@@ -117,3 +117,6 @@
 - [x] Imported 17 deficiencies with severity levels (critical, major, minor)
 - [x] Created job record for Annual Inspection (#0313-2025ANNUAL)
 - [x] Associated user with company for data visibility
+
+## Bug Fixes
+- [x] Fix nested anchor tag error on /admin/jobs page

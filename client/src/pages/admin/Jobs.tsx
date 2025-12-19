@@ -298,12 +298,18 @@ export default function AdminJobs() {
                       </div>
                       <div className="flex items-center gap-2">
                         {job.status === 'completed' && (
-                          <Link href={`/admin/qa/${job.id}`}>
-                            <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
-                              <CheckCircle2 className="h-4 w-4 mr-1" />
-                              QA
-                            </Button>
-                          </Link>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              window.location.href = `/admin/qa/${job.id}`;
+                            }}
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-1" />
+                            QA
+                          </Button>
                         )}
                         <ChevronRight className="h-5 w-5 text-muted-foreground" />
                       </div>
