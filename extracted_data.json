@@ -1,0 +1,342 @@
+{
+  "site": {
+    "address": "12500 Trites Road",
+    "name": "12500 Trites Road",
+    "city": "Richmond",
+    "state": "BC",
+    "building_id": "#0313"
+  },
+  "devices": [
+    {
+      "device_type": "Emergency Light",
+      "location": "PARKING STALL 27",
+      "serial_number": "EL-001",
+      "notes": "Battery: 6V 5AH (2016)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "PARKING STALL 24",
+      "serial_number": "EL-002",
+      "notes": "Battery: 6V 5AH (2023)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "PARKING STALL 36",
+      "serial_number": "EL-003",
+      "notes": "Battery: 6V 5AH (2023)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "PARKING STALL 16",
+      "serial_number": "EL-004",
+      "notes": "Battery: 6V 5AH (2023)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "BIKE CAGE",
+      "serial_number": "EL-005",
+      "notes": "Battery: 6V 5AH (2016)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "PARKADE MAINTENANCE RM OUTSIDE DOOR",
+      "serial_number": "EL-006",
+      "notes": "Battery: 6V 5AH (2021)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "PARKING STALL 15",
+      "serial_number": "EL-007",
+      "notes": "Battery: 6V 5AH (2023)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "VISITOR PARKING STALL A",
+      "serial_number": "EL-008",
+      "notes": "Battery: 6V 5AH (2023)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "PARKING STALL 8",
+      "serial_number": "EL-009",
+      "notes": "Battery: 6V 5AH (2020)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "VISITOR PARKING STALL G",
+      "serial_number": "EL-010",
+      "notes": "Battery: 6V 5AH (2021)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "PARKING STALL 2",
+      "serial_number": "EL-011",
+      "notes": "Battery: 6V 5AH (2015)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "PARKADE ENTRANCE",
+      "serial_number": "EL-012",
+      "notes": "Battery: 6V 5AH (2017)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "OFFICE STORAGE",
+      "serial_number": "EL-013",
+      "notes": "Battery: 12V 33AH ()",
+      "manufacturer": "",
+      "model": "250"
+    },
+    {
+      "device_type": "Emergency Light",
+      "location": "37/39 STAIRS",
+      "serial_number": "EL-014",
+      "notes": "Battery: 6V 5AH (2018)",
+      "manufacturer": "",
+      "model": "36"
+    },
+    {
+      "device_type": "Fire Extinguisher",
+      "location": "ELECTRICAL ROOM",
+      "serial_number": "73430641",
+      "model": "5 LB ABC",
+      "notes": "MFG: 2018"
+    },
+    {
+      "device_type": "Fire Extinguisher",
+      "location": "NE STORAGE",
+      "serial_number": "73430689",
+      "model": "5 LB ABC",
+      "notes": "MFG: 2018"
+    },
+    {
+      "device_type": "Fire Extinguisher",
+      "location": "LAUNDRY ROOM",
+      "serial_number": "65081892",
+      "model": "5 LB ABC",
+      "notes": "MFG: 2019"
+    },
+    {
+      "device_type": "Fire Extinguisher",
+      "location": "OFFICE KITCHEN",
+      "serial_number": "35572969",
+      "model": "5 LB ABC",
+      "notes": "MFG: 2023"
+    },
+    {
+      "device_type": "Fire Extinguisher",
+      "location": "PARKADE ENTRY",
+      "serial_number": "73430664",
+      "model": "5 LB ABC",
+      "notes": "MFG: 2018"
+    },
+    {
+      "device_type": "Fire Extinguisher",
+      "location": "PARKADE CENTRE",
+      "serial_number": "64687704",
+      "model": "5 LB ABC",
+      "notes": "MFG: 2018"
+    },
+    {
+      "device_type": "Fire Extinguisher",
+      "location": "PARKADE SOUTH EXIT",
+      "serial_number": "73430650",
+      "model": "5 LB ABC",
+      "notes": "MFG: 2018"
+    },
+    {
+      "device_type": "Sprinkler - Sprinkler Device",
+      "location": "D. Supervised circuit trouble signal",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - Sprinkler Device",
+      "location": "",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - Label/LCD text",
+      "location": "Device",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - PARKADE SPRINKLER",
+      "location": "TS",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - LOW AIR",
+      "location": "LA",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - PARKADE SPRINKLER",
+      "location": "FPS",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - PARKADE SPRINKLER",
+      "location": "TS",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - LOW AIR",
+      "location": "LA",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - WATER CURTAIN",
+      "location": "FPS",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - Sprinkler Device",
+      "location": "TS",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - RESIDENTIAL SPRINKLER",
+      "location": "FS",
+      "notes": ""
+    },
+    {
+      "device_type": "Sprinkler - MAIN VALAVE",
+      "location": "TS",
+      "notes": ""
+    }
+  ],
+  "deficiencies": [
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "RECOMMENDATION",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "OBSERVATION",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "RD\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "RD\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "RD\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "PM, RD, CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    },
+    {
+      "description": "REQUIREMENT",
+      "location": "PM, RD, CY\nDEC 13, 2024",
+      "severity": "medium",
+      "status": "open"
+    }
+  ],
+  "inspection": {
+    "job_number": "#0313-2025ANNUAL",
+    "inspection_type": "Annual",
+    "scheduled_date": "2024-12-19",
+    "status": "in_progress"
+  }
+}
