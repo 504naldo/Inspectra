@@ -1,28 +1,1003 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import * as db from "./db";
+import { invokeLLM } from "./_core/llm";
+import { storagePut } from "./storage";
+import { nanoid } from "nanoid";
+
+// Role-based procedure helpers
+const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== 'admin') {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+  }
+  return next({ ctx });
+});
+
+const officeProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (!['admin', 'office'].includes(ctx.user.role)) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Office or Admin access required' });
+  }
+  return next({ ctx });
+});
+
+const technicianProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (!['admin', 'office', 'technician'].includes(ctx.user.role)) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Technician access required' });
+  }
+  return next({ ctx });
+});
+
+const customerProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== 'customer') {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Customer access required' });
+  }
+  return next({ ctx });
+});
+
+// Company router
+const companyRouter = router({
+  list: adminProcedure.query(async () => {
+    return db.getAllCompanies();
+  }),
+  
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getCompanyById(input.id);
+  }),
+  
+  create: adminProcedure.input(z.object({
+    name: z.string().min(1),
+    logo: z.string().optional(),
+    address: z.string().optional(),
+    phone: z.string().optional(),
+    email: z.string().email().optional(),
+  })).mutation(async ({ input }) => {
+    return db.createCompany(input);
+  }),
+  
+  update: adminProcedure.input(z.object({
+    id: z.number(),
+    name: z.string().optional(),
+    logo: z.string().optional(),
+    address: z.string().optional(),
+    phone: z.string().optional(),
+    email: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...data } = input;
+    await db.updateCompany(id, data);
+    return { success: true };
+  }),
+});
+
+// Customer Organization router
+const customerOrgRouter = router({
+  list: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+    return db.getCustomerOrgsByCompany(input.companyId);
+  }),
+  
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const org = await db.getCustomerOrgById(input.id);
+    // Customer can only see their own org
+    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== input.id) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return org;
+  }),
+  
+  create: officeProcedure.input(z.object({
+    companyId: z.number(),
+    name: z.string().min(1),
+    contactName: z.string().optional(),
+    contactEmail: z.string().email().optional(),
+    contactPhone: z.string().optional(),
+    address: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    return db.createCustomerOrg(input);
+  }),
+  
+  update: officeProcedure.input(z.object({
+    id: z.number(),
+    name: z.string().optional(),
+    contactName: z.string().optional(),
+    contactEmail: z.string().optional(),
+    contactPhone: z.string().optional(),
+    address: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...data } = input;
+    await db.updateCustomerOrg(id, data);
+    return { success: true };
+  }),
+});
+
+// Site router
+const siteRouter = router({
+  listByCompany: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+    return db.getSitesByCompany(input.companyId);
+  }),
+  
+  listByCustomerOrg: protectedProcedure.input(z.object({ customerOrgId: z.number() })).query(async ({ input, ctx }) => {
+    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== input.customerOrgId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return db.getSitesByCustomerOrg(input.customerOrgId);
+  }),
+  
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getSiteById(input.id);
+  }),
+  
+  create: officeProcedure.input(z.object({
+    companyId: z.number(),
+    customerOrgId: z.number(),
+    name: z.string().min(1),
+    address: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    postalCode: z.string().optional(),
+    contactName: z.string().optional(),
+    contactPhone: z.string().optional(),
+    notes: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    return db.createSite(input);
+  }),
+  
+  update: officeProcedure.input(z.object({
+    id: z.number(),
+    name: z.string().optional(),
+    address: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    postalCode: z.string().optional(),
+    contactName: z.string().optional(),
+    contactPhone: z.string().optional(),
+    notes: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...data } = input;
+    await db.updateSite(id, data);
+    return { success: true };
+  }),
+});
+
+// Area router
+const areaRouter = router({
+  listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+    return db.getAreasBySite(input.siteId);
+  }),
+  
+  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getAreaById(input.id);
+  }),
+  
+  create: officeProcedure.input(z.object({
+    siteId: z.number(),
+    name: z.string().min(1),
+    floor: z.string().optional(),
+    building: z.string().optional(),
+    description: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    return db.createArea(input);
+  }),
+  
+  update: officeProcedure.input(z.object({
+    id: z.number(),
+    name: z.string().optional(),
+    floor: z.string().optional(),
+    building: z.string().optional(),
+    description: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...data } = input;
+    await db.updateArea(id, data);
+    return { success: true };
+  }),
+});
+
+// Device router
+const deviceRouter = router({
+  listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+    return db.getDevicesBySite(input.siteId);
+  }),
+  
+  listByArea: technicianProcedure.input(z.object({ areaId: z.number() })).query(async ({ input }) => {
+    return db.getDevicesByArea(input.areaId);
+  }),
+  
+  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getDeviceById(input.id);
+  }),
+  
+  create: officeProcedure.input(z.object({
+    siteId: z.number(),
+    areaId: z.number().optional(),
+    deviceType: z.string().min(1),
+    manufacturer: z.string().optional(),
+    model: z.string().optional(),
+    serialNumber: z.string().optional(),
+    location: z.string().optional(),
+    barcode: z.string().optional(),
+    notes: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    return db.createDevice(input);
+  }),
+  
+  update: officeProcedure.input(z.object({
+    id: z.number(),
+    deviceType: z.string().optional(),
+    areaId: z.number().optional(),
+    manufacturer: z.string().optional(),
+    model: z.string().optional(),
+    serialNumber: z.string().optional(),
+    location: z.string().optional(),
+    barcode: z.string().optional(),
+    notes: z.string().optional(),
+    isActive: z.boolean().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...data } = input;
+    await db.updateDevice(id, data);
+    return { success: true };
+  }),
+  
+  getCount: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+    return db.getDeviceCountBySite(input.siteId);
+  }),
+});
+
+// Job router
+const jobRouter = router({
+  listByCompany: officeProcedure.input(z.object({ 
+    companyId: z.number(),
+    status: z.string().optional()
+  })).query(async ({ input }) => {
+    return db.getJobsByCompany(input.companyId, input.status);
+  }),
+  
+  listByTechnician: technicianProcedure.input(z.object({
+    status: z.string().optional()
+  })).query(async ({ input, ctx }) => {
+    return db.getJobsByTechnician(ctx.user.id, input.status);
+  }),
+  
+  listByCustomerOrg: protectedProcedure.input(z.object({ customerOrgId: z.number() })).query(async ({ input, ctx }) => {
+    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== input.customerOrgId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return db.getJobsByCustomerOrg(input.customerOrgId);
+  }),
+  
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const job = await db.getJobById(input.id);
+    if (!job) return null;
+    // Customer can only see their own jobs
+    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== job.customerOrgId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return job;
+  }),
+  
+  getWithDetails: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const job = await db.getJobById(input.id);
+    if (!job) return null;
+    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== job.customerOrgId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    const site = await db.getSiteById(job.siteId);
+    const customerOrg = await db.getCustomerOrgById(job.customerOrgId);
+    const devices = await db.getDevicesBySite(job.siteId);
+    const inspectionResults = await db.getInspectionResultsByJob(job.id);
+    const deficiencies = await db.getDeficienciesByJob(job.id);
+    const stats = await db.getInspectionStats(job.id);
+    return { job, site, customerOrg, devices, inspectionResults, deficiencies, stats };
+  }),
+  
+  create: officeProcedure.input(z.object({
+    companyId: z.number(),
+    siteId: z.number(),
+    customerOrgId: z.number(),
+    assignedTechnicianId: z.number().optional(),
+    title: z.string().min(1),
+    description: z.string().optional(),
+    jobType: z.enum(['annual', 'semi_annual', 'quarterly', 'monthly', 'service_call', 'repair']).optional(),
+    priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+    scheduledDate: z.date().optional(),
+  })).mutation(async ({ input }) => {
+    const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
+    return db.createJob({ ...input, jobNumber });
+  }),
+  
+  update: officeProcedure.input(z.object({
+    id: z.number(),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    assignedTechnicianId: z.number().optional(),
+    jobType: z.enum(['annual', 'semi_annual', 'quarterly', 'monthly', 'service_call', 'repair']).optional(),
+    status: z.enum(['pending', 'scheduled', 'in_progress', 'completed', 'cancelled']).optional(),
+    priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+    scheduledDate: z.date().optional(),
+    notes: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...data } = input;
+    await db.updateJob(id, data);
+    return { success: true };
+  }),
+  
+  start: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    await db.updateJob(input.id, { status: 'in_progress', startedAt: new Date() });
+    return { success: true };
+  }),
+  
+  complete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    await db.updateJob(input.id, { status: 'completed', completedAt: new Date() });
+    return { success: true };
+  }),
+  
+  search: officeProcedure.input(z.object({
+    companyId: z.number(),
+    query: z.string()
+  })).query(async ({ input }) => {
+    return db.searchJobs(input.companyId, input.query);
+  }),
+});
+
+// Inspection Result router
+const inspectionResultRouter = router({
+  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+    return db.getInspectionResultsByJob(input.jobId);
+  }),
+  
+  getByJobAndDevice: technicianProcedure.input(z.object({ 
+    jobId: z.number(),
+    deviceId: z.number()
+  })).query(async ({ input }) => {
+    return db.getInspectionResultByJobAndDevice(input.jobId, input.deviceId);
+  }),
+  
+  upsert: technicianProcedure.input(z.object({
+    jobId: z.number(),
+    deviceId: z.number(),
+    result: z.enum(['pass', 'fail', 'na', 'not_tested']),
+    notes: z.string().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    const data = {
+      ...input,
+      technicianId: ctx.user.id,
+      testedAt: new Date(),
+      syncedAt: new Date(),
+    };
+    return db.upsertInspectionResult(data);
+  }),
+  
+  getStats: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+    return db.getInspectionStats(input.jobId);
+  }),
+  
+  // Batch sync for offline data
+  syncBatch: technicianProcedure.input(z.object({
+    results: z.array(z.object({
+      jobId: z.number(),
+      deviceId: z.number(),
+      result: z.enum(['pass', 'fail', 'na', 'not_tested']),
+      notes: z.string().optional(),
+      testedAt: z.date().optional(),
+    }))
+  })).mutation(async ({ input, ctx }) => {
+    const synced = [];
+    for (const result of input.results) {
+      const data = {
+        ...result,
+        technicianId: ctx.user.id,
+        testedAt: result.testedAt || new Date(),
+        syncedAt: new Date(),
+      };
+      const saved = await db.upsertInspectionResult(data);
+      synced.push(saved);
+      
+      // Log sync
+      await db.createSyncLog({
+        userId: ctx.user.id,
+        entityType: 'inspection_result',
+        entityId: saved.id!,
+        action: 'create',
+        payload: data,
+      });
+    }
+    return { synced: synced.length };
+  }),
+});
+
+// Deficiency router
+const deficiencyRouter = router({
+  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+    return db.getDeficienciesByJob(input.jobId);
+  }),
+  
+  listByCustomerOrg: protectedProcedure.input(z.object({ customerOrgId: z.number() })).query(async ({ input, ctx }) => {
+    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== input.customerOrgId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return db.getDeficienciesByCustomerOrg(input.customerOrgId);
+  }),
+  
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    const deficiency = await db.getDeficiencyById(input.id);
+    if (!deficiency) return null;
+    const attachments = await db.getAttachmentsByEntity('deficiency', input.id);
+    const repairs = await db.getRepairsByDeficiency(input.id);
+    return { deficiency, attachments, repairs };
+  }),
+  
+  create: technicianProcedure.input(z.object({
+    jobId: z.number(),
+    deviceId: z.number().optional(),
+    inspectionResultId: z.number().optional(),
+    title: z.string().min(1),
+    severity: z.enum(['critical', 'major', 'minor', 'observation']).optional(),
+    description: z.string().optional(),
+    observedIssue: z.string().optional(),
+    correctiveAction: z.string().optional(),
+    customerExplanation: z.string().optional(),
+    codeReference: z.string().optional(),
+    aiGenerated: z.boolean().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    return db.createDeficiency({ ...input, reportedById: ctx.user.id });
+  }),
+  
+  update: technicianProcedure.input(z.object({
+    id: z.number(),
+    title: z.string().optional(),
+    severity: z.enum(['critical', 'major', 'minor', 'observation']).optional(),
+    status: z.enum(['open', 'in_progress', 'resolved', 'closed', 'deferred']).optional(),
+    description: z.string().optional(),
+    observedIssue: z.string().optional(),
+    correctiveAction: z.string().optional(),
+    customerExplanation: z.string().optional(),
+    codeReference: z.string().optional(),
+    resolutionNotes: z.string().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    const { id, status, ...data } = input;
+    const updateData: any = { ...data };
+    if (status) {
+      updateData.status = status;
+      if (status === 'resolved' || status === 'closed') {
+        updateData.resolvedAt = new Date();
+        updateData.resolvedById = ctx.user.id;
+      }
+    }
+    await db.updateDeficiency(id, updateData);
+    return { success: true };
+  }),
+});
+
+// Repair router
+const repairRouter = router({
+  listByDeficiency: technicianProcedure.input(z.object({ deficiencyId: z.number() })).query(async ({ input }) => {
+    return db.getRepairsByDeficiency(input.deficiencyId);
+  }),
+  
+  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getRepairById(input.id);
+  }),
+  
+  create: technicianProcedure.input(z.object({
+    deficiencyId: z.number(),
+    description: z.string().optional(),
+    partsUsed: z.string().optional(),
+    laborHours: z.number().optional(),
+    aiRecommendations: z.any().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    return db.createRepair({ ...input, technicianId: ctx.user.id });
+  }),
+  
+  update: technicianProcedure.input(z.object({
+    id: z.number(),
+    status: z.enum(['pending', 'in_progress', 'completed', 'parts_ordered']).optional(),
+    description: z.string().optional(),
+    partsUsed: z.string().optional(),
+    laborHours: z.number().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, status, ...data } = input;
+    const updateData: any = { ...data };
+    if (status) {
+      updateData.status = status;
+      if (status === 'completed') {
+        updateData.completedAt = new Date();
+      }
+    }
+    await db.updateRepair(id, updateData);
+    return { success: true };
+  }),
+});
+
+// Attachment router
+const attachmentRouter = router({
+  listByEntity: protectedProcedure.input(z.object({
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job']),
+    entityId: z.number()
+  })).query(async ({ input }) => {
+    return db.getAttachmentsByEntity(input.entityType, input.entityId);
+  }),
+  
+  upload: technicianProcedure.input(z.object({
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job']),
+    entityId: z.number(),
+    fileName: z.string(),
+    fileData: z.string(), // Base64 encoded
+    mimeType: z.string(),
+    caption: z.string().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    const buffer = Buffer.from(input.fileData, 'base64');
+    const fileKey = `attachments/${input.entityType}/${input.entityId}/${nanoid()}-${input.fileName}`;
+    const { url } = await storagePut(fileKey, buffer, input.mimeType);
+    
+    return db.createAttachment({
+      entityType: input.entityType,
+      entityId: input.entityId,
+      uploadedById: ctx.user.id,
+      fileName: input.fileName,
+      fileKey,
+      fileUrl: url,
+      mimeType: input.mimeType,
+      fileSize: buffer.length,
+      caption: input.caption,
+    });
+  }),
+  
+  delete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    await db.deleteAttachment(input.id);
+    return { success: true };
+  }),
+});
+
+// Report router
+const reportRouter = router({
+  listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+    return db.getReportsByJob(input.jobId);
+  }),
+  
+  listByCustomerOrg: protectedProcedure.input(z.object({ customerOrgId: z.number() })).query(async ({ input, ctx }) => {
+    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== input.customerOrgId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return db.getReportsByCustomerOrg(input.customerOrgId);
+  }),
+  
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getReportById(input.id);
+  }),
+  
+  create: officeProcedure.input(z.object({
+    jobId: z.number(),
+    title: z.string(),
+    executiveSummary: z.string().optional(),
+    aiSummary: z.string().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    const stats = await db.getInspectionStats(input.jobId);
+    const deficiencies = await db.getDeficienciesByJob(input.jobId);
+    const reportNumber = `RPT-${Date.now().toString(36).toUpperCase()}`;
+    
+    return db.createReport({
+      ...input,
+      generatedById: ctx.user.id,
+      reportNumber,
+      deviceCount: stats.total,
+      passCount: stats.pass,
+      failCount: stats.fail,
+      deficiencyCount: deficiencies.length,
+    });
+  }),
+  
+  update: officeProcedure.input(z.object({
+    id: z.number(),
+    title: z.string().optional(),
+    executiveSummary: z.string().optional(),
+    aiSummary: z.string().optional(),
+    status: z.enum(['draft', 'generated', 'sent', 'approved']).optional(),
+    fileKey: z.string().optional(),
+    fileUrl: z.string().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    const { id, status, ...data } = input;
+    const updateData: any = { ...data };
+    if (status) {
+      updateData.status = status;
+      if (status === 'approved') {
+        updateData.approvedAt = new Date();
+        updateData.approvedById = ctx.user.id;
+      }
+    }
+    await db.updateReport(id, updateData);
+    return { success: true };
+  }),
+  
+  approve: customerProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+    await db.updateReport(input.id, { 
+      status: 'approved', 
+      approvedAt: new Date(),
+      approvedById: ctx.user.id 
+    });
+    return { success: true };
+  }),
+});
+
+// AI Features router
+const aiRouter = router({
+  // Deficiency narrative generator
+  generateDeficiencyNarrative: technicianProcedure.input(z.object({
+    deviceType: z.string(),
+    location: z.string(),
+    observedIssue: z.string(),
+    testOutcome: z.string(),
+    codeReference: z.string().optional(),
+    priorHistory: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const prompt = `You are a fire alarm inspection expert. Generate a professional deficiency narrative based on the following information:
+
+Device Type: ${input.deviceType}
+Location: ${input.location}
+Observed Issue: ${input.observedIssue}
+Test Outcome: ${input.testOutcome}
+${input.codeReference ? `Code Reference: ${input.codeReference}` : ''}
+${input.priorHistory ? `Prior History: ${input.priorHistory}` : ''}
+
+Please provide:
+1. A professional deficiency description (technical, detailed)
+2. Recommended corrective action (specific steps)
+3. Customer-friendly explanation (non-technical, easy to understand)
+
+Format your response as JSON with keys: description, correctiveAction, customerExplanation`;
+
+    const response = await invokeLLM({
+      messages: [
+        { role: "system", content: "You are a fire alarm inspection expert assistant. Always respond with valid JSON." },
+        { role: "user", content: prompt }
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "deficiency_narrative",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              description: { type: "string", description: "Technical deficiency description" },
+              correctiveAction: { type: "string", description: "Recommended corrective action" },
+              customerExplanation: { type: "string", description: "Customer-friendly explanation" }
+            },
+            required: ["description", "correctiveAction", "customerExplanation"],
+            additionalProperties: false
+          }
+        }
+      }
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty' });
+    
+    return { ...JSON.parse(content), isDraft: true };
+  }),
+  
+  // Smart repair recommendations
+  generateRepairRecommendations: technicianProcedure.input(z.object({
+    deviceType: z.string(),
+    manufacturer: z.string().optional(),
+    model: z.string().optional(),
+    issue: z.string(),
+    deficiencyDescription: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const prompt = `You are a fire alarm repair expert. Provide repair recommendations for:
+
+Device Type: ${input.deviceType}
+${input.manufacturer ? `Manufacturer: ${input.manufacturer}` : ''}
+${input.model ? `Model: ${input.model}` : ''}
+Issue: ${input.issue}
+${input.deficiencyDescription ? `Deficiency Description: ${input.deficiencyDescription}` : ''}
+
+Please provide:
+1. Troubleshooting steps (numbered list)
+2. Suggested parts and tools needed
+3. Suggested evidence photos to take
+4. Repair checklist
+
+Format your response as JSON with keys: troubleshootingSteps (array), partsAndTools (array), suggestedPhotos (array), repairChecklist (array)`;
+
+    const response = await invokeLLM({
+      messages: [
+        { role: "system", content: "You are a fire alarm repair expert assistant. Always respond with valid JSON." },
+        { role: "user", content: prompt }
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "repair_recommendations",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              troubleshootingSteps: { type: "array", items: { type: "string" } },
+              partsAndTools: { type: "array", items: { type: "string" } },
+              suggestedPhotos: { type: "array", items: { type: "string" } },
+              repairChecklist: { type: "array", items: { type: "string" } }
+            },
+            required: ["troubleshootingSteps", "partsAndTools", "suggestedPhotos", "repairChecklist"],
+            additionalProperties: false
+          }
+        }
+      }
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty' });
+    
+    return JSON.parse(content);
+  }),
+  
+  // Inspection report summary writer
+  generateReportSummary: officeProcedure.input(z.object({
+    jobId: z.number(),
+  })).mutation(async ({ input }) => {
+    const job = await db.getJobById(input.jobId);
+    if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
+    
+    const site = await db.getSiteById(job.siteId);
+    const stats = await db.getInspectionStats(input.jobId);
+    const deficiencies = await db.getDeficienciesByJob(input.jobId);
+    
+    const criticalCount = deficiencies.filter(d => d.severity === 'critical').length;
+    const majorCount = deficiencies.filter(d => d.severity === 'major').length;
+    const minorCount = deficiencies.filter(d => d.severity === 'minor').length;
+    
+    const prompt = `You are a fire alarm inspection report writer. Generate an executive summary for this inspection:
+
+Site: ${site?.name || 'Unknown'}
+Address: ${site?.address || 'N/A'}
+Job Type: ${job.jobType}
+Inspection Date: ${job.completedAt || job.scheduledDate || 'N/A'}
+
+Results:
+- Total Devices Tested: ${stats.total}
+- Passed: ${stats.pass}
+- Failed: ${stats.fail}
+- N/A: ${stats.na}
+- Not Tested: ${stats.notTested}
+
+Deficiencies Found: ${deficiencies.length}
+- Critical: ${criticalCount}
+- Major: ${majorCount}
+- Minor: ${minorCount}
+
+Deficiency Details:
+${deficiencies.slice(0, 10).map(d => `- ${d.title}: ${d.description || 'No description'}`).join('\n')}
+
+Please provide:
+1. Executive summary bullets (3-5 key points)
+2. Overall system status assessment
+3. Priority items requiring immediate attention
+4. Recommended next steps
+
+Important: Only report observed facts. Do not make conclusions about cause or origin.
+
+Format your response as JSON with keys: executiveSummary (array of strings), systemStatus (string), priorityItems (array), nextSteps (array)`;
+
+    const response = await invokeLLM({
+      messages: [
+        { role: "system", content: "You are a fire alarm inspection report writer. Only report observed facts, never conclusions about cause or origin. Always respond with valid JSON." },
+        { role: "user", content: prompt }
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "report_summary",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              executiveSummary: { type: "array", items: { type: "string" } },
+              systemStatus: { type: "string" },
+              priorityItems: { type: "array", items: { type: "string" } },
+              nextSteps: { type: "array", items: { type: "string" } }
+            },
+            required: ["executiveSummary", "systemStatus", "priorityItems", "nextSteps"],
+            additionalProperties: false
+          }
+        }
+      }
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty' });
+    
+    return { ...JSON.parse(content), stats, deficiencyCount: deficiencies.length };
+  }),
+  
+  // Photo note helper
+  generatePhotoCaption: technicianProcedure.input(z.object({
+    label: z.string(),
+    deviceType: z.string().optional(),
+    context: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const prompt = `Generate a short, professional caption and inspection note for a photo labeled "${input.label}"${input.deviceType ? ` of a ${input.deviceType}` : ''}${input.context ? `. Context: ${input.context}` : ''}.
+
+Format your response as JSON with keys: caption (short, 10 words max), inspectionNote (detailed, 1-2 sentences)`;
+
+    const response = await invokeLLM({
+      messages: [
+        { role: "system", content: "You are a fire alarm inspection assistant. Generate concise, professional photo captions. Always respond with valid JSON." },
+        { role: "user", content: prompt }
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "photo_caption",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              caption: { type: "string" },
+              inspectionNote: { type: "string" }
+            },
+            required: ["caption", "inspectionNote"],
+            additionalProperties: false
+          }
+        }
+      }
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty' });
+    
+    return JSON.parse(content);
+  }),
+  
+  // QA check for admin
+  runQACheck: adminProcedure.input(z.object({
+    jobId: z.number(),
+  })).mutation(async ({ input }) => {
+    const job = await db.getJobById(input.jobId);
+    if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
+    
+    const site = await db.getSiteById(job.siteId);
+    const devices = await db.getDevicesBySite(job.siteId);
+    const results = await db.getInspectionResultsByJob(input.jobId);
+    const deficiencies = await db.getDeficienciesByJob(input.jobId);
+    
+    const issues: string[] = [];
+    
+    // Check for untested devices
+    const testedDeviceIds = new Set(results.map(r => r.deviceId));
+    const untestedDevices = devices.filter(d => !testedDeviceIds.has(d.id));
+    if (untestedDevices.length > 0) {
+      issues.push(`${untestedDevices.length} device(s) not tested: ${untestedDevices.slice(0, 5).map(d => d.deviceType + ' at ' + d.location).join(', ')}${untestedDevices.length > 5 ? '...' : ''}`);
+    }
+    
+    // Check for failed devices without deficiencies
+    const failedResults = results.filter(r => r.result === 'fail');
+    const deficiencyDeviceIds = new Set(deficiencies.map(d => d.deviceId).filter(Boolean));
+    const failedWithoutDeficiency = failedResults.filter(r => !deficiencyDeviceIds.has(r.deviceId));
+    if (failedWithoutDeficiency.length > 0) {
+      issues.push(`${failedWithoutDeficiency.length} failed device(s) without deficiency records`);
+    }
+    
+    // Check for deficiencies without photos
+    for (const def of deficiencies) {
+      const photos = await db.getAttachmentsByEntity('deficiency', def.id);
+      if (photos.length === 0) {
+        issues.push(`Deficiency "${def.title}" has no photos attached`);
+      }
+    }
+    
+    // Check for missing notes on failed devices
+    const failedWithoutNotes = failedResults.filter(r => !r.notes || r.notes.trim() === '');
+    if (failedWithoutNotes.length > 0) {
+      issues.push(`${failedWithoutNotes.length} failed device(s) without inspection notes`);
+    }
+    
+    // Check job completion
+    if (job.status !== 'completed' && results.length === devices.length) {
+      issues.push('All devices tested but job not marked as completed');
+    }
+    
+    return {
+      jobId: input.jobId,
+      siteName: site?.name,
+      totalDevices: devices.length,
+      testedDevices: results.length,
+      deficienciesCount: deficiencies.length,
+      issues,
+      passedQA: issues.length === 0
+    };
+  }),
+});
+
+// User management router
+const userRouter = router({
+  list: adminProcedure.input(z.object({ companyId: z.number().optional() })).query(async ({ input }) => {
+    return db.getAllUsers(input.companyId);
+  }),
+  
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getUserById(input.id);
+  }),
+  
+  updateRole: adminProcedure.input(z.object({
+    userId: z.number(),
+    role: z.enum(['admin', 'office', 'technician', 'customer']),
+    companyId: z.number().optional(),
+    customerOrgId: z.number().optional(),
+  })).mutation(async ({ input }) => {
+    await db.updateUserRole(input.userId, input.role, input.companyId, input.customerOrgId);
+    return { success: true };
+  }),
+});
+
+// Dashboard router
+const dashboardRouter = router({
+  getStats: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+    return db.getDashboardStats(input.companyId);
+  }),
+  
+  getRecentJobs: officeProcedure.input(z.object({ 
+    companyId: z.number(),
+    limit: z.number().optional()
+  })).query(async ({ input }) => {
+    const jobs = await db.getJobsByCompany(input.companyId);
+    return jobs.slice(0, input.limit || 10);
+  }),
+});
+
+// Sync router for offline support
+const syncRouter = router({
+  getLogs: technicianProcedure.input(z.object({ limit: z.number().optional() })).query(async ({ input, ctx }) => {
+    return db.getSyncLogsByUser(ctx.user.id, input.limit);
+  }),
+  
+  getJobDataForOffline: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+    const job = await db.getJobById(input.jobId);
+    if (!job) return null;
+    
+    const site = await db.getSiteById(job.siteId);
+    const areas = site ? await db.getAreasBySite(site.id) : [];
+    const devices = await db.getDevicesBySite(job.siteId);
+    const existingResults = await db.getInspectionResultsByJob(input.jobId);
+    const deficiencies = await db.getDeficienciesByJob(input.jobId);
+    
+    return {
+      job,
+      site,
+      areas,
+      devices,
+      existingResults,
+      deficiencies,
+      downloadedAt: new Date()
+    };
+  }),
+});
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      return { success: true } as const;
     }),
   }),
-
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  
+  company: companyRouter,
+  customerOrg: customerOrgRouter,
+  site: siteRouter,
+  area: areaRouter,
+  device: deviceRouter,
+  job: jobRouter,
+  inspectionResult: inspectionResultRouter,
+  deficiency: deficiencyRouter,
+  repair: repairRouter,
+  attachment: attachmentRouter,
+  report: reportRouter,
+  ai: aiRouter,
+  user: userRouter,
+  dashboard: dashboardRouter,
+  sync: syncRouter,
 });
 
 export type AppRouter = typeof appRouter;

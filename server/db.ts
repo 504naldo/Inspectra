@@ -1,11 +1,25 @@
-import { eq } from "drizzle-orm";
+import { eq, and, desc, asc, sql, inArray, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import {
+  InsertUser, users, User,
+  companies, InsertCompany, Company,
+  customerOrgs, InsertCustomerOrg, CustomerOrg,
+  sites, InsertSite, Site,
+  areas, InsertArea, Area,
+  devices, InsertDevice, Device,
+  jobs, InsertJob, Job,
+  inspectionResults, InsertInspectionResult, InspectionResult,
+  deficiencies, InsertDeficiency, Deficiency,
+  repairs, InsertRepair, Repair,
+  attachments, InsertAttachment, Attachment,
+  reports, InsertReport, Report,
+  knowledgeBase, InsertKnowledgeBase, KnowledgeBase,
+  syncLogs, InsertSyncLog, SyncLog,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -18,6 +32,9 @@ export async function getDb() {
   return _db;
 }
 
+// ============================================
+// USER QUERIES
+// ============================================
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
@@ -30,9 +47,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
+    const values: InsertUser = { openId: user.openId };
     const updateSet: Record<string, unknown> = {};
 
     const textFields = ["name", "email", "loginMethod"] as const;
@@ -68,9 +83,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -79,14 +92,546 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
+  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getAllUsers(companyId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  if (companyId) {
+    return db.select().from(users).where(eq(users.companyId, companyId)).orderBy(desc(users.createdAt));
+  }
+  return db.select().from(users).orderBy(desc(users.createdAt));
+}
+
+export async function updateUserRole(userId: number, role: "admin" | "office" | "technician" | "customer", companyId?: number, customerOrgId?: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ role, companyId, customerOrgId }).where(eq(users.id, userId));
+}
+
+// ============================================
+// COMPANY QUERIES
+// ============================================
+export async function createCompany(data: InsertCompany) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(companies).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getCompanyById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getAllCompanies() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(companies).orderBy(desc(companies.createdAt));
+}
+
+export async function updateCompany(id: number, data: Partial<InsertCompany>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(companies).set(data).where(eq(companies.id, id));
+}
+
+// ============================================
+// CUSTOMER ORG QUERIES
+// ============================================
+export async function createCustomerOrg(data: InsertCustomerOrg) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(customerOrgs).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getCustomerOrgsByCompany(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customerOrgs).where(eq(customerOrgs.companyId, companyId)).orderBy(asc(customerOrgs.name));
+}
+
+export async function getCustomerOrgById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(customerOrgs).where(eq(customerOrgs.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateCustomerOrg(id: number, data: Partial<InsertCustomerOrg>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(customerOrgs).set(data).where(eq(customerOrgs.id, id));
+}
+
+// ============================================
+// SITE QUERIES
+// ============================================
+export async function createSite(data: InsertSite) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(sites).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getSitesByCompany(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(sites).where(eq(sites.companyId, companyId)).orderBy(asc(sites.name));
+}
+
+export async function getSitesByCustomerOrg(customerOrgId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(sites).where(eq(sites.customerOrgId, customerOrgId)).orderBy(asc(sites.name));
+}
+
+export async function getSiteById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(sites).where(eq(sites.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateSite(id: number, data: Partial<InsertSite>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(sites).set(data).where(eq(sites.id, id));
+}
+
+// ============================================
+// AREA QUERIES
+// ============================================
+export async function createArea(data: InsertArea) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(areas).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getAreasBySite(siteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(areas).where(eq(areas.siteId, siteId)).orderBy(asc(areas.name));
+}
+
+export async function getAreaById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(areas).where(eq(areas.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateArea(id: number, data: Partial<InsertArea>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(areas).set(data).where(eq(areas.id, id));
+}
+
+// ============================================
+// DEVICE QUERIES
+// ============================================
+export async function createDevice(data: InsertDevice) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(devices).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getDevicesBySite(siteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true))).orderBy(asc(devices.deviceType), asc(devices.location));
+}
+
+export async function getDevicesByArea(areaId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devices).where(and(eq(devices.areaId, areaId), eq(devices.isActive, true))).orderBy(asc(devices.deviceType));
+}
+
+export async function getDeviceById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(devices).where(eq(devices.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateDevice(id: number, data: Partial<InsertDevice>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(devices).set(data).where(eq(devices.id, id));
+}
+
+export async function getDeviceCountBySite(siteId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ count: sql<number>`count(*)` }).from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true)));
+  return result[0]?.count ?? 0;
+}
+
+// ============================================
+// JOB QUERIES
+// ============================================
+export async function createJob(data: InsertJob) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(jobs).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getJobsByCompany(companyId: number, status?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(jobs.companyId, companyId)];
+  if (status) {
+    conditions.push(eq(jobs.status, status as any));
+  }
+  return db.select().from(jobs).where(and(...conditions)).orderBy(desc(jobs.scheduledDate));
+}
+
+export async function getJobsByTechnician(technicianId: number, status?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(jobs.assignedTechnicianId, technicianId)];
+  if (status) {
+    conditions.push(eq(jobs.status, status as any));
+  }
+  return db.select().from(jobs).where(and(...conditions)).orderBy(desc(jobs.scheduledDate));
+}
+
+export async function getJobsByCustomerOrg(customerOrgId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(jobs).where(eq(jobs.customerOrgId, customerOrgId)).orderBy(desc(jobs.scheduledDate));
+}
+
+export async function getJobById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(jobs).where(eq(jobs.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateJob(id: number, data: Partial<InsertJob>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(jobs).set(data).where(eq(jobs.id, id));
+}
+
+export async function searchJobs(companyId: number, query: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(jobs).where(
+    and(
+      eq(jobs.companyId, companyId),
+      or(
+        like(jobs.jobNumber, `%${query}%`),
+        like(jobs.title, `%${query}%`)
+      )
+    )
+  ).orderBy(desc(jobs.scheduledDate));
+}
+
+// ============================================
+// INSPECTION RESULT QUERIES
+// ============================================
+export async function createInspectionResult(data: InsertInspectionResult) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(inspectionResults).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getInspectionResultsByJob(jobId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(inspectionResults).where(eq(inspectionResults.jobId, jobId)).orderBy(desc(inspectionResults.testedAt));
+}
+
+export async function getInspectionResultByJobAndDevice(jobId: number, deviceId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(inspectionResults).where(
+    and(eq(inspectionResults.jobId, jobId), eq(inspectionResults.deviceId, deviceId))
+  ).limit(1);
+  return result[0];
+}
+
+export async function updateInspectionResult(id: number, data: Partial<InsertInspectionResult>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inspectionResults).set(data).where(eq(inspectionResults.id, id));
+}
+
+export async function upsertInspectionResult(data: InsertInspectionResult) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const existing = await getInspectionResultByJobAndDevice(data.jobId, data.deviceId);
+  if (existing) {
+    await updateInspectionResult(existing.id, data);
+    return { ...existing, ...data };
+  } else {
+    return createInspectionResult(data);
+  }
+}
+
+export async function getInspectionStats(jobId: number) {
+  const db = await getDb();
+  if (!db) return { total: 0, pass: 0, fail: 0, na: 0, notTested: 0 };
+  
+  const results = await db.select({
+    result: inspectionResults.result,
+    count: sql<number>`count(*)`
+  }).from(inspectionResults).where(eq(inspectionResults.jobId, jobId)).groupBy(inspectionResults.result);
+  
+  const stats = { total: 0, pass: 0, fail: 0, na: 0, notTested: 0 };
+  for (const r of results) {
+    stats.total += r.count;
+    if (r.result === 'pass') stats.pass = r.count;
+    else if (r.result === 'fail') stats.fail = r.count;
+    else if (r.result === 'na') stats.na = r.count;
+    else if (r.result === 'not_tested') stats.notTested = r.count;
+  }
+  return stats;
+}
+
+// ============================================
+// DEFICIENCY QUERIES
+// ============================================
+export async function createDeficiency(data: InsertDeficiency) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(deficiencies).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getDeficienciesByJob(jobId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(deficiencies).where(eq(deficiencies.jobId, jobId)).orderBy(desc(deficiencies.createdAt));
+}
+
+export async function getDeficienciesByCustomerOrg(customerOrgId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  // Get jobs for this customer org, then get deficiencies
+  const customerJobs = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.customerOrgId, customerOrgId));
+  if (customerJobs.length === 0) return [];
+  const jobIds = customerJobs.map(j => j.id);
+  return db.select().from(deficiencies).where(inArray(deficiencies.jobId, jobIds)).orderBy(desc(deficiencies.createdAt));
+}
+
+export async function getDeficiencyById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(deficiencies).where(eq(deficiencies.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateDeficiency(id: number, data: Partial<InsertDeficiency>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(deficiencies).set(data).where(eq(deficiencies.id, id));
+}
+
+export async function getOpenDeficienciesCount(companyId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const companyJobs = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.companyId, companyId));
+  if (companyJobs.length === 0) return 0;
+  const jobIds = companyJobs.map(j => j.id);
+  const result = await db.select({ count: sql<number>`count(*)` }).from(deficiencies).where(
+    and(inArray(deficiencies.jobId, jobIds), eq(deficiencies.status, 'open'))
+  );
+  return result[0]?.count ?? 0;
+}
+
+// ============================================
+// REPAIR QUERIES
+// ============================================
+export async function createRepair(data: InsertRepair) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(repairs).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getRepairsByDeficiency(deficiencyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(repairs).where(eq(repairs.deficiencyId, deficiencyId)).orderBy(desc(repairs.createdAt));
+}
+
+export async function getRepairById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(repairs).where(eq(repairs.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateRepair(id: number, data: Partial<InsertRepair>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(repairs).set(data).where(eq(repairs.id, id));
+}
+
+// ============================================
+// ATTACHMENT QUERIES
+// ============================================
+export async function createAttachment(data: InsertAttachment) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(attachments).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getAttachmentsByEntity(entityType: string, entityId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(attachments).where(
+    and(eq(attachments.entityType, entityType as any), eq(attachments.entityId, entityId))
+  ).orderBy(desc(attachments.createdAt));
+}
+
+export async function deleteAttachment(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(attachments).where(eq(attachments.id, id));
+}
+
+// ============================================
+// REPORT QUERIES
+// ============================================
+export async function createReport(data: InsertReport) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(reports).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getReportsByJob(jobId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(reports).where(eq(reports.jobId, jobId)).orderBy(desc(reports.createdAt));
+}
+
+export async function getReportsByCustomerOrg(customerOrgId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const customerJobs = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.customerOrgId, customerOrgId));
+  if (customerJobs.length === 0) return [];
+  const jobIds = customerJobs.map(j => j.id);
+  return db.select().from(reports).where(inArray(reports.jobId, jobIds)).orderBy(desc(reports.createdAt));
+}
+
+export async function getReportById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(reports).where(eq(reports.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateReport(id: number, data: Partial<InsertReport>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(reports).set(data).where(eq(reports.id, id));
+}
+
+// ============================================
+// KNOWLEDGE BASE QUERIES
+// ============================================
+export async function createKnowledgeBaseEntry(data: InsertKnowledgeBase) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(knowledgeBase).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getKnowledgeBaseByCompany(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(knowledgeBase).where(
+    and(eq(knowledgeBase.companyId, companyId), eq(knowledgeBase.isActive, true))
+  ).orderBy(desc(knowledgeBase.createdAt));
+}
+
+export async function searchKnowledgeBase(companyId: number, query: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(knowledgeBase).where(
+    and(
+      eq(knowledgeBase.companyId, companyId),
+      eq(knowledgeBase.isActive, true),
+      or(
+        like(knowledgeBase.title, `%${query}%`),
+        like(knowledgeBase.content, `%${query}%`)
+      )
+    )
+  ).orderBy(desc(knowledgeBase.createdAt));
+}
+
+// ============================================
+// SYNC LOG QUERIES
+// ============================================
+export async function createSyncLog(data: InsertSyncLog) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(syncLogs).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getSyncLogsByUser(userId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(syncLogs).where(eq(syncLogs.userId, userId)).orderBy(desc(syncLogs.syncedAt)).limit(limit);
+}
+
+// ============================================
+// DASHBOARD STATS
+// ============================================
+export async function getDashboardStats(companyId: number) {
+  const db = await getDb();
+  if (!db) return { totalJobs: 0, activeJobs: 0, completedJobs: 0, openDeficiencies: 0, totalDevices: 0, totalSites: 0 };
+  
+  const [jobStats] = await db.select({
+    total: sql<number>`count(*)`,
+    active: sql<number>`sum(case when status in ('pending', 'scheduled', 'in_progress') then 1 else 0 end)`,
+    completed: sql<number>`sum(case when status = 'completed' then 1 else 0 end)`
+  }).from(jobs).where(eq(jobs.companyId, companyId));
+  
+  const [siteCount] = await db.select({ count: sql<number>`count(*)` }).from(sites).where(eq(sites.companyId, companyId));
+  
+  const companySites = await db.select({ id: sites.id }).from(sites).where(eq(sites.companyId, companyId));
+  let deviceCount = 0;
+  if (companySites.length > 0) {
+    const siteIds = companySites.map(s => s.id);
+    const [dc] = await db.select({ count: sql<number>`count(*)` }).from(devices).where(inArray(devices.siteId, siteIds));
+    deviceCount = dc?.count ?? 0;
+  }
+  
+  const openDef = await getOpenDeficienciesCount(companyId);
+  
+  return {
+    totalJobs: jobStats?.total ?? 0,
+    activeJobs: jobStats?.active ?? 0,
+    completedJobs: jobStats?.completed ?? 0,
+    openDeficiencies: openDef,
+    totalDevices: deviceCount,
+    totalSites: siteCount?.count ?? 0
+  };
+}
