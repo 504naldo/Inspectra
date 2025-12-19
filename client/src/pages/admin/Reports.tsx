@@ -111,7 +111,7 @@ export default function AdminReports() {
                 Generate Report
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Generate Inspection Report</DialogTitle>
               </DialogHeader>
@@ -162,7 +162,7 @@ export default function AdminReports() {
                     value={executiveSummary}
                     onChange={(e) => setExecutiveSummary(e.target.value)}
                     placeholder="Executive summary of the inspection..."
-                    className="min-h-[200px]"
+                    className="min-h-[300px] max-h-[400px] resize-y"
                   />
                 </div>
 

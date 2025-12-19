@@ -120,3 +120,4 @@
 
 ## Bug Fixes
 - [x] Fix nested anchor tag error on /admin/jobs page
+- [x] Fix report summary display - unable to view entire summary
