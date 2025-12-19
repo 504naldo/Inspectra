@@ -319,6 +319,12 @@ export async function getJobsByCustomerOrg(customerOrgId: number) {
   return db.select().from(jobs).where(eq(jobs.customerOrgId, customerOrgId)).orderBy(desc(jobs.scheduledDate));
 }
 
+export async function getJobsBySite(siteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(jobs).where(eq(jobs.siteId, siteId)).orderBy(desc(jobs.scheduledDate));
+}
+
 export async function getJobById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -634,4 +640,253 @@ export async function getDashboardStats(companyId: number) {
     totalDevices: deviceCount,
     totalSites: siteCount?.count ?? 0
   };
+}
+
+// ============================================
+// ENHANCED ATTACHMENT QUERIES
+// ============================================
+export async function getAttachmentsBySite(siteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(attachments).where(eq(attachments.siteId, siteId)).orderBy(desc(attachments.createdAt));
+}
+
+export async function getAttachmentsByJob(jobId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(attachments).where(eq(attachments.jobId, jobId)).orderBy(desc(attachments.createdAt));
+}
+
+export async function getAttachmentsByDevice(deviceId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(attachments).where(eq(attachments.deviceId, deviceId)).orderBy(desc(attachments.createdAt));
+}
+
+export async function updateAttachment(id: number, data: Partial<InsertAttachment>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(attachments).set(data).where(eq(attachments.id, id));
+}
+
+export async function updateAttachmentTags(id: number, tags: string[]) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(attachments).set({ tags: tags as any }).where(eq(attachments.id, id));
+}
+
+export async function getAttachmentById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(attachments).where(eq(attachments.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createBulkAttachments(dataList: InsertAttachment[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (dataList.length === 0) return [];
+  const result = await db.insert(attachments).values(dataList);
+  return dataList.map((data, index) => ({ id: Number(result[0].insertId) + index, ...data }));
+}
+
+// ============================================
+// FILE TAG QUERIES
+// ============================================
+import { fileTags, InsertFileTag, FileTag, importLogs, InsertImportLog, ImportLog, importRowResults, InsertImportRowResult, ImportRowResult, uploadQueue, InsertUploadQueueItem, UploadQueueItem } from "../drizzle/schema";
+
+export async function createFileTag(data: InsertFileTag) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(fileTags).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getFileTagsByCompany(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(fileTags).where(eq(fileTags.companyId, companyId)).orderBy(fileTags.name);
+}
+
+export async function deleteFileTag(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(fileTags).where(eq(fileTags.id, id));
+}
+
+// ============================================
+// IMPORT LOG QUERIES
+// ============================================
+export async function createImportLog(data: InsertImportLog) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(importLogs).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getImportLogsByCompany(companyId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(importLogs).where(eq(importLogs.companyId, companyId)).orderBy(desc(importLogs.createdAt)).limit(limit);
+}
+
+export async function getImportLogsBySite(siteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(importLogs).where(eq(importLogs.siteId, siteId)).orderBy(desc(importLogs.createdAt));
+}
+
+export async function getImportLogById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(importLogs).where(eq(importLogs.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateImportLog(id: number, data: Partial<InsertImportLog>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(importLogs).set(data).where(eq(importLogs.id, id));
+}
+
+// ============================================
+// IMPORT ROW RESULT QUERIES
+// ============================================
+export async function createImportRowResult(data: InsertImportRowResult) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(importRowResults).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function createBulkImportRowResults(dataList: InsertImportRowResult[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (dataList.length === 0) return [];
+  await db.insert(importRowResults).values(dataList);
+  return dataList;
+}
+
+export async function getImportRowResultsByLog(importLogId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(importRowResults).where(eq(importRowResults.importLogId, importLogId)).orderBy(importRowResults.rowNumber);
+}
+
+export async function getImportErrorsByLog(importLogId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(importRowResults).where(
+    and(eq(importRowResults.importLogId, importLogId), eq(importRowResults.status, 'error'))
+  ).orderBy(importRowResults.rowNumber);
+}
+
+// ============================================
+// UPLOAD QUEUE QUERIES
+// ============================================
+export async function createUploadQueueItem(data: InsertUploadQueueItem) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(uploadQueue).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getUploadQueueByUser(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(uploadQueue).where(eq(uploadQueue.userId, userId)).orderBy(desc(uploadQueue.queuedAt));
+}
+
+export async function getPendingUploads(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(uploadQueue).where(
+    and(
+      eq(uploadQueue.userId, userId),
+      inArray(uploadQueue.status, ['queued', 'uploading', 'paused'])
+    )
+  ).orderBy(uploadQueue.queuedAt);
+}
+
+export async function getUploadQueueItemById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(uploadQueue).where(eq(uploadQueue.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getUploadQueueItemByLocalId(userId: number, localFileId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(uploadQueue).where(
+    and(eq(uploadQueue.userId, userId), eq(uploadQueue.localFileId, localFileId))
+  ).limit(1);
+  return result[0];
+}
+
+export async function updateUploadQueueItem(id: number, data: Partial<InsertUploadQueueItem>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(uploadQueue).set(data).where(eq(uploadQueue.id, id));
+}
+
+export async function deleteUploadQueueItem(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(uploadQueue).where(eq(uploadQueue.id, id));
+}
+
+export async function clearCompletedUploads(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(uploadQueue).where(
+    and(eq(uploadQueue.userId, userId), eq(uploadQueue.status, 'completed'))
+  );
+}
+
+// ============================================
+// BULK DEVICE IMPORT HELPERS
+// ============================================
+export async function findDuplicateDevice(siteId: number, serialNumber: string | null, barcode: string | null) {
+  const db = await getDb();
+  if (!db) return undefined;
+  
+  // Check by serial number or barcode
+  if (serialNumber) {
+    const result = await db.select().from(devices).where(
+      and(eq(devices.siteId, siteId), eq(devices.serialNumber, serialNumber))
+    ).limit(1);
+    if (result[0]) return result[0];
+  }
+  
+  if (barcode) {
+    const result = await db.select().from(devices).where(
+      and(eq(devices.siteId, siteId), eq(devices.barcode, barcode))
+    ).limit(1);
+    if (result[0]) return result[0];
+  }
+  
+  return undefined;
+}
+
+export async function bulkCreateDevices(dataList: InsertDevice[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (dataList.length === 0) return [];
+  
+  const results: Device[] = [];
+  for (const data of dataList) {
+    const result = await db.insert(devices).values(data);
+    results.push({ id: Number(result[0].insertId), ...data } as Device);
+  }
+  return results;
+}
+
+export async function bulkUpdateDevices(updates: Array<{ id: number; data: Partial<InsertDevice> }>) {
+  const db = await getDb();
+  if (!db) return;
+  
+  for (const { id, data } of updates) {
+    await db.update(devices).set(data).where(eq(devices.id, id));
+  }
 }

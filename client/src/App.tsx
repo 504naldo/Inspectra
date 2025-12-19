@@ -24,6 +24,8 @@ import AdminSites from "./pages/admin/Sites";
 import AdminDevices from "./pages/admin/Devices";
 import AdminReports from "./pages/admin/Reports";
 import AdminQACheck from "./pages/admin/QACheck";
+import SiteFiles from "./pages/admin/SiteFiles";
+import AssetImport from "./pages/admin/AssetImport";
 import CustomerPortal from "./pages/customer/Portal";
 import CustomerReports from "./pages/customer/Reports";
 import CustomerDeficiencies from "./pages/customer/Deficiencies";
@@ -170,6 +172,16 @@ function Router() {
             <AdminQACheck jobId={parseInt(params.jobId)} />
           </ProtectedRoute>
         )}
+      </Route>
+      <Route path="/admin/sites/:siteId/files">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <SiteFiles />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/sites/:siteId/import">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <AssetImport />
+        </ProtectedRoute>
       </Route>
 
       {/* Customer routes */}

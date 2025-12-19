@@ -79,3 +79,32 @@
 - [x] Fast workflow with minimal typing
 - [x] Loading states and error handling
 
+
+## File Management Features (New)
+- [x] Enhanced Attachment table with tags, linked entities, and metadata
+- [x] Import logs table for tracking CSV/XLSX imports
+- [x] S3 storage integration for file uploads
+- [x] Bulk file upload API endpoint
+- [x] File tagging system (add/remove tags)
+- [x] Link files to Site/Inspection/Asset
+- [x] Customer → Site → Files admin page
+- [x] File preview and download functionality
+
+## Asset Import Features (New)
+- [x] CSV/XLSX file parsing on backend
+- [x] Column mapping screen UI
+- [x] Validation preview with error highlighting
+- [x] Duplicate detection and handling options
+- [x] Import execution with progress tracking
+- [x] Import results log with success/error counts
+- [x] Site → Assets → Import admin page
+
+## Mobile Upload Features (New)
+- [x] Camera capture integration
+- [x] File picker for gallery/documents
+- [x] Upload queue management
+- [x] Retry failed uploads
+- [x] Background/resumable uploads
+- [x] Upload progress indicators
+- [x] Offline queue with sync on reconnect
+

@@ -13,8 +13,13 @@ import {
   Plus,
   Building2,
   MapPin,
-  Phone
+  Phone,
+  FileImage,
+  Upload,
+  MoreHorizontal
 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Link } from "wouter";
 import { toast } from "sonner";
 
 export default function AdminSites() {
@@ -241,6 +246,27 @@ export default function AdminSites() {
                         </p>
                       )}
                     </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <Link href={`/admin/sites/${site.id}/files`}>
+                          <DropdownMenuItem>
+                            <FileImage className="h-4 w-4 mr-2" />
+                            Manage Files
+                          </DropdownMenuItem>
+                        </Link>
+                        <Link href={`/admin/sites/${site.id}/import`}>
+                          <DropdownMenuItem>
+                            <Upload className="h-4 w-4 mr-2" />
+                            Import Assets
+                          </DropdownMenuItem>
+                        </Link>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardContent>
               </Card>

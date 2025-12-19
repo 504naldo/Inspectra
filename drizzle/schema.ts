@@ -212,25 +212,139 @@ export type Repair = typeof repairs.$inferSelect;
 export type InsertRepair = typeof repairs.$inferInsert;
 
 // ============================================
-// ATTACHMENT (Photos)
+// ATTACHMENT (Photos & Files) - Enhanced
 // ============================================
 export const attachments = mysqlTable("attachments", {
   id: int("id").autoincrement().primaryKey(),
-  entityType: mysqlEnum("entityType", ["inspection_result", "deficiency", "repair", "device", "job"]).notNull(),
+  // Entity linking - can link to multiple entity types
+  entityType: mysqlEnum("entityType", ["inspection_result", "deficiency", "repair", "device", "job", "site", "customer_org"]).notNull(),
   entityId: int("entityId").notNull(),
+  // Additional optional links for cross-referencing
+  siteId: int("siteId"),
+  jobId: int("jobId"),
+  deviceId: int("deviceId"),
+  // File info
   uploadedById: int("uploadedById").notNull(),
   fileName: varchar("fileName", { length: 255 }).notNull(),
   fileKey: varchar("fileKey", { length: 500 }).notNull(), // S3 key
   fileUrl: text("fileUrl").notNull(), // S3 URL
   mimeType: varchar("mimeType", { length: 100 }),
   fileSize: int("fileSize"),
+  // Metadata
   caption: text("caption"),
   aiCaption: text("aiCaption"), // AI-generated caption
+  tags: json("tags"), // Array of tag strings
+  // Upload tracking
+  uploadStatus: mysqlEnum("uploadStatus", ["pending", "uploading", "completed", "failed"]).default("completed").notNull(),
+  uploadProgress: int("uploadProgress").default(100),
+  retryCount: int("retryCount").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type Attachment = typeof attachments.$inferSelect;
 export type InsertAttachment = typeof attachments.$inferInsert;
+
+// ============================================
+// FILE TAGS (Predefined tags for organization)
+// ============================================
+export const fileTags = mysqlTable("file_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  color: varchar("color", { length: 20 }).default("#3b82f6"), // Hex color
+  description: text("description"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FileTag = typeof fileTags.$inferSelect;
+export type InsertFileTag = typeof fileTags.$inferInsert;
+
+// ============================================
+// IMPORT LOG (Track CSV/XLSX imports)
+// ============================================
+export const importLogs = mysqlTable("import_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  siteId: int("siteId"),
+  importedById: int("importedById").notNull(),
+  importType: mysqlEnum("importType", ["devices", "sites", "areas", "customers"]).notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileKey: varchar("fileKey", { length: 500 }), // S3 key for original file
+  status: mysqlEnum("status", ["pending", "validating", "importing", "completed", "failed", "partial"]).default("pending").notNull(),
+  // Column mapping stored as JSON
+  columnMapping: json("columnMapping"),
+  // Results
+  totalRows: int("totalRows").default(0),
+  successCount: int("successCount").default(0),
+  errorCount: int("errorCount").default(0),
+  duplicateCount: int("duplicateCount").default(0),
+  skippedCount: int("skippedCount").default(0),
+  // Error details
+  errors: json("errors"), // Array of { row, column, message }
+  duplicateHandling: mysqlEnum("duplicateHandling", ["skip", "update", "create_new"]).default("skip"),
+  // Timing
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ImportLog = typeof importLogs.$inferSelect;
+export type InsertImportLog = typeof importLogs.$inferInsert;
+
+// ============================================
+// IMPORT ROW RESULT (Individual row results)
+// ============================================
+export const importRowResults = mysqlTable("import_row_results", {
+  id: int("id").autoincrement().primaryKey(),
+  importLogId: int("importLogId").notNull(),
+  rowNumber: int("rowNumber").notNull(),
+  status: mysqlEnum("status", ["success", "error", "duplicate", "skipped"]).notNull(),
+  entityId: int("entityId"), // ID of created/updated entity
+  originalData: json("originalData"), // Original row data
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ImportRowResult = typeof importRowResults.$inferSelect;
+export type InsertImportRowResult = typeof importRowResults.$inferInsert;
+
+// ============================================
+// UPLOAD QUEUE (For mobile background uploads)
+// ============================================
+export const uploadQueue = mysqlTable("upload_queue", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  // File info
+  localFileId: varchar("localFileId", { length: 100 }).notNull(), // Client-side ID
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 100 }),
+  fileSize: int("fileSize"),
+  // Target entity
+  entityType: mysqlEnum("entityType", ["inspection_result", "deficiency", "repair", "device", "job", "site", "customer_org"]).notNull(),
+  entityId: int("entityId").notNull(),
+  // Upload status
+  status: mysqlEnum("status", ["queued", "uploading", "paused", "completed", "failed"]).default("queued").notNull(),
+  progress: int("progress").default(0), // 0-100
+  retryCount: int("retryCount").default(0),
+  maxRetries: int("maxRetries").default(3),
+  lastError: text("lastError"),
+  // S3 info (populated after upload)
+  fileKey: varchar("fileKey", { length: 500 }),
+  fileUrl: text("fileUrl"),
+  // Metadata
+  tags: json("tags"),
+  caption: text("caption"),
+  // Timing
+  queuedAt: timestamp("queuedAt").defaultNow().notNull(),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UploadQueueItem = typeof uploadQueue.$inferSelect;
+export type InsertUploadQueueItem = typeof uploadQueue.$inferInsert;
 
 // ============================================
 // REPORT (Generated PDFs)

@@ -266,6 +266,10 @@ const jobRouter = router({
     return db.getJobsByCustomerOrg(input.customerOrgId);
   }),
   
+  listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+    return db.getJobsBySite(input.siteId);
+  }),
+  
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
     const job = await db.getJobById(input.id);
     if (!job) return null;
@@ -509,22 +513,42 @@ const repairRouter = router({
   }),
 });
 
-// Attachment router
+// Attachment router - Enhanced with bulk upload, tagging, and linking
 const attachmentRouter = router({
   listByEntity: protectedProcedure.input(z.object({
-    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job']),
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org']),
     entityId: z.number()
   })).query(async ({ input }) => {
     return db.getAttachmentsByEntity(input.entityType, input.entityId);
   }),
   
+  listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+    return db.getAttachmentsBySite(input.siteId);
+  }),
+  
+  listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+    return db.getAttachmentsByJob(input.jobId);
+  }),
+  
+  listByDevice: protectedProcedure.input(z.object({ deviceId: z.number() })).query(async ({ input }) => {
+    return db.getAttachmentsByDevice(input.deviceId);
+  }),
+  
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getAttachmentById(input.id);
+  }),
+  
   upload: technicianProcedure.input(z.object({
-    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job']),
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org']),
     entityId: z.number(),
     fileName: z.string(),
     fileData: z.string(), // Base64 encoded
     mimeType: z.string(),
     caption: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    siteId: z.number().optional(),
+    jobId: z.number().optional(),
+    deviceId: z.number().optional(),
   })).mutation(async ({ input, ctx }) => {
     const buffer = Buffer.from(input.fileData, 'base64');
     const fileKey = `attachments/${input.entityType}/${input.entityId}/${nanoid()}-${input.fileName}`;
@@ -540,11 +564,239 @@ const attachmentRouter = router({
       mimeType: input.mimeType,
       fileSize: buffer.length,
       caption: input.caption,
+      tags: input.tags as any,
+      siteId: input.siteId,
+      jobId: input.jobId,
+      deviceId: input.deviceId,
     });
+  }),
+  
+  // Bulk upload multiple files
+  bulkUpload: officeProcedure.input(z.object({
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org']),
+    entityId: z.number(),
+    files: z.array(z.object({
+      fileName: z.string(),
+      fileData: z.string(),
+      mimeType: z.string(),
+      caption: z.string().optional(),
+    })),
+    tags: z.array(z.string()).optional(),
+    siteId: z.number().optional(),
+    jobId: z.number().optional(),
+    deviceId: z.number().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    const results = [];
+    
+    for (const file of input.files) {
+      const buffer = Buffer.from(file.fileData, 'base64');
+      const fileKey = `attachments/${input.entityType}/${input.entityId}/${nanoid()}-${file.fileName}`;
+      const { url } = await storagePut(fileKey, buffer, file.mimeType);
+      
+      const attachment = await db.createAttachment({
+        entityType: input.entityType,
+        entityId: input.entityId,
+        uploadedById: ctx.user.id,
+        fileName: file.fileName,
+        fileKey,
+        fileUrl: url,
+        mimeType: file.mimeType,
+        fileSize: buffer.length,
+        caption: file.caption,
+        tags: input.tags as any,
+        siteId: input.siteId,
+        jobId: input.jobId,
+        deviceId: input.deviceId,
+      });
+      results.push(attachment);
+    }
+    
+    return { success: true, count: results.length, attachments: results };
+  }),
+  
+  // Update attachment metadata
+  update: officeProcedure.input(z.object({
+    id: z.number(),
+    caption: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    siteId: z.number().optional(),
+    jobId: z.number().optional(),
+    deviceId: z.number().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...data } = input;
+    await db.updateAttachment(id, { ...data, tags: data.tags as any });
+    return { success: true };
+  }),
+  
+  // Update tags only
+  updateTags: officeProcedure.input(z.object({
+    id: z.number(),
+    tags: z.array(z.string()),
+  })).mutation(async ({ input }) => {
+    await db.updateAttachmentTags(input.id, input.tags);
+    return { success: true };
+  }),
+  
+  // Link attachment to additional entities
+  linkToEntities: officeProcedure.input(z.object({
+    id: z.number(),
+    siteId: z.number().optional(),
+    jobId: z.number().optional(),
+    deviceId: z.number().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...links } = input;
+    await db.updateAttachment(id, links);
+    return { success: true };
   }),
   
   delete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     await db.deleteAttachment(input.id);
+    return { success: true };
+  }),
+});
+
+// File Tags router
+const fileTagRouter = router({
+  list: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+    return db.getFileTagsByCompany(input.companyId);
+  }),
+  
+  create: officeProcedure.input(z.object({
+    companyId: z.number(),
+    name: z.string().min(1),
+    color: z.string().optional(),
+    description: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    return db.createFileTag(input);
+  }),
+  
+  delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    await db.deleteFileTag(input.id);
+    return { success: true };
+  }),
+});
+
+// Upload Queue router (for mobile background uploads)
+const uploadQueueRouter = router({
+  list: technicianProcedure.query(async ({ ctx }) => {
+    return db.getUploadQueueByUser(ctx.user.id);
+  }),
+  
+  pending: technicianProcedure.query(async ({ ctx }) => {
+    return db.getPendingUploads(ctx.user.id);
+  }),
+  
+  add: technicianProcedure.input(z.object({
+    localFileId: z.string(),
+    fileName: z.string(),
+    mimeType: z.string().optional(),
+    fileSize: z.number().optional(),
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org']),
+    entityId: z.number(),
+    tags: z.array(z.string()).optional(),
+    caption: z.string().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    // Check if already exists
+    const existing = await db.getUploadQueueItemByLocalId(ctx.user.id, input.localFileId);
+    if (existing) {
+      return existing;
+    }
+    
+    return db.createUploadQueueItem({
+      userId: ctx.user.id,
+      localFileId: input.localFileId,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      fileSize: input.fileSize,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      tags: input.tags as any,
+      caption: input.caption,
+      status: 'queued',
+    });
+  }),
+  
+  updateStatus: technicianProcedure.input(z.object({
+    id: z.number(),
+    status: z.enum(['queued', 'uploading', 'paused', 'completed', 'failed']),
+    progress: z.number().optional(),
+    lastError: z.string().optional(),
+    fileKey: z.string().optional(),
+    fileUrl: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...data } = input;
+    const updateData: any = { ...data };
+    
+    if (data.status === 'uploading' && !data.progress) {
+      updateData.startedAt = new Date();
+    }
+    if (data.status === 'completed') {
+      updateData.completedAt = new Date();
+      updateData.progress = 100;
+    }
+    if (data.status === 'failed') {
+      const item = await db.getUploadQueueItemById(id);
+      if (item) {
+        updateData.retryCount = (item.retryCount || 0) + 1;
+      }
+    }
+    
+    await db.updateUploadQueueItem(id, updateData);
+    return { success: true };
+  }),
+  
+  // Complete upload - creates attachment from queue item
+  complete: technicianProcedure.input(z.object({
+    id: z.number(),
+    fileKey: z.string(),
+    fileUrl: z.string(),
+  })).mutation(async ({ input, ctx }) => {
+    const item = await db.getUploadQueueItemById(input.id);
+    if (!item) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Upload queue item not found' });
+    }
+    
+    // Create the attachment
+    const attachment = await db.createAttachment({
+      entityType: item.entityType,
+      entityId: item.entityId,
+      uploadedById: ctx.user.id,
+      fileName: item.fileName,
+      fileKey: input.fileKey,
+      fileUrl: input.fileUrl,
+      mimeType: item.mimeType,
+      fileSize: item.fileSize,
+      caption: item.caption,
+      tags: item.tags as any,
+    });
+    
+    // Update queue item
+    await db.updateUploadQueueItem(input.id, {
+      status: 'completed',
+      fileKey: input.fileKey,
+      fileUrl: input.fileUrl,
+      completedAt: new Date(),
+      progress: 100,
+    });
+    
+    return { success: true, attachment };
+  }),
+  
+  retry: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    await db.updateUploadQueueItem(input.id, {
+      status: 'queued',
+      lastError: null,
+    });
+    return { success: true };
+  }),
+  
+  remove: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    await db.deleteUploadQueueItem(input.id);
+    return { success: true };
+  }),
+  
+  clearCompleted: technicianProcedure.mutation(async ({ ctx }) => {
+    await db.clearCompletedUploads(ctx.user.id);
     return { success: true };
   }),
 });
@@ -944,6 +1196,296 @@ const dashboardRouter = router({
   }),
 });
 
+// Import router for CSV/XLSX imports
+const importRouter = router({
+  // Get import history
+  list: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+    return db.getImportLogsByCompany(input.companyId);
+  }),
+  
+  listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+    return db.getImportLogsBySite(input.siteId);
+  }),
+  
+  get: officeProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getImportLogById(input.id);
+  }),
+  
+  getResults: officeProcedure.input(z.object({ importLogId: z.number() })).query(async ({ input }) => {
+    return db.getImportRowResultsByLog(input.importLogId);
+  }),
+  
+  getErrors: officeProcedure.input(z.object({ importLogId: z.number() })).query(async ({ input }) => {
+    return db.getImportErrorsByLog(input.importLogId);
+  }),
+  
+  // Parse uploaded file and return preview data
+  parseFile: officeProcedure.input(z.object({
+    fileName: z.string(),
+    fileData: z.string(), // Base64 encoded
+  })).mutation(async ({ input }) => {
+    const XLSX = await import('xlsx');
+    const buffer = Buffer.from(input.fileData, 'base64');
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+    
+    if (data.length === 0) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'File is empty' });
+    }
+    
+    const headers = data[0] as string[];
+    const rows = data.slice(1, 11); // Preview first 10 rows
+    const totalRows = data.length - 1;
+    
+    return {
+      headers,
+      previewRows: rows,
+      totalRows,
+      sheetName,
+    };
+  }),
+  
+  // Validate import with column mapping
+  validate: officeProcedure.input(z.object({
+    companyId: z.number(),
+    siteId: z.number(),
+    importType: z.enum(['devices', 'sites', 'areas', 'customers']),
+    fileName: z.string(),
+    fileData: z.string(),
+    columnMapping: z.record(z.string(), z.string()), // targetField -> sourceColumn
+    duplicateHandling: z.enum(['skip', 'update', 'create_new']).optional(),
+  })).mutation(async ({ input }) => {
+    const XLSX = await import('xlsx');
+    const buffer = Buffer.from(input.fileData, 'base64');
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+    
+    const headers = data[0] as string[];
+    const rows = data.slice(1);
+    
+    const validationResults: Array<{
+      rowNumber: number;
+      status: 'valid' | 'error' | 'duplicate';
+      errors: string[];
+      data: Record<string, any>;
+    }> = [];
+    
+    const requiredFields = input.importType === 'devices' 
+      ? ['deviceType'] 
+      : input.importType === 'sites' 
+        ? ['name'] 
+        : ['name'];
+    
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowData: Record<string, any> = {};
+      const errors: string[] = [];
+      
+      // Map columns to fields
+      for (const [targetField, sourceColumn] of Object.entries(input.columnMapping)) {
+        const colIndex = headers.indexOf(sourceColumn);
+        if (colIndex !== -1) {
+          rowData[targetField] = row[colIndex];
+        }
+      }
+      
+      // Validate required fields
+      for (const field of requiredFields) {
+        if (!rowData[field] || String(rowData[field]).trim() === '') {
+          errors.push(`Missing required field: ${field}`);
+        }
+      }
+      
+      // Check for duplicates (for devices)
+      let isDuplicate = false;
+      if (input.importType === 'devices' && (rowData.serialNumber || rowData.barcode)) {
+        const existing = await db.findDuplicateDevice(
+          input.siteId,
+          rowData.serialNumber || null,
+          rowData.barcode || null
+        );
+        if (existing) {
+          isDuplicate = true;
+        }
+      }
+      
+      validationResults.push({
+        rowNumber: i + 2, // 1-indexed, accounting for header
+        status: errors.length > 0 ? 'error' : isDuplicate ? 'duplicate' : 'valid',
+        errors,
+        data: rowData,
+      });
+    }
+    
+    const validCount = validationResults.filter(r => r.status === 'valid').length;
+    const errorCount = validationResults.filter(r => r.status === 'error').length;
+    const duplicateCount = validationResults.filter(r => r.status === 'duplicate').length;
+    
+    return {
+      totalRows: rows.length,
+      validCount,
+      errorCount,
+      duplicateCount,
+      results: validationResults,
+    };
+  }),
+  
+  // Execute import
+  execute: officeProcedure.input(z.object({
+    companyId: z.number(),
+    siteId: z.number(),
+    importType: z.enum(['devices', 'sites', 'areas', 'customers']),
+    fileName: z.string(),
+    fileData: z.string(),
+    columnMapping: z.record(z.string(), z.string()),
+    duplicateHandling: z.enum(['skip', 'update', 'create_new']),
+  })).mutation(async ({ input, ctx }) => {
+    const XLSX = await import('xlsx');
+    const buffer = Buffer.from(input.fileData, 'base64');
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+    
+    const headers = data[0] as string[];
+    const rows = data.slice(1);
+    
+    // Create import log
+    const importLog = await db.createImportLog({
+      companyId: input.companyId,
+      siteId: input.siteId,
+      importedById: ctx.user.id,
+      importType: input.importType,
+      fileName: input.fileName,
+      columnMapping: input.columnMapping as any,
+      duplicateHandling: input.duplicateHandling,
+      totalRows: rows.length,
+      status: 'importing',
+      startedAt: new Date(),
+    });
+    
+    let successCount = 0;
+    let errorCount = 0;
+    let duplicateCount = 0;
+    let skippedCount = 0;
+    const rowResults: Array<{
+      importLogId: number;
+      rowNumber: number;
+      status: 'success' | 'error' | 'duplicate' | 'skipped';
+      entityId?: number;
+      originalData: any;
+      errorMessage?: string;
+    }> = [];
+    
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowData: Record<string, any> = {};
+      
+      // Map columns to fields
+      for (const [targetField, sourceColumn] of Object.entries(input.columnMapping)) {
+        const colIndex = headers.indexOf(sourceColumn);
+        if (colIndex !== -1 && row[colIndex] !== undefined && row[colIndex] !== '') {
+          rowData[targetField] = row[colIndex];
+        }
+      }
+      
+      try {
+        if (input.importType === 'devices') {
+          // Check for duplicate
+          const existing = await db.findDuplicateDevice(
+            input.siteId,
+            rowData.serialNumber || null,
+            rowData.barcode || null
+          );
+          
+          if (existing) {
+            if (input.duplicateHandling === 'skip') {
+              skippedCount++;
+              rowResults.push({
+                importLogId: importLog.id,
+                rowNumber: i + 2,
+                status: 'skipped',
+                originalData: rowData,
+                errorMessage: 'Duplicate - skipped',
+              });
+              continue;
+            } else if (input.duplicateHandling === 'update') {
+              await db.updateDevice(existing.id, {
+                ...rowData,
+                siteId: input.siteId,
+              });
+              duplicateCount++;
+              rowResults.push({
+                importLogId: importLog.id,
+                rowNumber: i + 2,
+                status: 'duplicate',
+                entityId: existing.id,
+                originalData: rowData,
+              });
+              continue;
+            }
+            // create_new falls through to create
+          }
+          
+          // Create new device
+          const device = await db.createDevice({
+            siteId: input.siteId,
+            deviceType: rowData.deviceType || 'Unknown',
+            manufacturer: rowData.manufacturer,
+            model: rowData.model,
+            serialNumber: rowData.serialNumber,
+            location: rowData.location,
+            barcode: rowData.barcode,
+            notes: rowData.notes,
+          });
+          
+          successCount++;
+          rowResults.push({
+            importLogId: importLog.id,
+            rowNumber: i + 2,
+            status: 'success',
+            entityId: device.id,
+            originalData: rowData,
+          });
+        }
+      } catch (error: any) {
+        errorCount++;
+        rowResults.push({
+          importLogId: importLog.id,
+          rowNumber: i + 2,
+          status: 'error',
+          originalData: rowData,
+          errorMessage: error.message || 'Unknown error',
+        });
+      }
+    }
+    
+    // Save row results
+    await db.createBulkImportRowResults(rowResults);
+    
+    // Update import log
+    await db.updateImportLog(importLog.id, {
+      status: errorCount > 0 ? 'partial' : 'completed',
+      successCount,
+      errorCount,
+      duplicateCount,
+      skippedCount,
+      completedAt: new Date(),
+    });
+    
+    return {
+      importLogId: importLog.id,
+      totalRows: rows.length,
+      successCount,
+      errorCount,
+      duplicateCount,
+      skippedCount,
+    };
+  }),
+});
+
 // Sync router for offline support
 const syncRouter = router({
   getLogs: technicianProcedure.input(z.object({ limit: z.number().optional() })).query(async ({ input, ctx }) => {
@@ -998,6 +1540,9 @@ export const appRouter = router({
   user: userRouter,
   dashboard: dashboardRouter,
   sync: syncRouter,
+  fileTag: fileTagRouter,
+  uploadQueue: uploadQueueRouter,
+  import: importRouter,
 });
 
 export type AppRouter = typeof appRouter;
