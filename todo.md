@@ -122,3 +122,13 @@
 - [x] Fix nested anchor tag error on /admin/jobs page
 - [x] Fix report summary display - unable to view entire summary
 - [x] Import data from "Individual device record" sheet in Excel file (134 devices: 76 smoke alarms, 10 emergency lights, 9 sprinkler devices, 35 fire alarm devices, 4 fire extinguishers)
+
+## PDF Report Generation (New)
+- [x] Install PDF generation library (pdfkit)
+- [x] Create PDF template with company branding
+- [x] Add device summary section to PDF
+- [x] Add deficiency details section to PDF
+- [x] Add inspection results table to PDF (24 pages)
+- [x] Create backend endpoint for PDF generation
+- [x] Update Reports UI with PDF download button
+- [x] Test PDF generation with sample data (165 devices, 19 deficiencies)

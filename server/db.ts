@@ -365,7 +365,30 @@ export async function createInspectionResult(data: InsertInspectionResult) {
 export async function getInspectionResultsByJob(jobId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(inspectionResults).where(eq(inspectionResults.jobId, jobId)).orderBy(desc(inspectionResults.testedAt));
+  
+  // Join with devices to get device info
+  const results = await db
+    .select({
+      id: inspectionResults.id,
+      jobId: inspectionResults.jobId,
+      deviceId: inspectionResults.deviceId,
+      technicianId: inspectionResults.technicianId,
+      result: inspectionResults.result,
+      notes: inspectionResults.notes,
+      testedAt: inspectionResults.testedAt,
+      syncedAt: inspectionResults.syncedAt,
+      createdAt: inspectionResults.createdAt,
+      updatedAt: inspectionResults.updatedAt,
+      deviceType: devices.deviceType,
+      location: devices.location,
+      serialNumber: devices.serialNumber,
+    })
+    .from(inspectionResults)
+    .leftJoin(devices, eq(inspectionResults.deviceId, devices.id))
+    .where(eq(inspectionResults.jobId, jobId))
+    .orderBy(desc(inspectionResults.testedAt));
+  
+  return results;
 }
 
 export async function getInspectionResultByJobAndDevice(jobId: number, deviceId: number) {

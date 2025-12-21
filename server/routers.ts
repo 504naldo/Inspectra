@@ -8,6 +8,7 @@ import * as db from "./db";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
+import { generateInspectionReportPDF } from "./pdfGenerator";
 
 // Role-based procedure helpers
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -868,6 +869,111 @@ const reportRouter = router({
       approvedById: ctx.user.id 
     });
     return { success: true };
+  }),
+  
+  generatePDF: officeProcedure.input(z.object({
+    jobId: z.number(),
+    summary: z.string().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    // Get job details
+    const job = await db.getJobById(input.jobId);
+    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+    
+    // Get site details
+    const site = await db.getSiteById(job.siteId);
+    if (!site) throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });
+    
+    // Get customer org
+    const customerOrg = await db.getCustomerOrgById(job.customerOrgId);
+    
+    // Get company
+    const company = await db.getCompanyById(job.companyId);
+    
+    // Get inspection results with device info
+    const inspectionResults = await db.getInspectionResultsByJob(input.jobId);
+    
+    // Get deficiencies
+    const deficiencies = await db.getDeficienciesByJob(input.jobId);
+    
+    // Calculate device summaries by type
+    const deviceTypeMap: Record<string, { total: number; passed: number; failed: number; na: number }> = {};
+    
+    for (const result of inspectionResults) {
+      const deviceType = result.deviceType || 'Unknown';
+      if (!deviceTypeMap[deviceType]) {
+        deviceTypeMap[deviceType] = { total: 0, passed: 0, failed: 0, na: 0 };
+      }
+      deviceTypeMap[deviceType].total++;
+      if (result.result === 'pass') deviceTypeMap[deviceType].passed++;
+      else if (result.result === 'fail') deviceTypeMap[deviceType].failed++;
+      else deviceTypeMap[deviceType].na++;
+    }
+    
+    const deviceSummaries = Object.entries(deviceTypeMap).map(([deviceType, stats]) => ({
+      deviceType,
+      ...stats
+    }));
+    
+    // Generate PDF
+    const pdfBuffer = await generateInspectionReportPDF({
+      jobNumber: job.jobNumber,
+      jobTitle: job.title,
+      siteName: site.name,
+      siteAddress: `${site.address || ''}, ${site.city || ''}, ${site.state || ''} ${site.postalCode || ''}`.trim(),
+      customerName: customerOrg?.name || 'Unknown Customer',
+      inspectionDate: job.scheduledDate || new Date(),
+      completedDate: job.completedAt,
+      companyName: company?.name || 'Fire Inspect Pro',
+      summary: input.summary,
+      deviceSummaries,
+      deficiencies: deficiencies.map(d => ({
+        id: d.id,
+        title: d.title,
+        severity: d.severity,
+        status: d.status,
+        description: d.description,
+        correctiveAction: d.correctiveAction,
+      })),
+      inspectionResults: inspectionResults.map(r => ({
+        deviceId: r.deviceId,
+        deviceType: r.deviceType || 'Unknown',
+        location: r.location,
+        serialNumber: r.serialNumber,
+        result: r.result,
+        notes: r.notes,
+      })),
+    });
+    
+    // Upload to S3
+    const fileKey = `reports/${job.companyId}/${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pdf`;
+    const { url } = await storagePut(fileKey, pdfBuffer, 'application/pdf');
+    
+    // Create or update report record
+    const reportNumber = `RPT-${Date.now().toString(36).toUpperCase()}`;
+    const stats = await db.getInspectionStats(input.jobId);
+    
+    const report = await db.createReport({
+      jobId: input.jobId,
+      title: `Inspection Report - ${job.title}`,
+      executiveSummary: input.summary,
+      aiSummary: input.summary,
+      generatedById: ctx.user.id,
+      reportNumber,
+      deviceCount: stats.total,
+      passCount: stats.pass,
+      failCount: stats.fail,
+      deficiencyCount: deficiencies.length,
+      fileKey,
+      fileUrl: url,
+      status: 'generated',
+    });
+    
+    return { 
+      success: true, 
+      reportId: report.id,
+      fileUrl: url,
+      reportNumber,
+    };
   }),
 });
 

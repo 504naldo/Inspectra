@@ -17,7 +17,9 @@ import {
   Loader2,
   ChevronRight,
   CheckCircle2,
-  Clock
+  Clock,
+  FileDown,
+  ExternalLink
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -30,14 +32,13 @@ export default function AdminReports() {
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [reportTitle, setReportTitle] = useState("");
   const [executiveSummary, setExecutiveSummary] = useState("");
+  const [generatedPdfUrl, setGeneratedPdfUrl] = useState<string | null>(null);
+  const [generatedReportNumber, setGeneratedReportNumber] = useState<string | null>(null);
 
-  const { data: jobs } = trpc.job.listByCompany.useQuery({
+  const { data: jobs, refetch: refetchJobs } = trpc.job.listByCompany.useQuery({
     companyId,
     status: 'completed'
   });
-
-  // For now, we'll list reports by iterating through jobs
-  // In a real app, you'd have a dedicated reports list endpoint
 
   const generateSummary = trpc.ai.generateReportSummary.useMutation({
     onSuccess: (data) => {
@@ -53,18 +54,36 @@ export default function AdminReports() {
     }
   });
 
+  const generatePDF = trpc.report.generatePDF.useMutation({
+    onSuccess: (data) => {
+      setGeneratedPdfUrl(data.fileUrl);
+      setGeneratedReportNumber(data.reportNumber);
+      toast.success('PDF report generated successfully!');
+      refetchJobs();
+    },
+    onError: (error) => {
+      toast.error(`Failed to generate PDF: ${error.message}`);
+    }
+  });
+
   const createReport = trpc.report.create.useMutation({
     onSuccess: () => {
       toast.success('Report created');
       setIsCreateOpen(false);
-      setSelectedJobId("");
-      setReportTitle("");
-      setExecutiveSummary("");
+      resetForm();
     },
     onError: () => {
       toast.error('Failed to create report');
     }
   });
+
+  const resetForm = () => {
+    setSelectedJobId("");
+    setReportTitle("");
+    setExecutiveSummary("");
+    setGeneratedPdfUrl(null);
+    setGeneratedReportNumber(null);
+  };
 
   const handleGenerateSummary = () => {
     if (!selectedJobId) {
@@ -72,6 +91,17 @@ export default function AdminReports() {
       return;
     }
     generateSummary.mutate({ jobId: parseInt(selectedJobId) });
+  };
+
+  const handleGeneratePDF = () => {
+    if (!selectedJobId) {
+      toast.error('Please select a job first');
+      return;
+    }
+    generatePDF.mutate({
+      jobId: parseInt(selectedJobId),
+      summary: executiveSummary || undefined,
+    });
   };
 
   const handleCreateReport = () => {
@@ -84,6 +114,12 @@ export default function AdminReports() {
       title: reportTitle,
       executiveSummary: executiveSummary || undefined,
     });
+  };
+
+  const handleDownloadPDF = () => {
+    if (generatedPdfUrl) {
+      window.open(generatedPdfUrl, '_blank');
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -104,7 +140,10 @@ export default function AdminReports() {
       <div className="space-y-6">
         {/* Actions */}
         <div className="flex justify-end">
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <Dialog open={isCreateOpen} onOpenChange={(open) => {
+            setIsCreateOpen(open);
+            if (!open) resetForm();
+          }}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
@@ -162,17 +201,82 @@ export default function AdminReports() {
                     value={executiveSummary}
                     onChange={(e) => setExecutiveSummary(e.target.value)}
                     placeholder="Executive summary of the inspection..."
-                    className="min-h-[300px] max-h-[400px] resize-y"
+                    className="min-h-[200px] max-h-[300px] resize-y"
                   />
                 </div>
 
-                <Button 
-                  className="w-full" 
-                  onClick={handleCreateReport}
-                  disabled={createReport.isPending}
-                >
-                  {createReport.isPending ? 'Creating...' : 'Create Report'}
-                </Button>
+                {/* PDF Generation Section */}
+                <div className="border-t pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">Generate PDF Report</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Create a downloadable PDF with all inspection details
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleGeneratePDF}
+                      disabled={generatePDF.isPending || !selectedJobId}
+                      className="bg-primary"
+                    >
+                      {generatePDF.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <FileDown className="h-4 w-4 mr-2" />
+                          Generate PDF
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* PDF Generated Success */}
+                  {generatedPdfUrl && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <div className="flex items-center gap-2 text-green-700 mb-2">
+                        <CheckCircle2 className="h-5 w-5" />
+                        <span className="font-medium">PDF Generated Successfully!</span>
+                      </div>
+                      <p className="text-sm text-green-600 mb-3">
+                        Report Number: {generatedReportNumber}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleDownloadPDF}
+                          className="border-green-300 text-green-700 hover:bg-green-100"
+                        >
+                          <Download className="h-4 w-4 mr-1" />
+                          Download PDF
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => window.open(generatedPdfUrl, '_blank')}
+                          className="text-green-700 hover:bg-green-100"
+                        >
+                          <ExternalLink className="h-4 w-4 mr-1" />
+                          Open in New Tab
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t pt-4">
+                  <Button 
+                    variant="outline"
+                    className="w-full" 
+                    onClick={handleCreateReport}
+                    disabled={createReport.isPending}
+                  >
+                    {createReport.isPending ? 'Saving...' : 'Save Report Record Only (No PDF)'}
+                  </Button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>
@@ -182,7 +286,7 @@ export default function AdminReports() {
         <Card>
           <CardHeader>
             <CardTitle>Completed Inspections</CardTitle>
-            <CardDescription>Generate reports from completed jobs</CardDescription>
+            <CardDescription>Generate PDF reports from completed jobs</CardDescription>
           </CardHeader>
           <CardContent>
             {!jobs || jobs.length === 0 ? (
@@ -207,7 +311,7 @@ export default function AdminReports() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
-                        variant="outline"
+                        variant="default"
                         size="sm"
                         onClick={() => {
                           setSelectedJobId(job.id.toString());
@@ -215,8 +319,8 @@ export default function AdminReports() {
                           setIsCreateOpen(true);
                         }}
                       >
-                        <FileText className="h-4 w-4 mr-1" />
-                        Generate
+                        <FileDown className="h-4 w-4 mr-1" />
+                        Generate PDF
                       </Button>
                       <Link href={`/tech/jobs/${job.id}`}>
                         <Button variant="ghost" size="icon">
