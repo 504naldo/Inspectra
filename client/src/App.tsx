@@ -22,6 +22,7 @@ import AdminJobs from "./pages/admin/Jobs";
 import AdminUsers from "./pages/admin/Users";
 import AdminCustomers from "./pages/admin/Customers";
 import AdminSites from "./pages/admin/Sites";
+import FireAlarmSetup from "./pages/admin/FireAlarmSetup";
 import AdminDevices from "./pages/admin/Devices";
 import AdminReports from "./pages/admin/Reports";
 import AdminQACheck from "./pages/admin/QACheck";
@@ -163,6 +164,13 @@ function Router() {
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <AdminSites />
         </ProtectedRoute>
+      </Route>
+      <Route path="/admin/sites/:siteId/fire-alarm">
+        {(params) => (
+          <ProtectedRoute allowedRoles={['admin', 'office']}>
+            <FireAlarmSetup />
+          </ProtectedRoute>
+        )}
       </Route>
       <Route path="/admin/devices">
         <ProtectedRoute allowedRoles={['admin', 'office']}>

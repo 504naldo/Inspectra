@@ -140,3 +140,10 @@
 - [x] Build fire alarm inspection UI page
 - [x] Add CAN/ULC S536 compliance checklist (20 sections)
 - [x] Integrate with existing job workflow
+
+## Fire Alarm System Setup Page (New)
+- [x] Create admin fire alarm system setup page
+- [x] Add form for manufacturer, model, operation type
+- [x] Add monitoring centre information fields
+- [x] Add navigation link from Sites page
+- [x] Test create and update functionality

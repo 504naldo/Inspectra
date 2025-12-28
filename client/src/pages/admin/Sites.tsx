@@ -16,7 +16,8 @@ import {
   Phone,
   FileImage,
   Upload,
-  MoreHorizontal
+  MoreHorizontal,
+  Flame
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link } from "wouter";
@@ -263,6 +264,12 @@ export default function AdminSites() {
                           <DropdownMenuItem>
                             <Upload className="h-4 w-4 mr-2" />
                             Import Assets
+                          </DropdownMenuItem>
+                        </Link>
+                        <Link href={`/admin/sites/${site.id}/fire-alarm`}>
+                          <DropdownMenuItem>
+                            <Flame className="h-4 w-4 mr-2" />
+                            Fire Alarm Setup
                           </DropdownMenuItem>
                         </Link>
                       </DropdownMenuContent>
