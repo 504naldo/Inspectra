@@ -132,3 +132,11 @@
 - [x] Create backend endpoint for PDF generation
 - [x] Update Reports UI with PDF download button
 - [x] Test PDF generation with sample data (165 devices, 19 deficiencies)
+
+## Fire Alarm Inspection Section (CAN/ULC S536)
+- [x] Analyze fire alarm tab from spreadsheet (20 sections, 155 items)
+- [x] Update database schema for fire alarm inspection requirements
+- [x] Create fire alarm device categories and test procedures (155 items)
+- [x] Build fire alarm inspection UI page
+- [x] Add CAN/ULC S536 compliance checklist (20 sections)
+- [x] Integrate with existing job workflow

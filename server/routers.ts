@@ -9,6 +9,7 @@ import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { generateInspectionReportPDF } from "./pdfGenerator";
+import { fireAlarmRouter } from "./fireAlarmRouter";
 
 // Role-based procedure helpers
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -1649,6 +1650,7 @@ export const appRouter = router({
   fileTag: fileTagRouter,
   uploadQueue: uploadQueueRouter,
   import: importRouter,
+  fireAlarm: fireAlarmRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -15,6 +15,7 @@ import JobDetails from "./pages/technician/JobDetails";
 import DeviceTest from "./pages/technician/DeviceTest";
 import DeficiencyList from "./pages/technician/DeficiencyList";
 import DeficiencyEditor from "./pages/technician/DeficiencyEditor";
+import FireAlarmInspection from "./pages/technician/FireAlarmInspection";
 import SyncScreen from "./pages/technician/SyncScreen";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminJobs from "./pages/admin/Jobs";
@@ -121,6 +122,13 @@ function Router() {
         {(params) => (
           <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
             <DeficiencyEditor jobId={parseInt(params.jobId)} />
+          </ProtectedRoute>
+        )}
+      </Route>
+      <Route path="/tech/jobs/:jobId/fire-alarm">
+        {(params) => (
+          <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
+            <FireAlarmInspection />
           </ProtectedRoute>
         )}
       </Route>

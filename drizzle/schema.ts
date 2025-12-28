@@ -409,3 +409,90 @@ export const syncLogs = mysqlTable("sync_logs", {
 
 export type SyncLog = typeof syncLogs.$inferSelect;
 export type InsertSyncLog = typeof syncLogs.$inferInsert;
+
+// ============================================
+// FIRE ALARM SYSTEM (CAN/ULC-S536 Compliance)
+// ============================================
+export const fireAlarmSystems = mysqlTable("fire_alarm_systems", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  manufacturer: varchar("manufacturer", { length: 255 }),
+  modelNumber: varchar("modelNumber", { length: 255 }),
+  operationType: mysqlEnum("operationType", ["single_stage", "two_stage", "other"]).default("single_stage"),
+  operationDescription: text("operationDescription"),
+  connectedToMonitoring: boolean("connectedToMonitoring").default(false),
+  monitoringCentreName: varchar("monitoringCentreName", { length: 255 }),
+  monitoringCentrePhone: varchar("monitoringCentrePhone", { length: 50 }),
+  systemFullyFunctional: boolean("systemFullyFunctional").default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FireAlarmSystem = typeof fireAlarmSystems.$inferSelect;
+export type InsertFireAlarmSystem = typeof fireAlarmSystems.$inferInsert;
+
+// ============================================
+// FIRE ALARM CHECKLIST TEMPLATE (CAN/ULC-S536)
+// ============================================
+export const fireAlarmChecklistTemplates = mysqlTable("fire_alarm_checklist_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  sectionName: varchar("sectionName", { length: 255 }).notNull(),
+  sectionOrder: int("sectionOrder").notNull(),
+  itemLetter: varchar("itemLetter", { length: 10 }), // A, B, C, etc.
+  itemDescription: text("itemDescription").notNull(),
+  requirementType: mysqlEnum("requirementType", ["inspection", "test", "both"]).default("both"),
+  isRequired: boolean("isRequired").default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FireAlarmChecklistTemplate = typeof fireAlarmChecklistTemplates.$inferSelect;
+export type InsertFireAlarmChecklistTemplate = typeof fireAlarmChecklistTemplates.$inferInsert;
+
+// ============================================
+// FIRE ALARM INSPECTION RESULTS
+// ============================================
+export const fireAlarmInspectionResults = mysqlTable("fire_alarm_inspection_results", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  fireAlarmSystemId: int("fireAlarmSystemId").notNull(),
+  checklistItemId: int("checklistItemId").notNull(),
+  result: mysqlEnum("result", ["pass", "fail", "na", "not_tested"]).default("not_tested"),
+  notes: text("notes"),
+  testedById: int("testedById"), // user_id of technician
+  testedAt: timestamp("testedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FireAlarmInspectionResult = typeof fireAlarmInspectionResults.$inferSelect;
+export type InsertFireAlarmInspectionResult = typeof fireAlarmInspectionResults.$inferInsert;
+
+// ============================================
+// FIRE ALARM CONTROL UNITS
+// ============================================
+export const fireAlarmControlUnits = mysqlTable("fire_alarm_control_units", {
+  id: int("id").autoincrement().primaryKey(),
+  fireAlarmSystemId: int("fireAlarmSystemId").notNull(),
+  location: varchar("location", { length: 255 }),
+  identification: varchar("identification", { length: 255 }),
+  unitType: mysqlEnum("unitType", ["control_unit", "transponder"]).default("control_unit"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FireAlarmControlUnit = typeof fireAlarmControlUnits.$inferSelect;
+export type InsertFireAlarmControlUnit = typeof fireAlarmControlUnits.$inferInsert;
+
+// ============================================
+// FIRE ALARM ANNUNCIATORS
+// ============================================
+export const fireAlarmAnnunciators = mysqlTable("fire_alarm_annunciators", {
+  id: int("id").autoincrement().primaryKey(),
+  fireAlarmSystemId: int("fireAlarmSystemId").notNull(),
+  location: varchar("location", { length: 255 }),
+  identification: varchar("identification", { length: 255 }),
+  annunciatorType: mysqlEnum("annunciatorType", ["standard", "sequential_display", "remote_trouble"]).default("standard"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FireAlarmAnnunciator = typeof fireAlarmAnnunciators.$inferSelect;
+export type InsertFireAlarmAnnunciator = typeof fireAlarmAnnunciators.$inferInsert;

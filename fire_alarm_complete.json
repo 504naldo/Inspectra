@@ -1,0 +1,1818 @@
+[
+  {
+    "section": "Control Unit or Transponder Inspection",
+    "row": 126,
+    "items": [
+      {
+        "row": 127,
+        "col_a": "YES = OPERATED CORRECTLY",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "NO = DID NOT OPERATE CORRECTLY",
+        "col_f": "",
+        "col_g": "",
+        "col_h": "N/A = NOT APPLICABLE "
+      }
+    ]
+  },
+  {
+    "section": "Control Unit/Transponder Field Location",
+    "row": 129,
+    "items": []
+  },
+  {
+    "section": "Control Unit/Transponder Identification:",
+    "row": 130,
+    "items": [
+      {
+        "row": 132,
+        "col_a": "A",
+        "col_b": "Input circuit designations, correctly identified in relation to connected field devices.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 133,
+        "col_a": "B",
+        "col_b": "Output circuit designations, correctly identified in relation to connected field devices.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 134,
+        "col_a": "C",
+        "col_b": "Correct designations for common control functions and indicators.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 135,
+        "col_a": "D",
+        "col_b": "Plug-in components and modules securely in place.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 136,
+        "col_a": "E",
+        "col_b": "Plug-in cables securely in place.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 137,
+        "col_a": "F",
+        "col_b": "(i) Record the date, revision and version of firmware",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 138,
+        "col_a": "",
+        "col_b": "(ii) Record the date, revision and version of software program",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 139,
+        "col_a": "G",
+        "col_b": "Clean and free of dust and dirt",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 140,
+        "col_a": "H",
+        "col_b": "Fuses in accordance with manufacturer's specification",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 141,
+        "col_a": "I",
+        "col_b": "Control unit or transponder lock functional.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 142,
+        "col_a": "J",
+        "col_b": "Termination points from wiring to field devices secure.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      }
+    ]
+  },
+  {
+    "section": "Control Unit or Transponder Test",
+    "row": 145,
+    "items": []
+  },
+  {
+    "section": "Control Unit/Transponder Field Location:",
+    "row": 146,
+    "items": []
+  },
+  {
+    "section": "Control Unit /Transponder Identification:",
+    "row": 147,
+    "items": [
+      {
+        "row": 149,
+        "col_a": "A",
+        "col_b": "Power \u2018ON\u2019 visual indicator.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 150,
+        "col_a": "B",
+        "col_b": "Time and date indication corresponds with local time and date",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 151,
+        "col_a": "C",
+        "col_b": "Common visual trouble signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 152,
+        "col_a": "D",
+        "col_b": "Common audible trouble signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 153,
+        "col_a": "E",
+        "col_b": "Trouble signal silence switch operates",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 154,
+        "col_a": "F",
+        "col_b": "Main power supply failure trouble signal operates",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 155,
+        "col_a": "G",
+        "col_b": "Trouble signal operates during positive and negative ground fault tests",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 156,
+        "col_a": "H",
+        "col_b": "Alert signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 157,
+        "col_a": "I",
+        "col_b": "Alarm signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 158,
+        "col_a": "J",
+        "col_b": "Automatic transfer from alert signal to alarm signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 159,
+        "col_a": "",
+        "col_b": "Time: _________",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 160,
+        "col_a": "K",
+        "col_b": "Manual transfer from alert signal to alarm signal operates",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 161,
+        "col_a": "L",
+        "col_b": "Automatic transfer from alert signal to alarm signal cancel (acknowledge) feature operates on a two-stage system",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 162,
+        "col_a": "M",
+        "col_b": "Alarm signal silence inhibit function operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 163,
+        "col_a": "N",
+        "col_b": "Alarm signal manual silence operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 164,
+        "col_a": "O",
+        "col_b": "Alarm signal silence visual indication operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 165,
+        "col_a": "P",
+        "col_b": "Alarm signals when silenced, automatically reinitiate only upon subsequent alarm from another NBC required fire alarm zone.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 166,
+        "col_a": "Q",
+        "col_b": "Duration of alarm signal prior to automatic silence.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 167,
+        "col_a": "R",
+        "col_b": "Audible and visual alert signals and alarm signals programmed and operate per design and specification; or documentation as provided in\nSection 21.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 168,
+        "col_a": "S",
+        "col_b": "Input circuit, alarm and supervisory operation, including audible and visual indication operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 169,
+        "col_a": "T",
+        "col_b": "Input circuit supervision fault causes a trouble indication.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 170,
+        "col_a": "U",
+        "col_b": "Output circuit alarm indicators operate",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 171,
+        "col_a": "V",
+        "col_b": "Output circuit supervision fault causes a trouble indication.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 172,
+        "col_a": "W",
+        "col_b": "Visual indicator test (lamp test) operates",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 173,
+        "col_a": "X",
+        "col_b": "Coded signal sequences operate not less than the required number of times and the correct alarm signal operates thereafter.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 174,
+        "col_a": "Y",
+        "col_b": "Coded signal sequences are not interrupted by subsequent alarms",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 175,
+        "col_a": "Z",
+        "col_b": "Ancillary device by-pass results in a trouble signal",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 176,
+        "col_a": "AA",
+        "col_b": "Input circuit to output circuit operation, including ancillary device circuits, for correct program operation, as per design and specification, or\ndocumentation as detailed in D, Description of Fire Alarm System for Inspection and Test Procedures.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 177,
+        "col_a": "BB",
+        "col_b": "System Reset operates",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 178,
+        "col_a": "CC",
+        "col_b": "Main power supply to emergency power supply transfer operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 179,
+        "col_a": "DD",
+        "col_b": "Smoke detector alarm verification (status change confirmation) verified. [Refer to14.4.3, Smoke Detector Alarm Verification (Status\nChange Confirmation)].",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      }
+    ]
+  },
+  {
+    "section": "Voice Communication Test",
+    "row": 182,
+    "items": [
+      {
+        "row": 183,
+        "col_a": "There are no Voice Communication Capabilities on this system. ",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 185,
+        "col_a": "A",
+        "col_b": "Power \u2018ON\u2019 indicator.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 186,
+        "col_a": "B",
+        "col_b": "Common visual trouble signal operates",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 187,
+        "col_a": "C",
+        "col_b": "Common audible trouble signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 188,
+        "col_a": "D",
+        "col_b": "Trouble signal silence switch operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 189,
+        "col_a": "E",
+        "col_b": "All-call voice paging, including visual indicator, operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 190,
+        "col_a": "F",
+        "col_b": "Output circuits for selective voice paging, including visual indication.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 191,
+        "col_a": "G",
+        "col_b": "Output circuits for selective voice paging trouble operation, including visual indication, operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 192,
+        "col_a": "H",
+        "col_b": "Microphone, including press to talk switch, operates",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 193,
+        "col_a": "I",
+        "col_b": "Operation of voice paging does not interfere with initial inhibit time of alert signal or alarm signal",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 194,
+        "col_a": "J",
+        "col_b": "All-call voice paging operates (on emergency power supply).",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 195,
+        "col_a": "K",
+        "col_b": "Where systems use back-up amplifiers, the automatic transfer feature operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 196,
+        "col_a": "L",
+        "col_b": "Circuits for emergency telephone call-in operation, including audible and visual indication, operates",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 197,
+        "col_a": "M",
+        "col_b": "Circuits for emergency telephones for operation, including two-way voice communication, operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 198,
+        "col_a": "N",
+        "col_b": "N Circuits for emergency telephone trouble operation, including visual indication, operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 199,
+        "col_a": "O",
+        "col_b": "Emergency telephone verbal communication operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 200,
+        "col_a": "P",
+        "col_b": "Emergency telephone operable or in-use tone at handset operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 201,
+        "col_a": "Q",
+        "col_b": "In standby mode, a short, or open on a paging, alert, alarm, or emergency telephone voice communication buss results in\na buss specific trouble condition.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      }
+    ]
+  },
+  {
+    "section": "Power Supply Inspection",
+    "row": 203,
+    "items": []
+  },
+  {
+    "section": "Control unit or transponder location:",
+    "row": 204,
+    "items": []
+  },
+  {
+    "section": "Control unit or transponder identification:",
+    "row": 205,
+    "items": [
+      {
+        "row": 206,
+        "col_a": "Circuit disconnect means or breaker location",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 207,
+        "col_a": "Circuit disconnect means or breaker identification:",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 209,
+        "col_a": "A",
+        "col_b": " Fused in accordance with the manufacturer's marked rating of the system.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 210,
+        "col_a": "B",
+        "col_b": "The primary supply is equipped with the identified disconnect means",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 211,
+        "col_a": "C",
+        "col_b": "Adequate to meet the requirements of the system",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 212,
+        "col_a": "D",
+        "col_b": "A short on the isolated side of each power isolation module results in a trouble condition",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 213,
+        "col_a": "E",
+        "col_b": "Operation of a device on the source side of each shorted power isolation module is confirmed",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 214,
+        "col_a": "F",
+        "col_b": "Power for ancillary devices is taken from a source separate from the fire alarm system control unit or transponder power supply.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 215,
+        "col_a": "G",
+        "col_b": "Power for ancillary devices is taken from the control unit or transponder that is designed to provide such power.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 216,
+        "col_a": "H",
+        "col_b": "Ancillary devices, which are powered from control unit or transponder, are recorded.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      }
+    ]
+  },
+  {
+    "section": "Emergency Power Supply Test and Inspection",
+    "row": 218,
+    "items": [
+      {
+        "row": 219,
+        "col_a": "Emergency power supply field location",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 220,
+        "col_a": "Emergency power supply identification",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 221,
+        "col_a": "Emergency Power supply provided by: ",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 222,
+        "col_a": "NBC required full load alarm operation time: ",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 223,
+        "col_a": "Batteries (as installed):",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "V",
+        "col_g": "",
+        "col_h": "Ah"
+      },
+      {
+        "row": 224,
+        "col_a": "BATTERY TESTS",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 226,
+        "col_a": "A",
+        "col_b": "Correct battery type as recommended by manufacturer.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 227,
+        "col_a": "B",
+        "col_b": "Correct battery rating as determined by battery calculations based on full system load.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 228,
+        "col_a": "C",
+        "col_b": "Battery voltage with main power supply \u2018ON\u2019.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 230,
+        "col_a": "D",
+        "col_b": "Battery voltage and current with main power supply \u2018OFF\u2019 and fire alarm system in supervisory condition.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 232,
+        "col_a": "E",
+        "col_b": "Battery voltage and current with main power supply \u2018OFF\u2019 and fire alarm system in full load alarm condition.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 234,
+        "col_a": "F",
+        "col_b": "Battery free of physical damage",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 235,
+        "col_a": "G",
+        "col_b": "Battery terminals cleaned and lubricated.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 236,
+        "col_a": "H",
+        "col_b": "Battery terminals clamped tightly.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 237,
+        "col_a": "I",
+        "col_b": "Correct electrolyte level.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 238,
+        "col_a": "J",
+        "col_b": "Specific gravity of electrolyte is within manufacturer's specifications.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 239,
+        "col_a": "K",
+        "col_b": "Battery free of Electrolyte leakage.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 240,
+        "col_a": "L",
+        "col_b": "Adequately ventilated",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 241,
+        "col_a": "M",
+        "col_b": "Battery manufacturer's date code.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 243,
+        "col_a": "N",
+        "col_b": "Disconnection of battery causes trouble signal at the fire alarm control unit.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 244,
+        "col_a": "O",
+        "col_b": "Indicate type of battery tests performed:.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 245,
+        "col_a": "",
+        "col_b": "(i) Required supervisory load for 24 h followed by the required full load operation; or",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 246,
+        "col_a": "",
+        "col_b": "(ii) Silent accelerated test. (Refer to Annex C1, New Silent Accelerated Test Method); or",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 247,
+        "col_a": "",
+        "col_b": "(iii) Battery manufacturer\u2019s method.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 248,
+        "col_a": "",
+        "col_b": "Specify: ____________________",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 249,
+        "col_a": "P",
+        "col_b": "Record calculated battery capacity (Refer to Annex C2.)",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 250,
+        "col_a": "Q",
+        "col_b": "Record battery terminal voltage after completion of tests.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 251,
+        "col_a": "R",
+        "col_b": "Confirm battery voltage not less than 85% of its rating after the tests",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 252,
+        "col_a": "S",
+        "col_b": "Battery Charging Current",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      }
+    ]
+  },
+  {
+    "section": "Emergency Power Generator Tests",
+    "row": 255,
+    "items": [
+      {
+        "row": 257,
+        "col_a": "A",
+        "col_b": "Generator provides power to the AC circuit serving the fire alarm system.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 258,
+        "col_a": "B",
+        "col_b": "Trouble condition at the emergency generator shall result in an audible common trouble signal and a visual\nindication at the required annunciator.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 259,
+        "col_a": "C",
+        "col_b": "Generator Run condition at the emergency generator shall result in an audible common trouble signal and a visual\nindication at the required annunciator.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      }
+    ]
+  },
+  {
+    "section": "Annunciator, Remote Trouble Signal Unit, Display and Control Centre Test and Inspection",
+    "row": 261,
+    "items": []
+  },
+  {
+    "section": "Annunciator or remote trouble signal unit location:",
+    "row": 262,
+    "items": [
+      {
+        "row": 263,
+        "col_a": "Annunciator or remote trouble signal identification:",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 265,
+        "col_a": "A",
+        "col_b": "Power \u2018on\u2019 indicator operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 266,
+        "col_a": "B",
+        "col_b": "Individual alarm and supervisory zone designation labels are properly identified.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 267,
+        "col_a": "C",
+        "col_b": "Where individual devices are annunciated confirm the individual alarm and supervisory indications are properly\nidentified",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 268,
+        "col_a": "D",
+        "col_b": "Where active and supporting field devices are utilized, the device location and programmed device label/descriptor\nshall be confirmed.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 269,
+        "col_a": "E",
+        "col_b": "Common trouble signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 270,
+        "col_a": "F",
+        "col_b": "Visual indicator test (lamp test) operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 271,
+        "col_a": "G",
+        "col_b": "Input wiring from control unit or transponder is supervised.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 272,
+        "col_a": "H",
+        "col_b": "Alarm signal silence visual indicator operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 273,
+        "col_a": "I",
+        "col_b": "Switches for ancillary functions operate as per design and specification, or in accordance with documentation as\ndetailed in Annex D, Description of Fire Alarm System for Inspection and Test Procedures.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 274,
+        "col_a": "J",
+        "col_b": "Other ancillary function visual indicators operate",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 275,
+        "col_a": "K",
+        "col_b": "Manual activation of alarm signal and indication operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 276,
+        "col_a": "L",
+        "col_b": "Displays are visible in installed location.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 277,
+        "col_a": "M",
+        "col_b": "Operates on emergency power.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 279,
+        "col_a": "Annunciator or Sequential Display",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 280,
+        "col_a": "There are no annunciators or sequential displays on this system",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 281,
+        "col_a": "Annunciator/Sequential display location:",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 282,
+        "col_a": "Annunciator/Sequential display identification",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 284,
+        "col_a": "A",
+        "col_b": "Power \u2018on\u2019 indicator operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 285,
+        "col_a": "B",
+        "col_b": "Individual alarm and supervisory zone designation labels are properly identified",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 286,
+        "col_a": "C",
+        "col_b": "Where individual devices are also annunciated confirm the individual alarm and supervisory indications are properly\nidentified",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 287,
+        "col_a": "D",
+        "col_b": "Where active and supporting field devices are utilized, the device location and programmed device label/descriptor\nshall be confirmed.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 288,
+        "col_a": "E",
+        "col_b": "Common trouble signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 289,
+        "col_a": "F",
+        "col_b": "Visual indicator test (lamp test) operates",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 290,
+        "col_a": "G",
+        "col_b": "Input wiring from control unit or transponder is supervised.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 291,
+        "col_a": "H",
+        "col_b": "Alarm signal silence visual indicator operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 292,
+        "col_a": "I",
+        "col_b": "Switches for ancillary functions operate as per design and specification, or in accordance with documentation as\ndetailed in Section 21. (See section 7.)",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 293,
+        "col_a": "J",
+        "col_b": "Ancillary function visual indicators operate",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 294,
+        "col_a": "K",
+        "col_b": "Manual activation of alarm signal and indication operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 295,
+        "col_a": "L",
+        "col_b": "Displays are visible in installed location.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 296,
+        "col_a": "M",
+        "col_b": "Multi-line sequential display operates as per 10.2, where utilized.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      }
+    ]
+  },
+  {
+    "section": "Remote Trouble Unit and Inspection",
+    "row": 298,
+    "items": []
+  },
+  {
+    "section": "There are no remote trouble signal units on this system",
+    "row": 299,
+    "items": []
+  },
+  {
+    "section": "Remote trouble signal unit location",
+    "row": 300,
+    "items": []
+  },
+  {
+    "section": "Remote trouble signal unit identification",
+    "row": 301,
+    "items": [
+      {
+        "row": 303,
+        "col_a": "A",
+        "col_b": "Input wiring from control unit or transponder is supervised.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 304,
+        "col_a": "B",
+        "col_b": "Visual trouble signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 305,
+        "col_a": "C",
+        "col_b": "Audible trouble signal operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 306,
+        "col_a": "D",
+        "col_b": "Audible trouble signal silence operates.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 309,
+        "col_a": "Printer Test",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 310,
+        "col_a": "There are no printers on this system",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 311,
+        "col_a": "Printer location:",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 312,
+        "col_a": "Printer identification:",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 314,
+        "col_a": "A",
+        "col_b": "Operates as per design and specification, or in accordance with documentation as detailed in Annex D, Description of\nFire Alarm System for Inspection and Test Procedures.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 315,
+        "col_a": "B",
+        "col_b": "Zone of each alarm initiating device is correctly printed.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      }
+    ]
+  },
+  {
+    "section": "Ancillary Device Circuit Test",
+    "row": 317,
+    "items": [
+      {
+        "row": 318,
+        "col_a": "Specific type of ancillary circuit",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "Ancillary circuit powered by:",
+        "col_f": "",
+        "col_g": "",
+        "col_h": "Operation of ancillary circuit confirmed"
+      }
+    ]
+  },
+  {
+    "section": "*FACU \u2013 fire alarm control unit",
+    "row": 326,
+    "items": [
+      {
+        "row": 328,
+        "col_a": "Interconnection to the Fire Signal Receiving Centre",
+        "col_b": "",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 329,
+        "col_a": "",
+        "col_b": "There are no interconnections to a Fire Signal Receiving Centre on this system",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 331,
+        "col_a": "A",
+        "col_b": "The fire signal receiving centre transmitter is integral to the fire alarm control unit.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 332,
+        "col_a": "B",
+        "col_b": "Receipt of the alarm transmission to the fire signal receiving centre.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 333,
+        "col_a": "C",
+        "col_b": "Receipt of the supervisory transmission to the fire signal receiving centre",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 334,
+        "col_a": "D",
+        "col_b": "Receipt of the trouble transmission to the fire signal receiving centre",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 335,
+        "col_a": "E",
+        "col_b": "Disabling or disconnecting the fire signal receiving centre transmitter results in a specific trouble signal at the control\nunit or transmitter and also transmits a trouble signal to the fire signal receiving centre.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 336,
+        "col_a": "F",
+        "col_b": "Disabling or disconnecting the fire signal receiving centre transmitter transmits a trouble signal to the fire signal receiving\ncentre.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 337,
+        "col_a": "G",
+        "col_b": "Record the company name and telephone number of the fire signal receiving centre. ",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      },
+      {
+        "row": 339,
+        "col_a": "H",
+        "col_b": "Operation of the fire signal receiving centre disconnect means transmits trouble to the fire signal receiving centre.",
+        "col_c": "",
+        "col_d": "",
+        "col_e": "",
+        "col_f": "",
+        "col_g": "",
+        "col_h": ""
+      }
+    ]
+  }
+]
