@@ -8,8 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { ArrowLeft, Check, X, Minus, AlertCircle, Cloud, CloudOff, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, X, Minus, AlertCircle, Cloud, CloudOff, Loader2, WifiOff, Wifi } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { offlineStorage } from "@/lib/offlineStorage";
 
 type ChecklistItem = {
   id: number;
@@ -35,7 +37,9 @@ export default function FireAlarmInspection() {
   const [, setLocation] = useLocation();
   const [results, setResults] = useState<Record<number, InspectionResult>>({});
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [pendingCount, setPendingCount] = useState(0);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isOnline = useOnlineStatus();
 
   // Fetch job details
   const { data: job, isLoading: loadingJob } = trpc.job.get.useQuery(
@@ -150,7 +154,7 @@ export default function FireAlarmInspection() {
     const currentResult = results[itemId];
     if (!currentResult) return;
 
-    await saveResult.mutateAsync({
+    const data = {
       jobId: parseInt(jobId!),
       fireAlarmSystemId: fireAlarmSystem?.id!,
       checklistItemId: itemId,
@@ -158,9 +162,115 @@ export default function FireAlarmInspection() {
       notes: currentResult.notes || "",
       numericValue: currentResult.numericValue,
       textValue: currentResult.textValue,
-    });
+    };
+
+    // If offline, save to IndexedDB
+    if (!isOnline) {
+      try {
+        await offlineStorage.savePendingResult(data);
+        setAutoSaveStatus('saved');
+        toast.info("Saved offline. Will sync when online.");
+        // Update pending count
+        const count = await offlineStorage.getPendingCount();
+        setPendingCount(count);
+        setTimeout(() => setAutoSaveStatus('idle'), 2000);
+      } catch (error) {
+        console.error("Failed to save offline:", error);
+        setAutoSaveStatus('error');
+        toast.error("Failed to save offline");
+        setTimeout(() => setAutoSaveStatus('idle'), 3000);
+      }
+      return;
+    }
+
+    // If online, save to server
+    try {
+      await saveResult.mutateAsync(data);
+    } catch (error) {
+      // If server save fails, fall back to offline storage
+      console.error("Server save failed, falling back to offline:", error);
+      try {
+        await offlineStorage.savePendingResult(data);
+        setAutoSaveStatus('saved');
+        toast.info("Saved offline. Will sync when connection improves.");
+        const count = await offlineStorage.getPendingCount();
+        setPendingCount(count);
+        setTimeout(() => setAutoSaveStatus('idle'), 2000);
+      } catch (offlineError) {
+        console.error("Offline save also failed:", offlineError);
+        setAutoSaveStatus('error');
+        setTimeout(() => setAutoSaveStatus('idle'), 3000);
+      }
+    }
   };
   
+  // Sync pending results when connection returns
+  useEffect(() => {
+    const syncPendingResults = async () => {      
+      if (!isOnline) return;
+      
+      try {
+        const pending = await offlineStorage.getPendingResults();
+        if (pending.length === 0) return;
+        
+        console.log(`Syncing ${pending.length} pending results...`);
+        toast.info(`Syncing ${pending.length} offline changes...`);
+        
+        let successCount = 0;
+        let failCount = 0;
+        
+        for (const item of pending) {
+          try {
+            await saveResult.mutateAsync({
+              jobId: item.jobId,
+              fireAlarmSystemId: item.fireAlarmSystemId,
+              checklistItemId: item.checklistItemId,
+              result: item.result,
+              notes: item.notes,
+              numericValue: item.numericValue,
+              textValue: item.textValue,
+            });
+            
+            // Mark as synced and delete from local storage
+            await offlineStorage.markAsSynced(item.id);
+            await offlineStorage.deleteSyncedResult(item.id);
+            successCount++;
+          } catch (error) {
+            console.error(`Failed to sync item ${item.id}:`, error);
+            failCount++;
+          }
+        }
+        
+        // Update pending count
+        const remainingCount = await offlineStorage.getPendingCount();
+        setPendingCount(remainingCount);
+        
+        if (successCount > 0) {
+          toast.success(`Synced ${successCount} offline changes`);
+        }
+        if (failCount > 0) {
+          toast.error(`Failed to sync ${failCount} changes`);
+        }
+      } catch (error) {
+        console.error("Sync failed:", error);
+      }
+    };
+    
+    // Sync when coming online
+    if (isOnline) {
+      syncPendingResults();
+    }
+  }, [isOnline]);
+  
+  // Load pending count on mount
+  useEffect(() => {
+    const loadPendingCount = async () => {
+      const count = await offlineStorage.getPendingCount();
+      setPendingCount(count);
+    };
+    loadPendingCount();
+  }, []);
+
   // Cleanup timer on unmount
   useEffect(() => {
     return () => {
@@ -323,26 +433,53 @@ export default function FireAlarmInspection() {
               <h1 className="text-2xl font-bold">Fire Alarm System Inspection</h1>
               <p className="text-sm text-muted-foreground">CAN/ULC-S536:2019 Annual Test</p>
             </div>
-            {/* Auto-save status indicator */}
-            <div className="flex items-center gap-2">
-              {autoSaveStatus === 'saving' && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Saving...</span>
+            {/* Status indicators */}
+            <div className="flex items-center gap-4">
+              {/* Online/Offline indicator */}
+              <div className="flex items-center gap-2">
+                {isOnline ? (
+                  <div className="flex items-center gap-2 text-sm text-green-600">
+                    <Wifi className="h-4 w-4" />
+                    <span>Online</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-orange-600">
+                    <WifiOff className="h-4 w-4" />
+                    <span>Offline</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Pending sync count */}
+              {pendingCount > 0 && (
+                <div className="flex items-center gap-2 text-sm text-orange-600">
+                  <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+                    {pendingCount} pending
+                  </Badge>
                 </div>
               )}
-              {autoSaveStatus === 'saved' && (
-                <div className="flex items-center gap-2 text-sm text-green-600">
-                  <Cloud className="h-4 w-4" />
-                  <span>Saved</span>
-                </div>
-              )}
-              {autoSaveStatus === 'error' && (
-                <div className="flex items-center gap-2 text-sm text-red-600">
-                  <CloudOff className="h-4 w-4" />
-                  <span>Save failed</span>
-                </div>
-              )}
+              
+              {/* Auto-save status indicator */}
+              <div className="flex items-center gap-2">
+                {autoSaveStatus === 'saving' && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Saving...</span>
+                  </div>
+                )}
+                {autoSaveStatus === 'saved' && (
+                  <div className="flex items-center gap-2 text-sm text-green-600">
+                    <Cloud className="h-4 w-4" />
+                    <span>Saved</span>
+                  </div>
+                )}
+                {autoSaveStatus === 'error' && (
+                  <div className="flex items-center gap-2 text-sm text-red-600">
+                    <CloudOff className="h-4 w-4" />
+                    <span>Save failed</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

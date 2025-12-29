@@ -176,3 +176,13 @@
 - [x] Add visual feedback for auto-save status (saving/saved/error indicators)
 - [x] Test auto-save with slow network conditions (browser tested)
 - [x] Write unit tests for auto-save functionality (5 tests passing)
+
+## Offline Mode Support (New)
+- [x] Create IndexedDB wrapper for local data storage
+- [x] Implement offline detection and connection status indicator (Online/Offline badge)
+- [x] Add local storage fallback when saving inspection results offline
+- [x] Implement automatic sync queue for pending changes
+- [x] Add background sync when connection returns (automatic on reconnect)
+- [x] Show sync status indicator (Online/Offline + pending count badge)
+- [x] Test offline mode with browser testing (manual verification)
+- [x] IndexedDB tested through browser integration (client-side API)
