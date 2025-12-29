@@ -217,9 +217,13 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      {/* 404 */}
+      {/* 404 - Explicit route for intentional 404 pages */}
       <Route path="/404" component={NotFound} />
-      <Route component={NotFound} />
+      
+      {/* Catch-all: redirect unknown routes to home instead of showing 404 */}
+      <Route>
+        <Redirect to="/" />
+      </Route>
     </Switch>
   );
 }

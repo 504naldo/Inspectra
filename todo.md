@@ -197,3 +197,13 @@
 - [x] Test Service Worker registration (successfully registered)
 - [x] Verify offline functionality with IndexedDB + Service Worker caching
 - [x] Configure runtime caching strategies (NetworkFirst for API, CacheFirst for images/fonts)
+
+## Bug Fixes - Post-Logout 404 Issue (New)
+- [x] Identify which URL path causes 404 after logout (catch-all route was showing 404 instead of redirecting)
+- [x] Configure SPA routing fallback to rewrite all non-API routes to /index.html (already configured in server/_core/vite.ts)
+- [x] Ensure static assets resolve normally without rewrite (working correctly)
+- [x] Fix auth redirect URLs to point to valid app routes (OAuth callback at /api/oauth/callback redirects to /)
+- [x] Add catch-all route handler in client router to redirect unknown routes to "/" (changed from NotFound to Redirect)
+- [x] Test sign-out → sign-in flow (works correctly, no 404)
+- [x] Test deep link refresh (tested /admin/jobs and /some-invalid-route) - no 404
+- [x] Verify OAuth callback URL configuration (correctly set to /api/oauth/callback)
