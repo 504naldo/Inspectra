@@ -188,6 +188,29 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </CardContent>
         </Card>
 
+        {/* Fire Alarm Inspection */}
+        <Card className="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-950/20 dark:to-red-950/20 border-orange-200 dark:border-orange-800">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <h3 className="font-semibold text-orange-900 dark:text-orange-100 flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5" />
+                  Fire Alarm System Inspection
+                </h3>
+                <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+                  CAN/ULC-S536 Annual Test & Inspection
+                </p>
+              </div>
+              <Link href={`/tech/jobs/${jobId}/fire-alarm`}>
+                <Button variant="default" className="bg-orange-600 hover:bg-orange-700">
+                  Start
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full grid grid-cols-2">

@@ -147,3 +147,8 @@
 - [x] Add monitoring centre information fields
 - [x] Add navigation link from Sites page
 - [x] Test create and update functionality
+
+## Fire Alarm Inspection Button (New)
+- [x] Add "Fire Alarm Inspection" button to Job Details page
+- [x] Link button to fire alarm inspection workflow
+- [x] Test navigation from job details to fire alarm inspection
