@@ -44,23 +44,31 @@ export function registerOAuthRoutes(app: Express) {
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      // Get user from database to determine role-based redirect
-      const user = await db.getUserByOpenId(userInfo.openId);
-      
-      // Check for returnTo parameter to redirect back to intended destination
-      const returnTo = getQueryParam(req, "returnTo");
-      if (returnTo && returnTo.startsWith("/")) {
-        res.redirect(302, returnTo);
-      } else {
-        // Default: redirect to role-based dashboard
-        let dashboardPath = '/admin'; // default for admin
-        if (user?.role === 'customer') {
-          dashboardPath = '/customer';
-        } else if (user?.role === 'technician') {
-          dashboardPath = '/tech';
+      // Decode state parameter to get the intended post-login route
+      let targetRoute = '/admin'; // default fallback
+      try {
+        const decodedState = Buffer.from(state, 'base64').toString('utf-8');
+        // Validate to prevent open redirects: must be same-origin path starting with "/"
+        if (decodedState && decodedState.startsWith('/') && !decodedState.startsWith('//')) {
+          targetRoute = decodedState;
         }
-        res.redirect(302, dashboardPath);
+      } catch (error) {
+        console.warn('[OAuth] Failed to decode state, using default route:', error);
       }
+
+      // If target route is "/", redirect to role-based dashboard instead
+      if (targetRoute === '/') {
+        const user = await db.getUserByOpenId(userInfo.openId);
+        if (user?.role === 'customer') {
+          targetRoute = '/customer';
+        } else if (user?.role === 'technician') {
+          targetRoute = '/tech';
+        } else {
+          targetRoute = '/admin';
+        }
+      }
+
+      res.redirect(302, targetRoute);
     } catch (error) {
       console.error("[OAuth] Callback failed", error);
       res.status(500).json({ error: "OAuth callback failed" });

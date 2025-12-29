@@ -5,13 +5,13 @@ export const getLoginUrl = (returnTo?: string) => {
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
   const appId = import.meta.env.VITE_APP_ID;
   
-  // Build redirect URI with returnTo parameter if provided
-  let redirectUri = `${window.location.origin}/api/oauth/callback`;
-  if (returnTo) {
-    redirectUri += `?returnTo=${encodeURIComponent(returnTo)}`;
-  }
+  // The redirect URI is always the OAuth callback endpoint
+  const redirectUri = `${window.location.origin}/api/oauth/callback`;
   
-  const state = btoa(redirectUri);
+  // Encode the intended post-login route in the state parameter
+  // Default to "/admin" if no returnTo is specified
+  const targetRoute = returnTo || '/admin';
+  const state = btoa(targetRoute);
 
   const url = new URL(`${oauthPortalUrl}/app-auth`);
   url.searchParams.set("appId", appId);

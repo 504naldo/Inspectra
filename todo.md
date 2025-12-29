@@ -249,3 +249,19 @@
 - [x] Test: Login → lands on role-based dashboard (verified with console logs)
 - [x] OAuth callback now fetches user role and redirects to /admin, /tech, or /customer
 - [x] returnTo parameter still works for deep linking
+
+## Bug Fixes - OAuth Cross-Site Cookie & State Routing (Critical)
+- [x] Fix session cookie configuration for cross-site OAuth (manus.im → manus.space)
+- [x] Set SameSite=None for session cookie to allow cross-site OAuth flow (already configured)
+- [x] Ensure cookie is Secure=true, HttpOnly=true, Path=/ (already configured correctly)
+- [x] Use host-only cookie (no explicit Domain) for manus.space (domain=undefined, correct)
+- [x] Fix OAuth state parameter to encode returnTo route (not callback URL)
+- [x] Base64-encode the intended post-login route in state parameter (btoa(targetRoute))
+- [x] Default to "/admin" if no returnTo is specified (const targetRoute = returnTo || '/admin')
+- [x] Update OAuth callback to decode state and validate for open redirect prevention
+- [x] Only allow same-origin paths starting with "/" in state (decodedState.startsWith('/') && !decodedState.startsWith('//'))
+- [x] Redirect to decoded state route after setting cookie (res.redirect(302, targetRoute))
+- [x] Fallback to "/admin" if state is missing or invalid (try-catch with default)
+- [x] If decoded state is "/", redirect to role-based dashboard instead
+- [x] Test: Login → lands on /admin (verified working)
+- [x] Cookie configuration supports cross-site OAuth with SameSite=None + Secure=true
