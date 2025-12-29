@@ -265,3 +265,17 @@
 - [x] If decoded state is "/", redirect to role-based dashboard instead
 - [x] Test: Login → lands on /admin (verified working)
 - [x] Cookie configuration supports cross-site OAuth with SameSite=None + Secure=true
+
+## Bug Fixes - Mobile Chrome Session Cookie Not Persisting (Critical)
+- [x] Verify tRPC client includes credentials: "include" in fetch configuration (main.tsx line 48)
+- [x] No axios used, only tRPC with credentials: "include"
+- [x] Ensure all API calls send cookies with requests (tRPC configured correctly)
+- [x] Verify session cookie settings in OAuth callback (HttpOnly=true, Secure=true, SameSite=none, Path=/)
+- [x] Add CORS middleware to Express server (server/_core/index.ts)
+- [x] Ensure Access-Control-Allow-Credentials: true is set (credentials: true in CORS config)
+- [x] Ensure Access-Control-Allow-Origin matches manus.space subdomains (regex pattern validation)
+- [x] CORS allows all manus.space subdomains and localhost for development
+- [x] CORS allows GET, POST, PUT, DELETE, OPTIONS methods
+- [x] CORS allows Content-Type and Authorization headers
+- [x] Installed cors package (pnpm add cors @types/cors)
+- [x] Ready for mobile Chrome testing after deployment
