@@ -23,15 +23,16 @@ export default function Home() {
   // Redirect authenticated users to their dashboard
   useEffect(() => {
     if (!loading && isAuthenticated && user) {
+      let targetPath = '/admin'; // default
       if (user.role === 'customer') {
-        setLocation('/customer');
+        targetPath = '/customer';
       } else if (user.role === 'technician') {
-        setLocation('/tech');
-      } else {
-        setLocation('/admin');
+        targetPath = '/tech';
       }
+      // Use window.location.href for guaranteed redirect
+      window.location.href = targetPath;
     }
-  }, [loading, isAuthenticated, user, setLocation]);
+  }, [loading, isAuthenticated, user]);
 
   // Show loading state while checking auth
   if (loading) {

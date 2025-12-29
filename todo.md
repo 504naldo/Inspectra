@@ -218,3 +218,10 @@
 - [x] OAuth callback now reads returnTo query param and redirects there after successful auth
 - [x] Home component already redirects authenticated users to role-based dashboard
 - [x] Implementation verified: returnTo flows from ProtectedRoute → Login → OAuth → Callback → Final destination
+
+## Bug Fixes - Login Redirect Still Showing Home Page (Critical)
+- [x] Investigate why Home component redirect is not working after login (wouter setLocation not reliable)
+- [x] Check if useEffect dependencies are correct (dependencies were correct)
+- [x] Verify auth state is properly loaded before redirect logic runs (auth state loading correctly)
+- [x] Test redirect with console logging to see execution flow (identified wouter issue)
+- [x] Fix redirect mechanism to ensure immediate navigation to dashboard (replaced setLocation with window.location.href)
