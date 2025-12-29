@@ -207,3 +207,14 @@
 - [x] Test sign-out → sign-in flow (works correctly, no 404)
 - [x] Test deep link refresh (tested /admin/jobs and /some-invalid-route) - no 404
 - [x] Verify OAuth callback URL configuration (correctly set to /api/oauth/callback)
+
+## Login Redirect Behavior Fix (New)
+- [x] Identify where OAuth callback redirects after successful sign-in (server/_core/oauth.ts line 47 redirects to "/")
+- [x] Implement "returnTo" logic in OAuth callback to redirect to intended destination
+- [x] Update getLoginUrl to accept optional returnTo parameter and encode it in redirect URI
+- [x] Update ProtectedRoute to capture current location and pass as returnTo query param to /login
+- [x] Update Login page to read returnTo from URL params and pass to OAuth flow
+- [x] Add home guard to prevent flash of marketing page (shows loading spinner for authenticated users)
+- [x] OAuth callback now reads returnTo query param and redirects there after successful auth
+- [x] Home component already redirects authenticated users to role-based dashboard
+- [x] Implementation verified: returnTo flows from ProtectedRoute → Login → OAuth → Callback → Final destination

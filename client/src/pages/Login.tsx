@@ -4,11 +4,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getLoginUrl } from "@/const";
 import { Shield } from "lucide-react";
 import { useLocation } from "wouter";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
 export default function Login() {
   const { user, loading, isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
+  
+  // Get returnTo from URL query parameter
+  const returnTo = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('returnTo') || undefined;
+  }, []);
+  
+  // Generate login URL with returnTo parameter
+  const loginUrl = useMemo(() => getLoginUrl(returnTo), [returnTo]);
 
   useEffect(() => {
     if (!loading && isAuthenticated && user) {
@@ -45,7 +54,7 @@ export default function Login() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <a href={getLoginUrl()} className="block">
+          <a href={loginUrl} className="block">
             <Button className="w-full h-12 text-lg" size="lg">
               Sign In
             </Button>

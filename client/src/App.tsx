@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch, Redirect } from "wouter";
+import { Route, Switch, Redirect, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
@@ -41,6 +41,7 @@ function ProtectedRoute({
   allowedRoles?: string[];
 }) {
   const { user, loading, isAuthenticated } = useAuth();
+  const [location] = useLocation();
 
   if (loading) {
     return (
@@ -54,7 +55,9 @@ function ProtectedRoute({
   }
 
   if (!isAuthenticated) {
-    return <Redirect to="/login" />;
+    // Pass current location as returnTo parameter
+    const returnTo = encodeURIComponent(location);
+    return <Redirect to={`/login?returnTo=${returnTo}`} />;
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
