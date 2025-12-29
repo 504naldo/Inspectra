@@ -169,3 +169,10 @@
 - [x] Add time measurement fields
 - [x] Add monitoring centre name and phone fields
 - [x] Run updated seed script to populate database (96 items across 20 sections)
+
+## Fire Alarm Auto-Save Feature (New)
+- [x] Update backend API to support saving individual inspection results (already existed)
+- [x] Implement auto-save logic in frontend with debouncing (2 second delay)
+- [x] Add visual feedback for auto-save status (saving/saved/error indicators)
+- [x] Test auto-save with slow network conditions (browser tested)
+- [x] Write unit tests for auto-save functionality (5 tests passing)

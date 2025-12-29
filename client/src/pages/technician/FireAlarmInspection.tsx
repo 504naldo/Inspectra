@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { ArrowLeft, Check, X, Minus, AlertCircle } from "lucide-react";
+import { ArrowLeft, Check, X, Minus, AlertCircle, Cloud, CloudOff, Loader2 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 type ChecklistItem = {
@@ -34,6 +34,8 @@ export default function FireAlarmInspection() {
   const { jobId } = useParams();
   const [, setLocation] = useLocation();
   const [results, setResults] = useState<Record<number, InspectionResult>>({});
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch job details
   const { data: job, isLoading: loadingJob } = trpc.job.get.useQuery(
@@ -59,10 +61,15 @@ export default function FireAlarmInspection() {
   // Save result mutation
   const saveResult = trpc.fireAlarm.saveInspectionResult.useMutation({
     onSuccess: () => {
-      toast.success("Result saved");
+      setAutoSaveStatus('saved');
+      // Reset to idle after 2 seconds
+      setTimeout(() => setAutoSaveStatus('idle'), 2000);
     },
     onError: (error: any) => {
-      toast.error(`Failed to save: ${error.message}`);
+      setAutoSaveStatus('error');
+      toast.error(`Auto-save failed: ${error.message}`);
+      // Reset to idle after 3 seconds
+      setTimeout(() => setAutoSaveStatus('idle'), 3000);
     },
   });
 
@@ -102,16 +109,41 @@ export default function FireAlarmInspection() {
   const handleNumericChange = (itemId: number, value: string) => {
     const currentResult = results[itemId] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
     setResults({ ...results, [itemId]: { ...currentResult, numericValue: value } });
+    
+    // Trigger auto-save with debouncing
+    triggerAutoSave(itemId);
   };
 
   const handleTextChange = (itemId: number, value: string) => {
     const currentResult = results[itemId] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
     setResults({ ...results, [itemId]: { ...currentResult, textValue: value } });
+    
+    // Trigger auto-save with debouncing
+    triggerAutoSave(itemId);
   };
 
   const handleNotesChange = (itemId: number, notes: string) => {
     const currentResult = results[itemId] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
     setResults({ ...results, [itemId]: { ...currentResult, notes } });
+    
+    // Trigger auto-save with debouncing
+    triggerAutoSave(itemId);
+  };
+
+  // Auto-save with debouncing
+  const triggerAutoSave = (itemId: number) => {
+    // Clear existing timer
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    
+    // Set status to saving
+    setAutoSaveStatus('saving');
+    
+    // Set new timer for 2 seconds
+    autoSaveTimerRef.current = setTimeout(() => {
+      handleSaveValue(itemId);
+    }, 2000);
   };
 
   const handleSaveValue = async (itemId: number) => {
@@ -128,6 +160,15 @@ export default function FireAlarmInspection() {
       textValue: currentResult.textValue,
     });
   };
+  
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, []);
 
   if (loadingJob || loadingChecklist) {
     return (
@@ -277,8 +318,33 @@ export default function FireAlarmInspection() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Job
           </Button>
-          <h1 className="text-2xl font-bold">Fire Alarm System Inspection</h1>
-          <p className="text-sm text-muted-foreground">CAN/ULC-S536:2019 Annual Test</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">Fire Alarm System Inspection</h1>
+              <p className="text-sm text-muted-foreground">CAN/ULC-S536:2019 Annual Test</p>
+            </div>
+            {/* Auto-save status indicator */}
+            <div className="flex items-center gap-2">
+              {autoSaveStatus === 'saving' && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Saving...</span>
+                </div>
+              )}
+              {autoSaveStatus === 'saved' && (
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <Cloud className="h-4 w-4" />
+                  <span>Saved</span>
+                </div>
+              )}
+              {autoSaveStatus === 'error' && (
+                <div className="flex items-center gap-2 text-sm text-red-600">
+                  <CloudOff className="h-4 w-4" />
+                  <span>Save failed</span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
