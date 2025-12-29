@@ -44,13 +44,22 @@ export function registerOAuthRoutes(app: Express) {
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
+      // Get user from database to determine role-based redirect
+      const user = await db.getUserByOpenId(userInfo.openId);
+      
       // Check for returnTo parameter to redirect back to intended destination
       const returnTo = getQueryParam(req, "returnTo");
       if (returnTo && returnTo.startsWith("/")) {
         res.redirect(302, returnTo);
       } else {
-        // Default: redirect to home, which will auto-redirect to dashboard
-        res.redirect(302, "/");
+        // Default: redirect to role-based dashboard
+        let dashboardPath = '/admin'; // default for admin
+        if (user?.role === 'customer') {
+          dashboardPath = '/customer';
+        } else if (user?.role === 'technician') {
+          dashboardPath = '/tech';
+        }
+        res.redirect(302, dashboardPath);
       }
     } catch (error) {
       console.error("[OAuth] Callback failed", error);

@@ -236,3 +236,16 @@
 - [x] Global auth guard checks if user is authenticated AND on "/" then redirects to role-based dashboard
 - [x] Test: Browser login → lands on dashboard (verified working)
 - [x] Implementation ensures PWA and browser behavior match exactly
+
+## Bug Fixes - Auth State Hydration & Session Persistence (Critical)
+- [x] Investigate useAuth hook to understand auth state hydration mechanism (uses trpc.auth.me.useQuery)
+- [x] Ensure auth state is properly hydrated from session on app startup (working correctly)
+- [x] Verify loading state properly reflects auth hydration status (loading state works correctly)
+- [x] Check session cookie configuration (credentials: "include" configured correctly)
+- [x] Ensure cookies persist correctly across refresh and are sent on API requests (working)
+- [x] Fix OAuth callback to redirect directly to role-based dashboard instead of "/"
+- [x] Keep global auth guard as backup safety net for edge cases
+- [x] Remove debug console logs for production
+- [x] Test: Login → lands on role-based dashboard (verified with console logs)
+- [x] OAuth callback now fetches user role and redirects to /admin, /tech, or /customer
+- [x] returnTo parameter still works for deep linking
