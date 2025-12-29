@@ -5,6 +5,7 @@ import { Route, Switch, Redirect, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
+import { useEffect } from "react";
 
 // Pages
 import Home from "./pages/Home";
@@ -75,7 +76,25 @@ function ProtectedRoute({
 }
 
 function Router() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, loading, isAuthenticated } = useAuth();
+  const [location, setLocation] = useLocation();
+
+  // Global auth guard: redirect authenticated users from home to dashboard
+  useEffect(() => {
+    // Only run after auth state is loaded
+    if (loading) return;
+    
+    // If user is authenticated and on home page, redirect to dashboard
+    if (isAuthenticated && user && location === '/') {
+      let targetPath = '/admin'; // default
+      if (user.role === 'customer') {
+        targetPath = '/customer';
+      } else if (user.role === 'technician') {
+        targetPath = '/tech';
+      }
+      setLocation(targetPath);
+    }
+  }, [loading, isAuthenticated, user, location, setLocation]);
 
   return (
     <Switch>

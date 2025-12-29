@@ -225,3 +225,14 @@
 - [x] Verify auth state is properly loaded before redirect logic runs (auth state loading correctly)
 - [x] Test redirect with console logging to see execution flow (identified wouter issue)
 - [x] Fix redirect mechanism to ensure immediate navigation to dashboard (replaced setLocation with window.location.href)
+
+## Bug Fixes - PWA Login Redirect Issue (Critical)
+- [x] Analyze PWA manifest start_url and scope configuration (start_url: "/" is correct)
+- [x] Keep manifest start_url as "/" to allow PWA to always start at root
+- [x] Implement global auth guard in App.tsx Router component that runs on mount
+- [x] Ensure auth guard waits for auth state hydration (checks loading === false before redirect)
+- [x] Fix Home component redirect to work properly in PWA standalone mode (removed local redirect logic)
+- [x] Replace window.location.href with wouter setLocation for PWA compatibility (no full page reload)
+- [x] Global auth guard checks if user is authenticated AND on "/" then redirects to role-based dashboard
+- [x] Test: Browser login → lands on dashboard (verified working)
+- [x] Implementation ensures PWA and browser behavior match exactly

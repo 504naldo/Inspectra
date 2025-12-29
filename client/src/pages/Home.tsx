@@ -13,26 +13,10 @@ import {
   AlertTriangle,
   ArrowRight
 } from "lucide-react";
-import { Link, useLocation } from "wouter";
-import { useEffect } from "react";
+import { Link } from "wouter";
 
 export default function Home() {
   const { user, loading, isAuthenticated } = useAuth();
-  const [, setLocation] = useLocation();
-
-  // Redirect authenticated users to their dashboard
-  useEffect(() => {
-    if (!loading && isAuthenticated && user) {
-      let targetPath = '/admin'; // default
-      if (user.role === 'customer') {
-        targetPath = '/customer';
-      } else if (user.role === 'technician') {
-        targetPath = '/tech';
-      }
-      // Use window.location.href for guaranteed redirect
-      window.location.href = targetPath;
-    }
-  }, [loading, isAuthenticated, user]);
 
   // Show loading state while checking auth
   if (loading) {
@@ -44,6 +28,7 @@ export default function Home() {
   }
   
   // Show loading state while redirecting authenticated users (prevent flash)
+  // Note: Actual redirect is handled by global auth guard in App.tsx
   if (isAuthenticated && user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
