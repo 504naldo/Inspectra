@@ -5,14 +5,35 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { ArrowLeft, Check, X, Minus, AlertCircle } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
+type ChecklistItem = {
+  id: number;
+  sectionName: string;
+  sectionOrder: number;
+  itemLetter: string | null;
+  itemDescription: string;
+  inputType: string;
+  numericLabel: string | null;
+  numericUnit: string | null;
+  isRequired: boolean;
+};
+
+type InspectionResult = {
+  result: string;
+  notes: string;
+  numericValue?: string;
+  textValue?: string;
+};
+
 export default function FireAlarmInspection() {
   const { jobId } = useParams();
   const [, setLocation] = useLocation();
-  const [results, setResults] = useState<Record<number, { result: string; notes: string }>>({});
+  const [results, setResults] = useState<Record<number, InspectionResult>>({});
 
   // Fetch job details
   const { data: job, isLoading: loadingJob } = trpc.job.get.useQuery(
@@ -48,11 +69,13 @@ export default function FireAlarmInspection() {
   // Load existing results into state
   useEffect(() => {
     if (existingResults) {
-      const resultsMap: Record<number, { result: string; notes: string }> = {};
+      const resultsMap: Record<number, InspectionResult> = {};
       existingResults.forEach((r: any) => {
         resultsMap[r.checklistItemId] = {
-          result: r.result as "pass" | "fail" | "na" | "not_tested",
+          result: r.result as string,
           notes: r.notes || "",
+          numericValue: r.numericValue || "",
+          textValue: r.textValue || "",
         };
       });
       setResults(resultsMap);
@@ -60,7 +83,8 @@ export default function FireAlarmInspection() {
   }, [existingResults]);
 
   const handleResultChange = async (itemId: number, result: "pass" | "fail" | "na" | "not_tested") => {
-    const newResults = { ...results, [itemId]: { result, notes: results[itemId]?.notes || "" } };
+    const currentResult = results[itemId] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
+    const newResults = { ...results, [itemId]: { ...currentResult, result } };
     setResults(newResults);
 
     // Save immediately
@@ -70,22 +94,38 @@ export default function FireAlarmInspection() {
       checklistItemId: itemId,
       result,
       notes: newResults[itemId].notes,
+      numericValue: newResults[itemId].numericValue,
+      textValue: newResults[itemId].textValue,
     });
   };
 
-  const handleNotesChange = (itemId: number, notes: string) => {
-    setResults({ ...results, [itemId]: { ...results[itemId], notes } });
+  const handleNumericChange = (itemId: number, value: string) => {
+    const currentResult = results[itemId] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
+    setResults({ ...results, [itemId]: { ...currentResult, numericValue: value } });
   };
 
-  const handleNotesSave = async (itemId: number) => {
-    if (!results[itemId]) return;
+  const handleTextChange = (itemId: number, value: string) => {
+    const currentResult = results[itemId] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
+    setResults({ ...results, [itemId]: { ...currentResult, textValue: value } });
+  };
+
+  const handleNotesChange = (itemId: number, notes: string) => {
+    const currentResult = results[itemId] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
+    setResults({ ...results, [itemId]: { ...currentResult, notes } });
+  };
+
+  const handleSaveValue = async (itemId: number) => {
+    const currentResult = results[itemId];
+    if (!currentResult) return;
 
     await saveResult.mutateAsync({
       jobId: parseInt(jobId!),
       fireAlarmSystemId: fireAlarmSystem?.id!,
       checklistItemId: itemId,
-      result: (results[itemId].result as "pass" | "fail" | "na" | "not_tested") || "not_tested",
-      notes: results[itemId].notes,
+      result: (currentResult.result as "pass" | "fail" | "na" | "not_tested") || "not_tested",
+      notes: currentResult.notes || "",
+      numericValue: currentResult.numericValue,
+      textValue: currentResult.textValue,
     });
   };
 
@@ -103,201 +143,273 @@ export default function FireAlarmInspection() {
   if (!job) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-destructive">Job not found</p>
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Job Not Found
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground mb-4">The requested job could not be found.</p>
+            <Button onClick={() => setLocation("/tech/jobs")}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Jobs
+            </Button>
           </CardContent>
         </Card>
       </div>
     );
   }
 
+  // Group checklist items by section
+  const sections = checklistSections?.reduce((acc: Record<string, ChecklistItem[]>, item: ChecklistItem) => {
+    if (!acc[item.sectionName]) {
+      acc[item.sectionName] = [];
+    }
+    acc[item.sectionName].push(item);
+    return acc;
+  }, {}) || {};
+
+  const sectionNames = Object.keys(sections).sort((a, b) => {
+    const orderA = sections[a]?.[0]?.sectionOrder || 0;
+    const orderB = sections[b]?.[0]?.sectionOrder || 0;
+    return orderA - orderB;
+  });
+
   // Calculate progress
-  const totalItems = checklistSections?.reduce((sum: number, section: any) => sum + section.items.length, 0) || 0;
-  const completedItems = Object.values(results).filter((r) => r.result !== "not_tested").length;
-  const progress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+  const totalItems = checklistSections?.length || 0;
+  const completedItems = Object.values(results).filter(r => r.result !== "not_tested").length;
+  const progressPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
 
-  const getResultIcon = (result: string) => {
-    switch (result) {
-      case "pass":
-        return <Check className="h-5 w-5 text-green-600" />;
-      case "fail":
-        return <X className="h-5 w-5 text-red-600" />;
-      case "na":
-        return <Minus className="h-5 w-5 text-gray-600" />;
-      default:
-        return <AlertCircle className="h-5 w-5 text-yellow-600" />;
-    }
-  };
+  const renderInputField = (item: ChecklistItem) => {
+    const currentResult = results[item.id] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
 
-  const getResultBadgeVariant = (result: string): "default" | "destructive" | "secondary" | "outline" => {
-    switch (result) {
-      case "pass":
-        return "default";
-      case "fail":
-        return "destructive";
-      case "na":
-        return "secondary";
-      default:
-        return "outline";
+    // For checkbox type (default), show YES/NO/N/A buttons
+    if (item.inputType === "checkbox") {
+      return (
+        <div className="flex gap-2 mt-2">
+          <Button
+            size="sm"
+            variant={currentResult.result === "pass" ? "default" : "outline"}
+            className={currentResult.result === "pass" ? "bg-green-600 hover:bg-green-700" : ""}
+            onClick={() => handleResultChange(item.id, "pass")}
+          >
+            <Check className="h-4 w-4 mr-1" />
+            YES
+          </Button>
+          <Button
+            size="sm"
+            variant={currentResult.result === "fail" ? "default" : "outline"}
+            className={currentResult.result === "fail" ? "bg-red-600 hover:bg-red-700" : ""}
+            onClick={() => handleResultChange(item.id, "fail")}
+          >
+            <X className="h-4 w-4 mr-1" />
+            NO
+          </Button>
+          <Button
+            size="sm"
+            variant={currentResult.result === "na" ? "default" : "outline"}
+            className={currentResult.result === "na" ? "bg-gray-600 hover:bg-gray-700" : ""}
+            onClick={() => handleResultChange(item.id, "na")}
+          >
+            <Minus className="h-4 w-4 mr-1" />
+            N/A
+          </Button>
+        </div>
+      );
     }
+
+    // For numeric types (voltage, current, numeric, year)
+    if (["voltage", "current", "numeric", "year"].includes(item.inputType)) {
+      return (
+        <div className="mt-2 space-y-2">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-medium min-w-[80px]">
+              {item.numericLabel || "Value:"}
+            </Label>
+            <Input
+              type="text"
+              value={currentResult.numericValue || ""}
+              onChange={(e) => handleNumericChange(item.id, e.target.value)}
+              onBlur={() => handleSaveValue(item.id)}
+              placeholder={item.inputType === "year" ? "YYYY" : "Enter value"}
+              className="max-w-[200px]"
+            />
+            {item.numericUnit && (
+              <span className="text-sm text-muted-foreground">{item.numericUnit}</span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // For text, date, time types
+    if (["text", "date", "time"].includes(item.inputType)) {
+      return (
+        <div className="mt-2 space-y-2">
+          <Label className="text-sm font-medium">
+            {item.numericLabel || "Value:"}
+          </Label>
+          <Input
+            type={item.inputType === "date" ? "date" : item.inputType === "time" ? "time" : "text"}
+            value={currentResult.textValue || ""}
+            onChange={(e) => handleTextChange(item.id, e.target.value)}
+            onBlur={() => handleSaveValue(item.id)}
+            placeholder="Enter value"
+            className="max-w-[300px]"
+          />
+        </div>
+      );
+    }
+
+    return null;
   };
 
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background border-b">
+      <div className="bg-card border-b sticky top-0 z-10">
         <div className="container py-4">
-          <div className="flex items-center gap-4 mb-4">
-            <Button variant="ghost" size="icon" onClick={() => setLocation(`/tech/jobs/${jobId}`)}>
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold">Fire Alarm Inspection</h1>
-              <p className="text-sm text-muted-foreground">{job.jobNumber} - CAN/ULC-S536</p>
-            </div>
-          </div>
-
-          {/* Progress */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Progress</span>
-              <span className="font-medium">
-                {completedItems} / {totalItems} items
-              </span>
-            </div>
-            <div className="w-full bg-secondary rounded-full h-2">
-              <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLocation(`/tech/jobs/${jobId}`)}
+            className="mb-2"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Job
+          </Button>
+          <h1 className="text-2xl font-bold">Fire Alarm System Inspection</h1>
+          <p className="text-sm text-muted-foreground">CAN/ULC-S536:2019 Annual Test</p>
         </div>
       </div>
 
-      {/* System Info */}
-      {fireAlarmSystem && (
-        <div className="container mt-4">
+      <div className="container py-6 space-y-6">
+        {/* Fire Alarm System Info */}
+        {fireAlarmSystem && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">System Information</CardTitle>
+              <CardTitle>Fire Alarm System Information</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Manufacturer:</span>
-                <span className="font-medium">{fireAlarmSystem.manufacturer || "N/A"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Model:</span>
-                <span className="font-medium">{fireAlarmSystem.modelNumber || "N/A"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Operation:</span>
-                <span className="font-medium capitalize">{fireAlarmSystem.operationType?.replace("_", " ") || "N/A"}</span>
+            <CardContent className="space-y-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Manufacturer</p>
+                  <p className="font-medium">{fireAlarmSystem.manufacturer || "Not specified"}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Model</p>
+                  <p className="font-medium">{fireAlarmSystem.modelNumber || "Not specified"}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Operation Type</p>
+                  <Badge variant="secondary">
+                    {fireAlarmSystem.operationType === "single_stage" ? "Single Stage" : 
+                     fireAlarmSystem.operationType === "two_stage" ? "Two Stage" : "Other"}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Monitoring Centre</p>
+                  <p className="font-medium">
+                    {fireAlarmSystem.connectedToMonitoring ? 
+                      fireAlarmSystem.monitoringCentreName || "Yes" : "No"}
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
-        </div>
-      )}
+        )}
 
-      {/* Checklist Sections */}
-      <div className="container mt-4 space-y-4">
-        {checklistSections?.map((section: any) => (
-          <Card key={section.id}>
-            <Accordion type="single" collapsible>
-              <AccordionItem value={`section-${section.id}`} className="border-none">
-                <AccordionTrigger className="px-6 py-4 hover:no-underline">
-                  <div className="flex items-center justify-between w-full pr-4">
-                    <div className="text-left">
-                      <h3 className="font-semibold">{section.sectionName}</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {section.items.filter((item: any) => results[item.id]?.result !== "not_tested").length} / {section.items.length} completed
-                      </p>
-                    </div>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-6 pb-4">
-                  <div className="space-y-4">
-                    {section.items.map((item: any) => (
-                      <div key={item.id} className="border rounded-lg p-4 space-y-3">
-                        <div className="flex items-start gap-3">
-                          {item.itemLetter && (
-                            <Badge variant="outline" className="shrink-0">
-                              {item.itemLetter}
-                            </Badge>
-                          )}
-                          <p className="text-sm flex-1">{item.itemDescription}</p>
-                        </div>
+        {/* Progress Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Inspection Progress</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Completed</span>
+                <span className="font-medium">{completedItems} / {totalItems}</span>
+              </div>
+              <div className="w-full bg-secondary rounded-full h-2">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground text-center">{progressPercent}% Complete</p>
+            </div>
+          </CardContent>
+        </Card>
 
-                        {/* Result Buttons */}
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant={results[item.id]?.result === "pass" ? "default" : "outline"}
-                            className="flex-1"
-                            onClick={() => handleResultChange(item.id, "pass")}
-                          >
-                            <Check className="h-4 w-4 mr-1" />
-                            Pass
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={results[item.id]?.result === "fail" ? "destructive" : "outline"}
-                            className="flex-1"
-                            onClick={() => handleResultChange(item.id, "fail")}
-                          >
-                            <X className="h-4 w-4 mr-1" />
-                            Fail
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={results[item.id]?.result === "na" ? "secondary" : "outline"}
-                            className="flex-1"
-                            onClick={() => handleResultChange(item.id, "na")}
-                          >
-                            <Minus className="h-4 w-4 mr-1" />
-                            N/A
-                          </Button>
-                        </div>
+        {/* Checklist Sections */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Inspection Checklist</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Complete all required tests and inspections
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Accordion type="multiple" className="w-full">
+              {sectionNames.map((sectionName, idx) => {
+                const items = sections[sectionName] || [];
+                const sectionCompleted = items.filter((item: ChecklistItem) => 
+                  results[item.id]?.result && results[item.id].result !== "not_tested"
+                ).length;
+                const sectionTotal = items.length;
 
-                        {/* Notes */}
-                        {results[item.id]?.result && results[item.id]?.result !== "not_tested" && (
-                          <div className="space-y-2">
-                            <Textarea
-                              placeholder="Add notes (optional)..."
-                              value={results[item.id]?.notes || ""}
-                              onChange={(e) => handleNotesChange(item.id, e.target.value)}
-                              onBlur={() => handleNotesSave(item.id)}
-                              rows={2}
-                              className="text-sm"
-                            />
-                          </div>
-                        )}
+                return (
+                  <AccordionItem key={idx} value={`section-${idx}`}>
+                    <AccordionTrigger className="hover:no-underline">
+                      <div className="flex items-center justify-between w-full pr-4">
+                        <span className="font-medium text-left">{sectionName}</span>
+                        <Badge variant="secondary" className="ml-2">
+                          {sectionCompleted}/{sectionTotal}
+                        </Badge>
                       </div>
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </Card>
-        ))}
-      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="space-y-4 pt-2">
+                        {items.map((item: ChecklistItem) => {
+                          const currentResult = results[item.id] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
+                          
+                          return (
+                            <div key={item.id} className="border-l-4 border-l-muted pl-4 py-2">
+                              <div className="flex items-start gap-2">
+                                {item.itemLetter && (
+                                  <span className="font-bold text-sm min-w-[24px]">{item.itemLetter}.</span>
+                                )}
+                                <div className="flex-1">
+                                  <p className="text-sm">{item.itemDescription}</p>
+                                  
+                                  {renderInputField(item)}
 
-      {/* Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t p-4">
-        <div className="container flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={() => setLocation(`/tech/jobs/${jobId}`)}>
-            Save & Exit
-          </Button>
-          <Button
-            className="flex-1"
-            disabled={progress < 100}
-            onClick={() => {
-              toast.success("Fire alarm inspection completed");
-              setLocation(`/tech/jobs/${jobId}`);
-            }}
-          >
-            Complete Inspection
-          </Button>
-        </div>
+                                  {/* Notes textarea */}
+                                  <div className="mt-3">
+                                    <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
+                                    <Textarea
+                                      value={currentResult.notes}
+                                      onChange={(e) => handleNotesChange(item.id, e.target.value)}
+                                      onBlur={() => handleSaveValue(item.id)}
+                                      placeholder="Add notes..."
+                                      className="mt-1 min-h-[60px]"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

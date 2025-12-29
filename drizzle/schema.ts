@@ -441,6 +441,9 @@ export const fireAlarmChecklistTemplates = mysqlTable("fire_alarm_checklist_temp
   itemLetter: varchar("itemLetter", { length: 10 }), // A, B, C, etc.
   itemDescription: text("itemDescription").notNull(),
   requirementType: mysqlEnum("requirementType", ["inspection", "test", "both"]).default("both"),
+  inputType: mysqlEnum("inputType", ["checkbox", "numeric", "text", "voltage", "current", "date", "time", "year"]).default("checkbox"),
+  numericLabel: varchar("numericLabel", { length: 100 }), // e.g., "Voltage:", "Current:", "Date:"
+  numericUnit: varchar("numericUnit", { length: 50 }), // e.g., "V", "A", "A•h"
   isRequired: boolean("isRequired").default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -457,6 +460,8 @@ export const fireAlarmInspectionResults = mysqlTable("fire_alarm_inspection_resu
   fireAlarmSystemId: int("fireAlarmSystemId").notNull(),
   checklistItemId: int("checklistItemId").notNull(),
   result: mysqlEnum("result", ["pass", "fail", "na", "not_tested"]).default("not_tested"),
+  numericValue: varchar("numericValue", { length: 100 }), // For numeric inputs (voltage, current, etc.)
+  textValue: text("textValue"), // For text inputs (names, descriptions, etc.)
   notes: text("notes"),
   testedById: int("testedById"), // user_id of technician
   testedAt: timestamp("testedAt"),

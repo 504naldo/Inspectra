@@ -71,6 +71,8 @@ export const fireAlarmRouter = router({
         checklistItemId: z.number(),
         result: z.enum(["pass", "fail", "na", "not_tested"]),
         notes: z.string().optional(),
+        numericValue: z.string().optional(),
+        textValue: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -96,6 +98,8 @@ export const fireAlarmRouter = router({
           .set({
             result: input.result,
             notes: input.notes || null,
+            numericValue: input.numericValue || null,
+            textValue: input.textValue || null,
             testedById: ctx.user.id,
             testedAt: new Date(),
             updatedAt: new Date(),
@@ -111,6 +115,8 @@ export const fireAlarmRouter = router({
           checklistItemId: input.checklistItemId,
           result: input.result,
           notes: input.notes || null,
+          numericValue: input.numericValue || null,
+          textValue: input.textValue || null,
           testedById: ctx.user.id,
           testedAt: new Date(),
         });

@@ -152,3 +152,11 @@
 - [x] Add "Fire Alarm Inspection" button to Job Details page
 - [x] Link button to fire alarm inspection workflow
 - [x] Test navigation from job details to fire alarm inspection
+
+## Fire Alarm Inspection PDF Report Format (New)
+- [x] Analyze PDF pages 8-17 to understand report format
+- [x] Identify checklist items requiring numeric values (16 types)
+- [x] Update database schema to support numeric values for checklist items
+- [x] Update fire alarm inspection UI to support numeric inputs
+- [ ] Update PDF generator to match pages 8-17 format
+- [ ] Test PDF generation with numeric values
