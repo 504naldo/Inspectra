@@ -122,6 +122,7 @@
 - [x] Fix nested anchor tag error on /admin/jobs page
 - [x] Fix report summary display - unable to view entire summary
 - [x] Import data from "Individual device record" sheet in Excel file (134 devices: 76 smoke alarms, 10 emergency lights, 9 sprinkler devices, 35 fire alarm devices, 4 fire extinguishers)
+- [x] Battery testing fields in Section 4 not showing in mobile version (fixed data structure mismatch between API and frontend)
 
 ## PDF Report Generation (New)
 - [x] Install PDF generation library (pdfkit)

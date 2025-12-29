@@ -162,14 +162,11 @@ export default function FireAlarmInspection() {
     );
   }
 
-  // Group checklist items by section
-  const sections = checklistSections?.reduce((acc: Record<string, ChecklistItem[]>, item: ChecklistItem) => {
-    if (!acc[item.sectionName]) {
-      acc[item.sectionName] = [];
-    }
-    acc[item.sectionName].push(item);
-    return acc;
-  }, {}) || {};
+  // Process checklist sections (API returns array of sections with nested items)
+  const sections: Record<string, ChecklistItem[]> = {};
+  checklistSections?.forEach((section: any) => {
+    sections[section.sectionName] = section.items || [];
+  });
 
   const sectionNames = Object.keys(sections).sort((a, b) => {
     const orderA = sections[a]?.[0]?.sectionOrder || 0;
@@ -178,7 +175,7 @@ export default function FireAlarmInspection() {
   });
 
   // Calculate progress
-  const totalItems = checklistSections?.length || 0;
+  const totalItems = Object.values(sections).flat().length;
   const completedItems = Object.values(results).filter(r => r.result !== "not_tested").length;
   const progressPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
 
