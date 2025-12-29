@@ -186,3 +186,14 @@
 - [x] Show sync status indicator (Online/Offline + pending count badge)
 - [x] Test offline mode with browser testing (manual verification)
 - [x] IndexedDB tested through browser integration (client-side API)
+
+## PWA (Progressive Web App) Upgrade (New)
+- [x] Create Web App Manifest (manifest.json) with app metadata
+- [x] Generate app icons in multiple sizes (192x192, 512x512, maskable)
+- [x] Implement Service Worker for offline-first caching strategy (Workbox)
+- [x] Add Service Worker registration in main.tsx
+- [x] Configure Vite PWA plugin for automatic SW generation
+- [x] Add PWA meta tags to HTML (theme-color, iOS support)
+- [x] Test Service Worker registration (successfully registered)
+- [x] Verify offline functionality with IndexedDB + Service Worker caching
+- [x] Configure runtime caching strategies (NetworkFirst for API, CacheFirst for images/fonts)
