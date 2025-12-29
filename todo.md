@@ -160,3 +160,11 @@
 - [x] Update fire alarm inspection UI to support numeric inputs
 - [ ] Update PDF generator to match pages 8-17 format
 - [ ] Test PDF generation with numeric values
+
+## Update Fire Alarm Seed Script (New)
+- [x] Update seed script with correct input types for numeric/text fields
+- [x] Add battery specification fields (voltage, capacity, quantity)
+- [x] Add firmware/software version fields
+- [x] Add time measurement fields
+- [x] Add monitoring centre name and phone fields
+- [x] Run updated seed script to populate database (96 items across 20 sections)
