@@ -279,3 +279,17 @@
 - [x] CORS allows Content-Type and Authorization headers
 - [x] Installed cors package (pnpm add cors @types/cors)
 - [x] Ready for mobile Chrome testing after deployment
+
+## PDF Report Redesign - Fire-Pro Style (New)
+- [x] Design professional cover page with hero image background and navy blue title block
+- [x] Create letter-style summary page with recipient block, RE line, service details, and signature
+- [x] Redesign device tables section with proper grouping (Fire Alarm Devices by type, Fire Extinguishers, Emergency Lights)
+- [x] Add Location column to all device tables
+- [x] Redesign deficiency table with Item #, Description, Device, and Total Labour & Material columns
+- [x] Include location information in deficiency descriptions
+- [x] Add consistent footer with company address/phone/email and page numbering (X of Y)
+- [x] Create final page with total amount and terms/conditions block
+- [x] Implement right-aligned currency formatting for prices
+- [x] Change download behavior from window.open to automatic download with download attribute
+- [x] Test PDF generation with new template
+- [x] Verify all locations are displayed for devices and deficiencies

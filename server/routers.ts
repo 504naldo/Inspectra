@@ -8,7 +8,7 @@ import * as db from "./db";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
-import { generateInspectionReportPDF } from "./pdfGenerator";
+import { generateInspectionReportPDF } from "./pdfGeneratorFirePro";
 import { fireAlarmRouter } from "./fireAlarmRouter";
 
 // Role-based procedure helpers
@@ -915,25 +915,57 @@ const reportRouter = router({
       ...stats
     }));
     
-    // Generate PDF
+    // Get technician details
+    const technician = await db.getUserById(job.assignedTechnicianId || ctx.user.id);
+    
+    // Generate PDF with Fire-Pro style
     const pdfBuffer = await generateInspectionReportPDF({
       jobNumber: job.jobNumber,
       jobTitle: job.title,
       siteName: site.name,
-      siteAddress: `${site.address || ''}, ${site.city || ''}, ${site.state || ''} ${site.postalCode || ''}`.trim(),
+      siteAddress: site.address || '',
+      siteCity: site.city || '',
+      siteState: site.state || '',
       customerName: customerOrg?.name || 'Unknown Customer',
+      customerAddress: customerOrg?.address || '',
+      customerCity: '',
+      customerState: '',
+      customerPostalCode: '',
+      attentionTo: customerOrg?.contactName || '',
+      attentionEmail: customerOrg?.contactEmail || '',
       inspectionDate: job.scheduledDate || new Date(),
       completedDate: job.completedAt,
+      technicianName: technician?.name || ctx.user.name || undefined,
+      technicianTitle: 'Fire Alarm Technician',
+      technicianEmail: technician?.email || ctx.user.email || undefined,
       companyName: company?.name || 'Fire Inspect Pro',
+      companyAddress: '15-3871 North Fraser Way, Burnaby BC V5G 5J6',
+      companyPhone: '604-299-1030',
+      companyEmail: 'info@fireinspectpro.ca',
       summary: input.summary,
       deviceSummaries,
-      deficiencies: deficiencies.map(d => ({
-        id: d.id,
-        title: d.title,
-        severity: d.severity,
-        status: d.status,
-        description: d.description,
-        correctiveAction: d.correctiveAction,
+      deficiencies: await Promise.all(deficiencies.map(async (d) => {
+        // Get device info if deviceId exists
+        let deviceType: string | undefined = undefined;
+        let location: string | undefined = undefined;
+        if (d.deviceId) {
+          const device = await db.getDeviceById(d.deviceId);
+          if (device) {
+            deviceType = device.deviceType;
+            location = device.location || undefined;
+          }
+        }
+        return {
+          id: d.id,
+          title: d.title,
+          severity: d.severity,
+          status: d.status,
+          description: d.description,
+          correctiveAction: d.correctiveAction,
+          deviceType,
+          location,
+          estimatedCost: 0, // TODO: Add estimatedCost field to deficiencies table
+        };
       })),
       inspectionResults: inspectionResults.map(r => ({
         deviceId: r.deviceId,

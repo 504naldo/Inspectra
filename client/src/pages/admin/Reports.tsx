@@ -118,7 +118,14 @@ export default function AdminReports() {
 
   const handleDownloadPDF = () => {
     if (generatedPdfUrl) {
-      window.open(generatedPdfUrl, '_blank');
+      // Create a temporary anchor element to trigger download
+      const link = document.createElement('a');
+      link.href = generatedPdfUrl;
+      link.download = `Fire-Inspection-Report-${new Date().toISOString().split('T')[0]}.pdf`;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
