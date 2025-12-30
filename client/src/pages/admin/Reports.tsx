@@ -34,6 +34,7 @@ export default function AdminReports() {
   const [executiveSummary, setExecutiveSummary] = useState("");
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState<string | null>(null);
   const [generatedReportNumber, setGeneratedReportNumber] = useState<string | null>(null);
+  const [reportType, setReportType] = useState<'deficiency' | 'compliance'>('deficiency');
 
   const { data: jobs, refetch: refetchJobs } = trpc.job.listByCompany.useQuery({
     companyId,
@@ -63,6 +64,18 @@ export default function AdminReports() {
     },
     onError: (error) => {
       toast.error(`Failed to generate PDF: ${error.message}`);
+    }
+  });
+
+  const generateCompliancePDF = trpc.report.generateCompliancePDF.useMutation({
+    onSuccess: (data) => {
+      setGeneratedPdfUrl(data.fileUrl);
+      setGeneratedReportNumber(data.reportNumber);
+      toast.success('Compliance report generated successfully!');
+      refetchJobs();
+    },
+    onError: (error) => {
+      toast.error(`Failed to generate compliance report: ${error.message}`);
     }
   });
 
@@ -98,10 +111,17 @@ export default function AdminReports() {
       toast.error('Please select a job first');
       return;
     }
-    generatePDF.mutate({
-      jobId: parseInt(selectedJobId),
-      summary: executiveSummary || undefined,
-    });
+    
+    if (reportType === 'compliance') {
+      generateCompliancePDF.mutate({
+        jobId: parseInt(selectedJobId),
+      });
+    } else {
+      generatePDF.mutate({
+        jobId: parseInt(selectedJobId),
+        summary: executiveSummary || undefined,
+      });
+    }
   };
 
   const handleCreateReport = () => {
@@ -187,46 +207,108 @@ export default function AdminReports() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>Executive Summary</Label>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleGenerateSummary}
-                      disabled={generateSummary.isPending || !selectedJobId}
+                {/* Report Type Selector */}
+                <div className="space-y-3 border rounded-lg p-4 bg-muted/30">
+                  <Label className="text-base font-medium">Report Type</Label>
+                  <div className="space-y-2">
+                    <div 
+                      className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                        reportType === 'deficiency' 
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-border hover:bg-muted/50'
+                      }`}
+                      onClick={() => setReportType('deficiency')}
                     >
-                      {generateSummary.isPending ? (
-                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-4 w-4 mr-1" />
-                      )}
-                      AI Generate
-                    </Button>
+                      <input
+                        type="radio"
+                        name="reportType"
+                        value="deficiency"
+                        checked={reportType === 'deficiency'}
+                        onChange={() => setReportType('deficiency')}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium mb-1">Deficiency Report (Quote)</div>
+                        <p className="text-sm text-muted-foreground">
+                          Professional report with pricing, device tables, and repair cost estimates. Ideal for providing quotes to clients.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div 
+                      className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                        reportType === 'compliance' 
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-border hover:bg-muted/50'
+                      }`}
+                      onClick={() => setReportType('compliance')}
+                    >
+                      <input
+                        type="radio"
+                        name="reportType"
+                        value="compliance"
+                        checked={reportType === 'compliance'}
+                        onChange={() => setReportType('compliance')}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium mb-1">CAN/ULC-S536 Compliance Report</div>
+                        <p className="text-sm text-muted-foreground">
+                          Official inspection form with detailed checklists, device records, and technician certification. No pricing included.
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <Textarea
-                    value={executiveSummary}
-                    onChange={(e) => setExecutiveSummary(e.target.value)}
-                    placeholder="Executive summary of the inspection..."
-                    className="min-h-[200px] max-h-[300px] resize-y"
-                  />
                 </div>
+
+                {/* Only show Executive Summary for Deficiency Report */}
+                {reportType === 'deficiency' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Executive Summary</Label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleGenerateSummary}
+                        disabled={generateSummary.isPending || !selectedJobId}
+                      >
+                        {generateSummary.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-4 w-4 mr-1" />
+                        )}
+                        AI Generate
+                      </Button>
+                    </div>
+                    <Textarea
+                      value={executiveSummary}
+                      onChange={(e) => setExecutiveSummary(e.target.value)}
+                      placeholder="Executive summary of the inspection..."
+                      className="min-h-[200px] max-h-[300px] resize-y"
+                    />
+                  </div>
+                )}
 
                 {/* PDF Generation Section */}
                 <div className="border-t pt-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-medium">Generate PDF Report</h4>
+                      <h4 className="font-medium">
+                        Generate {reportType === 'compliance' ? 'Compliance' : 'Deficiency'} Report
+                      </h4>
                       <p className="text-sm text-muted-foreground">
-                        Create a downloadable PDF with all inspection details
+                        {reportType === 'compliance' 
+                          ? 'CAN/ULC-S536 inspection form with checklists and device records'
+                          : 'Professional report with pricing and repair estimates'
+                        }
                       </p>
                     </div>
                     <Button
                       onClick={handleGeneratePDF}
-                      disabled={generatePDF.isPending || !selectedJobId}
+                      disabled={(generatePDF.isPending || generateCompliancePDF.isPending) || !selectedJobId}
                       className="bg-primary"
                     >
-                      {generatePDF.isPending ? (
+                      {(generatePDF.isPending || generateCompliancePDF.isPending) ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                           Generating...

@@ -328,3 +328,11 @@
 - [x] Test PDF generation with full CAN/ULC-S536 checklist structure
 - [x] Verify all checkboxes render correctly (☐ ☒)
 - [x] Verify repeating header appears on all pages except cover
+
+## Report Type Selector (New)
+- [x] Add report type state to Reports page (deficiency vs compliance)
+- [x] Create radio button group or dropdown for report type selection
+- [x] Update Generate PDF button to call appropriate endpoint based on selection
+- [x] Add visual distinction between report types (icons, descriptions)
+- [x] Test generating both report types from UI
+- [x] Update UI to show which report type was generated in report history
