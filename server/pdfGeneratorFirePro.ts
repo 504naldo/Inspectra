@@ -1,4 +1,6 @@
 import PDFDocument from 'pdfkit';
+import fs from 'fs';
+import path from 'path';
 
 interface DeviceSummary {
   deviceType: string;
@@ -59,6 +61,14 @@ interface ReportData {
   inspectionResults: InspectionResult[];
 }
 
+// Helper function to draw logo
+function drawLogo(doc: any, x: number, y: number, width: number) {
+  const logoPath = path.join(__dirname, '../assets/ewf-logo.png');
+  if (fs.existsSync(logoPath)) {
+    doc.image(logoPath, x, y, { width });
+  }
+}
+
 export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
@@ -89,16 +99,8 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       // Background - grayscale gradient to simulate hero image
       doc.rect(0, 0, 612, 792).fill('#d1d5db');
       
-      // Company logo area (top-left) - placeholder for logo
-      doc.fontSize(32)
-         .fillColor(dangerColor)
-         .font('Helvetica-Bold')
-         .text('FIRE-PRO', 50, 50);
-      
-      doc.fontSize(10)
-         .fillColor(black)
-         .font('Helvetica')
-         .text('FIRE PROTECTION', 50, 90);
+      // Company logo area (top-left) - EWF logo
+      drawLogo(doc, 50, 50, 150);
       
       // Navy blue title block (left side, centered vertically)
       const titleBlockTop = 250;
@@ -147,15 +149,8 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       doc.addPage();
       
       // Logo header (smaller)
-      doc.fontSize(18)
-         .fillColor(dangerColor)
-         .font('Helvetica-Bold')
-         .text('FIRE-PRO', 50, 50);
-      
-      doc.fontSize(8)
-         .fillColor(black)
-         .font('Helvetica')
-         .text('FIRE PROTECTION', 50, 72);
+      // Logo header
+      drawLogo(doc, 50, 50, 100);
       
       // Date
       doc.fontSize(10)
@@ -262,16 +257,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       doc.addPage();
       
       // Logo header
-      doc.fontSize(18)
-         .fillColor(dangerColor)
-         .font('Helvetica-Bold')
-         .text('FIRE-PRO', 50, 50);
-      
-      doc.fontSize(8)
-         .fillColor(black)
-         .font('Helvetica')
-         .text('FIRE PROTECTION', 50, 72);
-      
+      drawLogo(doc, 50, 50, 100);
       let currentY = 110;
       
       // Group devices by category
@@ -294,15 +280,8 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         if (startY > 650) {
           doc.addPage();
           // Logo header on new page
-          doc.fontSize(18)
-             .fillColor(dangerColor)
-             .font('Helvetica-Bold')
-             .text('FIRE-PRO', 50, 50);
-          doc.fontSize(8)
-             .fillColor(black)
-             .font('Helvetica')
-             .text('FIRE PROTECTION', 50, 72);
-          startY = 110;
+           drawLogo(doc, 50, 50, 100);
+           startY = 110;
         }
         
         doc.fontSize(12)
@@ -336,14 +315,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           if (startY > 720) {
             doc.addPage();
             // Logo header on new page
-            doc.fontSize(18)
-               .fillColor(dangerColor)
-               .font('Helvetica-Bold')
-               .text('FIRE-PRO', 50, 50);
-            doc.fontSize(8)
-               .fillColor(black)
-               .font('Helvetica')
-               .text('FIRE PROTECTION', 50, 72);
+            drawLogo(doc, 50, 50, 100);
             startY = 110;
           }
           
@@ -392,15 +364,8 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         doc.addPage();
         
         // Logo header
-        doc.fontSize(18)
-           .fillColor(dangerColor)
-           .font('Helvetica-Bold')
-           .text('FIRE-PRO', 50, 50);
-        
-        doc.fontSize(8)
-           .fillColor(black)
-           .font('Helvetica')
-           .text('FIRE PROTECTION', 50, 72);
+        // Logo header
+        drawLogo(doc, 50, 50, 100);
         
         let defY = 110;
         
@@ -431,14 +396,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           if (defY > 680) {
             doc.addPage();
             // Logo header on new page
-            doc.fontSize(18)
-               .fillColor(dangerColor)
-               .font('Helvetica-Bold')
-               .text('FIRE-PRO', 50, 50);
-            doc.fontSize(8)
-               .fillColor(black)
-               .font('Helvetica')
-               .text('FIRE PROTECTION', 50, 72);
+            drawLogo(doc, 50, 50, 100);
             defY = 110;
           }
           
@@ -502,14 +460,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           if (defY > 680) {
             doc.addPage();
             // Logo header on new page
-            doc.fontSize(18)
-               .fillColor(dangerColor)
-               .font('Helvetica-Bold')
-               .text('FIRE-PRO', 50, 50);
-            doc.fontSize(8)
-               .fillColor(black)
-               .font('Helvetica')
-               .text('FIRE PROTECTION', 50, 72);
+            drawLogo(doc, 50, 50, 100);
             defY = 110;
           }
           
