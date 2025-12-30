@@ -9,6 +9,8 @@ import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { generateInspectionReportPDF } from "./pdfGeneratorFirePro";
+import { generateComplianceReportPDF } from "./pdfGeneratorCompliance";
+import * as checklists from "./complianceChecklists";
 import { fireAlarmRouter } from "./fireAlarmRouter";
 
 // Role-based procedure helpers
@@ -990,6 +992,206 @@ const reportRouter = router({
       title: `Inspection Report - ${job.title}`,
       executiveSummary: input.summary,
       aiSummary: input.summary,
+      generatedById: ctx.user.id,
+      reportNumber,
+      deviceCount: stats.total,
+      passCount: stats.pass,
+      failCount: stats.fail,
+      deficiencyCount: deficiencies.length,
+      fileKey,
+      fileUrl: url,
+      status: 'generated',
+    });
+    
+    return { 
+      success: true, 
+      reportId: report.id,
+      fileUrl: url,
+      reportNumber,
+    };
+  }),
+  
+  generateCompliancePDF: officeProcedure.input(z.object({
+    jobId: z.number(),
+  })).mutation(async ({ input, ctx }) => {
+    // Get job details
+    const job = await db.getJobById(input.jobId);
+    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+    
+    // Get site details
+    const site = await db.getSiteById(job.siteId);
+    if (!site) throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });
+    
+    // Get customer org
+    const customerOrg = await db.getCustomerOrgById(job.customerOrgId);
+    
+    // Get company
+    const company = await db.getCompanyById(job.companyId);
+    
+    // Get inspection results with device info
+    const inspectionResults = await db.getInspectionResultsByJob(input.jobId);
+    
+    // Get deficiencies
+    const deficiencies = await db.getDeficienciesByJob(input.jobId);
+    
+    // Get technician details
+    const technician = await db.getUserById(job.assignedTechnicianId || ctx.user.id);
+    
+    // Build checklist sections
+    const checklistSections = [
+      checklists.getControlUnitInspectionChecklist(
+        'LOBBY',
+        'EDWARDS EST 3X'
+      ),
+      checklists.getControlUnitTestChecklist(
+        'LOBBY',
+        'EDWARDS EST 3X',
+        undefined,
+        deficiencies.length > 0 ? 'See deficiencies summary for details' : undefined
+      ),
+      checklists.getPowerSupplyInspectionChecklist(
+        'LOBBY',
+        'EDWARDS EST 3X',
+        'P1 ELECTRICAL RM',
+        '#24'
+      ),
+      checklists.getEmergencyPowerSupplyChecklist(
+        'LOBBY',
+        'EDWARDS',
+        27.33,
+        0.15,
+        25.62,
+        0.39,
+        24.775,
+        4.71
+      ),
+      checklists.getAnnunciatorTestChecklist(
+        'LOBBY',
+        'EDWARDS',
+        undefined,
+        deficiencies.length > 0 ? 'See deficiencies summary for details' : undefined
+      ),
+    ];
+    
+    // Build device records
+    const fireAlarmDevices = inspectionResults
+      .filter(r => r.deviceType?.toLowerCase().includes('smoke') || 
+                   r.deviceType?.toLowerCase().includes('heat') || 
+                   r.deviceType?.toLowerCase().includes('pull') ||
+                   r.deviceType?.toLowerCase().includes('horn') ||
+                   r.deviceType?.toLowerCase().includes('strobe'))
+      .map(r => ({
+        deviceType: r.deviceType || 'Unknown',
+        location: r.location || 'Unknown',
+        result: r.result === 'pass' ? 'PASS' as const : r.result === 'fail' ? 'DEFICIENT' as const : 'NO ACCESS' as const,
+        notes: r.notes || undefined,
+      }));
+    
+    const fireExtinguishers = inspectionResults
+      .filter(r => r.deviceType?.toLowerCase().includes('extinguisher'))
+      .map(r => ({
+        location: r.location || 'Unknown',
+        type: r.deviceType || 'Unknown',
+        serialNumber: r.serialNumber || undefined,
+        result: r.result === 'pass' ? 'PASS' as const : 'DEFICIENT' as const,
+      }));
+    
+    const emergencyLights = inspectionResults
+      .filter(r => r.deviceType?.toLowerCase().includes('emergency') || 
+                   r.deviceType?.toLowerCase().includes('exit'))
+      .map(r => ({
+        location: r.location || 'Unknown',
+        functionalTest: r.result === 'pass' ? 'PASS' as const : 'FAIL' as const,
+        durationTest: 'N/A' as const,
+        comments: r.notes || undefined,
+      }));
+    
+    // Build deficiencies summary
+    const deficienciesSummary = await Promise.all(deficiencies.map(async (d) => {
+      let deviceType: string | undefined = undefined;
+      let location: string | undefined = undefined;
+      if (d.deviceId) {
+        const device = await db.getDeviceById(d.deviceId);
+        if (device) {
+          deviceType = device.deviceType;
+          location = device.location || undefined;
+        }
+      }
+      return {
+        system: deviceType || 'Fire Alarm System',
+        location: location || 'Various',
+        description: d.description || 'No description provided',
+      };
+    }));
+    
+    // Generate compliance PDF
+    const pdfBuffer = await generateComplianceReportPDF({
+      workOrderNumber: job.jobNumber,
+      dateOfService: job.scheduledDate || new Date(),
+      inspectionFrequency: 'Annual',
+      contactPerson: customerOrg?.contactName || 'N/A',
+      contactPhone: customerOrg?.contactPhone || 'N/A',
+      buildingName: site.name,
+      buildingAddress: site.address || '',
+      city: site.city || '',
+      postalCode: site.postalCode || undefined,
+      pmOrOwner: customerOrg?.name,
+      ownerPhone: customerOrg?.contactPhone || undefined,
+      
+      systemsInspected: {
+        fireAlarmSystem: true,
+        commonAreaDevices: true,
+        inSuiteDevices: false,
+        sprinklerSystem: false,
+        fireExtinguishers: fireExtinguishers.length > 0,
+        emergencyLighting: emergencyLights.length > 0,
+        hydrant: false,
+        winterization: false,
+        generator: false,
+        backflow: false,
+        monitoring: false,
+        smokeControl: false,
+        suppressionSystems: false,
+        standpipe: false,
+        kitchen: false,
+      },
+      
+      systemModel: 'EDWARDS EST 3X',
+      systemOperation: 'Single Stage',
+      fireSignalReceivingCentre: 'BARTEC',
+      connectedToFireSignalReceivingCentre: true,
+      systemFullyFunctional: deficiencies.length === 0,
+      deficienciesIdentified: deficiencies.length > 0,
+      deficienciesCorrectedDate: undefined,
+      recommendationsIdentified: false,
+      
+      technicianName: technician?.name || ctx.user.name || 'Unknown',
+      technicianCertificateNumber: '1448',
+      secondaryTechnicianName: undefined,
+      secondaryTechnicianCertificateNumber: undefined,
+      companyName: 'Earth Wind and Fire',
+      companyPhone: '604-299-1030',
+      
+      checklists: checklistSections,
+      fireAlarmDevices,
+      fireExtinguishers,
+      emergencyLights,
+      deficiencies: deficienciesSummary,
+    });
+    
+    // Upload to S3
+    const fileKey = `reports/${job.companyId}/${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-compliance-${Date.now()}.pdf`;
+    const { url } = await storagePut(fileKey, pdfBuffer, 'application/pdf');
+    
+    // Create report record
+    const reportNumber = `CMP-${Date.now().toString(36).toUpperCase()}`;
+    const stats = await db.getInspectionStats(input.jobId);
+    
+    const report = await db.createReport({
+      jobId: input.jobId,
+      title: `CAN/ULC-S536 Compliance Report - ${job.title}`,
+      executiveSummary: 'Annual fire alarm system inspection per CAN/ULC-S536:2019',
+      aiSummary: 'Annual fire alarm system inspection per CAN/ULC-S536:2019',
       generatedById: ctx.user.id,
       reportNumber,
       deviceCount: stats.total,

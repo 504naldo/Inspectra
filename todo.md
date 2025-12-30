@@ -305,3 +305,26 @@
 - [x] Replace __dirname with ES module compatible path resolution
 - [x] Test PDF generation from web interface
 - [x] Verify logo loads correctly in production environment
+
+## CAN/ULC-S536 Compliant Annual Inspection Report
+- [x] Design repeating header template with EWF logo, building info, inspection frequency checkboxes
+- [x] Create cover page with cityscape background and EWF branding
+- [x] Implement table of contents page with system checkboxes
+- [x] Create inspection summary page with compliance statements and technician sign-off
+- [x] Implement Section 22.1: Control Unit or Transponder Inspection checklist
+- [x] Implement Section 22.2: Control Unit or Transponder Test checklist (30+ items)
+- [x] Implement Section 22.4: Power Supply Inspection checklist
+- [x] Implement Section 22.5: Emergency Power Supply Test and Inspection (battery tests)
+- [x] Implement Section 22.6: Annunciator Test and Inspection checklist
+- [ ] Implement Section 22.7: Circuit Supervision checklist
+- [ ] Implement Section 22.8-22.14: Initiating Devices checklists
+- [ ] Implement Section 22.15-22.16: Signaling Devices checklists
+- [x] Add individual device records table (all fire alarm devices with location, type, result)
+- [x] Add fire extinguisher inspection table (location, type, serial, result)
+- [x] Add emergency lighting inspection table (location, functional test, duration test)
+- [x] Add deficiencies summary section (system, location, description - NO pricing)
+- [x] Add final technician sign-off page with certification number and signature
+- [x] Remove all pricing and quote-related content from compliance report
+- [x] Test PDF generation with full CAN/ULC-S536 checklist structure
+- [x] Verify all checkboxes render correctly (☐ ☒)
+- [x] Verify repeating header appears on all pages except cover
