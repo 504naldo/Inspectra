@@ -1,6 +1,11 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 interface DeviceSummary {
   deviceType: string;
@@ -63,7 +68,8 @@ interface ReportData {
 
 // Helper function to draw logo
 function drawLogo(doc: any, x: number, y: number, width: number) {
-  const logoPath = path.join(__dirname, '../assets/ewf-logo.png');
+  // Use absolute path from project root
+  const logoPath = path.join(process.cwd(), 'assets/ewf-logo.png');
   if (fs.existsSync(logoPath)) {
     doc.image(logoPath, x, y, { width });
   }
