@@ -21,6 +21,23 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 // ============================================
+// INSPECTION CHECKLIST RESPONSES
+// ============================================
+export const inspectionChecklistResponses = mysqlTable("inspection_checklist_responses", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  sectionNumber: varchar("sectionNumber", { length: 10 }).notNull(), // e.g., "22.1", "22.2"
+  itemId: varchar("itemId", { length: 10 }).notNull(), // e.g., "A", "B", "AA"
+  status: mysqlEnum("status", ["PASS", "DEFICIENT", "NA"]).notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type InspectionChecklistResponse = typeof inspectionChecklistResponses.$inferSelect;
+export type InsertInspectionChecklistResponse = typeof inspectionChecklistResponses.$inferInsert;
+
+// ============================================
 // COMPANY (Tenant for multi-tenancy)
 // ============================================
 export const companies = mysqlTable("companies", {

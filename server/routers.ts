@@ -1037,23 +1037,60 @@ const reportRouter = router({
     // Get technician details
     const technician = await db.getUserById(job.assignedTechnicianId || ctx.user.id);
     
-    // Build checklist sections
+    // Fetch saved checklist responses
+    const savedResponses = await db.getChecklistResponsesByJob(input.jobId);
+    
+    // Audit checklist completeness
+    const { auditChecklistCompleteness, formatMissingItemsMessage } = await import('./checklistValidation');
+    const auditResult = auditChecklistCompleteness(savedResponses);
+    
+    if (!auditResult.isComplete) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: `Checklist incomplete (${auditResult.completionPercentage}% complete). ${formatMissingItemsMessage(auditResult.missingItems)}`,
+      });
+    }
+    
+    // Build a map of responses for quick lookup
+    const responseMap = new Map<string, { status: 'PASS' | 'DEFICIENT' | 'NA'; comment?: string }>();
+    savedResponses.forEach(r => {
+      const key = `${r.sectionNumber}-${r.itemId}`;
+      responseMap.set(key, {
+        status: r.status,
+        comment: r.comment || undefined,
+      });
+    });
+    
+    // Helper to convert saved responses to checklist format
+    const buildOverrides = (sectionNumber: string) => {
+      const overrides: Record<string, 'YES' | 'NO' | 'N/A'> = {};
+      savedResponses
+        .filter(r => r.sectionNumber === sectionNumber)
+        .forEach(r => {
+          overrides[r.itemId] = r.status === 'PASS' ? 'YES' : r.status === 'DEFICIENT' ? 'NO' : 'N/A';
+        });
+      return Object.keys(overrides).length > 0 ? overrides : undefined;
+    };
+    
+    // Build checklist sections using saved responses
     const checklistSections = [
       checklists.getControlUnitInspectionChecklist(
         'LOBBY',
-        'EDWARDS EST 3X'
+        'EDWARDS EST 3X',
+        buildOverrides('22.1')
       ),
       checklists.getControlUnitTestChecklist(
         'LOBBY',
         'EDWARDS EST 3X',
-        undefined,
+        buildOverrides('22.2'),
         deficiencies.length > 0 ? 'See deficiencies summary for details' : undefined
       ),
       checklists.getPowerSupplyInspectionChecklist(
         'LOBBY',
         'EDWARDS EST 3X',
         'P1 ELECTRICAL RM',
-        '#24'
+        '#24',
+        buildOverrides('22.4')
       ),
       checklists.getEmergencyPowerSupplyChecklist(
         'LOBBY',
@@ -1063,17 +1100,16 @@ const reportRouter = router({
         25.62,
         0.39,
         24.775,
-        4.71
+        4.71,
+        buildOverrides('22.5')
       ),
       checklists.getAnnunciatorTestChecklist(
         'LOBBY',
         'EDWARDS',
-        undefined,
+        buildOverrides('22.6'),
         deficiencies.length > 0 ? 'See deficiencies summary for details' : undefined
       ),
-    ];
-    
-    // Build device records
+    ]; // Build device records
     const fireAlarmDevices = inspectionResults
       .filter(r => r.deviceType?.toLowerCase().includes('smoke') || 
                    r.deviceType?.toLowerCase().includes('heat') || 
@@ -1209,6 +1245,50 @@ const reportRouter = router({
       fileUrl: url,
       reportNumber,
     };
+  }),
+});
+
+// Checklist router
+const checklistRouter = router({  
+  saveResponse: technicianProcedure.input(z.object({
+    jobId: z.number(),
+    sectionNumber: z.string(),
+    itemId: z.string(),
+    status: z.enum(['PASS', 'DEFICIENT', 'NA']),
+    comment: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    await db.saveChecklistResponse(input);
+    return { success: true };
+  }),
+  
+  bulkSaveResponses: technicianProcedure.input(z.object({
+    responses: z.array(z.object({
+      jobId: z.number(),
+      sectionNumber: z.string(),
+      itemId: z.string(),
+      status: z.enum(['PASS', 'DEFICIENT', 'NA']),
+      comment: z.string().optional(),
+    })),
+  })).mutation(async ({ input }) => {
+    await db.bulkSaveChecklistResponses(input.responses);
+    return { success: true };
+  }),
+  
+  getByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+    return db.getChecklistResponsesByJob(input.jobId);
+  }),
+  
+  getByJobAndItem: protectedProcedure.input(z.object({
+    jobId: z.number(),
+    sectionNumber: z.string(),
+    itemId: z.string(),
+  })).query(async ({ input }) => {
+    return db.getChecklistResponseByJobAndItem(input.jobId, input.sectionNumber, input.itemId);
+  }),
+  
+  deleteByJob: officeProcedure.input(z.object({ jobId: z.number() })).mutation(async ({ input }) => {
+    await db.deleteChecklistResponsesByJob(input.jobId);
+    return { success: true };
   }),
 });
 
@@ -1877,6 +1957,7 @@ export const appRouter = router({
   repair: repairRouter,
   attachment: attachmentRouter,
   report: reportRouter,
+  checklist: checklistRouter,
   ai: aiRouter,
   user: userRouter,
   dashboard: dashboardRouter,

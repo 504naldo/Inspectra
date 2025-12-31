@@ -210,6 +210,29 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </div>
           </CardContent>
         </Card>
+        
+        {/* CAN/ULC-S536 Checklist */}
+        <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5" />
+                  CAN/ULC-S536 Checklist
+                </h3>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                  Complete inspection checklist for compliance report
+                </p>
+              </div>
+              <Link href={`/tech/jobs/${jobId}/checklist`}>
+                <Button variant="default" className="bg-blue-600 hover:bg-blue-700">
+                  Open
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>

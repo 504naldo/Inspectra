@@ -17,6 +17,7 @@ import DeviceTest from "./pages/technician/DeviceTest";
 import DeficiencyList from "./pages/technician/DeficiencyList";
 import DeficiencyEditor from "./pages/technician/DeficiencyEditor";
 import FireAlarmInspection from "./pages/technician/FireAlarmInspection";
+import ChecklistCompletion from "./pages/tech/ChecklistCompletion";
 import SyncScreen from "./pages/technician/SyncScreen";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminJobs from "./pages/admin/Jobs";
@@ -152,6 +153,13 @@ function Router() {
         {(params) => (
           <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
             <FireAlarmInspection />
+          </ProtectedRoute>
+        )}
+      </Route>
+      <Route path="/tech/jobs/:id/checklist">
+        {(params) => (
+          <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
+            <ChecklistCompletion />
           </ProtectedRoute>
         )}
       </Route>

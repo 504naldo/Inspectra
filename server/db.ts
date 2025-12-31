@@ -15,6 +15,7 @@ import {
   reports, InsertReport, Report,
   knowledgeBase, InsertKnowledgeBase, KnowledgeBase,
   syncLogs, InsertSyncLog, SyncLog,
+  inspectionChecklistResponses, InsertInspectionChecklistResponse, InspectionChecklistResponse,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -912,4 +913,86 @@ export async function bulkUpdateDevices(updates: Array<{ id: number; data: Parti
   for (const { id, data } of updates) {
     await db.update(devices).set(data).where(eq(devices.id, id));
   }
+}
+
+// ============================================
+// INSPECTION CHECKLIST RESPONSES
+// ============================================
+export async function saveChecklistResponse(data: InsertInspectionChecklistResponse) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Upsert: if response exists for this job+section+item, update it; otherwise insert
+  const existing = await db
+    .select()
+    .from(inspectionChecklistResponses)
+    .where(
+      and(
+        eq(inspectionChecklistResponses.jobId, data.jobId),
+        eq(inspectionChecklistResponses.sectionNumber, data.sectionNumber),
+        eq(inspectionChecklistResponses.itemId, data.itemId)
+      )
+    )
+    .limit(1);
+  
+  if (existing.length > 0) {
+    await db
+      .update(inspectionChecklistResponses)
+      .set({
+        status: data.status,
+        comment: data.comment,
+        updatedAt: new Date(),
+      })
+      .where(eq(inspectionChecklistResponses.id, existing[0].id));
+  } else {
+    await db.insert(inspectionChecklistResponses).values(data);
+  }
+}
+
+export async function bulkSaveChecklistResponses(dataList: InsertInspectionChecklistResponse[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  for (const data of dataList) {
+    await saveChecklistResponse(data);
+  }
+}
+
+export async function getChecklistResponsesByJob(jobId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return await db
+    .select()
+    .from(inspectionChecklistResponses)
+    .where(eq(inspectionChecklistResponses.jobId, jobId))
+    .orderBy(asc(inspectionChecklistResponses.sectionNumber), asc(inspectionChecklistResponses.itemId));
+}
+
+export async function getChecklistResponseByJobAndItem(jobId: number, sectionNumber: string, itemId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  
+  const results = await db
+    .select()
+    .from(inspectionChecklistResponses)
+    .where(
+      and(
+        eq(inspectionChecklistResponses.jobId, jobId),
+        eq(inspectionChecklistResponses.sectionNumber, sectionNumber),
+        eq(inspectionChecklistResponses.itemId, itemId)
+      )
+    )
+    .limit(1);
+  
+  return results[0];
+}
+
+export async function deleteChecklistResponsesByJob(jobId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db
+    .delete(inspectionChecklistResponses)
+    .where(eq(inspectionChecklistResponses.jobId, jobId));
 }

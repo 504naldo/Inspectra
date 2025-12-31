@@ -336,3 +336,47 @@
 - [x] Add visual distinction between report types (icons, descriptions)
 - [x] Test generating both report types from UI
 - [x] Update UI to show which report type was generated in report history
+
+## Full CAN/ULC-S536 Checklist Implementation (New)
+
+### A) Checklist Data Model & Storage
+- [x] Review existing checklist source data (seed + JSON files)
+- [x] Create InspectionChecklistResponses table with jobId, itemId, status (PASS/DEFICIENT/NA), comment
+- [ ] Add required flag to checklist items schema
+- [x] Create database migration for new table
+- [x] Add tRPC endpoints for saving/fetching checklist responses
+
+### B) Technician UI for Checklist Completion
+- [x] Create ChecklistCompletion page component for job inspection
+- [x] Implement section grouping with expand/collapse functionality
+- [x] Add quick controls for PASS/DEFICIENT/NA per item
+- [x] Show comment box when DEFICIENT or NA is selected
+- [x] Add "Mark section complete" indicator per section
+- [x] Implement checklist completion progress tracker (X/Y complete)
+- [ ] Add validation to prevent report finalization until checklist complete
+- [ ] Add admin override option for incomplete checklists
+
+### C) Annual Inspection PDF Rendering
+- [x] Update compliance PDF generator to include ALL checklist sections
+- [x] Render checklist items with PASS/DEFICIENT/NA checkbox indicators
+- [x] Show comment lines for items marked DEFICIENT or NA
+- [x] Position checklist chapter before device tables in PDF
+- [x] Verify repeating header includes EWF logo, building info, inspection date, work order
+- [x] Verify repeating footer with company contact and page X of Y
+- [x] Test checklist rendering with all sections (22.1-22.16+)
+
+### D) Completeness Validation & Enforcement
+- [x] Create checklist coverage audit function
+- [x] Compare required items vs recorded responses
+- [x] Generate list of missing items (section + item text + itemId)
+- [x] Block report generation if checklist incomplete with clear error message
+- [ ] (Fallback) Add INCOMPLETE watermark and Missing Items page if generation forced
+- [x] Surface missing items list to user in UI
+
+### E) Acceptance Testing
+- [x] Test: Create inspection with missing checklist items → verify generation blocks
+- [x] Test: Complete all checklist items → verify report generates successfully
+- [x] Test: Random sample 5 sections → confirm all items appear with markers
+- [x] Test: Verify checklist chapter appears before device tables
+- [x] Test: Verify header/footer repeat on every page with EWF logo
+- [x] Test: Verify Annual vs Deficiency report scope differences maintained
