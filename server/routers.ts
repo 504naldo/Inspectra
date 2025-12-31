@@ -878,6 +878,9 @@ const reportRouter = router({
     jobId: z.number(),
     summary: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
+    // DEPRECATED: Use deficiencyReport.generate instead
+    console.warn('[DEPRECATED] report.generatePDF is deprecated. Use deficiencyReport.generate instead.');
+    
     // Get job details
     const job = await db.getJobById(input.jobId);
     if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
@@ -1043,6 +1046,9 @@ const reportRouter = router({
   generateCompliancePDF: officeProcedure.input(z.object({
     jobId: z.number(),
   })).mutation(async ({ input, ctx }) => {
+    // DEPRECATED: Use annualReport.generate instead
+    console.warn('[DEPRECATED] report.generateCompliancePDF is deprecated. Use annualReport.generate instead.');
+    
     // Get job details
     const job = await db.getJobById(input.jobId);
     if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
@@ -2044,6 +2050,25 @@ const syncRouter = router({
   }),
 });
 
+// Phase 2: Explicit Report Endpoints
+// These are simple wrappers that provide explicit naming and logging
+// They call the same underlying generators (generateCompliancePDF for Annual, generatePDF for Deficiency)
+// All Phase 1 validation is preserved and passed through unchanged
+
+const annualReportRouter = router({
+  // DEFINITIVE Annual Inspection Report endpoint
+  // Routes to: generateCompliancePDF (CAN/ULC-S536 compliance report)
+  // Enforces: Checklist completeness (122 items) + Device locations
+  generate: reportRouter._def.procedures.generateCompliancePDF,
+});
+
+const deficiencyReportRouter = router({
+  // DEFINITIVE Deficiency Report endpoint  
+  // Routes to: generatePDF (Fire-Pro style with pricing)
+  // Enforces: Deficiency locations
+  generate: reportRouter._def.procedures.generatePDF,
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -2066,6 +2091,8 @@ export const appRouter = router({
   repair: repairRouter,
   attachment: attachmentRouter,
   report: reportRouter,
+  annualReport: annualReportRouter,
+  deficiencyReport: deficiencyReportRouter,
   checklist: checklistRouter,
   ai: aiRouter,
   user: userRouter,

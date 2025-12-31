@@ -55,27 +55,35 @@ export default function AdminReports() {
     }
   });
 
-  const generatePDF = trpc.report.generatePDF.useMutation({
+  // Phase 2: Use new explicit endpoints
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+
+  const generateDeficiencyReport = trpc.deficiencyReport.generate.useMutation({
     onSuccess: (data) => {
       setGeneratedPdfUrl(data.fileUrl);
       setGeneratedReportNumber(data.reportNumber);
-      toast.success('PDF report generated successfully!');
+      toast.success('Deficiency report generated successfully!');
       refetchJobs();
     },
     onError: (error) => {
-      toast.error(`Failed to generate PDF: ${error.message}`);
+      setValidationError(error.message);
+      setShowErrorModal(true);
+      toast.error('Failed to generate deficiency report');
     }
   });
 
-  const generateCompliancePDF = trpc.report.generateCompliancePDF.useMutation({
+  const generateAnnualReport = trpc.annualReport.generate.useMutation({
     onSuccess: (data) => {
       setGeneratedPdfUrl(data.fileUrl);
       setGeneratedReportNumber(data.reportNumber);
-      toast.success('Compliance report generated successfully!');
+      toast.success('Annual inspection report generated successfully!');
       refetchJobs();
     },
     onError: (error) => {
-      toast.error(`Failed to generate compliance report: ${error.message}`);
+      setValidationError(error.message);
+      setShowErrorModal(true);
+      toast.error('Failed to generate annual report');
     }
   });
 
@@ -112,12 +120,13 @@ export default function AdminReports() {
       return;
     }
     
+    // Phase 2: Use explicit endpoints
     if (reportType === 'compliance') {
-      generateCompliancePDF.mutate({
+      generateAnnualReport.mutate({
         jobId: parseInt(selectedJobId),
       });
     } else {
-      generatePDF.mutate({
+      generateDeficiencyReport.mutate({
         jobId: parseInt(selectedJobId),
         summary: executiveSummary || undefined,
       });
@@ -305,10 +314,10 @@ export default function AdminReports() {
                     </div>
                     <Button
                       onClick={handleGeneratePDF}
-                      disabled={(generatePDF.isPending || generateCompliancePDF.isPending) || !selectedJobId}
+                      disabled={(generateDeficiencyReport.isPending || generateAnnualReport.isPending) || !selectedJobId}
                       className="bg-primary"
                     >
-                      {(generatePDF.isPending || generateCompliancePDF.isPending) ? (
+                      {(generateDeficiencyReport.isPending || generateAnnualReport.isPending) ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                           Generating...
@@ -424,6 +433,41 @@ export default function AdminReports() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Phase 2: Validation Error Modal */}
+      <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Report Generation Failed</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="p-4 border border-destructive/20 bg-destructive/5 rounded-lg">
+              <pre className="whitespace-pre-wrap text-sm font-mono">{validationError}</pre>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p className="font-medium mb-2">To fix this:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>If checklist items are missing: Complete the CAN/ULC-S536 checklist for this job</li>
+                <li>If device locations are missing: Add location information to all devices</li>
+                <li>If deficiency locations are missing: Add location information to all deficiencies</li>
+              </ul>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowErrorModal(false)}>
+                Close
+              </Button>
+              <Button onClick={() => {
+                setShowErrorModal(false);
+                if (selectedJobId) {
+                  window.location.href = `/tech/jobs/${selectedJobId}`;
+                }
+              }}>
+                Go to Job Details
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

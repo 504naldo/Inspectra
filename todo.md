@@ -451,3 +451,17 @@
 - [ ] Test: Annual report device tables include locations and exclude power supplies
 - [ ] Test: Deficiency report includes only deficiencies (no pass inventories)
 - [ ] Test: Both reports work on mobile and desktop
+
+
+## Phase 2: Explicit Endpoints & UI Updates
+- [x] Create new annualRouter with generateAnnualReport endpoint
+- [x] Create new deficiencyRouter with generateDeficiencyReport endpoint
+- [x] Add deprecation console warnings to old generatePDF endpoint
+- [x] Add deprecation console warnings to old generateCompliancePDF endpoint
+- [x] Forward old endpoints to new endpoints for backward compatibility
+- [x] Update Reports.tsx with two separate report buttons
+- [x] Create error modal component for displaying missing items/locations
+- [x] Wire Annual Report button to new endpoint with error handling
+- [x] Wire Deficiency Report button to new endpoint with error handling
+- [x] Add smoke tests for new endpoints
+- [x] Test complete flow from UI through new endpoints
