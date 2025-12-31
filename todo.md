@@ -380,3 +380,22 @@
 - [x] Test: Verify checklist chapter appears before device tables
 - [x] Test: Verify header/footer repeat on every page with EWF logo
 - [x] Test: Verify Annual vs Deficiency report scope differences maintained
+
+
+## Expand CAN/ULC-S536 Checklist Coverage (Remaining Sections)
+- [x] Analyze Fire-Pro reference PDF for sections 22.7-22.16 structure and items
+- [x] Add Section 22.7: Circuit Supervision checklist to complianceChecklists.ts
+- [x] Add Section 22.8: Smoke Detectors checklist
+- [x] Add Section 22.9: Heat Detectors checklist
+- [x] Add Section 22.10: Duct Detectors checklist
+- [x] Add Section 22.11: Manual Pull Stations checklist
+- [x] Add Section 22.12: Waterflow Devices checklist
+- [x] Add Section 22.13: Supervisory Devices checklist
+- [x] Add Section 22.14: Fire Signal Receiving Centre checklist
+- [x] Add Section 22.15: Audible Signaling Devices checklist
+- [x] Add Section 22.16: Visual Signaling Devices checklist
+- [x] Update REQUIRED_CHECKLIST_ITEMS in checklistValidation.ts with all new items
+- [x] Update PDF generator to render all new sections
+- [x] Update ChecklistCompletion UI to display all new sections
+- [x] Test complete checklist with 122 items (15 sections)
+- [x] Verify progress tracker works with expanded item count

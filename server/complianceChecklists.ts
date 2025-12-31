@@ -258,3 +258,319 @@ export function getAnnunciatorTestChecklist(
     comments,
   };
 }
+
+// Section 22.7: Circuit Supervision
+export function getCircuitSupervisionChecklist(
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'Alarm initiating circuit supervision operates.', result: 'YES' },
+    { id: 'B', description: 'Supervisory initiating circuit supervision operates.', result: 'YES' },
+    { id: 'C', description: 'Trouble initiating circuit supervision operates.', result: 'YES' },
+    { id: 'D', description: 'Alarm signal circuit supervision operates.', result: 'YES' },
+    { id: 'E', description: 'Supervisory signal circuit supervision operates.', result: 'YES' },
+    { id: 'F', description: 'Ancillary device circuit supervision operates.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  return {
+    sectionNumber: '22.7',
+    sectionTitle: 'Circuit Supervision',
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+  };
+}
+
+// Section 22.8: Smoke Detectors
+export function getSmokeDetectorsChecklist(
+  sampleSize: number,
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'Detector is clean and free of dust and dirt.', result: 'YES' },
+    { id: 'B', description: 'Detector is securely mounted.', result: 'YES' },
+    { id: 'C', description: 'Detector alarm operation confirmed.', result: 'YES' },
+    { id: 'D', description: 'Detector address/zone indication correct at control unit.', result: 'YES' },
+    { id: 'E', description: 'Detector sensitivity within manufacturer specification.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  return {
+    sectionNumber: '22.8',
+    sectionTitle: `Smoke Detectors (Sample: ${sampleSize} devices)`,
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+  };
+}
+
+// Section 22.9: Heat Detectors
+export function getHeatDetectorsChecklist(
+  sampleSize: number,
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'Detector is clean and free of dust and dirt.', result: 'YES' },
+    { id: 'B', description: 'Detector is securely mounted.', result: 'YES' },
+    { id: 'C', description: 'Detector alarm operation confirmed.', result: 'YES' },
+    { id: 'D', description: 'Detector address/zone indication correct at control unit.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  return {
+    sectionNumber: '22.9',
+    sectionTitle: `Heat Detectors (Sample: ${sampleSize} devices)`,
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+  };
+}
+
+// Section 22.10: Duct Detectors
+export function getDuctDetectorsChecklist(
+  sampleSize: number,
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'Detector is clean and free of dust and dirt.', result: 'YES' },
+    { id: 'B', description: 'Detector is securely mounted.', result: 'YES' },
+    { id: 'C', description: 'Detector alarm operation confirmed.', result: 'YES' },
+    { id: 'D', description: 'Detector address/zone indication correct at control unit.', result: 'YES' },
+    { id: 'E', description: 'Ancillary device circuit operation confirmed.', result: 'YES' },
+    { id: 'F', description: 'Sampling tubes clean and unobstructed.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  return {
+    sectionNumber: '22.10',
+    sectionTitle: `Duct Detectors (Sample: ${sampleSize} devices)`,
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+  };
+}
+
+// Section 22.11: Manual Pull Stations
+export function getManualPullStationsChecklist(
+  sampleSize: number,
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'Station is clean and free of damage.', result: 'YES' },
+    { id: 'B', description: 'Station is securely mounted.', result: 'YES' },
+    { id: 'C', description: 'Station alarm operation confirmed.', result: 'YES' },
+    { id: 'D', description: 'Station address/zone indication correct at control unit.', result: 'YES' },
+    { id: 'E', description: 'Station operating instructions visible and legible.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  return {
+    sectionNumber: '22.11',
+    sectionTitle: `Manual Pull Stations (Sample: ${sampleSize} devices)`,
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+  };
+}
+
+// Section 22.12: Waterflow Devices
+export function getWaterflowDevicesChecklist(
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'Device is clean and free of damage.', result: 'YES' },
+    { id: 'B', description: 'Device is securely mounted.', result: 'YES' },
+    { id: 'C', description: 'Device alarm operation confirmed.', result: 'YES' },
+    { id: 'D', description: 'Device address/zone indication correct at control unit.', result: 'YES' },
+    { id: 'E', description: 'Time delay setting verified.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  return {
+    sectionNumber: '22.12',
+    sectionTitle: 'Waterflow Devices',
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+  };
+}
+
+// Section 22.13: Supervisory Devices
+export function getSupervisoryDevicesChecklist(
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'Device is clean and free of damage.', result: 'YES' },
+    { id: 'B', description: 'Device is securely mounted.', result: 'YES' },
+    { id: 'C', description: 'Device supervisory signal operation confirmed.', result: 'YES' },
+    { id: 'D', description: 'Device address/zone indication correct at control unit.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  return {
+    sectionNumber: '22.13',
+    sectionTitle: 'Supervisory Devices',
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+  };
+}
+
+// Section 22.14: Interconnection to Fire Signal Receiving Centre
+export function getFireSignalReceivingCentreChecklist(
+  companyName?: string,
+  telephone?: string,
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'The fire signal receiving centre transmitter is integral to the fire alarm control unit.', result: 'YES' },
+    { id: 'B', description: 'Receipt of the alarm transmission to the fire signal receiving centre.', result: 'YES' },
+    { id: 'C', description: 'Receipt of the supervisory transmission to the fire signal receiving centre.', result: 'YES' },
+    { id: 'D', description: 'Receipt of the trouble transmission to the fire signal receiving centre.', result: 'YES' },
+    { id: 'E', description: 'Disabling or disconnecting the fire signal receiving centre transmitter results in a specific trouble signal at the control unit or transmitter and also transmits a trouble signal to the fire signal receiving centre.', result: 'NO' },
+    { id: 'F', description: 'Disabling or disconnecting the fire signal receiving centre transmitter transmits a trouble signal to the fire signal receiving centre.', result: 'NO' },
+    { id: 'G', description: 'Record the company name and telephone number of the fire signal receiving centre.', result: 'YES' },
+    { id: 'H', description: 'Operation of the fire signal receiving centre disconnect means transmits trouble to the fire signal receiving centre.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  const comments = companyName && telephone 
+    ? `Name: ${companyName}\nTelephone: ${telephone}`
+    : undefined;
+  
+  return {
+    sectionNumber: '22.14',
+    sectionTitle: 'Interconnection to the Fire Signal Receiving Centre',
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+    comments,
+  };
+}
+
+// Section 22.15: Audible Signaling Devices
+export function getAudibleSignalingDevicesChecklist(
+  sampleSize: number,
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'Device is clean and free of damage.', result: 'YES' },
+    { id: 'B', description: 'Device is securely mounted.', result: 'YES' },
+    { id: 'C', description: 'Device audible signal operation confirmed.', result: 'YES' },
+    { id: 'D', description: 'Device sound level adequate for area.', result: 'YES' },
+    { id: 'E', description: 'Device operates on correct signal circuit.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  return {
+    sectionNumber: '22.15',
+    sectionTitle: `Audible Signaling Devices (Sample: ${sampleSize} devices)`,
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+  };
+}
+
+// Section 22.16: Visual Signaling Devices
+export function getVisualSignalingDevicesChecklist(
+  sampleSize: number,
+  overrideResults?: Partial<Record<string, 'YES' | 'NO' | 'N/A'>>
+): ChecklistSection {
+  const items: ChecklistItem[] = [
+    { id: 'A', description: 'Device is clean and free of damage.', result: 'YES' },
+    { id: 'B', description: 'Device is securely mounted.', result: 'YES' },
+    { id: 'C', description: 'Device visual signal operation confirmed.', result: 'YES' },
+    { id: 'D', description: 'Device flash rate within specification.', result: 'YES' },
+    { id: 'E', description: 'Device operates on correct signal circuit.', result: 'YES' },
+  ];
+  
+  if (overrideResults) {
+    items.forEach(item => {
+      if (overrideResults[item.id]) {
+        item.result = overrideResults[item.id]!;
+      }
+    });
+  }
+  
+  const hasDeficiency = items.some(item => item.result === 'NO');
+  
+  return {
+    sectionNumber: '22.16',
+    sectionTitle: `Visual Signaling Devices (Sample: ${sampleSize} devices)`,
+    items,
+    overallResult: hasDeficiency ? 'DEFICIENT' : 'PASS',
+  };
+}

@@ -1109,6 +1109,44 @@ const reportRouter = router({
         buildOverrides('22.6'),
         deficiencies.length > 0 ? 'See deficiencies summary for details' : undefined
       ),
+      checklists.getCircuitSupervisionChecklist(
+        buildOverrides('22.7')
+      ),
+      checklists.getSmokeDetectorsChecklist(
+        inspectionResults.filter(r => r.deviceType?.toLowerCase().includes('smoke')).length,
+        buildOverrides('22.8')
+      ),
+      checklists.getHeatDetectorsChecklist(
+        inspectionResults.filter(r => r.deviceType?.toLowerCase().includes('heat')).length,
+        buildOverrides('22.9')
+      ),
+      checklists.getDuctDetectorsChecklist(
+        inspectionResults.filter(r => r.deviceType?.toLowerCase().includes('duct')).length,
+        buildOverrides('22.10')
+      ),
+      checklists.getManualPullStationsChecklist(
+        inspectionResults.filter(r => r.deviceType?.toLowerCase().includes('pull')).length,
+        buildOverrides('22.11')
+      ),
+      checklists.getWaterflowDevicesChecklist(
+        buildOverrides('22.12')
+      ),
+      checklists.getSupervisoryDevicesChecklist(
+        buildOverrides('22.13')
+      ),
+      checklists.getFireSignalReceivingCentreChecklist(
+        'BARTEC',
+        undefined,
+        buildOverrides('22.14')
+      ),
+      checklists.getAudibleSignalingDevicesChecklist(
+        inspectionResults.filter(r => r.deviceType?.toLowerCase().includes('horn') || r.deviceType?.toLowerCase().includes('bell')).length,
+        buildOverrides('22.15')
+      ),
+      checklists.getVisualSignalingDevicesChecklist(
+        inspectionResults.filter(r => r.deviceType?.toLowerCase().includes('strobe')).length,
+        buildOverrides('22.16')
+      ),
     ]; // Build device records
     const fireAlarmDevices = inspectionResults
       .filter(r => r.deviceType?.toLowerCase().includes('smoke') || 

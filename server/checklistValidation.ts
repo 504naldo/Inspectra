@@ -82,6 +82,79 @@ const REQUIRED_CHECKLIST_ITEMS = [
   { sectionNumber: '22.6', itemId: 'K', description: 'Annunciator clean and free of dust' },
   { sectionNumber: '22.6', itemId: 'L', description: 'Annunciator wiring secure' },
   { sectionNumber: '22.6', itemId: 'M', description: 'Annunciator communication operates' },
+  
+  // Section 22.7: Circuit Supervision (6 items)
+  { sectionNumber: '22.7', itemId: 'A', description: 'Alarm initiating circuit supervision operates' },
+  { sectionNumber: '22.7', itemId: 'B', description: 'Supervisory initiating circuit supervision operates' },
+  { sectionNumber: '22.7', itemId: 'C', description: 'Trouble initiating circuit supervision operates' },
+  { sectionNumber: '22.7', itemId: 'D', description: 'Alarm signal circuit supervision operates' },
+  { sectionNumber: '22.7', itemId: 'E', description: 'Supervisory signal circuit supervision operates' },
+  { sectionNumber: '22.7', itemId: 'F', description: 'Ancillary device circuit supervision operates' },
+  
+  // Section 22.8: Smoke Detectors (5 items)
+  { sectionNumber: '22.8', itemId: 'A', description: 'Detector clean and free of dust' },
+  { sectionNumber: '22.8', itemId: 'B', description: 'Detector securely mounted' },
+  { sectionNumber: '22.8', itemId: 'C', description: 'Detector alarm operation confirmed' },
+  { sectionNumber: '22.8', itemId: 'D', description: 'Detector address/zone indication correct' },
+  { sectionNumber: '22.8', itemId: 'E', description: 'Detector sensitivity within specification' },
+  
+  // Section 22.9: Heat Detectors (4 items)
+  { sectionNumber: '22.9', itemId: 'A', description: 'Detector clean and free of dust' },
+  { sectionNumber: '22.9', itemId: 'B', description: 'Detector securely mounted' },
+  { sectionNumber: '22.9', itemId: 'C', description: 'Detector alarm operation confirmed' },
+  { sectionNumber: '22.9', itemId: 'D', description: 'Detector address/zone indication correct' },
+  
+  // Section 22.10: Duct Detectors (6 items)
+  { sectionNumber: '22.10', itemId: 'A', description: 'Detector clean and free of dust' },
+  { sectionNumber: '22.10', itemId: 'B', description: 'Detector securely mounted' },
+  { sectionNumber: '22.10', itemId: 'C', description: 'Detector alarm operation confirmed' },
+  { sectionNumber: '22.10', itemId: 'D', description: 'Detector address/zone indication correct' },
+  { sectionNumber: '22.10', itemId: 'E', description: 'Ancillary device circuit operation confirmed' },
+  { sectionNumber: '22.10', itemId: 'F', description: 'Sampling tubes clean and unobstructed' },
+  
+  // Section 22.11: Manual Pull Stations (5 items)
+  { sectionNumber: '22.11', itemId: 'A', description: 'Station clean and free of damage' },
+  { sectionNumber: '22.11', itemId: 'B', description: 'Station securely mounted' },
+  { sectionNumber: '22.11', itemId: 'C', description: 'Station alarm operation confirmed' },
+  { sectionNumber: '22.11', itemId: 'D', description: 'Station address/zone indication correct' },
+  { sectionNumber: '22.11', itemId: 'E', description: 'Station operating instructions visible' },
+  
+  // Section 22.12: Waterflow Devices (5 items)
+  { sectionNumber: '22.12', itemId: 'A', description: 'Device clean and free of damage' },
+  { sectionNumber: '22.12', itemId: 'B', description: 'Device securely mounted' },
+  { sectionNumber: '22.12', itemId: 'C', description: 'Device alarm operation confirmed' },
+  { sectionNumber: '22.12', itemId: 'D', description: 'Device address/zone indication correct' },
+  { sectionNumber: '22.12', itemId: 'E', description: 'Time delay setting verified' },
+  
+  // Section 22.13: Supervisory Devices (4 items)
+  { sectionNumber: '22.13', itemId: 'A', description: 'Device clean and free of damage' },
+  { sectionNumber: '22.13', itemId: 'B', description: 'Device securely mounted' },
+  { sectionNumber: '22.13', itemId: 'C', description: 'Device supervisory signal operation confirmed' },
+  { sectionNumber: '22.13', itemId: 'D', description: 'Device address/zone indication correct' },
+  
+  // Section 22.14: Fire Signal Receiving Centre (8 items)
+  { sectionNumber: '22.14', itemId: 'A', description: 'Transmitter integral to control unit' },
+  { sectionNumber: '22.14', itemId: 'B', description: 'Alarm transmission receipt confirmed' },
+  { sectionNumber: '22.14', itemId: 'C', description: 'Supervisory transmission receipt confirmed' },
+  { sectionNumber: '22.14', itemId: 'D', description: 'Trouble transmission receipt confirmed' },
+  { sectionNumber: '22.14', itemId: 'E', description: 'Transmitter disconnect causes trouble signal' },
+  { sectionNumber: '22.14', itemId: 'F', description: 'Transmitter disconnect transmits trouble' },
+  { sectionNumber: '22.14', itemId: 'G', description: 'Company name and telephone recorded' },
+  { sectionNumber: '22.14', itemId: 'H', description: 'Disconnect means transmits trouble' },
+  
+  // Section 22.15: Audible Signaling Devices (5 items)
+  { sectionNumber: '22.15', itemId: 'A', description: 'Device clean and free of damage' },
+  { sectionNumber: '22.15', itemId: 'B', description: 'Device securely mounted' },
+  { sectionNumber: '22.15', itemId: 'C', description: 'Device audible signal operation confirmed' },
+  { sectionNumber: '22.15', itemId: 'D', description: 'Device sound level adequate' },
+  { sectionNumber: '22.15', itemId: 'E', description: 'Device operates on correct signal circuit' },
+  
+  // Section 22.16: Visual Signaling Devices (5 items)
+  { sectionNumber: '22.16', itemId: 'A', description: 'Device clean and free of damage' },
+  { sectionNumber: '22.16', itemId: 'B', description: 'Device securely mounted' },
+  { sectionNumber: '22.16', itemId: 'C', description: 'Device visual signal operation confirmed' },
+  { sectionNumber: '22.16', itemId: 'D', description: 'Device flash rate within specification' },
+  { sectionNumber: '22.16', itemId: 'E', description: 'Device operates on correct signal circuit' },
 ];
 
 export interface MissingChecklistItem {

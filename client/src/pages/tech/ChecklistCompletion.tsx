@@ -131,6 +131,119 @@ const CHECKLIST_SECTIONS: ChecklistSection[] = [
       { id: 'M', description: 'Annunciator communication with control unit operates' },
     ],
   },
+  {
+    sectionNumber: '22.7',
+    sectionTitle: 'Circuit Supervision',
+    items: [
+      { id: 'A', description: 'Alarm initiating circuit supervision operates.' },
+      { id: 'B', description: 'Supervisory initiating circuit supervision operates.' },
+      { id: 'C', description: 'Trouble initiating circuit supervision operates.' },
+      { id: 'D', description: 'Alarm signal circuit supervision operates.' },
+      { id: 'E', description: 'Supervisory signal circuit supervision operates.' },
+      { id: 'F', description: 'Ancillary device circuit supervision operates.' },
+    ],
+  },
+  {
+    sectionNumber: '22.8',
+    sectionTitle: 'Smoke Detectors',
+    items: [
+      { id: 'A', description: 'Detector is clean and free of dust and dirt.' },
+      { id: 'B', description: 'Detector is securely mounted.' },
+      { id: 'C', description: 'Detector alarm operation confirmed.' },
+      { id: 'D', description: 'Detector address/zone indication correct at control unit.' },
+      { id: 'E', description: 'Detector sensitivity within manufacturer specification.' },
+    ],
+  },
+  {
+    sectionNumber: '22.9',
+    sectionTitle: 'Heat Detectors',
+    items: [
+      { id: 'A', description: 'Detector is clean and free of dust and dirt.' },
+      { id: 'B', description: 'Detector is securely mounted.' },
+      { id: 'C', description: 'Detector alarm operation confirmed.' },
+      { id: 'D', description: 'Detector address/zone indication correct at control unit.' },
+    ],
+  },
+  {
+    sectionNumber: '22.10',
+    sectionTitle: 'Duct Detectors',
+    items: [
+      { id: 'A', description: 'Detector is clean and free of dust and dirt.' },
+      { id: 'B', description: 'Detector is securely mounted.' },
+      { id: 'C', description: 'Detector alarm operation confirmed.' },
+      { id: 'D', description: 'Detector address/zone indication correct at control unit.' },
+      { id: 'E', description: 'Ancillary device circuit operation confirmed.' },
+      { id: 'F', description: 'Sampling tubes clean and unobstructed.' },
+    ],
+  },
+  {
+    sectionNumber: '22.11',
+    sectionTitle: 'Manual Pull Stations',
+    items: [
+      { id: 'A', description: 'Station is clean and free of damage.' },
+      { id: 'B', description: 'Station is securely mounted.' },
+      { id: 'C', description: 'Station alarm operation confirmed.' },
+      { id: 'D', description: 'Station address/zone indication correct at control unit.' },
+      { id: 'E', description: 'Station operating instructions visible and legible.' },
+    ],
+  },
+  {
+    sectionNumber: '22.12',
+    sectionTitle: 'Waterflow Devices',
+    items: [
+      { id: 'A', description: 'Device is clean and free of damage.' },
+      { id: 'B', description: 'Device is securely mounted.' },
+      { id: 'C', description: 'Device alarm operation confirmed.' },
+      { id: 'D', description: 'Device address/zone indication correct at control unit.' },
+      { id: 'E', description: 'Time delay setting verified.' },
+    ],
+  },
+  {
+    sectionNumber: '22.13',
+    sectionTitle: 'Supervisory Devices',
+    items: [
+      { id: 'A', description: 'Device is clean and free of damage.' },
+      { id: 'B', description: 'Device is securely mounted.' },
+      { id: 'C', description: 'Device supervisory signal operation confirmed.' },
+      { id: 'D', description: 'Device address/zone indication correct at control unit.' },
+    ],
+  },
+  {
+    sectionNumber: '22.14',
+    sectionTitle: 'Interconnection to Fire Signal Receiving Centre',
+    items: [
+      { id: 'A', description: 'The fire signal receiving centre transmitter is integral to the fire alarm control unit.' },
+      { id: 'B', description: 'Receipt of the alarm transmission to the fire signal receiving centre.' },
+      { id: 'C', description: 'Receipt of the supervisory transmission to the fire signal receiving centre.' },
+      { id: 'D', description: 'Receipt of the trouble transmission to the fire signal receiving centre.' },
+      { id: 'E', description: 'Disabling or disconnecting the fire signal receiving centre transmitter results in a specific trouble signal at the control unit or transmitter and also transmits a trouble signal to the fire signal receiving centre.' },
+      { id: 'F', description: 'Disabling or disconnecting the fire signal receiving centre transmitter transmits a trouble signal to the fire signal receiving centre.' },
+      { id: 'G', description: 'Record the company name and telephone number of the fire signal receiving centre.' },
+      { id: 'H', description: 'Operation of the fire signal receiving centre disconnect means transmits trouble to the fire signal receiving centre.' },
+    ],
+  },
+  {
+    sectionNumber: '22.15',
+    sectionTitle: 'Audible Signaling Devices',
+    items: [
+      { id: 'A', description: 'Device is clean and free of damage.' },
+      { id: 'B', description: 'Device is securely mounted.' },
+      { id: 'C', description: 'Device audible signal operation confirmed.' },
+      { id: 'D', description: 'Device sound level adequate for area.' },
+      { id: 'E', description: 'Device operates on correct signal circuit.' },
+    ],
+  },
+  {
+    sectionNumber: '22.16',
+    sectionTitle: 'Visual Signaling Devices',
+    items: [
+      { id: 'A', description: 'Device is clean and free of damage.' },
+      { id: 'B', description: 'Device is securely mounted.' },
+      { id: 'C', description: 'Device visual signal operation confirmed.' },
+      { id: 'D', description: 'Device flash rate within specification.' },
+      { id: 'E', description: 'Device operates on correct signal circuit.' },
+    ],
+  },
 ];
 
 export default function ChecklistCompletion() {
