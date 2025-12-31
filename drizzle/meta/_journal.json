@@ -43,6 +43,13 @@
       "when": 1767161865769,
       "tag": "0005_spooky_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1767204417801,
+      "tag": "0006_panoramic_shadow_king",
+      "breakpoints": true
     }
   ]
 }

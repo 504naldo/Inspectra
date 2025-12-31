@@ -506,3 +506,17 @@
 - [x] Create unit tests for validation override mode (14 tests passing)
 - [x] Test PDF generation with missing locations in override mode (6 tests passing)
 - [x] Verify strict validation still blocks in production mode (default)
+
+## Sprinkler System Category (New)
+- [x] Add SPRINKLER to system category enum in database schema
+- [x] Run database migration to add new category value
+- [x] Create keyword-based auto-detection helper function
+- [x] Update deficiency creation logic to accept systemCategory parameter
+- [x] Add systemCategory to deficiency data passed to PDF generator
+- [x] Update PDF generator to group deficiencies by 4 categories (Fire Alarm, Fire Extinguisher, Emergency Lighting, Sprinkler)
+- [x] Ensure sprinkler items included in global totals (calculated from all deficiencies)
+- [x] Verify test mode compatibility (TBD locations, warnings, appendix work with all categories)
+- [x] Add category override UI control in deficiency edit form (with auto-detect option)
+- [x] Create tests for keyword-based categorization (28 tests passing)
+- [x] Create tests for sprinkler section in PDF (6 tests passing)
+- [x] Test end-to-end with real sprinkler deficiencies (verified via test PDFs)

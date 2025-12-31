@@ -25,6 +25,7 @@ interface Deficiency {
   deviceType?: string;
   location?: string;
   estimatedCost?: number;
+  systemCategory?: 'FIRE_ALARM' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHTING' | 'SPRINKLER' | null;
 }
 
 interface InspectionResult {
@@ -294,21 +295,37 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         
         // Group deficiencies by system type
         const deficienciesBySystem: Record<string, Array<typeof data.deficiencies[0]>> = {
-          'Fire Alarm': [],
-          'Fire Extinguishers': [],
-          'Emergency Lights': []
+          'Fire Alarm Deficiencies': [],
+          'Fire Extinguisher Deficiencies': [],
+          'Emergency Lighting Deficiencies': [],
+          'Sprinkler Deficiencies': []
         };
 
-        // Categorize each deficiency by device type
+        // Categorize each deficiency using systemCategory field (with fallback to device type)
         data.deficiencies.forEach((def) => {
-          const deviceType = def.deviceType || 'Unknown';
-          const typeLower = deviceType.toLowerCase();
+          let systemCategory = 'Fire Alarm Deficiencies'; // default
           
-          let systemCategory = 'Fire Alarm'; // default
-          if (typeLower.includes('extinguisher')) {
-            systemCategory = 'Fire Extinguishers';
-          } else if (typeLower.includes('emergency') || typeLower.includes('light')) {
-            systemCategory = 'Emergency Lights';
+          // Use explicit systemCategory if available
+          if (def.systemCategory) {
+            const categoryMap: Record<string, string> = {
+              'FIRE_ALARM': 'Fire Alarm Deficiencies',
+              'FIRE_EXTINGUISHER': 'Fire Extinguisher Deficiencies',
+              'EMERGENCY_LIGHTING': 'Emergency Lighting Deficiencies',
+              'SPRINKLER': 'Sprinkler Deficiencies'
+            };
+            systemCategory = categoryMap[def.systemCategory] || 'Fire Alarm Deficiencies';
+          } else {
+            // Fallback to device type detection for backward compatibility
+            const deviceType = def.deviceType || '';
+            const typeLower = deviceType.toLowerCase();
+            
+            if (typeLower.includes('extinguisher')) {
+              systemCategory = 'Fire Extinguisher Deficiencies';
+            } else if (typeLower.includes('emergency') || typeLower.includes('light')) {
+              systemCategory = 'Emergency Lighting Deficiencies';
+            } else if (typeLower.includes('sprinkler') || typeLower.includes('fdc') || typeLower.includes('standpipe')) {
+              systemCategory = 'Sprinkler Deficiencies';
+            }
           }
 
           deficienciesBySystem[systemCategory].push(def);

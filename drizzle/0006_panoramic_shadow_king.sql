@@ -1,0 +1,1 @@
+ALTER TABLE `deficiencies` ADD `systemCategory` enum('FIRE_ALARM','FIRE_EXTINGUISHER','EMERGENCY_LIGHTING','SPRINKLER');

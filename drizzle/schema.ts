@@ -191,6 +191,7 @@ export const deficiencies = mysqlTable("deficiencies", {
   reportedById: int("reportedById").notNull(),
   status: mysqlEnum("status", ["open", "in_progress", "resolved", "closed", "deferred"]).default("open").notNull(),
   severity: mysqlEnum("severity", ["critical", "major", "minor", "observation"]).default("major").notNull(),
+  systemCategory: mysqlEnum("systemCategory", ["FIRE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER"]),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   observedIssue: text("observedIssue"),

@@ -447,6 +447,7 @@ const deficiencyRouter = router({
     customerExplanation: z.string().optional(),
     codeReference: z.string().optional(),
     aiGenerated: z.boolean().optional(),
+    systemCategory: z.enum(['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING', 'SPRINKLER']).optional(),
   })).mutation(async ({ input, ctx }) => {
     return db.createDeficiency({ ...input, reportedById: ctx.user.id });
   }),
@@ -462,6 +463,7 @@ const deficiencyRouter = router({
     customerExplanation: z.string().optional(),
     codeReference: z.string().optional(),
     resolutionNotes: z.string().optional(),
+    systemCategory: z.enum(['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING', 'SPRINKLER']).optional(),
   })).mutation(async ({ input, ctx }) => {
     const { id, status, ...data } = input;
     const updateData: any = { ...data };
@@ -1004,6 +1006,7 @@ const reportRouter = router({
           deviceType,
           location,
           estimatedCost: 0, // TODO: Add estimatedCost field to deficiencies table
+          systemCategory: d.systemCategory,
         };
       })),
       inspectionResults: inspectionResults.map(r => ({

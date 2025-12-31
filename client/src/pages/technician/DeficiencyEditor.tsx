@@ -28,6 +28,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
   const [title, setTitle] = useState("");
   const [severity, setSeverity] = useState<string>("major");
   const [status, setStatus] = useState<string>("open");
+  const [systemCategory, setSystemCategory] = useState<string | undefined>();
   const [observedIssue, setObservedIssue] = useState("");
   const [description, setDescription] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
@@ -72,6 +73,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       setCodeReference(def.codeReference || "");
       setDeviceId(def.deviceId || undefined);
       setAiDraft(def.aiGenerated || false);
+      setSystemCategory(def.systemCategory || undefined);
     }
   }, [existingDef]);
 
@@ -151,6 +153,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         correctiveAction,
         customerExplanation,
         codeReference,
+        systemCategory: systemCategory as any,
       });
     } else {
       createDeficiency.mutate({
@@ -164,6 +167,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         customerExplanation,
         codeReference,
         aiGenerated: aiDraft,
+        systemCategory: systemCategory as any,
       });
     }
   };
@@ -244,6 +248,26 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
                 </Select>
               </div>
             )}
+          </div>
+
+          {/* System Category */}
+          <div className="space-y-2">
+            <Label>System Category</Label>
+            <Select value={systemCategory || "auto"} onValueChange={(val) => setSystemCategory(val === "auto" ? undefined : val)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Auto-detect from title/description" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto-detect (recommended)</SelectItem>
+                <SelectItem value="FIRE_ALARM">Fire Alarm</SelectItem>
+                <SelectItem value="FIRE_EXTINGUISHER">Fire Extinguisher</SelectItem>
+                <SelectItem value="EMERGENCY_LIGHTING">Emergency Lighting</SelectItem>
+                <SelectItem value="SPRINKLER">Sprinkler</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Leave as "Auto-detect" to categorize based on keywords in title and description. Manual selection overrides auto-detection.
+            </p>
           </div>
         </div>
 
