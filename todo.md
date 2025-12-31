@@ -465,3 +465,31 @@
 - [x] Wire Deficiency Report button to new endpoint with error handling
 - [x] Add smoke tests for new endpoints
 - [x] Test complete flow from UI through new endpoints
+
+
+## Deficiency Report Refactor - Deficiencies-Only with Pricing
+- [x] Audit pdfGeneratorFirePro.ts to identify device inventory rendering code
+- [x] Remove Fire Alarm Devices table from Deficiency Report
+- [x] Remove Fire Extinguishers table from Deficiency Report
+- [x] Remove Emergency Lights table from Deficiency Report
+- [x] Remove any pass/fail summaries or inspection result tables
+- [ ] Group deficiencies by system (Fire Alarm / Fire Extinguishers / Emergency Lights)
+- [ ] Ensure each deficiency includes: Item #, System, Location, Description, Corrective Action, Line Price
+- [ ] Add pricing totals section with Subtotal, Tax, Total
+- [ ] Add tax configuration support (GST/PST or HST, default 0% if not configured)
+- [ ] Add currency formatting (CAD)
+- [ ] Add price validation to block generation if any deficiency missing price
+- [ ] Test deficiency-only output with mixed system deficiencies
+- [ ] Verify pricing totals calculate correctly
+- [ ] Verify location validation still blocks generation
+- [ ] Confirm EWF branding, header/footer, page numbers preserved
+
+## Deficiency Report Refactoring (New)
+- [x] Remove device inventory tables from Deficiency Report (Fire Alarm Devices, Fire Extinguishers, Emergency Lights)
+- [x] Group deficiencies by system category (Fire Alarm / Fire Extinguishers / Emergency Lights)
+- [x] Add system category headers to deficiency tables
+- [x] Add pricing totals section with Subtotal, Tax (12%), and Grand Total
+- [x] Maintain proper pagination with logo headers on new pages
+- [x] Test refactored Deficiency Report with real data
+- [x] Create unit tests for system grouping logic (5 tests passing)
+- [x] Verify tax calculation accuracy (12% tax correctly calculated)

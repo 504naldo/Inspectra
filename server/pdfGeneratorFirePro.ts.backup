@@ -267,172 +267,81 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       
       if (data.deficiencies.length > 0) {
         doc.addPage();
+        
+        // Logo header
+        // Logo header
         drawLogo(doc, 50, 50, 100);
         
         let defY = 110;
         
-        // Group deficiencies by system type
-        const deficienciesBySystem: Record<string, Array<typeof data.deficiencies[0]>> = {
-          'Fire Alarm': [],
-          'Fire Extinguishers': [],
-          'Emergency Lights': []
-        };
-
-        // Categorize each deficiency by device type
-        data.deficiencies.forEach((def) => {
-          const deviceType = def.deviceType || 'Unknown';
-          const typeLower = deviceType.toLowerCase();
-          
-          let systemCategory = 'Fire Alarm'; // default
-          if (typeLower.includes('extinguisher')) {
-            systemCategory = 'Fire Extinguishers';
-          } else if (typeLower.includes('emergency') || typeLower.includes('light')) {
-            systemCategory = 'Emergency Lights';
-          }
-
-          deficienciesBySystem[systemCategory].push(def);
-        });
-
-        // Calculate totals
-        const subtotal = data.deficiencies.reduce((sum, def) => sum + (def.estimatedCost || 0), 0);
-        const taxRate = 0.12; // 12% tax (GST + PST)
-        const taxAmount = subtotal * taxRate;
-        const grandTotal = subtotal + taxAmount;
-
-        // Render deficiencies grouped by system
+        // Deficiency table
         const defColWidths = [40, 280, 100, 92];
         const defTableWidth = defColWidths.reduce((a, b) => a + b, 0);
         
-        for (const [systemName, systemDeficiencies] of Object.entries(deficienciesBySystem)) {
-          if (systemDeficiencies.length === 0) continue;
-
-          // Check if we need a new page
-          if (defY > 700) {
+        // Table header
+        doc.rect(50, defY, defTableWidth, 20).fill(black);
+        doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
+        
+        let dx = 55;
+        doc.text('Item #', dx, defY + 6);
+        dx += defColWidths[0];
+        doc.text('Description', dx, defY + 6);
+        dx += defColWidths[1];
+        doc.text('Device', dx, defY + 6);
+        dx += defColWidths[2];
+        doc.text('Total Labour & Material', dx, defY + 6, { width: defColWidths[3] - 10 });
+        
+        defY += 20;
+        
+        // Table rows
+        doc.font('Helvetica').fontSize(8);
+        let totalCost = 0;
+        
+        data.deficiencies.forEach((def, i) => {
+          if (defY > 680) {
             doc.addPage();
+            // Logo header on new page
             drawLogo(doc, 50, 50, 100);
             defY = 110;
           }
-
-          // System category header
-          doc.fontSize(14)
-             .fillColor(navyBlue)
-             .font('Helvetica-Bold')
-             .text(systemName, 50, defY);
           
-          defY += 25;
-
-          // Table header
-          doc.rect(50, defY, defTableWidth, 20).fill(black);
-          doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
+          const rowHeight = 40; // Increased height for multi-line descriptions
+          doc.rect(50, defY, defTableWidth, rowHeight).stroke(lightGray);
           
-          let dx = 55;
-          doc.text('Item #', dx, defY + 6);
+          doc.fillColor(black);
+          dx = 55;
+          
+          // Item number (centered)
+          doc.text((i + 1).toString(), dx, defY + 5, { width: defColWidths[0] - 10, align: 'center' });
           dx += defColWidths[0];
-          doc.text('Description', dx, defY + 6);
+          
+          // Description with location
+          let descText = def.description || def.title;
+          if (def.location) {
+            descText = `Location: ${def.location}. ${descText}`;
+          }
+          doc.text(descText, dx, defY + 5, { width: defColWidths[1] - 10, lineGap: 2 });
           dx += defColWidths[1];
-          doc.text('Device', dx, defY + 6);
+          
+          // Device type
+          doc.text(def.deviceType || '-', dx, defY + 5, { width: defColWidths[2] - 10 });
           dx += defColWidths[2];
-          doc.text('Total Labour & Material', dx, defY + 6, { width: defColWidths[3] - 10 });
           
-          defY += 20;
-
-          // Render each deficiency in this system
-          doc.font('Helvetica').fontSize(8);
+          // Cost (right-aligned)
+          const cost = def.estimatedCost || 0;
+          totalCost += cost;
+          doc.text(`$${cost.toFixed(2)}`, dx, defY + 5, { width: defColWidths[3] - 10, align: 'right' });
           
-          systemDeficiencies.forEach((def, i) => {
-            if (defY > 680) {
-              doc.addPage();
-              drawLogo(doc, 50, 50, 100);
-              defY = 110;
-              
-              // Redraw table header on new page
-              doc.rect(50, defY, defTableWidth, 20).fill(black);
-              doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
-              
-              dx = 55;
-              doc.text('Item #', dx, defY + 6);
-              dx += defColWidths[0];
-              doc.text('Description', dx, defY + 6);
-              dx += defColWidths[1];
-              doc.text('Device', dx, defY + 6);
-              dx += defColWidths[2];
-              doc.text('Total Labour & Material', dx, defY + 6, { width: defColWidths[3] - 10 });
-              
-              defY += 20;
-            }
-
-            const rowHeight = 40;
-            doc.rect(50, defY, defTableWidth, rowHeight).stroke(lightGray);
-            
-            doc.fillColor(black).font('Helvetica').fontSize(8);
-            dx = 55;
-            
-            // Item number
-            doc.text(def.id.toString(), dx, defY + 5, { width: defColWidths[0] - 10, align: 'center' });
-            dx += defColWidths[0];
-            
-            // Description with location
-            let descText = def.description || def.title;
-            if (def.location) {
-              descText = `Location: ${def.location}. ${descText}`;
-            }
-            doc.text(descText, dx, defY + 5, { width: defColWidths[1] - 10, lineGap: 2 });
-            dx += defColWidths[1];
-            
-            // Device type
-            doc.text(def.deviceType || '-', dx, defY + 5, { width: defColWidths[2] - 10 });
-            dx += defColWidths[2];
-            
-            // Cost
-            const cost = def.estimatedCost || 0;
-            doc.text(`$${cost.toFixed(2)}`, dx, defY + 5, { width: defColWidths[3] - 10, align: 'right' });
-            
-            defY += rowHeight;
-          });
-
-          defY += 15; // Space between system categories
-        }
-
-        // Pricing totals section
-        if (defY > 680) {
-          doc.addPage();
-          drawLogo(doc, 50, 50, 100);
-          defY = 110;
-        }
-
-        defY += 20;
-
-        const totalsX = 380;
-        const totalsLabelWidth = 100;
-        const totalsValueWidth = 70;
-
-        doc.fontSize(10)
-           .fillColor(black)
-           .font('Helvetica-Bold');
-
-        // Subtotal
-        doc.text('Subtotal:', totalsX, defY, { width: totalsLabelWidth, align: 'right' })
-           .text(`$${subtotal.toFixed(2)}`, totalsX + totalsLabelWidth + 10, defY, { width: totalsValueWidth, align: 'right' });
-
-        defY += 20;
-
-        // Tax
-        doc.text(`Tax (${(taxRate * 100).toFixed(0)}%):`, totalsX, defY, { width: totalsLabelWidth, align: 'right' })
-           .text(`$${taxAmount.toFixed(2)}`, totalsX + totalsLabelWidth + 10, defY, { width: totalsValueWidth, align: 'right' });
-
-        defY += 20;
-
-        // Grand Total with line separator
-        doc.moveTo(totalsX, defY - 5)
-           .lineTo(totalsX + totalsLabelWidth + totalsValueWidth + 10, defY - 5)
-           .stroke(black);
-
-        defY += 5;
-
-        doc.fontSize(12)
-           .text('Total:', totalsX, defY, { width: totalsLabelWidth, align: 'right' })
-           .text(`$${grandTotal.toFixed(2)}`, totalsX + totalsLabelWidth + 10, defY, { width: totalsValueWidth, align: 'right' });
-
+          defY += rowHeight;
+        });
+        
+        // Total row
+        doc.rect(50, defY, defTableWidth, 20).fill(white);
+        doc.fillColor(black).fontSize(10).font('Helvetica-Bold');
+        
+        dx = 55 + defColWidths[0] + defColWidths[1] + defColWidths[2];
+        doc.text(`$${totalCost.toFixed(2)}`, dx, defY + 5, { width: defColWidths[3] - 10, align: 'right' });
+        
         defY += 30;
         
         // ============================================

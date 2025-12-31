@@ -1,0 +1,172 @@
+      // Group deficiencies by system type
+      const deficienciesBySystem: Record<string, Array<{
+        id: number;
+        description: string;
+        location: string;
+        deviceType: string;
+        cost: number;
+      }>> = {
+        'Fire Alarm': [],
+        'Fire Extinguishers': [],
+        'Emergency Lights': []
+      };
+
+      // Categorize each deficiency by device type
+      for (const def of deficiencies) {
+        const deviceInfo = await db.getDeviceById(def.deviceId);
+        const deviceType = deviceInfo?.type || 'Unknown';
+        const location = deviceInfo?.location || def.location || 'Location not specified';
+        
+        // Determine system category
+        let systemCategory = 'Fire Alarm'; // default
+        const typeLower = deviceType.toLowerCase();
+        if (typeLower.includes('extinguisher')) {
+          systemCategory = 'Fire Extinguishers';
+        } else if (typeLower.includes('emergency') || typeLower.includes('light')) {
+          systemCategory = 'Emergency Lights';
+        }
+
+        deficienciesBySystem[systemCategory].push({
+          id: def.id,
+          description: def.description,
+          location: location,
+          deviceType: deviceType,
+          cost: def.cost || 0
+        });
+      }
+
+      // Calculate subtotal
+      const subtotal = deficiencies.reduce((sum, def) => sum + (def.cost || 0), 0);
+      const taxRate = 0.12; // 12% tax (GST + PST)
+      const taxAmount = subtotal * taxRate;
+      const grandTotal = subtotal + taxAmount;
+
+      // Render deficiencies grouped by system
+      let deficiencyY = doc.y + 20;
+      
+      for (const [systemName, systemDeficiencies] of Object.entries(deficienciesBySystem)) {
+        if (systemDeficiencies.length === 0) continue; // Skip empty categories
+
+        // Check if we need a new page for this section
+        if (deficiencyY > 700) {
+          doc.addPage();
+          drawLogo(doc, 50, 50, 100);
+          deficiencyY = 150;
+        }
+
+        // System category header
+        doc.fontSize(14)
+           .fillColor(navyBlue)
+           .font('Helvetica-Bold')
+           .text(systemName, 50, deficiencyY);
+        
+        deficiencyY += 25;
+
+        // Table header
+        const tableTop = deficiencyY;
+        const itemCol = 50;
+        const descCol = 100;
+        const deviceCol = 380;
+        const costCol = 480;
+        const rowHeight = 40;
+
+        doc.rect(itemCol, tableTop, 495, 25)
+           .fillAndStroke('#000000', '#cccccc');
+        
+        doc.fontSize(10)
+           .fillColor('#FFFFFF')
+           .font('Helvetica-Bold')
+           .text('Item #', itemCol + 5, tableTop + 8, { width: 40, align: 'center' })
+           .text('Description', descCol + 5, tableTop + 8, { width: 270 })
+           .text('Device', deviceCol + 5, tableTop + 8, { width: 90 })
+           .text('Total Labour & Material', costCol + 5, tableTop + 8, { width: 60, align: 'right' });
+
+        deficiencyY = tableTop + 25;
+
+        // Render each deficiency in this system
+        for (const def of systemDeficiencies) {
+          // Check if we need a new page
+          if (deficiencyY > 720) {
+            doc.addPage();
+            drawLogo(doc, 50, 50, 100);
+            deficiencyY = 150;
+            
+            // Redraw table header on new page
+            doc.rect(itemCol, deficiencyY, 495, 25)
+               .fillAndStroke('#000000', '#cccccc');
+            
+            doc.fontSize(10)
+               .fillColor('#FFFFFF')
+               .font('Helvetica-Bold')
+               .text('Item #', itemCol + 5, deficiencyY + 8, { width: 40, align: 'center' })
+               .text('Description', descCol + 5, deficiencyY + 8, { width: 270 })
+               .text('Device', deviceCol + 5, deficiencyY + 8, { width: 90 })
+               .text('Total Labour & Material', costCol + 5, deficiencyY + 8, { width: 60, align: 'right' });
+            
+            deficiencyY += 25;
+          }
+
+          // Draw row
+          doc.rect(itemCol, deficiencyY, 495, rowHeight)
+             .stroke('#cccccc');
+
+          doc.fontSize(9)
+             .fillColor('#000000')
+             .font('Helvetica')
+             .text(def.id.toString(), itemCol + 5, deficiencyY + 12, { width: 40, align: 'center' })
+             .text(`Location: ${def.location}. ${def.description}`, descCol + 5, deficiencyY + 5, { 
+               width: 270, 
+               height: rowHeight - 10,
+               ellipsis: true 
+             })
+             .text(def.deviceType, deviceCol + 5, deficiencyY + 12, { width: 90 })
+             .text(`$${def.cost.toFixed(2)}`, costCol + 5, deficiencyY + 12, { width: 60, align: 'right' });
+
+          deficiencyY += rowHeight;
+        }
+
+        deficiencyY += 10; // Space between system categories
+      }
+
+      // Pricing totals section
+      if (deficiencyY > 680) {
+        doc.addPage();
+        drawLogo(doc, 50, 50, 100);
+        deficiencyY = 150;
+      }
+
+      deficiencyY += 20;
+
+      const totalsX = 380;
+      const totalsLabelWidth = 100;
+      const totalsValueWidth = 60;
+
+      doc.fontSize(10)
+         .fillColor('#000000')
+         .font('Helvetica-Bold');
+
+      // Subtotal
+      doc.text('Subtotal:', totalsX, deficiencyY, { width: totalsLabelWidth, align: 'right' })
+         .text(`$${subtotal.toFixed(2)}`, totalsX + totalsLabelWidth + 10, deficiencyY, { width: totalsValueWidth, align: 'right' });
+
+      deficiencyY += 20;
+
+      // Tax
+      doc.text(`Tax (${(taxRate * 100).toFixed(0)}%):`, totalsX, deficiencyY, { width: totalsLabelWidth, align: 'right' })
+         .text(`$${taxAmount.toFixed(2)}`, totalsX + totalsLabelWidth + 10, deficiencyY, { width: totalsValueWidth, align: 'right' });
+
+      deficiencyY += 20;
+
+      // Grand Total with line separator
+      doc.moveTo(totalsX, deficiencyY - 5)
+         .lineTo(totalsX + totalsLabelWidth + totalsValueWidth + 10, deficiencyY - 5)
+         .stroke('#000000');
+
+      deficiencyY += 5;
+
+      doc.fontSize(12)
+         .text('Total:', totalsX, deficiencyY, { width: totalsLabelWidth, align: 'right' })
+         .text(`$${grandTotal.toFixed(2)}`, totalsX + totalsLabelWidth + 10, deficiencyY, { width: totalsValueWidth, align: 'right' });
+
+      deficiencyY += 30;
+
