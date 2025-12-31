@@ -399,3 +399,55 @@
 - [x] Update ChecklistCompletion UI to display all new sections
 - [x] Test complete checklist with 122 items (15 sections)
 - [x] Verify progress tracker works with expanded item count
+
+
+## Definitive Reporting Pipeline Refactor
+### Step 1: Identify Active Generators
+- [x] Search codebase for all PDF generation references
+- [x] Document which generator is used by which endpoint
+- [ ] Add deprecation warnings to old endpoints
+- [x] Create internal audit note in code comments
+
+### Step 2: Fix Checklist Enum Mismatch
+- [x] Update database schema to use PASS/DEFICIENT/N/A/NOT_TESTED (already correct: PASS/DEFICIENT/NA)
+- [x] Migrate existing data from pass/fail/na to new enum values (not needed - already correct)
+- [x] Update all checklist response code to use new enum (already correct)
+- [x] Remove YES/NO assumptions from PDF generators (already correct)
+
+### Step 3: Location Enforcement
+- [ ] Add location validation for Fire Alarm devices before Annual report generation
+- [ ] Add location validation for Fire Extinguishers before Annual report generation
+- [ ] Add location validation for Emergency Lights before Annual report generation
+- [ ] Add location validation for deficiencies before Deficiency report generation
+- [ ] Return detailed error with missing device/deficiency IDs when validation fails
+
+### Step 4: Device Scope Rules
+- [ ] Add device type/category filter to exclude power supplies from Fire Alarm device tables
+- [ ] Verify power supplies don't appear in Annual report device listings
+- [ ] Ensure power supply checklist items still appear in checklist sections
+
+### Step 5: Create Explicit Endpoints
+- [ ] Create POST /api/reports/annual endpoint (always uses compliance generator)
+- [ ] Create POST /api/reports/deficiencies endpoint (always uses FirePro generator)
+- [ ] Add backward compatibility redirects from old endpoints
+- [ ] Add server-side deprecation warnings for old endpoints
+- [ ] Ensure Annual endpoint blocks on incomplete checklist
+- [ ] Ensure Annual endpoint blocks on missing locations
+- [ ] Ensure Deficiency endpoint only includes deficiencies (no passing items)
+
+### Step 6: Update UI
+- [ ] Add separate "Generate Annual Inspection Report" button
+- [ ] Add separate "Generate Deficiency Report" button
+- [ ] Wire Annual button to new annual endpoint
+- [ ] Wire Deficiency button to new deficiencies endpoint
+- [ ] Add error modal for checklist incomplete with missing items list
+- [ ] Add error modal for missing locations with device/deficiency list
+- [ ] Add links to checklist/devices screens from error modals
+
+### Step 7: Acceptance Testing
+- [ ] Test: Annual report blocks if checklist incomplete and returns missing list
+- [ ] Test: Annual report blocks if device locations missing and returns missing list
+- [ ] Test: Annual report includes ALL checklist sections with correct PASS/DEFICIENT/N/A
+- [ ] Test: Annual report device tables include locations and exclude power supplies
+- [ ] Test: Deficiency report includes only deficiencies (no pass inventories)
+- [ ] Test: Both reports work on mobile and desktop

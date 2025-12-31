@@ -898,6 +898,35 @@ const reportRouter = router({
     // Get deficiencies
     const deficiencies = await db.getDeficienciesByJob(input.jobId);
     
+    // Validate deficiency locations before generating Deficiency report
+    // Fetch device locations for deficiencies
+    const deficienciesWithLocations = await Promise.all(deficiencies.map(async (d) => {
+      let location: string | null = null;
+      if (d.deviceId) {
+        const device = await db.getDeviceById(d.deviceId);
+        location = device?.location || null;
+      }
+      return {
+        id: d.id,
+        description: d.description || 'No description',
+        severity: d.severity,
+        location,
+      };
+    }));
+    
+    const { validateDeficiencyReportLocations } = await import('./locationValidation');
+    const locationValidation = validateDeficiencyReportLocations(deficienciesWithLocations);
+    
+    if (!locationValidation.isValid) {
+      const missingList = locationValidation.missingDeficiencies
+        .map(d => `  - Deficiency #${d.id}: ${d.description.substring(0, 60)}${d.description.length > 60 ? '...' : ''} (${d.severity})`)
+        .join('\n');
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: `Cannot generate Deficiency report: ${locationValidation.totalMissing} deficiency/deficiencies missing location information.\n\nMissing locations for:\n${missingList}\n\nPlease add locations to all deficiencies before generating the Deficiency Report.`,
+      });
+    }
+    
     // Calculate device summaries by type
     const deviceTypeMap: Record<string, { total: number; passed: number; failed: number; na: number }> = {};
     
@@ -1048,6 +1077,48 @@ const reportRouter = router({
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
         message: `Checklist incomplete (${auditResult.completionPercentage}% complete). ${formatMissingItemsMessage(auditResult.missingItems)}`,
+      });
+    }
+    
+    // Validate device locations before generating Annual report
+    const { validateAnnualReportLocations } = await import('./locationValidation');
+    const locationValidation = validateAnnualReportLocations({
+      fireAlarmDevices: inspectionResults
+        .filter(r => r.deviceType?.toLowerCase().includes('smoke') || 
+                     r.deviceType?.toLowerCase().includes('heat') || 
+                     r.deviceType?.toLowerCase().includes('pull') ||
+                     r.deviceType?.toLowerCase().includes('horn') ||
+                     r.deviceType?.toLowerCase().includes('strobe'))
+        .map(r => ({
+          id: r.id,
+          deviceType: r.deviceType || 'Unknown',
+          location: r.location,
+          identification: r.serialNumber,
+        })),
+      fireExtinguishers: inspectionResults
+        .filter(r => r.deviceType?.toLowerCase().includes('extinguisher'))
+        .map(r => ({
+          id: r.id,
+          location: r.location,
+          serialNumber: r.serialNumber,
+        })),
+      emergencyLights: inspectionResults
+        .filter(r => r.deviceType?.toLowerCase().includes('emergency') || 
+                     r.deviceType?.toLowerCase().includes('exit'))
+        .map(r => ({
+          id: r.id,
+          location: r.location,
+          identification: r.serialNumber,
+        })),
+    });
+    
+    if (!locationValidation.isValid) {
+      const missingList = locationValidation.missingDevices
+        .map(d => `  - ${d.type} (ID: ${d.id}${d.identification ? `, ${d.identification}` : ''}${d.deviceType ? `, Type: ${d.deviceType}` : ''})`)
+        .join('\n');
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: `Cannot generate Annual report: ${locationValidation.totalMissing} device(s) missing location information.\n\nMissing locations for:\n${missingList}\n\nPlease add locations to all devices before generating the Annual Inspection Report.`,
       });
     }
     
