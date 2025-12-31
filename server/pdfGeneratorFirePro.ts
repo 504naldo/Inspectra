@@ -64,6 +64,7 @@ interface ReportData {
   deviceSummaries: DeviceSummary[];
   deficiencies: Deficiency[];
   inspectionResults: InspectionResult[];
+  missingLocationDeficiencies?: Array<{ id: number; description: string; severity: string }>; // For admin override mode
 }
 
 // Helper function to draw logo
@@ -158,14 +159,34 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       // Logo header
       drawLogo(doc, 50, 50, 100);
       
+      let pageYPos = 110;
+      
+      // Warning banner if missing locations (admin override mode)
+      if (data.missingLocationDeficiencies && data.missingLocationDeficiencies.length > 0) {
+        const warningHeight = 40;
+        doc.rect(50, pageYPos, 512, warningHeight)
+           .fillAndStroke(warningColor, warningColor);
+        
+        doc.fontSize(10)
+           .fillColor(white)
+           .font('Helvetica-Bold')
+           .text('⚠ WARNING: TEST MODE REPORT', 60, pageYPos + 8);
+        
+        doc.fontSize(9)
+           .font('Helvetica')
+           .text(`${data.missingLocationDeficiencies.length} deficiency/deficiencies missing location information. See appendix for details.`, 60, pageYPos + 24, { width: 492 });
+        
+        pageYPos += warningHeight + 10;
+      }
+      
       // Date
       doc.fontSize(10)
          .fillColor(black)
          .font('Helvetica')
-         .text(data.inspectionDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 50, 110);
+         .text(data.inspectionDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 50, pageYPos);
       
       // Recipient block
-      let yPos = 130;
+      let yPos = pageYPos + 20;
       doc.text(data.siteName.toUpperCase(), 50, yPos);
       yPos += 12;
       
@@ -375,6 +396,9 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
             let descText = def.description || def.title;
             if (def.location) {
               descText = `Location: ${def.location}. ${descText}`;
+            } else {
+              // Show TBD for missing locations in override mode
+              descText = `Location: TBD (Required). ${descText}`;
             }
             doc.text(descText, dx, defY + 5, { width: defColWidths[1] - 10, lineGap: 2 });
             dx += defColWidths[1];
@@ -462,6 +486,91 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           
           doc.text(term, 50, defY, { width: 512, align: 'justify' });
           defY += 25;
+        });
+      }
+
+      // ============================================
+      // MISSING LOCATIONS APPENDIX (if applicable)
+      // ============================================
+      
+      if (data.missingLocationDeficiencies && data.missingLocationDeficiencies.length > 0) {
+        doc.addPage();
+        drawLogo(doc, 50, 50, 100);
+        
+        let appendixY = 110;
+        
+        // Appendix title
+        doc.fontSize(16)
+           .fillColor(dangerColor)
+           .font('Helvetica-Bold')
+           .text('APPENDIX: Missing Location Information', 50, appendixY);
+        
+        appendixY += 30;
+        
+        doc.fontSize(10)
+           .fillColor(black)
+           .font('Helvetica')
+           .text('The following deficiencies are missing location information and must be updated before final report submission:', 50, appendixY, { width: 512 });
+        
+        appendixY += 30;
+        
+        // Table header
+        const appendixColWidths = [50, 350, 112];
+        const appendixTableWidth = appendixColWidths.reduce((a, b) => a + b, 0);
+        
+        doc.rect(50, appendixY, appendixTableWidth, 20).fill(dangerColor);
+        doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
+        
+        let ax = 55;
+        doc.text('ID', ax, appendixY + 6);
+        ax += appendixColWidths[0];
+        doc.text('Description', ax, appendixY + 6);
+        ax += appendixColWidths[1];
+        doc.text('Severity', ax, appendixY + 6);
+        
+        appendixY += 20;
+        
+        // Table rows
+        doc.font('Helvetica').fontSize(8);
+        
+        data.missingLocationDeficiencies.forEach((def) => {
+          if (appendixY > 680) {
+            doc.addPage();
+            drawLogo(doc, 50, 50, 100);
+            appendixY = 110;
+            
+            // Redraw header
+            doc.rect(50, appendixY, appendixTableWidth, 20).fill(dangerColor);
+            doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
+            
+            ax = 55;
+            doc.text('ID', ax, appendixY + 6);
+            ax += appendixColWidths[0];
+            doc.text('Description', ax, appendixY + 6);
+            ax += appendixColWidths[1];
+            doc.text('Severity', ax, appendixY + 6);
+            
+            appendixY += 20;
+          }
+          
+          const rowHeight = 30;
+          doc.rect(50, appendixY, appendixTableWidth, rowHeight).stroke(lightGray);
+          
+          doc.fillColor(black).font('Helvetica').fontSize(8);
+          ax = 55;
+          
+          // ID
+          doc.text(def.id.toString(), ax, appendixY + 5, { width: appendixColWidths[0] - 10 });
+          ax += appendixColWidths[0];
+          
+          // Description
+          doc.text(def.description, ax, appendixY + 5, { width: appendixColWidths[1] - 10, lineGap: 2 });
+          ax += appendixColWidths[1];
+          
+          // Severity
+          doc.text(def.severity.toUpperCase(), ax, appendixY + 5, { width: appendixColWidths[2] - 10 });
+          
+          appendixY += rowHeight;
         });
       }
 

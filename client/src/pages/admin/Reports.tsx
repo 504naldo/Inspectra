@@ -35,6 +35,7 @@ export default function AdminReports() {
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState<string | null>(null);
   const [generatedReportNumber, setGeneratedReportNumber] = useState<string | null>(null);
   const [reportType, setReportType] = useState<'deficiency' | 'compliance'>('deficiency');
+  const [allowMissingLocations, setAllowMissingLocations] = useState(false);
 
   const { data: jobs, refetch: refetchJobs } = trpc.job.listByCompany.useQuery({
     companyId,
@@ -129,6 +130,7 @@ export default function AdminReports() {
       generateDeficiencyReport.mutate({
         jobId: parseInt(selectedJobId),
         summary: executiveSummary || undefined,
+        allowMissingLocations: allowMissingLocations || undefined,
       });
     }
   };
@@ -269,6 +271,30 @@ export default function AdminReports() {
                     </div>
                   </div>
                 </div>
+
+                {/* Admin Override Toggle - Only for Deficiency Reports and Admin Users */}
+                {reportType === 'deficiency' && user?.role === 'admin' && (
+                  <div className="border rounded-lg p-4 bg-yellow-50 dark:bg-yellow-950/20 space-y-2">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        id="allowMissingLocations"
+                        checked={allowMissingLocations}
+                        onChange={(e) => setAllowMissingLocations(e.target.checked)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor="allowMissingLocations" className="font-medium text-yellow-800 dark:text-yellow-200 cursor-pointer">
+                          Allow missing locations (Test Mode)
+                        </Label>
+                        <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                          Admin override: Generate report even if deficiencies are missing location information. 
+                          Report will include warnings and a "Missing Locations" appendix.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Only show Executive Summary for Deficiency Report */}
                 {reportType === 'deficiency' && (

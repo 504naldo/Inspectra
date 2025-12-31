@@ -493,3 +493,16 @@
 - [x] Test refactored Deficiency Report with real data
 - [x] Create unit tests for system grouping logic (5 tests passing)
 - [x] Verify tax calculation accuracy (12% tax correctly calculated)
+
+## Deficiency Report Validation Override (New)
+- [x] Update validation helper to accept allowMissingLocations parameter
+- [x] Modify deficiencyReport.generate endpoint to accept override flag
+- [x] Add missing location detection and warning generation logic
+- [x] Update PDF generator to show "Location: TBD (Required)" for missing locations
+- [x] Add warning banner on page 2 (letter page) with count of missing locations
+- [x] Create "Missing Locations" appendix section in PDF
+- [x] Add admin-only toggle UI to Reports page: "Allow missing locations (test mode)"
+- [x] Update tRPC endpoint to check user role for override permission
+- [x] Create unit tests for validation override mode (14 tests passing)
+- [x] Test PDF generation with missing locations in override mode (6 tests passing)
+- [x] Verify strict validation still blocks in production mode (default)

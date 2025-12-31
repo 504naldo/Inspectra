@@ -877,6 +877,7 @@ const reportRouter = router({
   generatePDF: officeProcedure.input(z.object({
     jobId: z.number(),
     summary: z.string().optional(),
+    allowMissingLocations: z.boolean().optional(), // Admin override for test mode
   })).mutation(async ({ input, ctx }) => {
     // DEPRECATED: Use deficiencyReport.generate instead
     console.warn('[DEPRECATED] report.generatePDF is deprecated. Use deficiencyReport.generate instead.');
@@ -918,7 +919,11 @@ const reportRouter = router({
     }));
     
     const { validateDeficiencyReportLocations } = await import('./locationValidation');
-    const locationValidation = validateDeficiencyReportLocations(deficienciesWithLocations);
+    
+    // Check if admin override is enabled (only admins can use this)
+    const allowOverride = input.allowMissingLocations === true && ctx.user.role === 'admin';
+    
+    const locationValidation = validateDeficiencyReportLocations(deficienciesWithLocations, allowOverride);
     
     if (!locationValidation.isValid) {
       const missingList = locationValidation.missingDeficiencies
@@ -1009,6 +1014,10 @@ const reportRouter = router({
         result: r.result,
         notes: r.notes,
       })),
+      // Include missing location info if override mode is enabled
+      missingLocationDeficiencies: allowOverride && locationValidation.missingDeficiencies.length > 0
+        ? locationValidation.missingDeficiencies
+        : undefined,
     });
     
     // Upload to S3

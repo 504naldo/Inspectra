@@ -152,12 +152,28 @@ export function validateAnnualReportLocations(data: {
 /**
  * Comprehensive location validation for Deficiency Report
  * Validates deficiencies only
+ * 
+ * @param deficiencies - Array of deficiencies to validate
+ * @param allowMissingLocations - If true, allows generation with missing locations (admin override)
+ * @returns LocationValidationResult with validation status and missing items
  */
 export function validateDeficiencyReportLocations(
-  deficiencies: Array<{ id: number; description: string; severity: string; location: string | null }>
+  deficiencies: Array<{ id: number; description: string; severity: string; location: string | null }>,
+  allowMissingLocations: boolean = false
 ): LocationValidationResult {
   const validation = validateDeficiencyLocations(deficiencies);
   
+  // If override is enabled, always return valid but include missing items for warnings
+  if (allowMissingLocations) {
+    return {
+      isValid: true, // Allow generation in override mode
+      missingDevices: [],
+      missingDeficiencies: validation.missing,
+      totalMissing: validation.missing.length,
+    };
+  }
+  
+  // Default strict mode: block if any locations missing
   return {
     isValid: validation.isValid,
     missingDevices: [],
