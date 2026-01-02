@@ -566,13 +566,30 @@ export const sprinklerSystems = mysqlTable("sprinkler_systems", {
   manufacturer: varchar("manufacturer", { length: 255 }),
   model: varchar("model", { length: 255 }),
   
-  // Pressures (stored as strings to allow units like "120 PSI")
-  systemWaterPressure: varchar("systemWaterPressure", { length: 50 }),
-  supplyWaterPressure: varchar("supplyWaterPressure", { length: 50 }),
-  residualPressure: varchar("residualPressure", { length: 50 }),
-  systemAirPressure: varchar("systemAirPressure", { length: 50 }),
-  lowAirSwitchCutIn: varchar("lowAirSwitchCutIn", { length: 50 }),
-  tripPressure: varchar("tripPressure", { length: 50 }),
+  // Pressures (stored as decimals for numeric validation)
+  systemWaterPressure: int("systemWaterPressure"), // psi
+  supplyWaterPressure: int("supplyWaterPressure"), // psi
+  residualPressure: int("residualPressure"), // psi
+  waterPressureAtBaseOfRiser: int("waterPressureAtBaseOfRiser"), // psi
+  systemAirPressure: int("systemAirPressure"), // psi
+  lowAirSwitchCutIn: int("lowAirSwitchCutIn"), // psi
+  tripPressure: int("tripPressure"), // psi
+  
+  // Timing measurements (stored as decimals for seconds)
+  tripTime: int("tripTime"), // seconds
+  waterDeliveryTime: int("waterDeliveryTime"), // seconds
+  
+  // Gauge information
+  gaugeYear: int("gaugeYear"), // year of manufacture/installation
+  gaugeCondition: text("gaugeCondition"),
+  
+  // Compressor information (for dry/preaction systems)
+  compressorMakeModel: varchar("compressorMakeModel", { length: 255 }),
+  compressorCutInPressure: int("compressorCutInPressure"), // psi
+  compressorCutOutPressure: int("compressorCutOutPressure"), // psi
+  
+  // Notes
+  notes: text("notes"),
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

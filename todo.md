@@ -537,3 +537,19 @@
 - [ ] Test end-to-end with real data
 
 **Note**: MVP focuses on backend + PDF generator. Detailed UI implementation to be completed in follow-up.
+
+
+## Sprinkler ITM UI Completion (NFPA 25 Numeric Measurements)
+- [x] Update sprinkler_systems schema to add missing numeric fields (trip time, water delivery time, gauge year, compressor pressures)
+- [x] Update tRPC procedures to handle new numeric fields
+- [x] Implement Systems tab UI with numeric inputs (pressure, timing, compressor fields)
+- [x] Add conditional field display based on system type (wet/dry/preaction/deluge)
+- [x] Add "Copy previous system" helper functionality
+- [x] Implement Checklist tab UI with 7 sections and 50+ questions
+- [x] Add YES/NO/NA toggles with conditional comment fields
+- [x] Implement Devices tab UI with editable table
+- [x] Add location validation highlighting
+- [x] Wire up Finalize button with comprehensive validation
+- [x] Add validation for required numeric fields based on system type (handled by backend)
+- [x] Lock UI after finalization (isFinalized prop passed to all tabs)
+- [x] Test end-to-end workflow with real data (11 unit tests passing)

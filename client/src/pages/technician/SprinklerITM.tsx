@@ -7,6 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ArrowLeft, Save, CheckCircle, FileText, Loader2 } from "lucide-react";
 import { Link } from "wouter";
+import SystemsTab from "@/components/sprinkler/SystemsTab";
+import ChecklistTab from "@/components/sprinkler/ChecklistTab";
+import DevicesTab from "@/components/sprinkler/DevicesTab";
 
 interface SprinklerITMProps {
   jobId: number;
@@ -18,7 +21,7 @@ export default function SprinklerITM({ jobId }: SprinklerITMProps) {
   const [inspectionId, setInspectionId] = useState<number | null>(null);
   
   // Get or create inspection
-  const { data: existingInspection, isLoading: loadingInspection } = trpc.sprinkler.getInspectionByJobId.useQuery(
+  const { data: existingInspection, isLoading: loadingInspection, refetch } = trpc.sprinkler.getInspectionByJobId.useQuery(
     { jobId },
     { enabled: !!jobId }
   );
@@ -32,6 +35,23 @@ export default function SprinklerITM({ jobId }: SprinklerITMProps) {
       toast.error("Failed to create inspection");
     }
   });
+
+  const finalizeInspection = trpc.sprinkler.finalizeInspection.useMutation({
+    onSuccess: () => {
+      toast.success("Inspection finalized successfully");
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Validation failed. Please check all required fields.");
+    }
+  });
+
+  const handleFinalize = () => {
+    if (!inspectionId) return;
+    if (window.confirm("Are you sure you want to finalize this inspection? This will lock all data and cannot be undone.")) {
+      finalizeInspection.mutate({ id: inspectionId });
+    }
+  };
   
   useEffect(() => {
     if (existingInspection) {
@@ -76,9 +96,17 @@ export default function SprinklerITM({ jobId }: SprinklerITMProps) {
             <FileText className="h-4 w-4 mr-2" />
             Export PDF
           </Button>
-          <Button>
-            <CheckCircle className="h-4 w-4 mr-2" />
-            Finalize
+          <Button
+            onClick={handleFinalize}
+            disabled={existingInspection?.status === 'finalized' || finalizeInspection.isPending}
+            variant={existingInspection?.status === 'finalized' ? 'outline' : 'default'}
+          >
+            {finalizeInspection.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <CheckCircle className="h-4 w-4 mr-2" />
+            )}
+            {existingInspection?.status === 'finalized' ? 'Finalized' : 'Finalize Inspection'}
           </Button>
         </div>
       </div>
@@ -92,15 +120,15 @@ export default function SprinklerITM({ jobId }: SprinklerITMProps) {
         </TabsList>
         
         <TabsContent value="systems">
-          <SystemsTab inspectionId={inspectionId} />
+          <SystemsTab inspectionId={inspectionId} isFinalized={existingInspection?.status === 'finalized'} />
         </TabsContent>
         
         <TabsContent value="checklist">
-          <ChecklistTab inspectionId={inspectionId} />
+          <ChecklistTab inspectionId={inspectionId} isFinalized={existingInspection?.status === 'finalized'} />
         </TabsContent>
         
         <TabsContent value="devices">
-          <DevicesTab inspectionId={inspectionId} />
+          <DevicesTab inspectionId={inspectionId} isFinalized={existingInspection?.status === 'finalized'} />
         </TabsContent>
       </Tabs>
     </div>
@@ -111,64 +139,16 @@ export default function SprinklerITM({ jobId }: SprinklerITMProps) {
 // SYSTEMS TAB
 // ============================================
 
-function SystemsTab({ inspectionId }: { inspectionId: number }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Sprinkler Systems Summary</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          System details for up to 6 sprinkler systems
-        </p>
-      </CardHeader>
-      <CardContent>
-        <div className="text-center py-12 text-muted-foreground">
-          Systems grid interface - Coming soon
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+
 
 // ============================================
 // CHECKLIST TAB
 // ============================================
 
-function ChecklistTab({ inspectionId }: { inspectionId: number }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Inspection Checklist</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          NFPA 25 compliance checklist with YES/NO/NA responses
-        </p>
-      </CardHeader>
-      <CardContent>
-        <div className="text-center py-12 text-muted-foreground">
-          Checklist interface - Coming soon
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+
 
 // ============================================
 // DEVICES TAB
 // ============================================
 
-function DevicesTab({ inspectionId }: { inspectionId: number }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Sprinkler Devices</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Device list with location (required), checks A-F, and remarks
-        </p>
-      </CardHeader>
-      <CardContent>
-        <div className="text-center py-12 text-muted-foreground">
-          Devices table - Coming soon
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+
