@@ -210,6 +210,29 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Sprinkler ITM Inspection */}
+        <Card className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border-blue-200 dark:border-blue-800">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                  <Building2 className="h-5 w-5" />
+                  Sprinkler ITM Inspection
+                </h3>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                  NFPA 25 / Vancouver Fire By-law Compliance
+                </p>
+              </div>
+              <Link href={`/tech/jobs/${jobId}/sprinkler-itm`}>
+                <Button variant="default" className="bg-blue-600 hover:bg-blue-700">
+                  Start
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
         
         {/* CAN/ULC-S536 Checklist */}
         <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">

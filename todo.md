@@ -553,3 +553,9 @@
 - [x] Add validation for required numeric fields based on system type (handled by backend)
 - [x] Lock UI after finalization (isFinalized prop passed to all tabs)
 - [x] Test end-to-end workflow with real data (11 unit tests passing)
+
+
+## Sprinkler ITM Navigation Link
+- [x] Find Job Details page component
+- [x] Add Sprinkler ITM button/link alongside existing report links
+- [x] Test navigation flow from job details to Sprinkler ITM module
