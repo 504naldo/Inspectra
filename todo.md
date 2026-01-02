@@ -520,3 +520,20 @@
 - [x] Create tests for keyword-based categorization (28 tests passing)
 - [x] Create tests for sprinkler section in PDF (6 tests passing)
 - [x] Test end-to-end with real sprinkler deficiencies (verified via test PDFs)
+
+## Sprinkler ITM Inspection Report Module (NFPA 25 / Vancouver Fire By-law)
+- [x] Analyze Excel template structure (Sprinkler Systems, Sprinkler Report, Sprinkler Devices tabs)
+- [x] Design database schema for sprinkler ITM data (systems, checklist items, devices)
+- [x] Create database migrations and push schema changes (0007_rapid_ultron.sql)
+- [x] Build backend tRPC procedures for sprinkler ITM CRUD operations
+- [x] Create Sprinkler ITM page scaffolding with tabs (Systems, Checklist, Devices)
+- [ ] Implement Systems tab UI (grid for 6 systems with all fields)
+- [ ] Implement Checklist tab UI (grouped questions with YES/NO/NA + special fields)
+- [ ] Implement Devices tab UI (editable table with required Location)
+- [ ] Implement PDF generator matching Excel template layout
+- [ ] Add validation rules (devices require Location, NO responses require comments)
+- [ ] Wire up Finalize and Export PDF buttons
+- [ ] Create unit tests for sprinkler ITM module
+- [ ] Test end-to-end with real data
+
+**Note**: MVP focuses on backend + PDF generator. Detailed UI implementation to be completed in follow-up.

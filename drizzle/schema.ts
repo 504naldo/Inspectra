@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date } from "drizzle-orm/mysql-core";
 
 // ============================================
 // CORE USER TABLE (Extended from template)
@@ -519,3 +519,121 @@ export const fireAlarmAnnunciators = mysqlTable("fire_alarm_annunciators", {
 
 export type FireAlarmAnnunciator = typeof fireAlarmAnnunciators.$inferSelect;
 export type InsertFireAlarmAnnunciator = typeof fireAlarmAnnunciators.$inferInsert;
+
+
+// ============================================
+// SPRINKLER ITM INSPECTION MODULE (NFPA 25 / Vancouver Fire By-law)
+// ============================================
+
+// Main sprinkler inspection record
+export const sprinklerInspections = mysqlTable("sprinkler_inspections", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  inspectionDate: timestamp("inspectionDate").notNull(),
+  buildingId: varchar("buildingId", { length: 50 }),
+  status: mysqlEnum("status", ["draft", "finalized"]).default("draft").notNull(),
+  finalizedAt: timestamp("finalizedAt"),
+  finalizedById: int("finalizedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SprinklerInspection = typeof sprinklerInspections.$inferSelect;
+export type InsertSprinklerInspection = typeof sprinklerInspections.$inferInsert;
+
+// Sprinkler systems summary (up to 6 systems per inspection)
+export const sprinklerSystems = mysqlTable("sprinkler_systems", {
+  id: int("id").autoincrement().primaryKey(),
+  inspectionId: int("inspectionId").notNull(),
+  systemNumber: int("systemNumber").notNull(), // 1-6
+  
+  // System type flags
+  isWet: boolean("isWet").default(false),
+  isDryPipePartialTest: boolean("isDryPipePartialTest").default(false),
+  isDryPipeFullFlowTest: boolean("isDryPipeFullFlowTest").default(false),
+  isDeluge: boolean("isDeluge").default(false),
+  isPreaction: boolean("isPreaction").default(false),
+  isOther: boolean("isOther").default(false),
+  otherDescription: text("otherDescription"),
+  
+  // Dates
+  dateOfLastFullFlowTest: date("dateOfLastFullFlowTest"),
+  dateOfLast5YearInternal: date("dateOfLast5YearInternal"),
+  
+  // System details
+  areaOfCoverage: varchar("areaOfCoverage", { length: 255 }),
+  size: varchar("size", { length: 100 }),
+  manufacturer: varchar("manufacturer", { length: 255 }),
+  model: varchar("model", { length: 255 }),
+  
+  // Pressures (stored as strings to allow units like "120 PSI")
+  systemWaterPressure: varchar("systemWaterPressure", { length: 50 }),
+  supplyWaterPressure: varchar("supplyWaterPressure", { length: 50 }),
+  residualPressure: varchar("residualPressure", { length: 50 }),
+  systemAirPressure: varchar("systemAirPressure", { length: 50 }),
+  lowAirSwitchCutIn: varchar("lowAirSwitchCutIn", { length: 50 }),
+  tripPressure: varchar("tripPressure", { length: 50 }),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SprinklerSystem = typeof sprinklerSystems.$inferSelect;
+export type InsertSprinklerSystem = typeof sprinklerSystems.$inferInsert;
+
+// Sprinkler checklist items
+export const sprinklerChecklistItems = mysqlTable("sprinkler_checklist_items", {
+  id: int("id").autoincrement().primaryKey(),
+  inspectionId: int("inspectionId").notNull(),
+  section: varchar("section", { length: 100 }).notNull(), // 'General', 'Dry Systems', etc.
+  questionText: text("questionText").notNull(),
+  questionOrder: int("questionOrder").notNull(),
+  
+  // Response
+  response: mysqlEnum("response", ["YES", "NO", "NA"]),
+  comment: text("comment"),
+  
+  // Special fields for specific questions
+  numberValue: int("numberValue"), // For "Number of systems", etc.
+  dateValue: date("dateValue"), // For date fields
+  tempValue: varchar("tempValue", { length: 50 }), // For antifreeze temps
+  textValue: text("textValue"), // For text fields like "System pressure"
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SprinklerChecklistItem = typeof sprinklerChecklistItems.$inferSelect;
+export type InsertSprinklerChecklistItem = typeof sprinklerChecklistItems.$inferInsert;
+
+// Sprinkler devices table
+export const sprinklerDevices = mysqlTable("sprinkler_devices", {
+  id: int("id").autoincrement().primaryKey(),
+  inspectionId: int("inspectionId").notNull(),
+  deviceOrder: int("deviceOrder").notNull(),
+  
+  // Required field
+  location: varchar("location", { length: 255 }).notNull(), // REQUIRED
+  
+  // Device details
+  labelText: varchar("labelText", { length: 255 }),
+  deviceType: varchar("deviceType", { length: 50 }), // TS, FS, FPS, LA, etc.
+  address: varchar("address", { length: 100 }),
+  zone: varchar("zone", { length: 100 }),
+  
+  // Checks (A-F) - null means not checked, true = pass, false = fail
+  checkA: boolean("checkA"), // Correctly installed
+  checkB: boolean("checkB"), // Alarm/Activation confirmed
+  checkC: boolean("checkC"), // Annunciator indication
+  checkD: boolean("checkD"), // Supervised circuit trouble signal
+  checkE: boolean("checkE"), // Requires service/missing
+  checkF: boolean("checkF"), // Measurements
+  
+  remarks: text("remarks"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SprinklerDevice = typeof sprinklerDevices.$inferSelect;
+export type InsertSprinklerDevice = typeof sprinklerDevices.$inferInsert;

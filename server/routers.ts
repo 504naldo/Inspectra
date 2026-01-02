@@ -12,6 +12,7 @@ import { generateInspectionReportPDF } from "./pdfGeneratorFirePro";
 import { generateComplianceReportPDF } from "./pdfGeneratorCompliance";
 import * as checklists from "./complianceChecklists";
 import { fireAlarmRouter } from "./fireAlarmRouter";
+import { sprinklerRouter } from "./sprinklerRouter";
 
 // Role-based procedure helpers
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -2114,6 +2115,7 @@ export const appRouter = router({
   uploadQueue: uploadQueueRouter,
   import: importRouter,
   fireAlarm: fireAlarmRouter,
+  sprinkler: sprinklerRouter,
 });
 
 export type AppRouter = typeof appRouter;
