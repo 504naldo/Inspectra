@@ -71,30 +71,36 @@ export default function ChecklistTab({ inspectionId, isFinalized }: ChecklistTab
   const handleSave = () => {
     // Validate before saving
     const errors = new Set<number>();
-    items.forEach((item, index) => {
-      if (item.response === "NO" && !item.comment) {
-        errors.add(index);
+    items.forEach((item, idx) => {
+      // Check if response creates deficiency and requires comment
+      const defaultQ = defaultChecklistQuestions.find(q => q.questionOrder === item.questionOrder);
+      if (item.response && defaultQ?.createsDeficiencyWhen && item.response === defaultQ.createsDeficiencyWhen && !item.comment) {
+        errors.add(idx);
       }
     });
 
     if (errors.size > 0) {
       setValidationErrors(errors);
-      toast.error("Please add comments for all NO responses");
+      toast.error("Please add comments for all deficiency responses");
       return;
     }
 
     setValidationErrors(new Set());
     saveItems.mutate({
       inspectionId,
-      items: items.map(item => ({
-        ...item,
-        response: item.response || undefined,
-        comment: item.comment || undefined,
-        numberValue: item.numberValue ?? undefined,
-        dateValue: item.dateValue || undefined,
-        tempValue: item.tempValue ?? undefined,
-        textValue: item.textValue || undefined,
-      })),
+      items: items.map(item => {
+        const defaultQ = defaultChecklistQuestions.find(q => q.questionOrder === item.questionOrder);
+        return {
+          ...item,
+          response: item.response || undefined,
+          comment: item.comment || undefined,
+          createsDeficiencyWhen: defaultQ?.createsDeficiencyWhen || 'NEVER',
+          numberValue: item.numberValue ?? undefined,
+          dateValue: item.dateValue || undefined,
+          tempValue: item.tempValue ?? undefined,
+          textValue: item.textValue || undefined,
+        };
+      }),
     });
   };
 
@@ -285,8 +291,18 @@ export default function ChecklistTab({ inspectionId, isFinalized }: ChecklistTab
                           </RadioGroup>
                         )}
 
-                        {/* Comment field (required for NO responses) */}
-                        {item.response === "NO" && (
+                        {/* Deficiency Warning */}
+                        {item.response && defaultQ?.createsDeficiencyWhen && item.response === defaultQ.createsDeficiencyWhen && (
+                          <div className="flex items-center gap-2 p-2 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-md">
+                            <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400 flex-shrink-0" />
+                            <span className="text-sm text-orange-700 dark:text-orange-300">
+                              This response will be recorded as a deficiency
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Comment field (required for deficiency-creating responses) */}
+                        {item.response && defaultQ?.createsDeficiencyWhen && item.response === defaultQ.createsDeficiencyWhen && (
                           <div className="space-y-2">
                             <div className="flex items-center gap-2">
                               <Label className="text-sm font-medium">

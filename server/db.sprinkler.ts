@@ -186,13 +186,16 @@ export async function validateSprinklerInspectionForFinalize(inspectionId: numbe
     errors.push(`${devicesWithoutLocation.length} device(s) missing location`);
   }
   
-  // Check NO responses have comments
+  // Check deficiency-creating responses have comments
   const checklistItems = await getSprinklerChecklistItemsByInspectionId(inspectionId);
-  const noResponsesWithoutComment = checklistItems.filter((item: any) => 
-    item.response === 'NO' && (!item.comment || item.comment.trim() === '')
+  const deficiencyResponsesWithoutComment = checklistItems.filter((item: any) => 
+    item.response && 
+    item.createsDeficiencyWhen && 
+    item.response === item.createsDeficiencyWhen &&
+    (!item.comment || item.comment.trim() === '')
   );
-  if (noResponsesWithoutComment.length > 0) {
-    errors.push(`${noResponsesWithoutComment.length} deficiency item(s) marked NO without comments`);
+  if (deficiencyResponsesWithoutComment.length > 0) {
+    errors.push(`${deficiencyResponsesWithoutComment.length} deficiency item(s) require comments`);
   }
   
   return {
@@ -218,9 +221,13 @@ export async function getSprinklerDeficiencies(inspectionId: number) {
     failedChecks?: string[];
   }> = [];
   
-  // Get checklist deficiencies (NO responses)
+  // Get checklist deficiencies (only when response matches createsDeficiencyWhen)
   const checklistItems = await getSprinklerChecklistItemsByInspectionId(inspectionId);
-  checklistItems.filter((item: any) => item.response === 'NO').forEach((item: any) => {
+  checklistItems.filter((item: any) => 
+    item.response && 
+    item.createsDeficiencyWhen && 
+    item.response === item.createsDeficiencyWhen
+  ).forEach((item: any) => {
     deficiencies.push({
       type: 'checklist',
       id: item.id,

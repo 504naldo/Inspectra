@@ -559,3 +559,18 @@
 - [x] Find Job Details page component
 - [x] Add Sprinkler ITM button/link alongside existing report links
 - [x] Test navigation flow from job details to Sprinkler ITM module
+
+
+## Debug Sprinkler ITM Navigation Card
+- [ ] Verify code changes are in JobDetails.tsx
+- [ ] Start dev server and check rendered page
+- [ ] Fix any visibility or rendering issues
+
+
+## Fix Sprinkler Checklist Deficiency Logic
+- [x] Add createsDeficiencyWhen field to sprinkler_checklist_items schema (migration 0009_groovy_ken_ellis.sql)
+- [x] Update default checklist questions with appropriate createsDeficiencyWhen values (30+ questions configured)
+- [x] Update backend deficiency generation logic to check createsDeficiencyWhen
+- [x] Update Deficiency Summary to only include matching responses
+- [x] Add UI warning when response will create deficiency (orange banner)
+- [x] Test with various checklist configurations (11 unit tests passing)

@@ -64,6 +64,13 @@
       "when": 1767349398255,
       "tag": "0008_giant_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1767521973397,
+      "tag": "0009_groovy_ken_ellis",
+      "breakpoints": true
     }
   ]
 }

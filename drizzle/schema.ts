@@ -610,6 +610,9 @@ export const sprinklerChecklistItems = mysqlTable("sprinkler_checklist_items", {
   response: mysqlEnum("response", ["YES", "NO", "NA"]),
   comment: text("comment"),
   
+  // Deficiency trigger configuration
+  createsDeficiencyWhen: mysqlEnum("createsDeficiencyWhen", ["NO", "YES", "NEVER"]).default("NEVER"),
+  
   // Special fields for specific questions
   numberValue: int("numberValue"), // For "Number of systems", etc.
   dateValue: date("dateValue"), // For date fields

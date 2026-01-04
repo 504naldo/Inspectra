@@ -1,0 +1,1 @@
+ALTER TABLE `sprinkler_checklist_items` ADD `createsDeficiencyWhen` enum('NO','YES','NEVER') DEFAULT 'NEVER';

@@ -136,6 +136,7 @@ export const sprinklerRouter = router({
       questionOrder: z.number(),
       response: z.enum(['YES', 'NO', 'NA']).optional(),
       comment: z.string().optional(),
+      createsDeficiencyWhen: z.enum(['NO', 'YES', 'NEVER']).optional(),
       numberValue: z.number().optional(),
       dateValue: z.date().optional(),
       tempValue: z.string().optional(),
