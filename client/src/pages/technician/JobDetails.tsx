@@ -201,12 +201,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   CAN/ULC-S536 Annual Test & Inspection
                 </p>
               </div>
-              <Link href={`/tech/jobs/${jobId}/fire-alarm`}>
-                <Button variant="default" className="bg-orange-600 hover:bg-orange-700">
-                  Start
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </Link>
+              <Button 
+                variant="default" 
+                className="bg-orange-600 hover:bg-orange-700"
+                onClick={() => setLocation(`/tech/jobs/${jobId}/fire-alarm`, { replace: true })}
+              >
+                Start
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -224,12 +226,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   NFPA 25 / Vancouver Fire By-law Compliance
                 </p>
               </div>
-              <Link href={`/tech/jobs/${jobId}/sprinkler-itm`}>
-                <Button variant="default" className="bg-blue-600 hover:bg-blue-700">
-                  Start
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </Link>
+              <Button 
+                variant="default" 
+                className="bg-blue-600 hover:bg-blue-700"
+                onClick={() => setLocation(`/tech/jobs/${jobId}/sprinkler-itm`, { replace: true })}
+              >
+                Start
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
             </div>
           </CardContent>
         </Card>

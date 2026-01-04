@@ -10,6 +10,8 @@ import { Link } from "wouter";
 import SystemsTab from "@/components/sprinkler/SystemsTab";
 import ChecklistTab from "@/components/sprinkler/ChecklistTab";
 import DevicesTab from "@/components/sprinkler/DevicesTab";
+import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";
+import { UnsavedChangesDialog } from "@/components/UnsavedChangesDialog";
 
 interface SprinklerITMProps {
   jobId: number;
@@ -19,6 +21,9 @@ export default function SprinklerITM({ jobId }: SprinklerITMProps) {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("systems");
   const [inspectionId, setInspectionId] = useState<number | null>(null);
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const { hasUnsavedChanges, markAsChanged, markAsSaved } = useUnsavedChanges();
   
   // Get or create inspection
   const { data: existingInspection, isLoading: loadingInspection, refetch } = trpc.sprinkler.getInspectionByJobId.useQuery(
@@ -80,11 +85,21 @@ export default function SprinklerITM({ jobId }: SprinklerITMProps) {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <Link href={`/tech/jobs/${jobId}`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+          <Button 
+            variant="outline" 
+            className="gap-2"
+            onClick={() => {
+              if (hasUnsavedChanges && existingInspection?.status !== 'finalized') {
+                setPendingNavigation('/tech/jobs');
+                setShowUnsavedDialog(true);
+              } else {
+                setLocation('/tech/jobs');
+              }
+            }}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            My Jobs
+          </Button>
           <div>
             <h1 className="text-3xl font-bold">Sprinkler ITM Inspection</h1>
             <p className="text-muted-foreground">NFPA 25 / Vancouver Fire By-law Compliance</p>
@@ -131,6 +146,25 @@ export default function SprinklerITM({ jobId }: SprinklerITMProps) {
           <DevicesTab inspectionId={inspectionId} isFinalized={existingInspection?.status === 'finalized'} />
         </TabsContent>
       </Tabs>
+
+      {/* Unsaved Changes Dialog */}
+      <UnsavedChangesDialog
+        open={showUnsavedDialog}
+        onOpenChange={setShowUnsavedDialog}
+        onSaveAndExit={() => {
+          // Save logic would go here
+          markAsSaved();
+          if (pendingNavigation) {
+            setLocation(pendingNavigation);
+          }
+        }}
+        onExitWithoutSaving={() => {
+          markAsSaved();
+          if (pendingNavigation) {
+            setLocation(pendingNavigation);
+          }
+        }}
+      />
     </div>
   );
 }

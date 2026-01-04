@@ -574,3 +574,13 @@
 - [x] Update Deficiency Summary to only include matching responses
 - [x] Add UI warning when response will create deficiency (orange banner)
 - [x] Test with various checklist configurations (11 unit tests passing)
+
+
+## Fix Inspection Navigation Flow
+- [x] Add persistent "← My Jobs" header button to all inspection pages (SprinklerITM, FireAlarmInspection, DeficiencyEditor)
+- [x] Implement unsaved changes detection for inspection forms (hook + dialog created)
+- [x] Create confirmation modal for unsaved changes (Save & Exit / Exit without saving / Stay)
+- [ ] Wire up change detection in tab components (SystemsTab, ChecklistTab, DevicesTab)
+- [x] Update JobDetails navigation to use replace history when entering inspections (Fire Alarm, Sprinkler ITM)
+- [x] Update tech role default landing route from dashboard to /tech/jobs
+- [x] Test back button behavior: inspection → My Jobs (no empty dashboard) - replace history prevents dashboard from appearing in back stack

@@ -179,9 +179,10 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       {/* Header */}
       <header className="sticky top-0 z-50 bg-card border-b">
         <div className="container flex h-16 items-center gap-4">
-          <Link href={isEditing && existingDef?.deficiency ? `/tech/jobs/${existingDef.deficiency.jobId}` : `/tech/jobs/${jobId}`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
+          <Link href="/tech/jobs">
+            <Button variant="outline" size="sm" className="gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              My Jobs
             </Button>
           </Link>
           <h1 className="font-bold text-lg">

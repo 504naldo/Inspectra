@@ -420,13 +420,13 @@ export default function FireAlarmInspection() {
       <div className="bg-card border-b sticky top-0 z-10">
         <div className="container py-4">
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            onClick={() => setLocation(`/tech/jobs/${jobId}`)}
-            className="mb-2"
+            onClick={() => setLocation('/tech/jobs')}
+            className="mb-2 gap-2"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Job
+            <ArrowLeft className="h-4 w-4" />
+            My Jobs
           </Button>
           <div className="flex items-center justify-between">
             <div>

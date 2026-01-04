@@ -68,7 +68,7 @@ function ProtectedRoute({
     if (user.role === 'customer') {
       return <Redirect to="/customer" />;
     } else if (user.role === 'technician') {
-      return <Redirect to="/tech" />;
+      return <Redirect to="/tech/jobs" />;
     } else {
       return <Redirect to="/admin" />;
     }
@@ -92,7 +92,7 @@ function Router() {
       if (user.role === 'customer') {
         targetPath = '/customer';
       } else if (user.role === 'technician') {
-        targetPath = '/tech';
+        targetPath = '/tech/jobs';
       }
       setLocation(targetPath);
     }
