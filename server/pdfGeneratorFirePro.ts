@@ -287,11 +287,13 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       // DEFICIENCIES TABLE
       // ============================================
       
+      let defY = 110; // Declare outside if block for use in appendix
+      
       if (data.deficiencies.length > 0) {
         doc.addPage();
         drawLogo(doc, 50, 50, 100);
         
-        let defY = 110;
+        defY = 110;
         
         // Group deficiencies by system type
         const deficienciesBySystem: Record<string, Array<typeof data.deficiencies[0]>> = {
@@ -434,14 +436,14 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           defY += 15; // Space between system categories
         }
 
-        // Pricing totals section
-        if (defY > 680) {
+        // Pricing totals section - only add page if insufficient space (need ~100px for totals)
+        if (defY > 650) {
           doc.addPage();
           drawLogo(doc, 50, 50, 100);
           defY = 110;
         }
 
-        defY += 20;
+        defY += 10; // Reduced spacing before totals
 
         const totalsX = 380;
         const totalsLabelWidth = 100;
@@ -511,10 +513,16 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       // ============================================
       
       if (data.missingLocationDeficiencies && data.missingLocationDeficiencies.length > 0) {
-        doc.addPage();
-        drawLogo(doc, 50, 50, 100);
+        // Only add new page if insufficient space for appendix header
+        if (defY > 650) {
+          doc.addPage();
+          drawLogo(doc, 50, 50, 100);
+          defY = 110;
+        } else {
+          defY += 30; // Add spacing if continuing on same page
+        }
         
-        let appendixY = 110;
+        let appendixY = defY;
         
         // Appendix title
         doc.fontSize(16)

@@ -584,3 +584,14 @@
 - [x] Update JobDetails navigation to use replace history when entering inspections (Fire Alarm, Sprinkler ITM)
 - [x] Update tech role default landing route from dashboard to /tech/jobs
 - [x] Test back button behavior: inspection → My Jobs (no empty dashboard) - replace history prevents dashboard from appearing in back stack
+
+
+## Fix Deficiency Report PDF Blank Pages
+- [x] Audit pdfGeneratorFirePro.ts for forced page breaks and empty sections - Found: line 345 skips empty sections (good), line 438 forces page for totals (bad), multiple addPage() calls
+- [x] Remove rendering of empty deficiency category sections (0 items) - Already implemented at line 345
+- [x] Remove forced page breaks (pageBreak: "always", breakBefore, etc.) - Changed to conditional breaks
+- [x] Replace fixed-height spacers with flexible spacing - Reduced spacing before totals from 20px to 10px
+- [x] Fix totals placement to render immediately after last deficiency section - Removed forced page break
+- [x] Add conditional page break for totals only when insufficient space - Changed threshold from 680 to 650
+- [x] Test with 1-5 deficiencies (should be 1-2 pages max) - 5 tests passing
+- [x] Test with empty sections (should skip those sections entirely) - Verified in tests
