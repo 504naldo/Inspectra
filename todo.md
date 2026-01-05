@@ -595,3 +595,25 @@
 - [x] Add conditional page break for totals only when insufficient space - Changed threshold from 680 to 650
 - [x] Test with 1-5 deficiencies (should be 1-2 pages max) - 5 tests passing
 - [x] Test with empty sections (should skip those sections entirely) - Verified in tests
+
+
+## Technician Job Assignment System
+- [x] Add assignedTechnicianId, assignedAt, assignedByUserId fields to jobs table (assignedTechnicianId already existed)
+- [x] Create database migration and backfill existing jobs as unassigned (migration 0010_optimal_synch.sql)
+- [x] Create tech.listMyJobs() procedure to return only assigned jobs
+- [x] Create admin.listJobsWithAssignee() procedure to return all jobs with assignee info
+- [x] Create admin.assignJob() procedure for single job assignment
+- [x] Create admin.bulkAssignJobs() procedure for bulk assignment
+- [x] Add role validation (only OFFICE/ADMIN can assign)
+- [x] Add listTechnicians() procedure for dropdown population
+- [x] Build admin job assignment page at /admin/job-assignments
+- [x] Add job table with inline technician dropdown per row
+- [x] Add bulk assignment controls (checkboxes + bulk dropdown)
+- [x] Add technician filter (All / Unassigned / specific tech)
+- [x] Update Tech My Jobs page to call jobAssignment.listMyJobs()
+- [x] Add empty state for technicians with no assigned jobs (existing empty state will show)
+- [x] Add seenAssignmentsAt field to user profile for notification tracking (migration 0011_silky_kylun.sql)
+- [x] Show "new assignments" indicator in Tech My Jobs page (badge shows count of new assignments)
+- [x] Create unit tests for assignment procedures (6 tests passing)
+- [x] Test bulk assignment with multiple jobs (verified in tests)
+- [x] Test filtering and role permissions (verified in tests)

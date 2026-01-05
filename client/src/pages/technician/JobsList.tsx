@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,12 +20,35 @@ import { Link } from "wouter";
 import { toast } from "sonner";
 
 export default function JobsList() {
+  const { user } = useAuth();
   const { isOnline, cacheJobData } = useOfflineStorage();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
 
-  const { data: jobs, isLoading } = trpc.job.listByTechnician.useQuery({
-    status: activeTab === 'all' ? undefined : activeTab
+  // Fetch only jobs assigned to current technician
+  const { data: assignedJobs, isLoading } = trpc.jobAssignment.listMyJobs.useQuery();
+  const markSeenMutation = trpc.jobAssignment.markAssignmentsSeen.useMutation();
+
+  // Check for new assignments (assigned after last seen timestamp)
+  const newAssignmentsCount = assignedJobs?.filter(job => {
+    if (!job.assignedAt || !user?.seenAssignmentsAt) return true;
+    return new Date(job.assignedAt) > new Date(user.seenAssignmentsAt);
+  }).length || 0;
+
+  // Mark assignments as seen when page loads
+  useEffect(() => {
+    if (newAssignmentsCount > 0 && user?.role === 'technician') {
+      const timer = setTimeout(() => {
+        markSeenMutation.mutate();
+      }, 2000); // Wait 2 seconds before marking as seen
+      return () => clearTimeout(timer);
+    }
+  }, [newAssignmentsCount, user?.role]);
+
+  // Filter by status tab
+  const jobs = assignedJobs?.filter(job => {
+    if (activeTab === 'all') return true;
+    return job.status === activeTab;
   });
 
   const filteredJobs = jobs?.filter(job => {
@@ -87,7 +110,14 @@ export default function JobsList() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="font-bold text-lg flex-1">My Jobs</h1>
+          <h1 className="font-bold text-lg flex-1">
+            My Jobs
+            {newAssignmentsCount > 0 && (
+              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary text-primary-foreground">
+                {newAssignmentsCount} new
+              </span>
+            )}
+          </h1>
           {isOnline ? (
             <span className="online-badge flex items-center gap-1 text-xs">
               <Wifi className="h-3 w-3" />

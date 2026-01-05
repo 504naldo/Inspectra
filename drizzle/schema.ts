@@ -15,6 +15,7 @@ export const users = mysqlTable("users", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  seenAssignmentsAt: timestamp("seenAssignmentsAt"),
 });
 
 export type User = typeof users.$inferSelect;
@@ -144,6 +145,8 @@ export const jobs = mysqlTable("jobs", {
   siteId: int("siteId").notNull(),
   customerOrgId: int("customerOrgId").notNull(),
   assignedTechnicianId: int("assignedTechnicianId"),
+  assignedAt: timestamp("assignedAt"),
+  assignedByUserId: int("assignedByUserId"),
   jobNumber: varchar("jobNumber", { length: 50 }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),

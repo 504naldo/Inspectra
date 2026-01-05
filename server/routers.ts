@@ -13,6 +13,7 @@ import { generateComplianceReportPDF } from "./pdfGeneratorCompliance";
 import * as checklists from "./complianceChecklists";
 import { fireAlarmRouter } from "./fireAlarmRouter";
 import { sprinklerRouter } from "./sprinklerRouter";
+import { jobAssignmentRouter } from "./jobAssignmentRouter";
 
 // Role-based procedure helpers
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -2116,6 +2117,7 @@ export const appRouter = router({
   import: importRouter,
   fireAlarm: fireAlarmRouter,
   sprinkler: sprinklerRouter,
+  jobAssignment: jobAssignmentRouter,
 });
 
 export type AppRouter = typeof appRouter;
