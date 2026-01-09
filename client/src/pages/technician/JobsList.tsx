@@ -14,8 +14,10 @@ import {
   ChevronRight,
   Wifi,
   WifiOff,
-  Download
+  Download,
+  User
 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Link } from "wouter";
 import { toast } from "sonner";
 
@@ -24,9 +26,39 @@ export default function JobsList() {
   const { isOnline, cacheJobData } = useOfflineStorage();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const [technicianFilter, setTechnicianFilter] = useState<string>("all");
 
-  // Fetch only jobs assigned to current technician
-  const { data: assignedJobs, isLoading } = trpc.jobAssignment.listMyJobs.useQuery();
+  // Role-based data fetching
+  const isAdmin = user?.role === 'admin' || user?.role === 'office';
+  
+  // Fetch jobs based on role
+  const { data: assignedJobs, isLoading: techJobsLoading } = trpc.jobAssignment.listMyJobs.useQuery(
+    undefined,
+    { enabled: !isAdmin }
+  );
+  const { data: allJobsData, isLoading: adminJobsLoading } = trpc.jobAssignment.listJobsWithAssignee.useQuery(
+    undefined,
+    { enabled: isAdmin }
+  );
+  const { data: technicians } = trpc.jobAssignment.listTechnicians.useQuery(
+    undefined,
+    { enabled: isAdmin }
+  );
+  
+  const isLoading = isAdmin ? adminJobsLoading : techJobsLoading;
+  const jobsData = isAdmin ? allJobsData : assignedJobs;
+  
+  // Assignment mutation
+  const utils = trpc.useUtils();
+  const assignMutation = trpc.jobAssignment.assignJob.useMutation({
+    onSuccess: () => {
+      utils.jobAssignment.listJobsWithAssignee.invalidate();
+      toast.success('Job assignment updated');
+    },
+    onError: () => {
+      toast.error('Failed to update assignment');
+    }
+  });
   const markSeenMutation = trpc.jobAssignment.markAssignmentsSeen.useMutation();
 
   // Check for new assignments (assigned after last seen timestamp)
@@ -45,10 +77,20 @@ export default function JobsList() {
     }
   }, [newAssignmentsCount, user?.role]);
 
-  // Filter by status tab
-  const jobs = assignedJobs?.filter(job => {
-    if (activeTab === 'all') return true;
-    return job.status === activeTab;
+  // Filter by status tab and technician (for admin)
+  const jobs = jobsData?.filter(job => {
+    // Status filter
+    if (activeTab !== 'all' && job.status !== activeTab) return false;
+    
+    // Technician filter (admin only)
+    if (isAdmin && technicianFilter !== 'all') {
+      if (technicianFilter === 'unassigned') {
+        return !job.assignedTechnicianId;
+      }
+      return job.assignedTechnicianId?.toString() === technicianFilter;
+    }
+    
+    return true;
   });
 
   const filteredJobs = jobs?.filter(job => {
@@ -80,8 +122,14 @@ export default function JobsList() {
     }
   };
 
-  const utils = trpc.useUtils();
   const [downloadingJobId, setDownloadingJobId] = useState<number | null>(null);
+  
+  const handleAssignmentChange = (jobId: number, technicianId: string) => {
+    assignMutation.mutate({
+      jobId,
+      technicianId: technicianId === 'unassigned' ? null : parseInt(technicianId)
+    });
+  };
 
   const handleDownload = async (jobId: number, e: React.MouseEvent) => {
     e.preventDefault();
@@ -141,6 +189,27 @@ export default function JobsList() {
             className="pl-10 h-12"
           />
         </div>
+        
+        {/* Technician Filter (Admin/Office only) */}
+        {isAdmin && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Filter by Technician</label>
+            <Select value={technicianFilter} onValueChange={setTechnicianFilter}>
+              <SelectTrigger className="h-12">
+                <SelectValue placeholder="All jobs" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Jobs</SelectItem>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {technicians?.map(tech => (
+                  <SelectItem key={tech.id} value={tech.id.toString()}>
+                    {tech.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -186,6 +255,29 @@ export default function JobsList() {
                               </span>
                             )}
                           </div>
+                          
+                          {/* Assignment Dropdown (Admin/Office only) */}
+                          {isAdmin && (
+                            <div className="mt-3" onClick={(e) => e.preventDefault()}>
+                              <Select 
+                                value={job.assignedTechnicianId?.toString() || 'unassigned'}
+                                onValueChange={(value) => handleAssignmentChange(job.id, value)}
+                              >
+                                <SelectTrigger className="h-9 text-xs">
+                                  <User className="h-3 w-3 mr-1" />
+                                  <SelectValue placeholder="Unassigned" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                                  {technicians?.map(tech => (
+                                    <SelectItem key={tech.id} value={tech.id.toString()}>
+                                      {tech.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           {isOnline && job.status !== 'completed' && (

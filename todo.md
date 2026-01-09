@@ -617,3 +617,12 @@
 - [x] Create unit tests for assignment procedures (6 tests passing)
 - [x] Test bulk assignment with multiple jobs (verified in tests)
 - [x] Test filtering and role permissions (verified in tests)
+
+
+## Jobs Page Assignment UI for OFFICE/ADMIN
+- [x] Add role detection to Jobs page (useAuth hook)
+- [x] Add "Assigned To" dropdown to each job card for OFFICE/ADMIN users
+- [x] Wire up dropdown to assignJob mutation
+- [x] Add filter controls (All / Unassigned / By Technician) for OFFICE/ADMIN
+- [x] Ensure TECH users see no assignment controls (conditional rendering based on isAdmin)
+- [x] Test role-based visibility (TypeScript compilation successful)

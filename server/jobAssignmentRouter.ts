@@ -41,6 +41,7 @@ export const jobAssignmentRouter = router({
         status: jobs.status,
         priority: jobs.priority,
         scheduledDate: jobs.scheduledDate,
+        assignedTechnicianId: jobs.assignedTechnicianId,
         assignedAt: jobs.assignedAt,
         siteId: jobs.siteId,
         customerOrgId: jobs.customerOrgId,
