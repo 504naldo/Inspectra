@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { APP_NAME } from "../../../shared/constants";
 import { Button } from "@/components/ui/button";
 import { 
   Shield, 
@@ -53,7 +54,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             <Link href="/admin">
               <div className="flex items-center gap-2 cursor-pointer">
                 <Shield className="h-7 w-7 text-primary" />
-                <span className="font-bold text-lg hidden sm:inline">Fire Inspect Pro</span>
+                <span className="font-bold text-lg hidden sm:inline">{APP_NAME}</span>
               </div>
             </Link>
           </div>

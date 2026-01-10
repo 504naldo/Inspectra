@@ -1026,7 +1026,7 @@ const reportRouter = router({
     });
     
     // Upload to S3
-    const fileKey = `reports/${job.companyId}/${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pdf`;
+    const fileKey = `reports/${job.companyId}/Inspectra-${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pdf`;
     const { url } = await storagePut(fileKey, pdfBuffer, 'application/pdf');
     
     // Create or update report record
@@ -1345,7 +1345,7 @@ const reportRouter = router({
     });
     
     // Upload to S3
-    const fileKey = `reports/${job.companyId}/${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-compliance-${Date.now()}.pdf`;
+    const fileKey = `reports/${job.companyId}/Inspectra-${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-compliance-${Date.now()}.pdf`;
     const { url } = await storagePut(fileKey, pdfBuffer, 'application/pdf');
     
     // Create report record

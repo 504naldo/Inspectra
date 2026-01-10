@@ -91,7 +91,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      // Colors matching Fire-Pro style
+      // Colors matching Inspectra style
       const navyBlue = '#003366'; // Dark navy blue for title block
       const white = '#FFFFFF';
       const black = '#000000';

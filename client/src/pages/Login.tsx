@@ -48,7 +48,7 @@ export default function Login() {
               <Shield className="h-12 w-12 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-2xl">Fire Inspect Pro</CardTitle>
+          <CardTitle className="text-2xl">Inspectra</CardTitle>
           <CardDescription>
             Sign in to access your inspection dashboard
           </CardDescription>

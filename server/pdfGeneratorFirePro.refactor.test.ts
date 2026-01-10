@@ -6,7 +6,7 @@ import path from 'path';
 describe('Deficiency Report - System Grouping and Pricing', () => {
   const mockData = {
     jobNumber: 'TEST-001',
-    jobTitle: 'Annual Fire Inspection',
+    jobTitle: 'Annual Inspectraion',
     siteName: 'Test Site',
     siteAddress: '123 Test Street',
     siteCity: 'Vancouver',

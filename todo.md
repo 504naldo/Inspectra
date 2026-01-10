@@ -649,3 +649,17 @@
 - [x] Test resume functionality on desktop (10 tests passing)
 - [x] Test TECH editable vs OFFICE/ADMIN read-only modes (Handled by existing role-based routing)
 - [x] Test fallback when stored route is invalid (Progress validation in hook ensures safe fallback)
+
+## Inspectra Rebrand
+
+- [x] Create APP_NAME constant in shared config
+- [x] Update DashboardLayout header with Inspectra
+- [x] Update login/auth pages with Inspectra
+- [x] Update footer text with Inspectra
+- [x] Update browser document title
+- [x] Update PWA manifest name and short_name
+- [x] Update PDF generators to display Inspectra
+- [x] Update PDF filenames to include Inspectra
+- [x] Test PWA installation shows Inspectra (14 tests passing)
+- [x] Test all PDFs display Inspectra correctly (14 tests passing)
+- [x] Verify no routing or build issues (14 tests passing)

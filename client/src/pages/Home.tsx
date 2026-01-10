@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getLoginUrl } from "@/const";
+import { APP_NAME, APP_TAGLINE, APP_DESCRIPTION } from "../../../shared/constants";
 import { 
   Shield, 
   ClipboardCheck, 
@@ -44,7 +45,7 @@ export default function Home() {
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="h-8 w-8 text-primary" />
-            <span className="text-xl font-bold">Fire Inspect Pro</span>
+            <span className="text-xl font-bold">{APP_NAME}</span>
           </div>
           <div className="flex items-center gap-4">
             {isAuthenticated ? (
@@ -90,7 +91,7 @@ export default function Home() {
       <section className="py-20 px-4">
         <div className="container">
           <h2 className="text-3xl font-bold text-center mb-12">
-            Everything You Need for Fire Inspections
+            {APP_TAGLINE}
           </h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             <Card className="border-2 hover:border-primary/50 transition-colors">
@@ -239,10 +240,10 @@ export default function Home() {
         <div className="container flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Shield className="h-6 w-6 text-primary" />
-            <span className="font-semibold">Fire Inspect Pro</span>
+            <span className="font-semibold">{APP_NAME}</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            Professional fire alarm inspection management
+            {APP_DESCRIPTION}
           </p>
         </div>
       </footer>

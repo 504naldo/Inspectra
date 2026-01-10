@@ -44,7 +44,7 @@ export default function TechnicianDashboard() {
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="h-7 w-7 text-primary" />
-            <span className="font-bold">Fire Inspect</span>
+            <span className="font-bold">Inspectra</span>
           </div>
           <div className="flex items-center gap-3">
             {isOnline ? (

@@ -3,7 +3,7 @@ import { generateInspectionReportPDF } from './pdfGeneratorFirePro';
 import fs from 'fs';
 import path from 'path';
 
-describe('Fire-Pro PDF Generator', () => {
+describe('Inspectra PDF Generator', () => {
   it('should generate a PDF buffer with cover page and letter-style summary', async () => {
     const testData = {
       jobNumber: 'TEST-001',
@@ -24,7 +24,7 @@ describe('Fire-Pro PDF Generator', () => {
       technicianName: 'Jane Smith',
       technicianTitle: 'Fire Alarm Technician',
       technicianEmail: 'jane@firepro.ca',
-      companyName: 'Fire-Pro Fire Protection',
+      companyName: 'Inspectra Fire Protection',
       companyAddress: '15-3871 North Fraser Way, Burnaby BC V5G 5J6',
       companyPhone: '604-299-1030',
       companyEmail: 'info@myfirepro.ca',
@@ -92,7 +92,7 @@ describe('Fire-Pro PDF Generator', () => {
       siteState: 'BC',
       customerName: 'Test Customer',
       inspectionDate: new Date('2024-12-01'),
-      companyName: 'Fire-Pro',
+      companyName: 'Inspectra',
       companyAddress: '15-3871 North Fraser Way',
       companyPhone: '604-299-1030',
       companyEmail: 'info@firepro.ca',
@@ -142,7 +142,7 @@ describe('Fire-Pro PDF Generator', () => {
       siteState: 'BC',
       customerName: 'Test Customer',
       inspectionDate: new Date('2024-12-01'),
-      companyName: 'Fire-Pro',
+      companyName: 'Inspectra',
       companyAddress: '15-3871 North Fraser Way',
       companyPhone: '604-299-1030',
       companyEmail: 'info@firepro.ca',
@@ -200,7 +200,7 @@ describe('Fire-Pro PDF Generator', () => {
       siteState: 'BC',
       customerName: 'Test Customer',
       inspectionDate: new Date('2024-12-01'),
-      companyName: 'Fire-Pro',
+      companyName: 'Inspectra',
       companyAddress: '15-3871 North Fraser Way, Burnaby BC V5G 5J6',
       companyPhone: '604-299-1030',
       companyEmail: 'info@myfirepro.ca',
@@ -229,7 +229,7 @@ describe('Fire-Pro PDF Generator', () => {
       siteState: 'BC',
       customerName: 'Test Customer',
       inspectionDate: new Date('2024-12-01'),
-      companyName: 'Fire-Pro',
+      companyName: 'Inspectra',
       companyAddress: '15-3871 North Fraser Way',
       companyPhone: '604-299-1030',
       companyEmail: 'info@firepro.ca',
