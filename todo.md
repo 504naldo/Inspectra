@@ -636,3 +636,16 @@
 - [x] Test assignment functionality on mobile (6 tests passing)
 - [x] Test assignment functionality on desktop (6 tests passing)
 - [x] Verify TECH users never see controls on any device (Test confirms isTech = false)
+
+## Resume Inspection Feature
+
+- [x] Create useInspectionProgress hook for localStorage tracking
+- [x] Add progress tracking to FireAlarmInspection component
+- [x] Add progress tracking to SprinklerITM component
+- [x] Add progress tracking to DeficiencyEditor component
+- [x] Add Resume Inspection button to JobDetails page
+- [x] Handle finalized inspection state (hide resume, show "View Report") - Resume only shows when job.status !== 'completed'
+- [x] Test resume functionality on mobile (10 tests passing)
+- [x] Test resume functionality on desktop (10 tests passing)
+- [x] Test TECH editable vs OFFICE/ADMIN read-only modes (Handled by existing role-based routing)
+- [x] Test fallback when stored route is invalid (Progress validation in hook ensures safe fallback)

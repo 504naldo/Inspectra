@@ -12,14 +12,23 @@ import ChecklistTab from "@/components/sprinkler/ChecklistTab";
 import DevicesTab from "@/components/sprinkler/DevicesTab";
 import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";
 import { UnsavedChangesDialog } from "@/components/UnsavedChangesDialog";
+import { useTrackInspectionProgress } from "@/hooks/useInspectionProgress";
 
 interface SprinklerITMProps {
   jobId: number;
 }
 
 export default function SprinklerITM({ jobId }: SprinklerITMProps) {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("systems");
+  
+  // Track inspection progress for resume functionality
+  useTrackInspectionProgress(
+    jobId,
+    `${location}#${activeTab}`,
+    'sprinkler-itm',
+    `Sprinkler ITM - ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}`
+  );
   const [inspectionId, setInspectionId] = useState<number | null>(null);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);

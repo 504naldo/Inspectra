@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { useTrackInspectionProgress } from "@/hooks/useInspectionProgress";
 
 interface DeficiencyEditorProps {
   deficiencyId?: number;
@@ -22,8 +23,16 @@ interface DeficiencyEditorProps {
 }
 
 export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEditorProps) {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const isEditing = !!deficiencyId;
+  
+  // Track inspection progress for resume functionality
+  useTrackInspectionProgress(
+    jobId || 0,
+    location,
+    'deficiency',
+    isEditing ? 'Edit Deficiency' : 'Create Deficiency'
+  );
 
   const [title, setTitle] = useState("");
   const [severity, setSeverity] = useState<string>("major");

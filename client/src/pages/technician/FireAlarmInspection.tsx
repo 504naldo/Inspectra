@@ -12,6 +12,7 @@ import { ArrowLeft, Check, X, Minus, AlertCircle, Cloud, CloudOff, Loader2, Wifi
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { offlineStorage } from "@/lib/offlineStorage";
+import { useTrackInspectionProgress } from "@/hooks/useInspectionProgress";
 
 type ChecklistItem = {
   id: number;
@@ -34,7 +35,15 @@ type InspectionResult = {
 
 export default function FireAlarmInspection() {
   const { jobId } = useParams();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  
+  // Track inspection progress for resume functionality
+  useTrackInspectionProgress(
+    jobId!,
+    location,
+    'fire-alarm',
+    'Fire Alarm Inspection'
+  );
   const [results, setResults] = useState<Record<number, InspectionResult>>({});
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [pendingCount, setPendingCount] = useState(0);

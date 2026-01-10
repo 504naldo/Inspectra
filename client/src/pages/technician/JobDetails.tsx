@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { useInspectionProgress } from "@/hooks/useInspectionProgress";
 import { 
   ArrowLeft, 
   MapPin, 
@@ -28,6 +29,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const [, setLocation] = useLocation();
   const { isOnline, getCachedJobData } = useOfflineStorage();
   const [activeTab, setActiveTab] = useState("devices");
+  const { getProgress, isProgressRecent } = useInspectionProgress(jobId);
 
   const { data, isLoading, refetch } = trpc.job.getWithDetails.useQuery(
     { id: jobId },
@@ -187,6 +189,46 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Resume Inspection */}
+        {(() => {
+          const progress = getProgress();
+          const isRecent = isProgressRecent(progress);
+          
+          // Only show if there's recent progress and job is not completed
+          if (progress && isRecent && job.status !== 'completed') {
+            return (
+              <Card className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/20 dark:to-indigo-950/20 border-purple-200 dark:border-purple-800">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-purple-900 dark:text-purple-100 flex items-center gap-2">
+                        <Play className="h-5 w-5" />
+                        Resume Inspection
+                      </h3>
+                      <p className="text-sm text-purple-700 dark:text-purple-300 mt-1">
+                        Last visited: {progress.label || 'Inspection'}
+                      </p>
+                    </div>
+                    <Button 
+                      variant="default" 
+                      className="bg-purple-600 hover:bg-purple-700"
+                      onClick={() => {
+                        // Extract base route without hash
+                        const baseRoute = progress.route.split('#')[0];
+                        setLocation(baseRoute, { replace: true });
+                      }}
+                    >
+                      Resume
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          }
+          return null;
+        })()}
 
         {/* Fire Alarm Inspection */}
         <Card className="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-950/20 dark:to-red-950/20 border-orange-200 dark:border-orange-800">
