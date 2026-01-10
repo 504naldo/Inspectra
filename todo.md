@@ -626,3 +626,13 @@
 - [x] Add filter controls (All / Unassigned / By Technician) for OFFICE/ADMIN
 - [x] Ensure TECH users see no assignment controls (conditional rendering based on isAdmin)
 - [x] Test role-based visibility (TypeScript compilation successful)
+
+## Mobile Job Assignment UI Fix
+
+- [x] Investigate current JobsList.tsx implementation for mobile vs desktop views
+- [x] Identify why assignment controls are missing on mobile (FOUND: Assignment dropdown already exists at lines 259-280, no responsive breakpoints hiding it)
+- [x] Add assignment dropdown to mobile job cards for OFFICE/ADMIN users (Already implemented at lines 259-280)
+- [x] Ensure role-based gating (not viewport-based) (Verified: isAdmin check on line 32, no responsive CSS)
+- [x] Test assignment functionality on mobile (6 tests passing)
+- [x] Test assignment functionality on desktop (6 tests passing)
+- [x] Verify TECH users never see controls on any device (Test confirms isTech = false)
