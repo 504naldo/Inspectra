@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { useInspectionProgress } from "@/hooks/useInspectionProgress";
+import { InspectionCategoryCard } from "@/components/InspectionCategoryCard";
 import { 
   ArrowLeft, 
   MapPin, 
@@ -16,7 +17,11 @@ import {
   ChevronRight,
   Building2,
   Wifi,
-  WifiOff
+  WifiOff,
+  Flame,
+  FireExtinguisher,
+  Lightbulb,
+  Droplets
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -108,6 +113,76 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     }
   };
 
+  // Category filtering logic
+  const categorizeDevice = (deviceType: string) => {
+    const type = deviceType.toLowerCase();
+    if (type.includes('smoke')) return 'smoke';
+    if (type.includes('extinguisher')) return 'extinguisher';
+    if (type.includes('emergency') || type.includes('exit')) return 'emergency';
+    if (type.includes('pull') || type.includes('heat') || type.includes('horn') || 
+        type.includes('strobe') || type.includes('module') || type.includes('bell')) return 'fire_alarm';
+    return 'other';
+  };
+
+  // Calculate progress for each category
+  const smokeAlarms = devices?.filter((d: any) => categorizeDevice(d.deviceType) === 'smoke') || [];
+  const fireAlarmDevices = devices?.filter((d: any) => categorizeDevice(d.deviceType) === 'fire_alarm') || [];
+  const extinguishers = devices?.filter((d: any) => categorizeDevice(d.deviceType) === 'extinguisher') || [];
+  const emergencyLights = devices?.filter((d: any) => categorizeDevice(d.deviceType) === 'emergency') || [];
+
+  const getSmokeAlarmStats = () => {
+    const tested = inspectionResults?.filter((r: any) => {
+      const device = devices?.find((d: any) => d.id === r.deviceId);
+      return device && categorizeDevice(device.deviceType) === 'smoke';
+    }) || [];
+    const defCount = deficiencies?.filter((d: any) => {
+      const device = devices?.find((dev: any) => dev.id === d.deviceId);
+      return device && categorizeDevice(device.deviceType) === 'smoke';
+    }).length || 0;
+    return { tested: tested.length, total: smokeAlarms.length, deficiencies: defCount };
+  };
+
+  const getFireAlarmStats = () => {
+    const tested = inspectionResults?.filter((r: any) => {
+      const device = devices?.find((d: any) => d.id === r.deviceId);
+      return device && categorizeDevice(device.deviceType) === 'fire_alarm';
+    }) || [];
+    const defCount = deficiencies?.filter((d: any) => {
+      const device = devices?.find((dev: any) => dev.id === d.deviceId);
+      return device && categorizeDevice(device.deviceType) === 'fire_alarm';
+    }).length || 0;
+    return { tested: tested.length, total: fireAlarmDevices.length, deficiencies: defCount };
+  };
+
+  const getExtinguisherStats = () => {
+    const tested = inspectionResults?.filter((r: any) => {
+      const device = devices?.find((d: any) => d.id === r.deviceId);
+      return device && categorizeDevice(device.deviceType) === 'extinguisher';
+    }) || [];
+    const defCount = deficiencies?.filter((d: any) => {
+      const device = devices?.find((dev: any) => dev.id === d.deviceId);
+      return device && categorizeDevice(device.deviceType) === 'extinguisher';
+    }).length || 0;
+    return { tested: tested.length, total: extinguishers.length, deficiencies: defCount };
+  };
+
+  const getEmergencyLightStats = () => {
+    const tested = inspectionResults?.filter((r: any) => {
+      const device = devices?.find((d: any) => d.id === r.deviceId);
+      return device && categorizeDevice(device.deviceType) === 'emergency';
+    }) || [];
+    const defCount = deficiencies?.filter((d: any) => {
+      const device = devices?.find((dev: any) => dev.id === d.deviceId);
+      return device && categorizeDevice(device.deviceType) === 'emergency';
+    }).length || 0;
+    return { tested: tested.length, total: emergencyLights.length, deficiencies: defCount };
+  };
+
+  const smokeStats = getSmokeAlarmStats();
+  const fireAlarmStats = getFireAlarmStats();
+  const extinguisherStats = getExtinguisherStats();
+  const emergencyLightStats = getEmergencyLightStats();
+
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom pb-24">
       {/* Header */}
@@ -190,62 +265,99 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </CardContent>
         </Card>
 
-        {/* Resume Inspection */}
-        {(() => {
-          const progress = getProgress();
-          const isRecent = isProgressRecent(progress);
-          
-          // Only show if there's recent progress and job is not completed
-          if (progress && isRecent && job.status !== 'completed') {
-            return (
-              <Card className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/20 dark:to-indigo-950/20 border-purple-200 dark:border-purple-800">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-purple-900 dark:text-purple-100 flex items-center gap-2">
-                        <Play className="h-5 w-5" />
-                        Resume Inspection
-                      </h3>
-                      <p className="text-sm text-purple-700 dark:text-purple-300 mt-1">
-                        Last visited: {progress.label || 'Inspection'}
-                      </p>
-                    </div>
-                    <Button 
-                      variant="default" 
-                      className="bg-purple-600 hover:bg-purple-700"
-                      onClick={() => {
-                        // Extract base route without hash
-                        const baseRoute = progress.route.split('#')[0];
-                        setLocation(baseRoute, { replace: true });
-                      }}
-                    >
-                      Resume
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          }
-          return null;
-        })()}
+        {/* Category Cards */}
+        {smokeStats.total > 0 && (
+          <InspectionCategoryCard
+            title="Smoke Alarms"
+            description="Smoke detection devices"
+            icon={<Flame className="h-5 w-5" />}
+            testedCount={smokeStats.tested}
+            totalCount={smokeStats.total}
+            deficiencyCount={smokeStats.deficiencies}
+            route={`/tech/jobs/${jobId}#smoke-alarms`}
+            resumeRoute={getProgress()?.route.includes('smoke') ? getProgress()?.route : undefined}
+            gradientFrom="from-red-50"
+            gradientTo="to-orange-50 dark:from-red-950/20 dark:to-orange-950/20"
+            borderColor="border-red-200 dark:border-red-800"
+            textColor="text-red-900 dark:text-red-100"
+            buttonColor="bg-red-600"
+            buttonHoverColor="hover:bg-red-700"
+          />
+        )}
 
-        {/* Fire Alarm Inspection */}
-        <Card className="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-950/20 dark:to-red-950/20 border-orange-200 dark:border-orange-800">
+        {fireAlarmStats.total > 0 && (
+          <InspectionCategoryCard
+            title="Fire Alarm Devices"
+            description="Pull stations, heat detectors, horns, strobes"
+            icon={<AlertTriangle className="h-5 w-5" />}
+            testedCount={fireAlarmStats.tested}
+            totalCount={fireAlarmStats.total}
+            deficiencyCount={fireAlarmStats.deficiencies}
+            route={`/tech/jobs/${jobId}#fire-alarm-devices`}
+            resumeRoute={getProgress()?.route.includes('fire-alarm') && !getProgress()?.route.includes('smoke') ? getProgress()?.route : undefined}
+            gradientFrom="from-orange-50"
+            gradientTo="to-yellow-50 dark:from-orange-950/20 dark:to-yellow-950/20"
+            borderColor="border-orange-200 dark:border-orange-800"
+            textColor="text-orange-900 dark:text-orange-100"
+            buttonColor="bg-orange-600"
+            buttonHoverColor="hover:bg-orange-700"
+          />
+        )}
+
+        {extinguisherStats.total > 0 && (
+          <InspectionCategoryCard
+            title="Fire Extinguishers"
+            description="Portable fire extinguishing equipment"
+            icon={<FireExtinguisher className="h-5 w-5" />}
+            testedCount={extinguisherStats.tested}
+            totalCount={extinguisherStats.total}
+            deficiencyCount={extinguisherStats.deficiencies}
+            route={`/tech/jobs/${jobId}#extinguishers`}
+            resumeRoute={getProgress()?.route.includes('extinguisher') ? getProgress()?.route : undefined}
+            gradientFrom="from-rose-50"
+            gradientTo="to-pink-50 dark:from-rose-950/20 dark:to-pink-950/20"
+            borderColor="border-rose-200 dark:border-rose-800"
+            textColor="text-rose-900 dark:text-rose-100"
+            buttonColor="bg-rose-600"
+            buttonHoverColor="hover:bg-rose-700"
+          />
+        )}
+
+        {emergencyLightStats.total > 0 && (
+          <InspectionCategoryCard
+            title="Emergency Lights"
+            description="Emergency and exit lighting"
+            icon={<Lightbulb className="h-5 w-5" />}
+            testedCount={emergencyLightStats.tested}
+            totalCount={emergencyLightStats.total}
+            deficiencyCount={emergencyLightStats.deficiencies}
+            route={`/tech/jobs/${jobId}#emergency-lights`}
+            resumeRoute={getProgress()?.route.includes('emergency') || getProgress()?.route.includes('exit') ? getProgress()?.route : undefined}
+            gradientFrom="from-yellow-50"
+            gradientTo="to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20"
+            borderColor="border-yellow-200 dark:border-yellow-800"
+            textColor="text-yellow-900 dark:text-yellow-100"
+            buttonColor="bg-yellow-600"
+            buttonHoverColor="hover:bg-yellow-700"
+          />
+        )}
+
+        {/* Fire Alarm System Inspection */}
+        <Card className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/20 dark:to-indigo-950/20 border-purple-200 dark:border-purple-800">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex-1">
-                <h3 className="font-semibold text-orange-900 dark:text-orange-100 flex items-center gap-2">
+                <h3 className="font-semibold text-purple-900 dark:text-purple-100 flex items-center gap-2">
                   <AlertTriangle className="h-5 w-5" />
                   Fire Alarm System Inspection
                 </h3>
-                <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+                <p className="text-sm text-purple-700 dark:text-purple-300 mt-1">
                   CAN/ULC-S536 Annual Test & Inspection
                 </p>
               </div>
               <Button 
                 variant="default" 
-                className="bg-orange-600 hover:bg-orange-700"
+                className="bg-purple-600 hover:bg-purple-700"
                 onClick={() => setLocation(`/tech/jobs/${jobId}/fire-alarm`, { replace: true })}
               >
                 Start
@@ -261,7 +373,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <h3 className="font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                  <Building2 className="h-5 w-5" />
+                  <Droplets className="h-5 w-5" />
                   Sprinkler ITM Inspection
                 </h3>
                 <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">

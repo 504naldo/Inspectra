@@ -675,3 +675,18 @@
 - [x] Test walkOrder assignment during device testing (14 tests passing)
 - [x] Test PDF device list ordering matches test sequence (14 tests passing)
 - [x] Verify devices without walkOrder appear at end (14 tests passing)
+
+## Category Cards for Job Inspection Screen
+
+- [x] Analyze current JobDetails page structure (Has Fire Alarm and Sprinkler cards, devices shown in tabs)
+- [x] Analyze device data structure and filtering requirements (devices array with deviceType field)
+- [x] Create InspectionCategoryCard component with progress display
+- [x] Add category filtering logic for Smoke Alarms vs other Fire Alarm devices
+- [x] Add progress calculation for each category
+- [x] Integrate Resume button with category-specific routes
+- [x] Add navigation routing for each category (using hash anchors)
+- [x] Update JobDetails page with category cards layout
+- [x] Test category cards on mobile (24 tests passing)
+- [x] Test progress indicators accuracy (24 tests passing)
+- [x] Test Resume vs Start button logic (24 tests passing)
+- [x] Verify smoke alarms separated from other devices (24 tests passing)
