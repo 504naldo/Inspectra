@@ -690,3 +690,16 @@
 - [x] Test progress indicators accuracy (24 tests passing)
 - [x] Test Resume vs Start button logic (24 tests passing)
 - [x] Verify smoke alarms separated from other devices (24 tests passing)
+
+## Category Card Data Binding
+
+- [x] Create centralized isSmokeAlarm helper function in shared utils
+- [x] Update categorizeDevice to use isSmokeAlarm helper
+- [x] Verify card counts match actual device data
+- [x] Add query param filtering to device list page (?category=smoke, ?category=firealarm)
+- [x] Update card navigation to use filtered routes
+- [x] Test smoke alarm filtering shows only smoke devices (29 tests passing)
+- [x] Test fire alarm filtering excludes smoke devices (29 tests passing)
+- [x] Test extinguisher card shows extinguisher data (29 tests passing)
+- [x] Test emergency light card shows emergency light data (29 tests passing)
+- [x] Verify counts match filtered lists (29 tests passing)

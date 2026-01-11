@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { useInspectionProgress } from "@/hooks/useInspectionProgress";
 import { InspectionCategoryCard } from "@/components/InspectionCategoryCard";
+import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
 import { 
   ArrowLeft, 
   MapPin, 
@@ -31,10 +32,14 @@ interface JobDetailsProps {
 }
 
 export default function JobDetails({ jobId }: JobDetailsProps) {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { isOnline, getCachedJobData } = useOfflineStorage();
   const [activeTab, setActiveTab] = useState("devices");
   const { getProgress, isProgressRecent } = useInspectionProgress(jobId);
+  
+  // Get category filter from URL search params
+  const searchParams = new URLSearchParams(window.location.search);
+  const categoryFilter = searchParams.get('category');
 
   const { data, isLoading, refetch } = trpc.job.getWithDetails.useQuery(
     { id: jobId },
@@ -113,31 +118,23 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     }
   };
 
-  // Category filtering logic
-  const categorizeDevice = (deviceType: string) => {
-    const type = deviceType.toLowerCase();
-    if (type.includes('smoke')) return 'smoke';
-    if (type.includes('extinguisher')) return 'extinguisher';
-    if (type.includes('emergency') || type.includes('exit')) return 'emergency';
-    if (type.includes('pull') || type.includes('heat') || type.includes('horn') || 
-        type.includes('strobe') || type.includes('module') || type.includes('bell')) return 'fire_alarm';
-    return 'other';
-  };
-
-  // Calculate progress for each category
-  const smokeAlarms = devices?.filter((d: any) => categorizeDevice(d.deviceType) === 'smoke') || [];
-  const fireAlarmDevices = devices?.filter((d: any) => categorizeDevice(d.deviceType) === 'fire_alarm') || [];
-  const extinguishers = devices?.filter((d: any) => categorizeDevice(d.deviceType) === 'extinguisher') || [];
-  const emergencyLights = devices?.filter((d: any) => categorizeDevice(d.deviceType) === 'emergency') || [];
+  // Calculate progress for each category using centralized helpers
+  const smokeAlarms = devices?.filter((d: any) => isSmokeAlarm(d)) || [];
+  const fireAlarmDevices = devices?.filter((d: any) => {
+    const category = categorizeDevice(d);
+    return category === 'fire_alarm';
+  }) || [];
+  const extinguishers = devices?.filter((d: any) => categorizeDevice(d) === 'extinguisher') || [];
+  const emergencyLights = devices?.filter((d: any) => categorizeDevice(d) === 'emergency') || [];
 
   const getSmokeAlarmStats = () => {
     const tested = inspectionResults?.filter((r: any) => {
       const device = devices?.find((d: any) => d.id === r.deviceId);
-      return device && categorizeDevice(device.deviceType) === 'smoke';
+      return device && isSmokeAlarm(device);
     }) || [];
     const defCount = deficiencies?.filter((d: any) => {
       const device = devices?.find((dev: any) => dev.id === d.deviceId);
-      return device && categorizeDevice(device.deviceType) === 'smoke';
+      return device && isSmokeAlarm(device);
     }).length || 0;
     return { tested: tested.length, total: smokeAlarms.length, deficiencies: defCount };
   };
@@ -145,11 +142,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const getFireAlarmStats = () => {
     const tested = inspectionResults?.filter((r: any) => {
       const device = devices?.find((d: any) => d.id === r.deviceId);
-      return device && categorizeDevice(device.deviceType) === 'fire_alarm';
+      return device && categorizeDevice(device) === 'fire_alarm';
     }) || [];
     const defCount = deficiencies?.filter((d: any) => {
       const device = devices?.find((dev: any) => dev.id === d.deviceId);
-      return device && categorizeDevice(device.deviceType) === 'fire_alarm';
+      return device && categorizeDevice(device) === 'fire_alarm';
     }).length || 0;
     return { tested: tested.length, total: fireAlarmDevices.length, deficiencies: defCount };
   };
@@ -157,11 +154,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const getExtinguisherStats = () => {
     const tested = inspectionResults?.filter((r: any) => {
       const device = devices?.find((d: any) => d.id === r.deviceId);
-      return device && categorizeDevice(device.deviceType) === 'extinguisher';
+      return device && categorizeDevice(device) === 'extinguisher';
     }) || [];
     const defCount = deficiencies?.filter((d: any) => {
       const device = devices?.find((dev: any) => dev.id === d.deviceId);
-      return device && categorizeDevice(device.deviceType) === 'extinguisher';
+      return device && categorizeDevice(device) === 'extinguisher';
     }).length || 0;
     return { tested: tested.length, total: extinguishers.length, deficiencies: defCount };
   };
@@ -169,11 +166,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const getEmergencyLightStats = () => {
     const tested = inspectionResults?.filter((r: any) => {
       const device = devices?.find((d: any) => d.id === r.deviceId);
-      return device && categorizeDevice(device.deviceType) === 'emergency';
+      return device && categorizeDevice(device) === 'emergency';
     }) || [];
     const defCount = deficiencies?.filter((d: any) => {
       const device = devices?.find((dev: any) => dev.id === d.deviceId);
-      return device && categorizeDevice(device.deviceType) === 'emergency';
+      return device && categorizeDevice(device) === 'emergency';
     }).length || 0;
     return { tested: tested.length, total: emergencyLights.length, deficiencies: defCount };
   };
@@ -274,7 +271,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             testedCount={smokeStats.tested}
             totalCount={smokeStats.total}
             deficiencyCount={smokeStats.deficiencies}
-            route={`/tech/jobs/${jobId}#smoke-alarms`}
+            route={`/tech/jobs/${jobId}?category=smoke`}
             resumeRoute={getProgress()?.route.includes('smoke') ? getProgress()?.route : undefined}
             gradientFrom="from-red-50"
             gradientTo="to-orange-50 dark:from-red-950/20 dark:to-orange-950/20"
@@ -293,7 +290,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             testedCount={fireAlarmStats.tested}
             totalCount={fireAlarmStats.total}
             deficiencyCount={fireAlarmStats.deficiencies}
-            route={`/tech/jobs/${jobId}#fire-alarm-devices`}
+            route={`/tech/jobs/${jobId}?category=firealarm`}
             resumeRoute={getProgress()?.route.includes('fire-alarm') && !getProgress()?.route.includes('smoke') ? getProgress()?.route : undefined}
             gradientFrom="from-orange-50"
             gradientTo="to-yellow-50 dark:from-orange-950/20 dark:to-yellow-950/20"
@@ -312,7 +309,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             testedCount={extinguisherStats.tested}
             totalCount={extinguisherStats.total}
             deficiencyCount={extinguisherStats.deficiencies}
-            route={`/tech/jobs/${jobId}#extinguishers`}
+            route={`/tech/jobs/${jobId}?category=extinguisher`}
             resumeRoute={getProgress()?.route.includes('extinguisher') ? getProgress()?.route : undefined}
             gradientFrom="from-rose-50"
             gradientTo="to-pink-50 dark:from-rose-950/20 dark:to-pink-950/20"
@@ -331,7 +328,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             testedCount={emergencyLightStats.tested}
             totalCount={emergencyLightStats.total}
             deficiencyCount={emergencyLightStats.deficiencies}
-            route={`/tech/jobs/${jobId}#emergency-lights`}
+            route={`/tech/jobs/${jobId}?category=emergency`}
             resumeRoute={getProgress()?.route.includes('emergency') || getProgress()?.route.includes('exit') ? getProgress()?.route : undefined}
             gradientFrom="from-yellow-50"
             gradientTo="to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20"
@@ -427,7 +424,46 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </TabsList>
 
           <TabsContent value="devices" className="mt-4 space-y-2">
-            {devices?.map((device: any) => {
+            {/* Category filter indicator */}
+            {categoryFilter && (
+              <div className="flex items-center justify-between p-3 bg-muted rounded-lg mb-4">
+                <span className="text-sm font-medium">
+                  Showing: {categoryFilter === 'smoke' ? 'Smoke Alarms' : 
+                           categoryFilter === 'firealarm' ? 'Fire Alarm Devices' :
+                           categoryFilter === 'extinguisher' ? 'Fire Extinguishers' :
+                           categoryFilter === 'emergency' ? 'Emergency Lights' : 'All Devices'}
+                </span>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => setLocation(`/tech/jobs/${jobId}`, { replace: true })}
+                >
+                  Clear Filter
+                </Button>
+              </div>
+            )}
+            {(() => {
+              // Filter devices based on category
+              let filteredDevices = devices || [];
+              if (categoryFilter === 'smoke') {
+                filteredDevices = devices?.filter((d: any) => isSmokeAlarm(d)) || [];
+              } else if (categoryFilter === 'firealarm') {
+                filteredDevices = devices?.filter((d: any) => categorizeDevice(d) === 'fire_alarm') || [];
+              } else if (categoryFilter === 'extinguisher') {
+                filteredDevices = devices?.filter((d: any) => categorizeDevice(d) === 'extinguisher') || [];
+              } else if (categoryFilter === 'emergency') {
+                filteredDevices = devices?.filter((d: any) => categorizeDevice(d) === 'emergency') || [];
+              }
+              
+              if (filteredDevices.length === 0) {
+                return (
+                  <p className="text-center text-muted-foreground py-8">
+                    No devices found in this category
+                  </p>
+                );
+              }
+              
+              return filteredDevices.map((device: any) => {
               const result = getResultForDevice(device.id);
               return (
                 <Link key={device.id} href={`/tech/jobs/${jobId}/device/${device.id}`}>
@@ -455,7 +491,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   </Card>
                 </Link>
               );
-            })}
+            });
+            })()}
           </TabsContent>
 
           <TabsContent value="deficiencies" className="mt-4 space-y-2">
