@@ -1,0 +1,1 @@
+ALTER TABLE `inspection_results` ADD `walkOrder` int;

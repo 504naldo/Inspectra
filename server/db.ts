@@ -378,6 +378,7 @@ export async function getInspectionResultsByJob(jobId: number) {
       notes: inspectionResults.notes,
       testedAt: inspectionResults.testedAt,
       syncedAt: inspectionResults.syncedAt,
+      walkOrder: inspectionResults.walkOrder,
       createdAt: inspectionResults.createdAt,
       updatedAt: inspectionResults.updatedAt,
       deviceType: devices.deviceType,
@@ -407,16 +408,44 @@ export async function updateInspectionResult(id: number, data: Partial<InsertIns
   await db.update(inspectionResults).set(data).where(eq(inspectionResults.id, id));
 }
 
+export async function getNextWalkOrder(jobId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 1;
+  
+  const results = await db
+    .select({ walkOrder: inspectionResults.walkOrder })
+    .from(inspectionResults)
+    .where(eq(inspectionResults.jobId, jobId))
+    .orderBy(desc(inspectionResults.walkOrder))
+    .limit(1);
+  
+  if (results.length === 0 || results[0].walkOrder === null) {
+    return 1;
+  }
+  
+  return results[0].walkOrder + 1;
+}
+
 export async function upsertInspectionResult(data: InsertInspectionResult) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
   const existing = await getInspectionResultByJobAndDevice(data.jobId, data.deviceId);
   if (existing) {
-    await updateInspectionResult(existing.id, data);
-    return { ...existing, ...data };
+    // Update existing result, preserve walkOrder if already set
+    const updateData = { ...data };
+    if (existing.walkOrder !== null && !data.walkOrder) {
+      updateData.walkOrder = existing.walkOrder;
+    }
+    await updateInspectionResult(existing.id, updateData);
+    return { ...existing, ...updateData };
   } else {
-    return createInspectionResult(data);
+    // New result - assign walkOrder if not provided and result is being tested
+    const insertData = { ...data };
+    if (!insertData.walkOrder && insertData.result !== 'not_tested') {
+      insertData.walkOrder = await getNextWalkOrder(data.jobId);
+    }
+    return createInspectionResult(insertData);
   }
 }
 

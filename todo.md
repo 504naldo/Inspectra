@@ -663,3 +663,15 @@
 - [x] Test PWA installation shows Inspectra (14 tests passing)
 - [x] Test all PDFs display Inspectra correctly (14 tests passing)
 - [x] Verify no routing or build issues (14 tests passing)
+
+## Walk Order Device Ordering
+
+- [x] Add walkOrder field to inspection_results table schema
+- [x] Create database migration for walkOrder field
+- [x] Update device testing mutation to assign walkOrder automatically
+- [x] Add helper function to calculate next walkOrder for inspection
+- [x] Update PDF generators to sort devices by walkOrder
+- [x] Add fallback sorting for devices without walkOrder
+- [x] Test walkOrder assignment during device testing (14 tests passing)
+- [x] Test PDF device list ordering matches test sequence (14 tests passing)
+- [x] Verify devices without walkOrder appear at end (14 tests passing)

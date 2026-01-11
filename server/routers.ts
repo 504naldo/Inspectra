@@ -1245,6 +1245,13 @@ const reportRouter = router({
                    r.deviceType?.toLowerCase().includes('pull') ||
                    r.deviceType?.toLowerCase().includes('horn') ||
                    r.deviceType?.toLowerCase().includes('strobe'))
+      .sort((a, b) => {
+        // Sort by walkOrder (nulls last), then by location as fallback
+        if (a.walkOrder === null && b.walkOrder === null) return (a.location || '').localeCompare(b.location || '');
+        if (a.walkOrder === null) return 1;
+        if (b.walkOrder === null) return -1;
+        return a.walkOrder - b.walkOrder;
+      })
       .map(r => ({
         deviceType: r.deviceType || 'Unknown',
         location: r.location || 'Unknown',
@@ -1254,6 +1261,13 @@ const reportRouter = router({
     
     const fireExtinguishers = inspectionResults
       .filter(r => r.deviceType?.toLowerCase().includes('extinguisher'))
+      .sort((a, b) => {
+        // Sort by walkOrder (nulls last), then by location as fallback
+        if (a.walkOrder === null && b.walkOrder === null) return (a.location || '').localeCompare(b.location || '');
+        if (a.walkOrder === null) return 1;
+        if (b.walkOrder === null) return -1;
+        return a.walkOrder - b.walkOrder;
+      })
       .map(r => ({
         location: r.location || 'Unknown',
         type: r.deviceType || 'Unknown',
@@ -1264,6 +1278,13 @@ const reportRouter = router({
     const emergencyLights = inspectionResults
       .filter(r => r.deviceType?.toLowerCase().includes('emergency') || 
                    r.deviceType?.toLowerCase().includes('exit'))
+      .sort((a, b) => {
+        // Sort by walkOrder (nulls last), then by location as fallback
+        if (a.walkOrder === null && b.walkOrder === null) return (a.location || '').localeCompare(b.location || '');
+        if (a.walkOrder === null) return 1;
+        if (b.walkOrder === null) return -1;
+        return a.walkOrder - b.walkOrder;
+      })
       .map(r => ({
         location: r.location || 'Unknown',
         functionalTest: r.result === 'pass' ? 'PASS' as const : 'FAIL' as const,

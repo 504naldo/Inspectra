@@ -176,6 +176,7 @@ export const inspectionResults = mysqlTable("inspection_results", {
   notes: text("notes"),
   testedAt: timestamp("testedAt"),
   syncedAt: timestamp("syncedAt"), // When synced from offline
+  walkOrder: int("walkOrder"), // Order in which device was tested (auto-assigned on first test)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
