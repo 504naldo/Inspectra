@@ -703,3 +703,18 @@
 - [x] Test extinguisher card shows extinguisher data (29 tests passing)
 - [x] Test emergency light card shows emergency light data (29 tests passing)
 - [x] Verify counts match filtered lists (29 tests passing)
+
+## Expandable Category Cards
+
+- [x] Create expandable accordion card component with expand/collapse behavior
+- [x] Add walk order sorting helper function (sortByWalkOrderThenLocation)
+- [x] Update InspectionCategoryCard to show device list inside when expanded
+- [x] Implement accordion behavior (only one card expanded at a time)
+- [x] Add device row component with label, location, and status pill
+- [x] Limit preview to 10 items with "View All" link
+- [x] Add navigation to device detail screen on row tap
+- [x] Update Start/Resume button to open first untested item
+- [x] Test accordion expand/collapse on mobile (19 tests passing)
+- [x] Test device list shows correct items per category (19 tests passing)
+- [x] Test walk order sorting works correctly (19 tests passing)
+- [x] Verify only one card expanded at a time (19 tests passing)

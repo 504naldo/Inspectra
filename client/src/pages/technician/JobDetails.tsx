@@ -6,8 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { useInspectionProgress } from "@/hooks/useInspectionProgress";
-import { InspectionCategoryCard } from "@/components/InspectionCategoryCard";
+import { ExpandableCategoryCard } from "@/components/ExpandableCategoryCard";
 import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
+import { sortByWalkOrderThenLocation } from "@shared/deviceHelpers";
 import { 
   ArrowLeft, 
   MapPin, 
@@ -36,6 +37,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const { isOnline, getCachedJobData } = useOfflineStorage();
   const [activeTab, setActiveTab] = useState("devices");
   const { getProgress, isProgressRecent } = useInspectionProgress(jobId);
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
   
   // Get category filter from URL search params
   const searchParams = new URLSearchParams(window.location.search);
@@ -126,6 +128,24 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   }) || [];
   const extinguishers = devices?.filter((d: any) => categorizeDevice(d) === 'extinguisher') || [];
   const emergencyLights = devices?.filter((d: any) => categorizeDevice(d) === 'emergency') || [];
+
+  // Sort devices by walk order and add inspection results
+  const sortedSmokeAlarms = sortByWalkOrderThenLocation(smokeAlarms).map((d: any) => ({
+    ...d,
+    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
+  }));
+  const sortedFireAlarmDevices = sortByWalkOrderThenLocation(fireAlarmDevices).map((d: any) => ({
+    ...d,
+    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
+  }));
+  const sortedExtinguishers = sortByWalkOrderThenLocation(extinguishers).map((d: any) => ({
+    ...d,
+    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
+  }));
+  const sortedEmergencyLights = sortByWalkOrderThenLocation(emergencyLights).map((d: any) => ({
+    ...d,
+    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
+  }));
 
   const getSmokeAlarmStats = () => {
     const tested = inspectionResults?.filter((r: any) => {
@@ -264,7 +284,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
         {/* Category Cards */}
         {smokeStats.total > 0 && (
-          <InspectionCategoryCard
+          <ExpandableCategoryCard
             title="Smoke Alarms"
             description="Smoke detection devices"
             icon={<Flame className="h-5 w-5" />}
@@ -279,11 +299,15 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             textColor="text-red-900 dark:text-red-100"
             buttonColor="bg-red-600"
             buttonHoverColor="hover:bg-red-700"
+            devices={sortedSmokeAlarms}
+            isExpanded={expandedCard === 'smoke'}
+            onToggle={() => setExpandedCard(expandedCard === 'smoke' ? null : 'smoke')}
+            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}`}
           />
         )}
 
         {fireAlarmStats.total > 0 && (
-          <InspectionCategoryCard
+          <ExpandableCategoryCard
             title="Fire Alarm Devices"
             description="Pull stations, heat detectors, horns, strobes"
             icon={<AlertTriangle className="h-5 w-5" />}
@@ -298,11 +322,15 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             textColor="text-orange-900 dark:text-orange-100"
             buttonColor="bg-orange-600"
             buttonHoverColor="hover:bg-orange-700"
+            devices={sortedFireAlarmDevices}
+            isExpanded={expandedCard === 'firealarm'}
+            onToggle={() => setExpandedCard(expandedCard === 'firealarm' ? null : 'firealarm')}
+            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}`}
           />
         )}
 
         {extinguisherStats.total > 0 && (
-          <InspectionCategoryCard
+          <ExpandableCategoryCard
             title="Fire Extinguishers"
             description="Portable fire extinguishing equipment"
             icon={<FireExtinguisher className="h-5 w-5" />}
@@ -317,11 +345,15 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             textColor="text-rose-900 dark:text-rose-100"
             buttonColor="bg-rose-600"
             buttonHoverColor="hover:bg-rose-700"
+            devices={sortedExtinguishers}
+            isExpanded={expandedCard === 'extinguisher'}
+            onToggle={() => setExpandedCard(expandedCard === 'extinguisher' ? null : 'extinguisher')}
+            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}`}
           />
         )}
 
         {emergencyLightStats.total > 0 && (
-          <InspectionCategoryCard
+          <ExpandableCategoryCard
             title="Emergency Lights"
             description="Emergency and exit lighting"
             icon={<Lightbulb className="h-5 w-5" />}
@@ -336,6 +368,10 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             textColor="text-yellow-900 dark:text-yellow-100"
             buttonColor="bg-yellow-600"
             buttonHoverColor="hover:bg-yellow-700"
+            devices={sortedEmergencyLights}
+            isExpanded={expandedCard === 'emergency'}
+            onToggle={() => setExpandedCard(expandedCard === 'emergency' ? null : 'emergency')}
+            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}`}
           />
         )}
 
