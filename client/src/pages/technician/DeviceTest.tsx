@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,11 +14,15 @@ import {
   Wifi,
   WifiOff,
   AlertTriangle,
-  Save
+  Save,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { nanoid } from "nanoid";
+import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
+import { sortByWalkOrderThenLocation } from "@shared/deviceHelpers";
 
 interface DeviceTestProps {
   jobId: number;
@@ -26,12 +30,16 @@ interface DeviceTestProps {
 }
 
 export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { isOnline, saveOfflineResult, getResultsForJob } = useOfflineStorage();
   
   const [result, setResult] = useState<'pass' | 'fail' | 'na' | 'not_tested'>('not_tested');
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Get category from URL search params
+  const searchParams = new URLSearchParams(window.location.search);
+  const category = searchParams.get('category');
 
   const { data: device, isLoading: deviceLoading } = trpc.device.get.useQuery(
     { id: deviceId },
@@ -42,6 +50,42 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
     { jobId, deviceId },
     { enabled: isOnline }
   );
+
+  // Get job details for category navigation
+  const { data: jobData } = trpc.job.getWithDetails.useQuery(
+    { id: jobId },
+    { enabled: isOnline }
+  );
+
+  // Calculate category devices for navigation
+  const categoryDevices = useMemo(() => {
+    if (!jobData?.devices) return [];
+    
+    let filtered = jobData.devices;
+    if (category === 'smoke') {
+      filtered = jobData.devices.filter((d: any) => isSmokeAlarm(d));
+    } else if (category === 'firealarm') {
+      filtered = jobData.devices.filter((d: any) => categorizeDevice(d) === 'fire_alarm');
+    } else if (category === 'extinguisher') {
+      filtered = jobData.devices.filter((d: any) => categorizeDevice(d) === 'extinguisher');
+    } else if (category === 'emergency') {
+      filtered = jobData.devices.filter((d: any) => categorizeDevice(d) === 'emergency');
+    }
+    
+    return sortByWalkOrderThenLocation(filtered);
+  }, [jobData?.devices, category]);
+
+  // Find current device index and navigation
+  const currentIndex = categoryDevices.findIndex((d: any) => d.id === deviceId);
+  const hasPrevious = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < categoryDevices.length - 1;
+  const previousDevice = hasPrevious ? categoryDevices[currentIndex - 1] : null;
+  const nextDevice = hasNext ? categoryDevices[currentIndex + 1] : null;
+
+  const navigateToDevice = (targetDeviceId: number) => {
+    const categoryParam = category ? `?category=${category}` : '';
+    setLocation(`/tech/jobs/${jobId}/device/${targetDeviceId}${categoryParam}`, { replace: true });
+  };
 
   // Load existing result
   useEffect(() => {
@@ -238,7 +282,40 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
 
       {/* Bottom Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 safe-bottom">
-        <div className="container">
+        <div className="container space-y-3">
+          {/* Navigation Buttons */}
+          {category && categoryDevices.length > 1 && (
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                onClick={() => previousDevice && navigateToDevice(previousDevice.id)}
+                disabled={!hasPrevious}
+                className="h-12"
+              >
+                <ChevronLeft className="h-5 w-5 mr-1" />
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => nextDevice && navigateToDevice(nextDevice.id)}
+                disabled={!hasNext}
+                className="h-12"
+              >
+                Next
+                <ChevronRight className="h-5 w-5 ml-1" />
+              </Button>
+            </div>
+          )}
+          
+          {/* Position indicator */}
+          {category && categoryDevices.length > 1 && (
+            <p className="text-center text-sm text-muted-foreground">
+              Device {currentIndex + 1} of {categoryDevices.length}
+              {!hasPrevious && <span className="ml-2">(Start of list)</span>}
+              {!hasNext && <span className="ml-2">(End of list)</span>}
+            </p>
+          )}
+          
           <Button 
             className="w-full action-btn"
             onClick={handleSave}

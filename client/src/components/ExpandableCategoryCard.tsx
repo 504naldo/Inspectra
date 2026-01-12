@@ -96,18 +96,13 @@ export function ExpandableCategoryCard({
 
   const handleStartResume = () => {
     if (resumeRoute && hasProgress) {
+      // Resume: navigate to saved route
       setLocation(resumeRoute, { replace: true });
-    } else if (devices.length > 0) {
-      // Find first untested device
-      const firstUntested = devices.find(d => !d.result);
-      if (firstUntested) {
-        setLocation(getDeviceRoute(firstUntested.id), { replace: true });
-      } else {
-        // All tested, go to first device
-        setLocation(getDeviceRoute(devices[0].id), { replace: true });
-      }
     } else {
-      setLocation(route, { replace: true });
+      // Start: expand card to show list
+      if (!isExpanded) {
+        onToggle();
+      }
     }
   };
 
@@ -221,7 +216,13 @@ export function ExpandableCategoryCard({
               variant="outline"
               onClick={(e) => {
                 e.stopPropagation();
-                setLocation(route, { replace: true });
+                if (!isExpanded) {
+                  // Expand card to show list
+                  onToggle();
+                } else if (devices.length > 10) {
+                  // If already expanded and has more than preview, navigate to full list
+                  setLocation(route, { replace: true });
+                }
               }}
             >
               View All

@@ -302,7 +302,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             devices={sortedSmokeAlarms}
             isExpanded={expandedCard === 'smoke'}
             onToggle={() => setExpandedCard(expandedCard === 'smoke' ? null : 'smoke')}
-            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}`}
+            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=smoke`}
           />
         )}
 
@@ -325,7 +325,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             devices={sortedFireAlarmDevices}
             isExpanded={expandedCard === 'firealarm'}
             onToggle={() => setExpandedCard(expandedCard === 'firealarm' ? null : 'firealarm')}
-            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}`}
+            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=firealarm`}
           />
         )}
 
@@ -348,7 +348,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             devices={sortedExtinguishers}
             isExpanded={expandedCard === 'extinguisher'}
             onToggle={() => setExpandedCard(expandedCard === 'extinguisher' ? null : 'extinguisher')}
-            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}`}
+            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=extinguisher`}
           />
         )}
 
@@ -371,7 +371,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             devices={sortedEmergencyLights}
             isExpanded={expandedCard === 'emergency'}
             onToggle={() => setExpandedCard(expandedCard === 'emergency' ? null : 'emergency')}
-            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}`}
+            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=emergency`}
           />
         )}
 
@@ -448,90 +448,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </CardContent>
         </Card>
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full grid grid-cols-2">
-            <TabsTrigger value="devices">
-              Devices ({totalDevices})
-            </TabsTrigger>
-            <TabsTrigger value="deficiencies">
-              Deficiencies ({deficiencies?.length || 0})
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="devices" className="mt-4 space-y-2">
-            {/* Category filter indicator */}
-            {categoryFilter && (
-              <div className="flex items-center justify-between p-3 bg-muted rounded-lg mb-4">
-                <span className="text-sm font-medium">
-                  Showing: {categoryFilter === 'smoke' ? 'Smoke Alarms' : 
-                           categoryFilter === 'firealarm' ? 'Fire Alarm Devices' :
-                           categoryFilter === 'extinguisher' ? 'Fire Extinguishers' :
-                           categoryFilter === 'emergency' ? 'Emergency Lights' : 'All Devices'}
-                </span>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setLocation(`/tech/jobs/${jobId}`, { replace: true })}
-                >
-                  Clear Filter
-                </Button>
-              </div>
-            )}
-            {(() => {
-              // Filter devices based on category
-              let filteredDevices = devices || [];
-              if (categoryFilter === 'smoke') {
-                filteredDevices = devices?.filter((d: any) => isSmokeAlarm(d)) || [];
-              } else if (categoryFilter === 'firealarm') {
-                filteredDevices = devices?.filter((d: any) => categorizeDevice(d) === 'fire_alarm') || [];
-              } else if (categoryFilter === 'extinguisher') {
-                filteredDevices = devices?.filter((d: any) => categorizeDevice(d) === 'extinguisher') || [];
-              } else if (categoryFilter === 'emergency') {
-                filteredDevices = devices?.filter((d: any) => categorizeDevice(d) === 'emergency') || [];
-              }
-              
-              if (filteredDevices.length === 0) {
-                return (
-                  <p className="text-center text-muted-foreground py-8">
-                    No devices found in this category
-                  </p>
-                );
-              }
-              
-              return filteredDevices.map((device: any) => {
-              const result = getResultForDevice(device.id);
-              return (
-                <Link key={device.id} href={`/tech/jobs/${jobId}/device/${device.id}`}>
-                  <Card className="inspection-card">
-                    <CardContent className="flex items-center justify-between p-4">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium">{device.deviceType}</p>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {device.location || 'No location specified'}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {result ? (
-                          <span className={`px-2 py-1 rounded text-xs font-medium border ${getResultBadgeClass(result.result)}`}>
-                            {result.result.toUpperCase()}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 rounded text-xs font-medium bg-muted text-muted-foreground">
-                            NOT TESTED
-                          </span>
-                        )}
-                        <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              );
-            });
-            })()}
-          </TabsContent>
-
-          <TabsContent value="deficiencies" className="mt-4 space-y-2">
+        {/* Deficiencies Section - Only show deficiencies, devices are in category cards above */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Deficiencies ({deficiencies?.length || 0})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
             <Link href={`/tech/deficiency/new/${jobId}`}>
               <Button className="w-full mb-4" variant="outline">
                 <AlertTriangle className="h-4 w-4 mr-2" />
@@ -543,7 +467,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 No deficiencies recorded
               </p>
             ) : (
-              deficiencies?.map((def: any) => (
+              <div className="space-y-2">
+                {deficiencies?.map((def: any) => (
                 <Link key={def.id} href={`/tech/deficiency/${def.id}`}>
                   <Card className="inspection-card">
                     <CardContent className="flex items-center justify-between p-4">
@@ -570,10 +495,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                     </CardContent>
                   </Card>
                 </Link>
-              ))
+                ))}
+              </div>
             )}
-          </TabsContent>
-        </Tabs>
+          </CardContent>
+        </Card>
       </main>
 
       {/* Bottom Action Bar */}

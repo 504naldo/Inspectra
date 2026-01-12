@@ -718,3 +718,18 @@
 - [x] Test device list shows correct items per category (19 tests passing)
 - [x] Test walk order sorting works correctly (19 tests passing)
 - [x] Verify only one card expanded at a time (19 tests passing)
+
+## Category Card Workflow Fixes
+
+- [x] Fix Start button to expand card and show list (not open single item)
+- [x] Update handleStartResume to expand card instead of navigating to device
+- [x] Add Next/Previous navigation to device detail screen
+- [x] Implement category-aware navigation in detail screen
+- [x] Add sticky footer with Next/Previous buttons on mobile
+- [x] Disable Previous at start of list, Next at end of list
+- [x] Fix View All button to reliably open full category list
+- [x] Remove duplicate device lists from bottom of JobDetails page
+- [x] Test Start opens list view on mobile (21 tests passing)
+- [x] Test Next/Previous navigation works correctly in detail screen (21 tests passing)
+- [x] Test View All opens complete category list (21 tests passing)
+- [x] Verify no duplicate lists appear (21 tests passing)
