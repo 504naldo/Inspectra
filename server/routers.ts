@@ -378,6 +378,28 @@ const inspectionResultRouter = router({
     return db.upsertInspectionResult(data);
   }),
   
+  bulkMarkPass: technicianProcedure.input(z.object({
+    jobId: z.number(),
+    deviceIds: z.array(z.number()),
+    notes: z.string().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    const results = [];
+    for (const deviceId of input.deviceIds) {
+      const data = {
+        jobId: input.jobId,
+        deviceId,
+        result: 'pass' as const,
+        notes: input.notes,
+        technicianId: ctx.user.id,
+        testedAt: new Date(),
+        syncedAt: new Date(),
+      };
+      const saved = await db.upsertInspectionResult(data);
+      results.push(saved);
+    }
+    return { count: results.length, results };
+  }),
+  
   getStats: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
     return db.getInspectionStats(input.jobId);
   }),

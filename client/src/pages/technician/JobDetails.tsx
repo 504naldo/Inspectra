@@ -67,6 +67,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     },
     onError: () => toast.error('Failed to complete job')
   });
+  
+  const bulkMarkPass = trpc.inspectionResult.bulkMarkPass.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Marked ${result.count} devices as PASS`);
+      refetch();
+    },
+    onError: () => toast.error('Failed to mark devices as pass')
+  });
 
   if (isLoading && isOnline) {
     return (
@@ -303,6 +311,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             isExpanded={expandedCard === 'smoke'}
             onToggle={() => setExpandedCard(expandedCard === 'smoke' ? null : 'smoke')}
             getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=smoke`}
+            jobId={jobId}
+            onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedSmokeAlarms.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
           />
         )}
 
@@ -326,6 +336,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             isExpanded={expandedCard === 'firealarm'}
             onToggle={() => setExpandedCard(expandedCard === 'firealarm' ? null : 'firealarm')}
             getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=firealarm`}
+            jobId={jobId}
+            onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedFireAlarmDevices.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
           />
         )}
 
@@ -349,6 +361,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             isExpanded={expandedCard === 'extinguisher'}
             onToggle={() => setExpandedCard(expandedCard === 'extinguisher' ? null : 'extinguisher')}
             getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=extinguisher`}
+            jobId={jobId}
+            onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedExtinguishers.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
           />
         )}
 
@@ -369,6 +383,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             buttonColor="bg-yellow-600"
             buttonHoverColor="hover:bg-yellow-700"
             devices={sortedEmergencyLights}
+            jobId={jobId}
+            onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedEmergencyLights.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
             isExpanded={expandedCard === 'emergency'}
             onToggle={() => setExpandedCard(expandedCard === 'emergency' ? null : 'emergency')}
             getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=emergency`}

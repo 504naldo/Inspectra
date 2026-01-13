@@ -734,7 +734,10 @@
 - [x] Test View All opens complete category list (21 tests passing)
 - [x] Verify no duplicate lists appear (21 tests passing)
 
-## Fix View All to Show Complete List
-- [x] Remove 10-item limit from ExpandableCategoryCard
-- [x] Show all devices when card is expanded
-- [x] Test View All shows complete device list
+## Mark All Pass Bulk Action
+- [x] Add backend mutation for bulk device testing (bulkMarkDevicesPass)
+- [x] Add Mark All Pass button to ExpandableCategoryCard
+- [x] Add confirmation dialog before bulk action
+- [x] Show success toast after bulk marking
+- [x] Refresh device list after bulk action
+- [x] Test bulk marking with multiple devices

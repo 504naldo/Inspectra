@@ -1,7 +1,16 @@
 import { useState } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ChevronRight, ChevronDown, Play, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -32,6 +41,8 @@ interface ExpandableCategoryCardProps {
   isExpanded: boolean;
   onToggle: () => void;
   getDeviceRoute: (deviceId: number) => string;
+  jobId: number;
+  onBulkMarkPass?: () => void;
 }
 
 export function ExpandableCategoryCard({
@@ -53,14 +64,32 @@ export function ExpandableCategoryCard({
   isExpanded,
   onToggle,
   getDeviceRoute,
+  jobId,
+  onBulkMarkPass,
 }: ExpandableCategoryCardProps) {
   const [, setLocation] = useLocation();
+  const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const progress = totalCount > 0 ? (testedCount / totalCount) * 100 : 0;
   const hasProgress = testedCount > 0;
   const isComplete = testedCount === totalCount && totalCount > 0;
   
+  // Get untested devices
+  const untestedDevices = devices.filter(d => !d.result || d.result === 'not_tested');
+  
   // Show all devices when expanded
   const displayDevices = devices;
+  
+  const handleBulkMarkPass = () => {
+    if (untestedDevices.length === 0) return;
+    setShowConfirmDialog(true);
+  };
+  
+  const confirmBulkMarkPass = () => {
+    setShowConfirmDialog(false);
+    if (onBulkMarkPass) {
+      onBulkMarkPass();
+    }
+  };
 
   const getStatusBadge = (result?: string | null) => {
     if (!result) {
@@ -152,6 +181,21 @@ export function ExpandableCategoryCard({
         {/* Expandable Device List */}
         {isExpanded && totalCount > 0 && (
           <div className="mt-4 space-y-2">
+            {/* Mark All Pass Button */}
+            {untestedDevices.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mb-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBulkMarkPass();
+                }}
+              >
+                Mark All Pass ({untestedDevices.length} untested)
+              </Button>
+            )}
+            
             {displayDevices.map((device) => (
               <div
                 key={device.id}
@@ -223,6 +267,27 @@ export function ExpandableCategoryCard({
             Complete
           </div>
         )}
+        
+        {/* Confirmation Dialog */}
+        <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Mark All Pass?</DialogTitle>
+              <DialogDescription>
+                This will mark {untestedDevices.length} untested {untestedDevices.length === 1 ? 'device' : 'devices'} as PASS.
+                This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={confirmBulkMarkPass}>
+                Confirm
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
