@@ -733,3 +733,8 @@
 - [x] Test Next/Previous navigation works correctly in detail screen (21 tests passing)
 - [x] Test View All opens complete category list (21 tests passing)
 - [x] Verify no duplicate lists appear (21 tests passing)
+
+## Fix View All to Show Complete List
+- [x] Remove 10-item limit from ExpandableCategoryCard
+- [x] Show all devices when card is expanded
+- [x] Test View All shows complete device list

@@ -59,9 +59,8 @@ export function ExpandableCategoryCard({
   const hasProgress = testedCount > 0;
   const isComplete = testedCount === totalCount && totalCount > 0;
   
-  // Limit preview to 10 items
-  const previewDevices = devices.slice(0, 10);
-  const hasMore = devices.length > 10;
+  // Show all devices when expanded
+  const displayDevices = devices;
 
   const getStatusBadge = (result?: string | null) => {
     if (!result) {
@@ -153,7 +152,7 @@ export function ExpandableCategoryCard({
         {/* Expandable Device List */}
         {isExpanded && totalCount > 0 && (
           <div className="mt-4 space-y-2">
-            {previewDevices.map((device) => (
+            {displayDevices.map((device) => (
               <div
                 key={device.id}
                 className="flex items-center justify-between p-3 bg-white/50 dark:bg-black/20 rounded-lg cursor-pointer hover:bg-white/70 dark:hover:bg-black/30 transition-colors"
@@ -173,19 +172,7 @@ export function ExpandableCategoryCard({
                 {getStatusBadge(device.result)}
               </div>
             ))}
-            
-            {hasMore && (
-              <Button
-                variant="ghost"
-                className="w-full text-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLocation(route, { replace: true });
-                }}
-              >
-                View All ({devices.length} items)
-              </Button>
-            )}
+
           </div>
         )}
 
