@@ -806,4 +806,4 @@
 - [ ] Verify dropdowns stack properly on mobile
 
 ## Bug Fixes - Unassigned Dropdown Not Opening on Mobile (New)
-- [x] Fix "Unassigned" dropdown on Admin Jobs page not opening when tapped on mobile devices
+- [x] Fix "Unassigned" dropdown on Admin Jobs page - dropdown should open and show technician list when tapped

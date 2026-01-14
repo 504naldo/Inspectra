@@ -332,7 +332,7 @@ export default function AdminJobs() {
                         </div>
                       </div>
                       <div className="card-actions">
-                        <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                        <div onClick={(e) => e.stopPropagation()}>
                           <Select
                             value={job.assignedTechnicianId?.toString() || "unassigned"}
                             onValueChange={(value) => {
