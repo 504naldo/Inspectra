@@ -332,33 +332,29 @@ export default function AdminJobs() {
                         </div>
                       </div>
                       <div className="card-actions">
-                        <Select
-                          value={job.assignedTechnicianId?.toString() || "unassigned"}
-                          onValueChange={(value) => {
-                            assignJob.mutate({
-                              id: job.id,
-                              assignedTechnicianId: value === "unassigned" ? undefined : parseInt(value)
-                            });
-                          }}
-                        >
-                          <SelectTrigger 
-                            className="w-full sm:w-[180px] safe-select" 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
+                        <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                          <Select
+                            value={job.assignedTechnicianId?.toString() || "unassigned"}
+                            onValueChange={(value) => {
+                              assignJob.mutate({
+                                id: job.id,
+                                assignedTechnicianId: value === "unassigned" ? undefined : parseInt(value)
+                              });
                             }}
                           >
-                            <SelectValue placeholder="Assign to..." />
-                          </SelectTrigger>
-                          <SelectContent position="popper" sideOffset={5}>
-                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                            {technicians?.map((tech: any) => (
-                              <SelectItem key={tech.id} value={tech.id.toString()}>
-                                {tech.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                            <SelectTrigger className="w-full sm:w-[180px] safe-select">
+                              <SelectValue placeholder="Assign to..." />
+                            </SelectTrigger>
+                            <SelectContent position="popper" sideOffset={5}>
+                              <SelectItem value="unassigned">Unassigned</SelectItem>
+                              {technicians?.map((tech: any) => (
+                                <SelectItem key={tech.id} value={tech.id.toString()}>
+                                  {tech.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         {job.status === 'completed' && (
                           <Button 
                             variant="outline" 
