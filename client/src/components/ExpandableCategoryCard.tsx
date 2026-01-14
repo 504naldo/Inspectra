@@ -250,10 +250,8 @@ export function ExpandableCategoryCard({
                 if (!isExpanded) {
                   // Expand card to show list
                   onToggle();
-                } else if (devices.length > 10) {
-                  // If already expanded and has more than preview, navigate to full list
-                  setLocation(route, { replace: true });
                 }
+                // Card always shows full list when expanded, no need to navigate
               }}
             >
               View All

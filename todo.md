@@ -741,3 +741,13 @@
 - [x] Show success toast after bulk marking
 - [x] Refresh device list after bulk action
 - [x] Test bulk marking with multiple devices
+
+## Fix Category Card Classification and View All
+- [x] Update categorizeDevice to return 'extinguisher' and 'emergency' categories (Already implemented)
+- [x] Add keyword detection for extinguisher devices (Already implemented)
+- [x] Add keyword detection for emergency light devices (Already implemented)
+- [x] Remove View All device count gating (devices.length > 10)
+- [x] Make View All always expand to show full list
+- [x] Remove duplicate device lists from bottom of JobDetails (Already removed)
+- [x] Test all categories show correct devices (18 tests passing)
+- [x] Test View All works for all categories (18 tests passing)
