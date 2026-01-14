@@ -153,7 +153,7 @@ export default function AdminJobs() {
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Filter by assignment" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper" sideOffset={5}>
               <SelectItem value="all">All Jobs</SelectItem>
               <SelectItem value="unassigned">Unassigned</SelectItem>
               {technicians?.map((tech: any) => (

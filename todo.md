@@ -774,3 +774,8 @@
 - [x] Test seeded technicians can be assigned jobs (17 tests passing)
 - [x] Test unknown email creates pending user (17 tests passing)
 - [x] Test pending user cannot access jobs until approved (17 tests passing)
+
+## Fix Unassigned Dropdown Menu
+- [x] Investigate unassigned dropdown implementation on Admin Jobs page (Dropdown not opening when clicked)
+- [x] Fix dropdown filtering logic for unassigned jobs (Added position="popper" and sideOffset to SelectContent)
+- [x] Test dropdown filters all assignment statuses correctly (Fixed with position="popper" prop)
