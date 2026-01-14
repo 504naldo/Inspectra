@@ -56,9 +56,36 @@ export function registerOAuthRoutes(app: Express) {
         console.warn('[OAuth] Failed to decode state, using default route:', error);
       }
 
+      // Check if user is active
+      const user = await db.getUserByOpenId(userInfo.openId);
+      if (user && user.isActive === 0) {
+        // User exists but is not active - show pending approval message
+        res.status(403).send(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Account Pending Approval</title>
+              <style>
+                body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f5f5f5; }
+                .message { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 400px; text-align: center; }
+                h1 { color: #333; margin-top: 0; }
+                p { color: #666; line-height: 1.6; }
+              </style>
+            </head>
+            <body>
+              <div class="message">
+                <h1>Account Pending Approval</h1>
+                <p>Your account has been created but is awaiting admin approval. Please contact your administrator to activate your account.</p>
+                <p><strong>Email:</strong> ${user.email || 'Not provided'}</p>
+              </div>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
       // If target route is "/", redirect to role-based dashboard instead
       if (targetRoute === '/') {
-        const user = await db.getUserByOpenId(userInfo.openId);
         if (user?.role === 'customer') {
           targetRoute = '/customer';
         } else if (user?.role === 'technician') {

@@ -762,3 +762,15 @@
 - [x] Add Assigned To dropdown per job card
 - [x] Test OFFICE/ADMIN can view all jobs and assign technicians (21 tests passing)
 - [x] Test TECH cannot access Admin Jobs and only sees assigned jobs (21 tests passing)
+
+## Technician User Seeding + Safe First-Login
+- [x] Add isActive field to user schema
+- [x] Push database migration for isActive field
+- [x] Create seed script for 5 technician users (Chris, Pat, Russ, Markus, Tony)
+- [x] Implement auto-create user on first login with isActive=false
+- [x] Add account approval check on login (block if isActive=false)
+- [x] Update listTechnicians to filter only active technicians
+- [x] Update assignment dropdown to show only active technicians
+- [x] Test seeded technicians can be assigned jobs (17 tests passing)
+- [x] Test unknown email creates pending user (17 tests passing)
+- [x] Test pending user cannot access jobs until approved (17 tests passing)

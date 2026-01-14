@@ -48,6 +48,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
+    // Check if user exists
+    const existing = await getUserByOpenId(user.openId);
+    
     const values: InsertUser = { openId: user.openId };
     const updateSet: Record<string, unknown> = {};
 
@@ -68,12 +71,28 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.lastSignedIn = user.lastSignedIn;
       updateSet.lastSignedIn = user.lastSignedIn;
     }
+    
+    // Handle role assignment
     if (user.role !== undefined) {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
       values.role = 'admin';
       updateSet.role = 'admin';
+    } else if (!existing) {
+      // New user: default to technician role
+      values.role = 'technician';
+    }
+    
+    // Handle isActive for new users
+    if (!existing) {
+      // New users start as inactive (pending approval)
+      values.isActive = 0;
+    }
+    // For existing users, don't change isActive unless explicitly provided
+    if (user.isActive !== undefined) {
+      values.isActive = user.isActive;
+      updateSet.isActive = user.isActive;
     }
 
     if (!values.lastSignedIn) {

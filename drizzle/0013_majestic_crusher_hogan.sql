@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `isActive` tinyint DEFAULT 1 NOT NULL;

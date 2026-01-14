@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint } from "drizzle-orm/mysql-core";
 
 // ============================================
 // CORE USER TABLE (Extended from template)
@@ -10,6 +10,7 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["admin", "office", "technician", "customer"]).default("technician").notNull(),
+  isActive: tinyint("isActive").default(1).notNull(), // 1=active, 0=pending approval
   companyId: int("companyId"),
   customerOrgId: int("customerOrgId"), // For customer role users
   createdAt: timestamp("createdAt").defaultNow().notNull(),
