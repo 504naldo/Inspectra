@@ -841,3 +841,15 @@
 - [x] Fixed by removing preventDefault(), keeping only stopPropagation()
 - [x] Fix assignment control functionality
 - [x] Popovers should now open correctly while preventing navigation
+
+## Comprehensive Assignment UI Fix (Critical)
+- [x] Remove Link wrapper from job cards in Admin Jobs list
+- [x] Add dedicated chevron button for navigation to inspection detail
+- [x] Verify Lead technician is returned by listJobsWithAssignees query (role field included)
+- [x] Display Lead technician clearly with badge/star in job cards (Star icon shows for LEAD)
+- [x] Remove preventDefault/stopPropagation (no longer needed without Link wrapper)
+- [x] Ensure assignment popover opens without navigation
+- [x] Fix: assignment controls no longer wrapped in Link, cannot trigger navigation
+- [x] Fix: only chevron button navigates to inspection
+- [x] Verified: Lead technician role returned by backend query
+- [x] Verified: Lead star icon displays when tech.role === 'LEAD'

@@ -314,8 +314,7 @@ export default function AdminJobs() {
         ) : (
           <div className="space-y-3">
             {filteredJobs.map((job: any) => (
-              <Link key={job.id} href={`/tech/jobs/${job.id}`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <Card key={job.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4">
                     <div className="responsive-card-row">
                       <div className="card-content">
@@ -337,7 +336,7 @@ export default function AdminJobs() {
                         </div>
                       </div>
                       <div className="card-actions">
-                        <div onClick={(e) => e.stopPropagation()} className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0">
                           {job.assignedTechnicians.length === 0 ? (
                             <Popover>
                               <PopoverTrigger asChild>
@@ -345,7 +344,6 @@ export default function AdminJobs() {
                                   variant="outline" 
                                   size="sm" 
                                   className="w-full sm:w-auto"
-                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   <UserPlus className="h-4 w-4 mr-2" />
                                   Assign Technicians
@@ -384,8 +382,7 @@ export default function AdminJobs() {
                                   {tech.role === 'LEAD' && <Star className="h-3 w-3 fill-current" />}
                                   <span>{tech.name}</span>
                                   <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
+                                    onClick={() => {
                                       const remaining = job.assignedTechnicians.filter((t: any) => t.id !== tech.id);
                                       const remainingIds = remaining.map((t: any) => t.id);
                                       
@@ -421,7 +418,6 @@ export default function AdminJobs() {
                                     variant="ghost" 
                                     size="sm" 
                                     className="h-6 px-2"
-                                    onClick={(e) => e.stopPropagation()}
                                   >
                                     <Plus className="h-3 w-3" />
                                   </Button>
@@ -472,12 +468,17 @@ export default function AdminJobs() {
                             QA
                           </Button>
                         )}
-                        <ChevronRight className="h-5 w-5 text-muted-foreground hidden sm:block" />
+                        <button
+                          onClick={() => window.location.href = `/tech/jobs/${job.id}`}
+                          className="p-2 hover:bg-accent rounded-full transition-colors"
+                          aria-label="View job details"
+                        >
+                          <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                        </button>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-              </Link>
             ))}
           </div>
         )}
