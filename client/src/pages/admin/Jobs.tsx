@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -44,6 +45,12 @@ export default function AdminJobs() {
   });
 
   const [assignmentFilter, setAssignmentFilter] = useState<string>("all");
+  
+  // Assignment modal state
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
+  const [selectedAssistantIds, setSelectedAssistantIds] = useState<number[]>([]);
   
   const { data: jobs, isLoading, refetch } = trpc.jobAssignment.listJobsWithAssignees.useQuery({
     companyId,
@@ -338,43 +345,20 @@ export default function AdminJobs() {
                       <div className="card-actions">
                         <div className="flex-1 min-w-0">
                           {job.assignedTechnicians.length === 0 ? (
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="w-full sm:w-auto"
-                                >
-                                  <UserPlus className="h-4 w-4 mr-2" />
-                                  Assign Technicians
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-64" align="start">
-                                <div className="space-y-2">
-                                  <h4 className="font-medium text-sm">Select Technicians</h4>
-                                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                                    {technicians?.map((tech: any) => (
-                                      <label key={tech.id} className="flex items-center gap-2 cursor-pointer">
-                                        <Checkbox
-                                          checked={false}
-                                          onCheckedChange={(checked) => {
-                                            if (checked) {
-                                              // First technician assigned becomes Lead
-                                              setAssignments.mutate({
-                                                jobId: job.id,
-                                                technicianIds: [tech.id],
-                                                leadId: tech.id,
-                                              });
-                                            }
-                                          }}
-                                        />
-                                        <span className="text-sm">{tech.name}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                              </PopoverContent>
-                            </Popover>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="w-full sm:w-auto"
+                              onClick={() => {
+                                setSelectedJobId(job.id);
+                                setSelectedLeadId(null);
+                                setSelectedAssistantIds([]);
+                                setAssignModalOpen(true);
+                              }}
+                            >
+                              <UserPlus className="h-4 w-4 mr-2" />
+                              Assign Technicians
+                            </Button>
                           ) : (
                             <div className="flex flex-wrap gap-1">
                               {job.assignedTechnicians.map((tech: any) => (
@@ -412,45 +396,19 @@ export default function AdminJobs() {
                                   </button>
                                 </div>
                               ))}
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    className="h-6 px-2"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-64" align="start">
-                                  <div className="space-y-2">
-                                    <h4 className="font-medium text-sm">Add Technicians</h4>
-                                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                                      {technicians
-                                        ?.filter((tech: any) => !job.assignedTechnicians.some((t: any) => t.id === tech.id))
-                                        .map((tech: any) => (
-                                          <label key={tech.id} className="flex items-center gap-2 cursor-pointer">
-                                            <Checkbox
-                                              checked={false}
-                                              onCheckedChange={(checked) => {
-                                                if (checked) {
-                                                  const newIds = [...job.assignedTechnicians.map((t: any) => t.id), tech.id];
-                                                  const currentLead = job.assignedTechnicians.find((t: any) => t.role === 'LEAD');
-                                                  setAssignments.mutate({
-                                                    jobId: job.id,
-                                                    technicianIds: newIds,
-                                                    leadId: currentLead?.id || newIds[0],
-                                                  });
-                                                }
-                                              }}
-                                            />
-                                            <span className="text-sm">{tech.name}</span>
-                                          </label>
-                                        ))}
-                                    </div>
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-6 px-2"
+                                onClick={() => {
+                                  setSelectedJobId(job.id);
+                                  setSelectedLeadId(job.assignedTechnicians.find((t: any) => t.role === 'LEAD')?.id || null);
+                                  setSelectedAssistantIds(job.assignedTechnicians.filter((t: any) => t.role === 'ASSIST').map((t: any) => t.id));
+                                  setAssignModalOpen(true);
+                                }}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
                             </div>
                           )}
                         </div>
@@ -483,6 +441,84 @@ export default function AdminJobs() {
           </div>
         )}
       </div>
+
+      {/* Assignment Modal */}
+      <Dialog open={assignModalOpen} onOpenChange={setAssignModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Technicians</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {/* Lead Technician Section */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Lead Technician (Required)</Label>
+              <RadioGroup value={selectedLeadId?.toString() || ""} onValueChange={(value) => setSelectedLeadId(Number(value))}>
+                {technicians?.map((tech: any) => (
+                  <div key={tech.id} className="flex items-center space-x-2">
+                    <RadioGroupItem value={tech.id.toString()} id={`lead-${tech.id}`} />
+                    <Label htmlFor={`lead-${tech.id}`} className="font-normal cursor-pointer">
+                      {tech.name}
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+
+            {/* Additional Technicians Section */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Additional Technicians (Optional)</Label>
+              <div className="space-y-2">
+                {technicians
+                  ?.filter((tech: any) => tech.id !== selectedLeadId)
+                  .map((tech: any) => (
+                    <div key={tech.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`assist-${tech.id}`}
+                        checked={selectedAssistantIds.includes(tech.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedAssistantIds([...selectedAssistantIds, tech.id]);
+                          } else {
+                            setSelectedAssistantIds(selectedAssistantIds.filter(id => id !== tech.id));
+                          }
+                        }}
+                      />
+                      <Label htmlFor={`assist-${tech.id}`} className="font-normal cursor-pointer">
+                        {tech.name}
+                      </Label>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setAssignModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!selectedLeadId) {
+                  toast.error('Please select a Lead technician');
+                  return;
+                }
+                if (selectedJobId) {
+                  const allTechnicianIds = [selectedLeadId, ...selectedAssistantIds];
+                  setAssignments.mutate({
+                    jobId: selectedJobId,
+                    technicianIds: allTechnicianIds,
+                    leadId: selectedLeadId,
+                  });
+                  setAssignModalOpen(false);
+                }
+              }}
+            >
+              Save
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

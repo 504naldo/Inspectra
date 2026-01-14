@@ -853,3 +853,17 @@
 - [x] Fix: only chevron button navigates to inspection
 - [x] Verified: Lead technician role returned by backend query
 - [x] Verified: Lead star icon displays when tech.role === 'LEAD'
+
+## Functional Assignment Picker Modal (Critical)
+- [x] Replace placeholder popover with Dialog modal
+- [x] Add Lead Technician section with radio buttons (required)
+- [x] Add Additional Technicians section with checkboxes (optional)
+- [x] Load technician list from users table (role=TECH, isActive=true)
+- [x] Implement Save button with Lead validation (toast error if no Lead)
+- [x] Implement Cancel button to close modal
+- [x] Show error message if saving without Lead selection (toast.error)
+- [x] Display assigned technicians as chips after saving (already implemented)
+- [x] Mark Lead chip with star icon (already implemented)
+- [x] Modal opens with full technician list from backend
+- [x] Cannot save without selecting Lead (validation in onClick)
+- [x] Multiple technicians can be selected (Lead + Assistants)
