@@ -1759,6 +1759,11 @@ const userRouter = router({
     return db.getAllUsers(input.companyId);
   }),
   
+  listTechnicians: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+    const users = await db.getAllUsers(input.companyId);
+    return users.filter((u: any) => u.role === 'technician');
+  }),
+  
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
     return db.getUserById(input.id);
   }),

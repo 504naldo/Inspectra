@@ -38,6 +38,8 @@ export default function AdminJobs() {
     scheduledDate: "",
   });
 
+  const [assignmentFilter, setAssignmentFilter] = useState<string>("all");
+  
   const { data: jobs, isLoading, refetch } = trpc.job.listByCompany.useQuery({
     companyId,
     status: statusFilter === 'all' ? undefined : statusFilter,
@@ -45,6 +47,15 @@ export default function AdminJobs() {
 
   const { data: sites } = trpc.site.listByCompany.useQuery({ companyId });
   const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
+  const { data: technicians } = trpc.user.listTechnicians.useQuery({ companyId });
+  
+  const assignJob = trpc.job.update.useMutation({
+    onSuccess: () => {
+      toast.success('Job assignment updated');
+      refetch();
+    },
+    onError: () => toast.error('Failed to update assignment')
+  });
 
   const createJob = trpc.job.create.useMutation({
     onSuccess: () => {
@@ -65,12 +76,21 @@ export default function AdminJobs() {
   });
 
   const filteredJobs = jobs?.filter((job: any) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      job.title.toLowerCase().includes(query) ||
-      job.jobNumber.toLowerCase().includes(query)
-    );
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = job.title.toLowerCase().includes(query) || job.jobNumber.toLowerCase().includes(query);
+      if (!matchesSearch) return false;
+    }
+    
+    // Assignment filter
+    if (assignmentFilter === 'unassigned') {
+      return !job.assignedTechnicianId;
+    } else if (assignmentFilter !== 'all') {
+      return job.assignedTechnicianId === parseInt(assignmentFilter);
+    }
+    
+    return true;
   }) || [];
 
   const handleCreateJob = () => {
@@ -126,6 +146,21 @@ export default function AdminJobs() {
               <SelectItem value="in_progress">In Progress</SelectItem>
               <SelectItem value="completed">Completed</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          <Select value={assignmentFilter} onValueChange={setAssignmentFilter}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filter by assignment" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Jobs</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {technicians?.map((tech: any) => (
+                <SelectItem key={tech.id} value={tech.id.toString()}>
+                  Assigned to {tech.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           
@@ -297,6 +332,33 @@ export default function AdminJobs() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        <Select
+                          value={job.assignedTechnicianId?.toString() || "unassigned"}
+                          onValueChange={(value) => {
+                            assignJob.mutate({
+                              id: job.id,
+                              assignedTechnicianId: value === "unassigned" ? undefined : parseInt(value)
+                            });
+                          }}
+                        >
+                          <SelectTrigger 
+                            className="w-[180px]" 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            <SelectValue placeholder="Assign to..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {technicians?.map((tech: any) => (
+                              <SelectItem key={tech.id} value={tech.id.toString()}>
+                                {tech.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         {job.status === 'completed' && (
                           <Button 
                             variant="outline" 

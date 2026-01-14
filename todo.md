@@ -751,3 +751,14 @@
 - [x] Remove duplicate device lists from bottom of JobDetails (Already removed)
 - [x] Test all categories show correct devices (18 tests passing)
 - [x] Test View All works for all categories (18 tests passing)
+
+## Admin Jobs List for OFFICE/ADMIN Users
+- [x] Add "Admin Jobs" navigation item visible only to OFFICE/ADMIN users (Already exists in AdminLayout)
+- [x] Create listAllJobs backend procedure restricted to OFFICE/ADMIN (Already exists as listByCompany)
+- [x] Verify listMyJobs only returns assigned jobs for TECH users (Exists as listByTechnician)
+- [x] Add listTechnicians procedure for OFFICE/ADMIN
+- [x] Create AdminJobsList component showing all jobs with assignment controls (Enhanced existing Admin Jobs page)
+- [x] Add filters: All / Unassigned / Assigned to [Tech]
+- [x] Add Assigned To dropdown per job card
+- [x] Test OFFICE/ADMIN can view all jobs and assign technicians (21 tests passing)
+- [x] Test TECH cannot access Admin Jobs and only sees assigned jobs (21 tests passing)
