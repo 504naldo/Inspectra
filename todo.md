@@ -834,3 +834,10 @@
 - [x] Prevent removing Lead without choosing new Lead (auto-promotes first remaining tech)
 - [x] Test: tapping assignment controls does NOT navigate to inspection (fixed with preventDefault)
 - [x] Test: cannot save assignments without Lead technician (6 tests passing)
+
+## Bug Fix - Assignment Controls Not Responding (Critical)
+- [x] Investigate why assignment controls (popover, chips, add button) are not responding
+- [x] Identified issue: preventDefault() was blocking Popover from opening
+- [x] Fixed by removing preventDefault(), keeping only stopPropagation()
+- [x] Fix assignment control functionality
+- [x] Popovers should now open correctly while preventing navigation

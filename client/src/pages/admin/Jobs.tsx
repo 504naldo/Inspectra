@@ -345,7 +345,7 @@ export default function AdminJobs() {
                                   variant="outline" 
                                   size="sm" 
                                   className="w-full sm:w-auto"
-                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   <UserPlus className="h-4 w-4 mr-2" />
                                   Assign Technicians
@@ -385,7 +385,6 @@ export default function AdminJobs() {
                                   <span>{tech.name}</span>
                                   <button
                                     onClick={(e) => {
-                                      e.preventDefault();
                                       e.stopPropagation();
                                       const remaining = job.assignedTechnicians.filter((t: any) => t.id !== tech.id);
                                       const remainingIds = remaining.map((t: any) => t.id);
@@ -422,7 +421,7 @@ export default function AdminJobs() {
                                     variant="ghost" 
                                     size="sm" 
                                     className="h-6 px-2"
-                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                    onClick={(e) => e.stopPropagation()}
                                   >
                                     <Plus className="h-3 w-3" />
                                   </Button>
