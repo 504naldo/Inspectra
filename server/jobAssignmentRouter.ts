@@ -2,18 +2,18 @@ import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "./db";
-import { jobs, users } from "../drizzle/schema";
-import { eq, inArray } from "drizzle-orm";
+import { jobs, users, jobAssignments } from "../drizzle/schema";
+import { eq, inArray, and, sql } from "drizzle-orm";
 
 /**
  * Job Assignment Router
- * Handles technician job assignments for admin and filtered job lists for technicians
+ * Handles multi-technician job assignments for admin and filtered job lists for technicians
  */
 
 export const jobAssignmentRouter = router({
   /**
    * List jobs assigned to the current technician
-   * Only returns jobs where assignedTechnicianId matches current user
+   * Returns jobs where the technician is in job_assignments table
    */
   listMyJobs: protectedProcedure.query(async ({ ctx }) => {
     if (ctx.user.role !== "technician") {
@@ -31,6 +31,7 @@ export const jobAssignmentRouter = router({
       });
     }
 
+    // Get jobs where user is assigned
     const assignedJobs = await db
       .select({
         id: jobs.id,
@@ -41,108 +42,156 @@ export const jobAssignmentRouter = router({
         status: jobs.status,
         priority: jobs.priority,
         scheduledDate: jobs.scheduledDate,
-        assignedTechnicianId: jobs.assignedTechnicianId,
-        assignedAt: jobs.assignedAt,
         siteId: jobs.siteId,
         customerOrgId: jobs.customerOrgId,
         createdAt: jobs.createdAt,
         updatedAt: jobs.updatedAt,
+        assignmentRole: jobAssignments.role,
+        assignedAt: jobAssignments.assignedAt,
       })
       .from(jobs)
-      .where(eq(jobs.assignedTechnicianId, ctx.user.id))
+      .innerJoin(jobAssignments, eq(jobs.id, jobAssignments.jobId))
+      .where(eq(jobAssignments.userId, ctx.user.id))
       .orderBy(jobs.scheduledDate);
 
     return assignedJobs;
   }),
 
   /**
-   * List all jobs with assignee information (Admin/Office only)
-   * Returns all jobs with current assigned technician details
+   * List all jobs with assigned technicians (Admin/Office only)
+   * Returns jobs with array of assigned technicians
    */
-  listJobsWithAssignee: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Only admin or office users can view all job assignments",
-      });
-    }
+  listJobsWithAssignees: protectedProcedure
+    .input(z.object({ 
+      companyId: z.number(),
+      status: z.string().optional()
+    }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only admin or office users can view all job assignments",
+        });
+      }
 
-    const db = await getDb();
-    if (!db) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Database not available",
-      });
-    }
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      }
 
-    const allJobs = await db
-      .select({
-        id: jobs.id,
-        jobNumber: jobs.jobNumber,
-        title: jobs.title,
-        description: jobs.description,
-        jobType: jobs.jobType,
-        status: jobs.status,
-        priority: jobs.priority,
-        scheduledDate: jobs.scheduledDate,
-        assignedTechnicianId: jobs.assignedTechnicianId,
-        assignedAt: jobs.assignedAt,
-        assignedByUserId: jobs.assignedByUserId,
-        siteId: jobs.siteId,
-        customerOrgId: jobs.customerOrgId,
-        createdAt: jobs.createdAt,
-        updatedAt: jobs.updatedAt,
-        technicianName: users.name,
-        technicianEmail: users.email,
-      })
-      .from(jobs)
-      .leftJoin(users, eq(jobs.assignedTechnicianId, users.id))
-      .orderBy(jobs.scheduledDate);
+      // Get all jobs for the company
+      const whereConditions = input.status && input.status !== 'all'
+        ? and(
+            eq(jobs.companyId, input.companyId),
+            eq(jobs.status, input.status as any)
+          )
+        : eq(jobs.companyId, input.companyId);
 
-    return allJobs;
-  }),
+      const allJobs = await db
+        .select({
+          id: jobs.id,
+          jobNumber: jobs.jobNumber,
+          title: jobs.title,
+          description: jobs.description,
+          jobType: jobs.jobType,
+          status: jobs.status,
+          priority: jobs.priority,
+          scheduledDate: jobs.scheduledDate,
+          siteId: jobs.siteId,
+          customerOrgId: jobs.customerOrgId,
+          createdAt: jobs.createdAt,
+          updatedAt: jobs.updatedAt,
+          companyId: jobs.companyId,
+        })
+        .from(jobs)
+        .where(whereConditions)
+        .orderBy(jobs.scheduledDate);
+
+      // Get all assignments for these jobs
+      const jobIds = allJobs.map(j => j.id);
+      if (jobIds.length === 0) return [];
+
+      const assignments = await db
+        .select({
+          jobId: jobAssignments.jobId,
+          userId: jobAssignments.userId,
+          role: jobAssignments.role,
+          assignedAt: jobAssignments.assignedAt,
+          technicianName: users.name,
+          technicianEmail: users.email,
+        })
+        .from(jobAssignments)
+        .innerJoin(users, eq(jobAssignments.userId, users.id))
+        .where(inArray(jobAssignments.jobId, jobIds));
+
+      // Group assignments by job
+      const jobsWithAssignees = allJobs.map(job => ({
+        ...job,
+        assignedTechnicians: assignments
+          .filter(a => a.jobId === job.id)
+          .map(a => ({
+            id: a.userId,
+            name: a.technicianName,
+            email: a.technicianEmail,
+            role: a.role,
+            assignedAt: a.assignedAt,
+          })),
+      }));
+
+      return jobsWithAssignees;
+    }),
 
   /**
-   * List all technicians (for assignment dropdown)
+   * List all active technicians (for assignment dropdown)
    */
-  listTechnicians: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Only admin or office users can list technicians",
-      });
-    }
+  listTechnicians: protectedProcedure
+    .input(z.object({ companyId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only admin or office users can list technicians",
+        });
+      }
 
-    const db = await getDb();
-    if (!db) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Database not available",
-      });
-    }
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      }
 
-    const technicians = await db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-      })
-      .from(users)
-      .where(eq(users.role, "technician"))
-      .orderBy(users.name);
+      const technicians = await db
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        })
+        .from(users)
+        .where(and(
+          eq(users.role, "technician"),
+          eq(users.companyId, input.companyId),
+          eq(users.isActive, 1)
+        ))
+        .orderBy(users.name);
 
-    return technicians;
-  }),
+      return technicians;
+    }),
 
   /**
-   * Assign a job to a technician (Admin/Office only)
-   * Can also unassign by passing null as technicianId
+   * Set job assignments (replace all assignments for a job)
+   * Admin/Office only
    */
-  assignJob: protectedProcedure
+  setJobAssignments: protectedProcedure
     .input(
       z.object({
         jobId: z.number(),
-        technicianId: z.number().nullable(),
+        technicianIds: z.array(z.number()),
+        leadId: z.number().optional(), // Optional lead technician
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -161,50 +210,169 @@ export const jobAssignmentRouter = router({
         });
       }
 
-      // Validate technician exists and has correct role
-      if (input.technicianId !== null) {
-        const technician = await db
-          .select()
+      // Validate all technicians exist and are active
+      if (input.technicianIds.length > 0) {
+        const validTechs = await db
+          .select({ id: users.id })
           .from(users)
-          .where(eq(users.id, input.technicianId))
-          .limit(1);
+          .where(and(
+            inArray(users.id, input.technicianIds),
+            eq(users.role, "technician"),
+            eq(users.isActive, 1)
+          ));
 
-        if (technician.length === 0 || technician[0].role !== "technician") {
+        if (validTechs.length !== input.technicianIds.length) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Invalid technician ID or user is not a technician",
+            message: "One or more invalid or inactive technician IDs",
           });
         }
       }
 
-      // Update job assignment
+      // Delete existing assignments
       await db
-        .update(jobs)
-        .set({
-          assignedTechnicianId: input.technicianId,
-          assignedAt: input.technicianId !== null ? new Date() : null,
-          assignedByUserId: input.technicianId !== null ? ctx.user.id : null,
-        })
-        .where(eq(jobs.id, input.jobId));
+        .delete(jobAssignments)
+        .where(eq(jobAssignments.jobId, input.jobId));
+
+      // Insert new assignments
+      if (input.technicianIds.length > 0) {
+        const newAssignments = input.technicianIds.map(techId => ({
+          jobId: input.jobId,
+          userId: techId,
+          role: (input.leadId && techId === input.leadId) ? 'LEAD' as const : 'ASSIST' as const,
+          assignedByUserId: ctx.user.id,
+        }));
+
+        await db.insert(jobAssignments).values(newAssignments);
+      }
+
+      return { success: true, count: input.technicianIds.length };
+    }),
+
+  /**
+   * Add technicians to a job (without removing existing assignments)
+   */
+  addJobAssignments: protectedProcedure
+    .input(
+      z.object({
+        jobId: z.number(),
+        technicianIds: z.array(z.number()),
+        leadId: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only admin or office users can assign jobs",
+        });
+      }
+
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      }
+
+      // Validate technicians
+      if (input.technicianIds.length > 0) {
+        const validTechs = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(
+            inArray(users.id, input.technicianIds),
+            eq(users.role, "technician"),
+            eq(users.isActive, 1)
+          ));
+
+        if (validTechs.length !== input.technicianIds.length) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "One or more invalid or inactive technician IDs",
+          });
+        }
+      }
+
+      // Get existing assignments
+      const existing = await db
+        .select({ userId: jobAssignments.userId })
+        .from(jobAssignments)
+        .where(eq(jobAssignments.jobId, input.jobId));
+
+      const existingIds = new Set(existing.map(e => e.userId));
+
+      // Filter out already-assigned technicians
+      const newTechIds = input.technicianIds.filter(id => !existingIds.has(id));
+
+      if (newTechIds.length > 0) {
+        const newAssignments = newTechIds.map(techId => ({
+          jobId: input.jobId,
+          userId: techId,
+          role: (input.leadId && techId === input.leadId) ? 'LEAD' as const : 'ASSIST' as const,
+          assignedByUserId: ctx.user.id,
+        }));
+
+        await db.insert(jobAssignments).values(newAssignments);
+      }
+
+      return { success: true, added: newTechIds.length, skipped: input.technicianIds.length - newTechIds.length };
+    }),
+
+  /**
+   * Remove a technician from a job
+   */
+  removeJobAssignment: protectedProcedure
+    .input(
+      z.object({
+        jobId: z.number(),
+        technicianId: z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only admin or office users can remove assignments",
+        });
+      }
+
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      }
+
+      await db
+        .delete(jobAssignments)
+        .where(and(
+          eq(jobAssignments.jobId, input.jobId),
+          eq(jobAssignments.userId, input.technicianId)
+        ));
 
       return { success: true };
     }),
 
   /**
-   * Bulk assign multiple jobs to a technician (Admin/Office only)
+   * Bulk assign multiple jobs to multiple technicians
    */
   bulkAssignJobs: protectedProcedure
     .input(
       z.object({
         jobIds: z.array(z.number()),
-        technicianId: z.number().nullable(),
+        technicianIds: z.array(z.number()),
+        mode: z.enum(['add', 'replace']).default('add'),
+        leadId: z.number().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "Only admin or office users can assign jobs",
+          message: "Only admin or office users can bulk assign jobs",
         });
       }
 
@@ -216,40 +384,68 @@ export const jobAssignmentRouter = router({
         });
       }
 
-      if (input.jobIds.length === 0) {
+      if (input.jobIds.length === 0 || input.technicianIds.length === 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "No jobs selected for assignment",
+          message: "Must select at least one job and one technician",
         });
       }
 
-      // Validate technician exists and has correct role
-      if (input.technicianId !== null) {
-        const technician = await db
-          .select()
-          .from(users)
-          .where(eq(users.id, input.technicianId))
-          .limit(1);
+      // Validate technicians
+      const validTechs = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(
+          inArray(users.id, input.technicianIds),
+          eq(users.role, "technician"),
+          eq(users.isActive, 1)
+        ));
 
-        if (technician.length === 0 || technician[0].role !== "technician") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Invalid technician ID or user is not a technician",
+      if (validTechs.length !== input.technicianIds.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One or more invalid or inactive technician IDs",
+        });
+      }
+
+      // If replace mode, delete existing assignments
+      if (input.mode === 'replace') {
+        await db
+          .delete(jobAssignments)
+          .where(inArray(jobAssignments.jobId, input.jobIds));
+      }
+
+      // Create new assignments for each job x technician combination
+      const newAssignments = [];
+      for (const jobId of input.jobIds) {
+        for (const techId of input.technicianIds) {
+          newAssignments.push({
+            jobId,
+            userId: techId,
+            role: (input.leadId && techId === input.leadId) ? 'LEAD' as const : 'ASSIST' as const,
+            assignedByUserId: ctx.user.id,
           });
         }
       }
 
-      // Bulk update job assignments
-      await db
-        .update(jobs)
-        .set({
-          assignedTechnicianId: input.technicianId,
-          assignedAt: input.technicianId !== null ? new Date() : null,
-          assignedByUserId: input.technicianId !== null ? ctx.user.id : null,
-        })
-        .where(inArray(jobs.id, input.jobIds));
-
-      return { success: true, count: input.jobIds.length };
+      // In add mode, use INSERT IGNORE to skip duplicates
+      if (input.mode === 'add') {
+        // Insert one by one to handle duplicates gracefully
+        let added = 0;
+        for (const assignment of newAssignments) {
+          try {
+            await db.insert(jobAssignments).values(assignment);
+            added++;
+          } catch (err) {
+            // Skip duplicates (unique constraint violation)
+            continue;
+          }
+        }
+        return { success: true, added, total: newAssignments.length };
+      } else {
+        await db.insert(jobAssignments).values(newAssignments);
+        return { success: true, added: newAssignments.length, total: newAssignments.length };
+      }
     }),
 
   /**

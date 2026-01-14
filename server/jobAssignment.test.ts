@@ -1,100 +1,223 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { getDb } from './db';
+import { jobs, jobAssignments, users, companies, sites, customerOrgs } from '../drizzle/schema';
+import { eq } from 'drizzle-orm';
 
 /**
- * Job Assignment System Tests
- * 
- * These tests verify the job assignment functionality:
- * - Admins can assign jobs to technicians
- * - Technicians see only their assigned jobs
- * - Bulk assignment works correctly
- * - Role permissions are enforced
+ * Integration tests for multi-technician job assignment system
+ * Tests the job_assignments many-to-many relationship
  */
 
-describe('Job Assignment System', () => {
-  it('should have assignment fields in jobs table schema', () => {
-    // Verify schema includes assignment tracking fields
-    const expectedFields = [
-      'assignedTechnicianId',
-      'assignedAt',
-      'assignedByUserId'
-    ];
-    
-    // This test verifies the schema was updated correctly
-    expect(expectedFields).toHaveLength(3);
+describe('Multi-Technician Job Assignment', () => {
+  let testCompanyId: number;
+  let testSiteId: number;
+  let testCustomerOrgId: number;
+  let testJobId: number;
+  let testTech1Id: number;
+  let testTech2Id: number;
+  let testTech3Id: number;
+
+  beforeAll(async () => {
+    const db = await getDb();
+    if (!db) throw new Error('Database not available');
+
+    // Create test company
+    const [company] = await db.insert(companies).values({
+      name: 'Test Company for Multi-Assign',
+    }).$returningId();
+    testCompanyId = company.id;
+
+    // Create test customer org
+    const [customerOrg] = await db.insert(customerOrgs).values({
+      companyId: testCompanyId,
+      name: 'Test Customer Org',
+    }).$returningId();
+    testCustomerOrgId = customerOrg.id;
+
+    // Create test site
+    const [site] = await db.insert(sites).values({
+      companyId: testCompanyId,
+      customerOrgId: testCustomerOrgId,
+      name: 'Test Site',
+      address: '123 Test St',
+    }).$returningId();
+    testSiteId = site.id;
+
+    // Create test technicians
+    const [tech1] = await db.insert(users).values({
+      openId: 'test-tech-1-multi',
+      name: 'Tech One',
+      email: 'tech1@test.com',
+      role: 'technician',
+      companyId: testCompanyId,
+    }).$returningId();
+    testTech1Id = tech1.id;
+
+    const [tech2] = await db.insert(users).values({
+      openId: 'test-tech-2-multi',
+      name: 'Tech Two',
+      email: 'tech2@test.com',
+      role: 'technician',
+      companyId: testCompanyId,
+    }).$returningId();
+    testTech2Id = tech2.id;
+
+    const [tech3] = await db.insert(users).values({
+      openId: 'test-tech-3-multi',
+      name: 'Tech Three',
+      email: 'tech3@test.com',
+      role: 'technician',
+      companyId: testCompanyId,
+    }).$returningId();
+    testTech3Id = tech3.id;
+
+    // Create test job
+    const [job] = await db.insert(jobs).values({
+      companyId: testCompanyId,
+      siteId: testSiteId,
+      customerOrgId: testCustomerOrgId,
+      jobNumber: 'TEST-MULTI-001',
+      title: 'Multi-Technician Test Job',
+      status: 'pending',
+    }).$returningId();
+    testJobId = job.id;
   });
 
-  it('should have seenAssignmentsAt field in users table schema', () => {
-    // Verify users table includes notification tracking
-    const expectedField = 'seenAssignmentsAt';
-    
-    expect(expectedField).toBe('seenAssignmentsAt');
+  afterAll(async () => {
+    const db = await getDb();
+    if (!db) return;
+
+    // Cleanup in reverse order of creation
+    await db.delete(jobAssignments).where(eq(jobAssignments.jobId, testJobId));
+    await db.delete(jobs).where(eq(jobs.id, testJobId));
+    await db.delete(sites).where(eq(sites.id, testSiteId));
+    await db.delete(customerOrgs).where(eq(customerOrgs.id, testCustomerOrgId));
+    await db.delete(users).where(eq(users.id, testTech1Id));
+    await db.delete(users).where(eq(users.id, testTech2Id));
+    await db.delete(users).where(eq(users.id, testTech3Id));
+    await db.delete(companies).where(eq(companies.id, testCompanyId));
   });
 
-  it('should have jobAssignment router with required procedures', () => {
-    // Verify all required procedures exist
-    const requiredProcedures = [
-      'listMyJobs',
-      'listJobsWithAssignee',
-      'listTechnicians',
-      'assignJob',
-      'bulkAssignJobs',
-      'markAssignmentsSeen'
-    ];
-    
-    expect(requiredProcedures).toHaveLength(6);
+  it('should assign multiple technicians to a job', async () => {
+    const db = await getDb();
+    if (!db) throw new Error('Database not available');
+
+    // Assign two technicians
+    await db.insert(jobAssignments).values([
+      {
+        jobId: testJobId,
+        userId: testTech1Id,
+        role: 'LEAD',
+      },
+      {
+        jobId: testJobId,
+        userId: testTech2Id,
+        role: 'ASSIST',
+      },
+    ]);
+
+    // Verify assignments
+    const assignments = await db
+      .select()
+      .from(jobAssignments)
+      .where(eq(jobAssignments.jobId, testJobId));
+
+    expect(assignments).toHaveLength(2);
+    expect(assignments.find(a => a.userId === testTech1Id)?.role).toBe('LEAD');
+    expect(assignments.find(a => a.userId === testTech2Id)?.role).toBe('ASSIST');
   });
 
-  it('should filter jobs by assigned technician', () => {
-    // Mock data
-    const allJobs = [
-      { id: 1, assignedTechnicianId: 100 },
-      { id: 2, assignedTechnicianId: 200 },
-      { id: 3, assignedTechnicianId: 100 },
-      { id: 4, assignedTechnicianId: null }
-    ];
-    
-    const technicianId = 100;
-    const filteredJobs = allJobs.filter(job => job.assignedTechnicianId === technicianId);
-    
-    expect(filteredJobs).toHaveLength(2);
-    expect(filteredJobs[0].id).toBe(1);
-    expect(filteredJobs[1].id).toBe(3);
+  it('should prevent duplicate assignments (unique constraint)', async () => {
+    const db = await getDb();
+    if (!db) throw new Error('Database not available');
+
+    // Try to assign the same technician twice
+    await expect(async () => {
+      await db.insert(jobAssignments).values({
+        jobId: testJobId,
+        userId: testTech1Id,
+        role: 'ASSIST',
+      });
+    }).rejects.toThrow();
   });
 
-  it('should identify new assignments correctly', () => {
-    const now = new Date();
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    
-    const jobs = [
-      { id: 1, assignedAt: now },
-      { id: 2, assignedAt: yesterday },
-      { id: 3, assignedAt: lastWeek }
-    ];
-    
-    const seenAssignmentsAt = yesterday;
-    
-    const newJobs = jobs.filter(job => {
-      if (!job.assignedAt) return false;
-      return new Date(job.assignedAt) > new Date(seenAssignmentsAt);
+  it('should allow adding additional technicians', async () => {
+    const db = await getDb();
+    if (!db) throw new Error('Database not available');
+
+    // Add third technician
+    await db.insert(jobAssignments).values({
+      jobId: testJobId,
+      userId: testTech3Id,
+      role: 'ASSIST',
     });
-    
-    expect(newJobs).toHaveLength(1);
-    expect(newJobs[0].id).toBe(1);
+
+    // Verify all three assignments exist
+    const assignments = await db
+      .select()
+      .from(jobAssignments)
+      .where(eq(jobAssignments.jobId, testJobId));
+
+    expect(assignments).toHaveLength(3);
   });
 
-  it('should handle bulk assignment correctly', () => {
-    const jobIds = [1, 2, 3, 4, 5];
-    const technicianId = 100;
-    
-    // Simulate bulk assignment
-    const assignedJobs = jobIds.map(id => ({
-      id,
-      assignedTechnicianId: technicianId,
-      assignedAt: new Date()
-    }));
-    
-    expect(assignedJobs).toHaveLength(5);
-    expect(assignedJobs.every(job => job.assignedTechnicianId === technicianId)).toBe(true);
+  it('should allow removing a technician from a job', async () => {
+    const db = await getDb();
+    if (!db) throw new Error('Database not available');
+
+    // Remove tech2
+    await db
+      .delete(jobAssignments)
+      .where(eq(jobAssignments.userId, testTech2Id));
+
+    // Verify only 2 assignments remain
+    const assignments = await db
+      .select()
+      .from(jobAssignments)
+      .where(eq(jobAssignments.jobId, testJobId));
+
+    expect(assignments).toHaveLength(2);
+    expect(assignments.find(a => a.userId === testTech2Id)).toBeUndefined();
+  });
+
+  it('should support replacing all assignments', async () => {
+    const db = await getDb();
+    if (!db) throw new Error('Database not available');
+
+    // Delete all existing assignments
+    await db.delete(jobAssignments).where(eq(jobAssignments.jobId, testJobId));
+
+    // Assign only tech2
+    await db.insert(jobAssignments).values({
+      jobId: testJobId,
+      userId: testTech2Id,
+      role: 'LEAD',
+    });
+
+    // Verify only tech2 is assigned
+    const assignments = await db
+      .select()
+      .from(jobAssignments)
+      .where(eq(jobAssignments.jobId, testJobId));
+
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0].userId).toBe(testTech2Id);
+    expect(assignments[0].role).toBe('LEAD');
+  });
+
+  it('should support unassigning all technicians', async () => {
+    const db = await getDb();
+    if (!db) throw new Error('Database not available');
+
+    // Delete all assignments
+    await db.delete(jobAssignments).where(eq(jobAssignments.jobId, testJobId));
+
+    // Verify no assignments
+    const assignments = await db
+      .select()
+      .from(jobAssignments)
+      .where(eq(jobAssignments.jobId, testJobId));
+
+    expect(assignments).toHaveLength(0);
   });
 });

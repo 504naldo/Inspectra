@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique } from "drizzle-orm/mysql-core";
 
 // ============================================
 // CORE USER TABLE (Extended from template)
@@ -164,6 +164,25 @@ export const jobs = mysqlTable("jobs", {
 
 export type Job = typeof jobs.$inferSelect;
 export type InsertJob = typeof jobs.$inferInsert;
+
+// ============================================
+// JOB ASSIGNMENTS (Many-to-Many: Jobs <-> Technicians)
+// ============================================
+export const jobAssignments = mysqlTable("job_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  userId: int("userId").notNull(), // technician user id
+  role: mysqlEnum("role", ["LEAD", "ASSIST"]).default("ASSIST").notNull(),
+  assignedAt: timestamp("assignedAt").defaultNow().notNull(),
+  assignedByUserId: int("assignedByUserId"), // who assigned this technician
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  // Prevent duplicate assignments
+  uniqueJobUser: unique().on(table.jobId, table.userId),
+}));
+
+export type JobAssignment = typeof jobAssignments.$inferSelect;
+export type InsertJobAssignment = typeof jobAssignments.$inferInsert;
 
 // ============================================
 // INSPECTION RESULT (Device Test Result)

@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
@@ -14,7 +16,10 @@ import {
   Search, 
   ChevronRight,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  X,
+  Star,
+  UserPlus
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -40,21 +45,21 @@ export default function AdminJobs() {
 
   const [assignmentFilter, setAssignmentFilter] = useState<string>("all");
   
-  const { data: jobs, isLoading, refetch } = trpc.job.listByCompany.useQuery({
+  const { data: jobs, isLoading, refetch } = trpc.jobAssignment.listJobsWithAssignees.useQuery({
     companyId,
     status: statusFilter === 'all' ? undefined : statusFilter,
   });
 
   const { data: sites } = trpc.site.listByCompany.useQuery({ companyId });
   const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
-  const { data: technicians } = trpc.user.listTechnicians.useQuery({ companyId });
+  const { data: technicians } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
   
-  const assignJob = trpc.job.update.useMutation({
+  const setAssignments = trpc.jobAssignment.setJobAssignments.useMutation({
     onSuccess: () => {
-      toast.success('Job assignment updated');
+      toast.success('Job assignments updated');
       refetch();
     },
-    onError: () => toast.error('Failed to update assignment')
+    onError: () => toast.error('Failed to update assignments')
   });
 
   const createJob = trpc.job.create.useMutation({
@@ -85,9 +90,9 @@ export default function AdminJobs() {
     
     // Assignment filter
     if (assignmentFilter === 'unassigned') {
-      return !job.assignedTechnicianId;
+      return job.assignedTechnicians.length === 0;
     } else if (assignmentFilter !== 'all') {
-      return job.assignedTechnicianId === parseInt(assignmentFilter);
+      return job.assignedTechnicians.some((t: any) => t.id === parseInt(assignmentFilter));
     }
     
     return true;
@@ -332,28 +337,97 @@ export default function AdminJobs() {
                         </div>
                       </div>
                       <div className="card-actions">
-                        <div onClick={(e) => e.stopPropagation()}>
-                          <Select
-                            value={job.assignedTechnicianId?.toString() || "unassigned"}
-                            onValueChange={(value) => {
-                              assignJob.mutate({
-                                id: job.id,
-                                assignedTechnicianId: value === "unassigned" ? undefined : parseInt(value)
-                              });
-                            }}
-                          >
-                            <SelectTrigger className="w-full sm:w-[180px] safe-select">
-                              <SelectValue placeholder="Assign to..." />
-                            </SelectTrigger>
-                            <SelectContent position="popper" sideOffset={5}>
-                              <SelectItem value="unassigned">Unassigned</SelectItem>
-                              {technicians?.map((tech: any) => (
-                                <SelectItem key={tech.id} value={tech.id.toString()}>
-                                  {tech.name}
-                                </SelectItem>
+                        <div onClick={(e) => e.stopPropagation()} className="flex-1 min-w-0">
+                          {job.assignedTechnicians.length === 0 ? (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" size="sm" className="w-full sm:w-auto">
+                                  <UserPlus className="h-4 w-4 mr-2" />
+                                  Assign Technicians
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-64" align="start">
+                                <div className="space-y-2">
+                                  <h4 className="font-medium text-sm">Select Technicians</h4>
+                                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                                    {technicians?.map((tech: any) => (
+                                      <label key={tech.id} className="flex items-center gap-2 cursor-pointer">
+                                        <Checkbox
+                                          checked={false}
+                                          onCheckedChange={(checked) => {
+                                            if (checked) {
+                                              setAssignments.mutate({
+                                                jobId: job.id,
+                                                technicianIds: [tech.id],
+                                              });
+                                            }
+                                          }}
+                                        />
+                                        <span className="text-sm">{tech.name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {job.assignedTechnicians.map((tech: any) => (
+                                <div key={tech.id} className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-1 rounded text-xs">
+                                  {tech.role === 'LEAD' && <Star className="h-3 w-3 fill-current" />}
+                                  <span>{tech.name}</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const remaining = job.assignedTechnicians
+                                        .filter((t: any) => t.id !== tech.id)
+                                        .map((t: any) => t.id);
+                                      setAssignments.mutate({
+                                        jobId: job.id,
+                                        technicianIds: remaining,
+                                      });
+                                    }}
+                                    className="hover:bg-primary/20 rounded-full p-0.5"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
                               ))}
-                            </SelectContent>
-                          </Select>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-6 px-2">
+                                    <Plus className="h-3 w-3" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-64" align="start">
+                                  <div className="space-y-2">
+                                    <h4 className="font-medium text-sm">Add Technicians</h4>
+                                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                                      {technicians
+                                        ?.filter((tech: any) => !job.assignedTechnicians.some((t: any) => t.id === tech.id))
+                                        .map((tech: any) => (
+                                          <label key={tech.id} className="flex items-center gap-2 cursor-pointer">
+                                            <Checkbox
+                                              checked={false}
+                                              onCheckedChange={(checked) => {
+                                                if (checked) {
+                                                  const newIds = [...job.assignedTechnicians.map((t: any) => t.id), tech.id];
+                                                  setAssignments.mutate({
+                                                    jobId: job.id,
+                                                    technicianIds: newIds,
+                                                  });
+                                                }
+                                              }}
+                                            />
+                                            <span className="text-sm">{tech.name}</span>
+                                          </label>
+                                        ))}
+                                    </div>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                          )}
                         </div>
                         {job.status === 'completed' && (
                           <Button 

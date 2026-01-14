@@ -807,3 +807,16 @@
 
 ## Bug Fixes - Unassigned Dropdown Not Opening on Mobile (New)
 - [x] Fix "Unassigned" dropdown on Admin Jobs page - dropdown should open and show technician list when tapped
+
+## Multi-Technician Job Assignment (New)
+- [x] Create job_assignments table with many-to-many relationship
+- [x] Add role field (LEAD/ASSIST) to job_assignments
+- [x] Migrate existing assignedTechnicianId data to job_assignments
+- [x] Update backend listAllJobs to return assigned technicians array
+- [x] Create setJobAssignments procedure for multi-assign
+- [x] Update listMyJobs to filter by job_assignments
+- [x] Replace single dropdown with multi-select chips UI in Admin Jobs
+- [x] Add lead technician marker (star) in UI
+- [x] Add bulk assignment feature for multiple jobs
+- [x] Update unassigned filter to check job_assignments count
+- [x] Test multi-technician assignment end-to-end (6 tests passing)

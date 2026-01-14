@@ -14,16 +14,17 @@ export default function JobAssignments() {
   const [bulkTechnicianId, setBulkTechnicianId] = useState<string>('');
   const [filterTechnicianId, setFilterTechnicianId] = useState<string>('all');
 
-  const { data: jobs, isLoading: jobsLoading, refetch: refetchJobs } = trpc.jobAssignment.listJobsWithAssignee.useQuery();
-  const { data: technicians, isLoading: techniciansLoading } = trpc.jobAssignment.listTechnicians.useQuery();
-  const assignJobMutation = trpc.jobAssignment.assignJob.useMutation();
+  const companyId = 1; // TODO: Get from user context
+  const { data: jobs, isLoading: jobsLoading, refetch: refetchJobs } = trpc.jobAssignment.listJobsWithAssignees.useQuery({ companyId, status: undefined });
+  const { data: technicians, isLoading: techniciansLoading } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
+  const assignJobMutation = trpc.jobAssignment.setJobAssignments.useMutation();
   const bulkAssignMutation = trpc.jobAssignment.bulkAssignJobs.useMutation();
 
   const handleAssignJob = async (jobId: number, technicianId: string | null) => {
     try {
       await assignJobMutation.mutateAsync({
         jobId,
-        technicianId: technicianId === 'unassigned' ? null : Number(technicianId),
+        technicianIds: technicianId === 'unassigned' ? [] : [Number(technicianId)],
       });
       toast.success('Technician assignment updated successfully');
       refetchJobs();
@@ -46,9 +47,10 @@ export default function JobAssignments() {
     try {
       const result = await bulkAssignMutation.mutateAsync({
         jobIds: selectedJobs,
-        technicianId: bulkTechnicianId === 'unassigned' ? null : Number(bulkTechnicianId),
+        technicianIds: bulkTechnicianId === 'unassigned' ? [] : [Number(bulkTechnicianId)],
+        mode: 'replace',
       });
-      toast.success(`${result.count} jobs assigned successfully`);
+      toast.success(`${result.added || result.total} jobs assigned successfully`);
       setSelectedJobs([]);
       setBulkTechnicianId('');
       refetchJobs();
@@ -68,14 +70,14 @@ export default function JobAssignments() {
     if (selectedJobs.length === filteredJobs.length) {
       setSelectedJobs([]);
     } else {
-      setSelectedJobs(filteredJobs.map(j => j.id));
+      setSelectedJobs(filteredJobs.map((j: any) => j.id));
     }
   };
 
-  const filteredJobs = jobs?.filter(job => {
+  const filteredJobs = jobs?.filter((job: any) => {
     if (filterTechnicianId === 'all') return true;
-    if (filterTechnicianId === 'unassigned') return !job.assignedTechnicianId;
-    return job.assignedTechnicianId === Number(filterTechnicianId);
+    if (filterTechnicianId === 'unassigned') return job.assignedTechnicians?.length === 0;
+    return job.assignedTechnicians?.some((t: any) => t.id === Number(filterTechnicianId));
   });
 
   const getStatusBadge = (status: string) => {
@@ -213,13 +215,22 @@ export default function JobAssignments() {
                             : 'Not scheduled'}
                         </td>
                         <td className="p-3">
-                          <Select
-                            value={job.assignedTechnicianId ? String(job.assignedTechnicianId) : 'unassigned'}
-                            onValueChange={value => handleAssignJob(job.id, value)}
-                            disabled={assignJobMutation.isPending}
-                          >
-                            <SelectTrigger className="w-[200px]">
-                              <SelectValue />
+                          {job.assignedTechnicians.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {job.assignedTechnicians.map((tech: any) => (
+                                <Badge key={tech.id} variant="secondary">
+                                  {tech.name}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <Select
+                              value="unassigned"
+                              onValueChange={value => handleAssignJob(job.id, value)}
+                              disabled={assignJobMutation.isPending}
+                            >
+                              <SelectTrigger className="w-[200px]">
+                                <SelectValue placeholder="Unassigned" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="unassigned">
@@ -232,6 +243,7 @@ export default function JobAssignments() {
                               ))}
                             </SelectContent>
                           </Select>
+                          )}
                         </td>
                       </tr>
                     ))}
