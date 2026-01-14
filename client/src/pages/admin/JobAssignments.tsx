@@ -22,9 +22,11 @@ export default function JobAssignments() {
 
   const handleAssignJob = async (jobId: number, technicianId: string | null) => {
     try {
+      const techId = Number(technicianId);
       await assignJobMutation.mutateAsync({
         jobId,
-        technicianIds: technicianId === 'unassigned' ? [] : [Number(technicianId)],
+        technicianIds: technicianId === 'unassigned' ? [] : [techId],
+        leadId: techId, // First assigned technician becomes Lead
       });
       toast.success('Technician assignment updated successfully');
       refetchJobs();
@@ -45,9 +47,11 @@ export default function JobAssignments() {
     }
 
     try {
+      const techId = Number(bulkTechnicianId);
       const result = await bulkAssignMutation.mutateAsync({
         jobIds: selectedJobs,
-        technicianIds: bulkTechnicianId === 'unassigned' ? [] : [Number(bulkTechnicianId)],
+        technicianIds: bulkTechnicianId === 'unassigned' ? [] : [techId],
+        leadId: techId, // Assigned technician becomes Lead
         mode: 'replace',
       });
       toast.success(`${result.added || result.total} jobs assigned successfully`);

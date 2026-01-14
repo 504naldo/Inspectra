@@ -820,3 +820,17 @@
 - [x] Add bulk assignment feature for multiple jobs
 - [x] Update unassigned filter to check job_assignments count
 - [x] Test multi-technician assignment end-to-end (6 tests passing)
+
+## Required Lead Technician & Navigation Bug Fix (New)
+- [x] Enforce exactly ONE LEAD per job in job_assignments (validation in backend)
+- [x] Update setJobAssignments to require leadId parameter
+- [x] Validate leadId is present if any technicians assigned
+- [x] Ensure only one LEAD row per job
+- [x] Update bulkSetJobAssignments to require leadId in replace mode
+- [x] Fix Admin Jobs UI: stopPropagation on all assignment controls (chips, add button, remove buttons)
+- [x] Prevent assignment control clicks from navigating to inspection (preventDefault + stopPropagation)
+- [x] Update assignment UI to require Lead selection (first assigned becomes Lead)
+- [x] Add automatic Lead assignment (first technician assigned becomes Lead)
+- [x] Prevent removing Lead without choosing new Lead (auto-promotes first remaining tech)
+- [x] Test: tapping assignment controls does NOT navigate to inspection (fixed with preventDefault)
+- [x] Test: cannot save assignments without Lead technician (6 tests passing)

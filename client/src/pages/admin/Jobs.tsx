@@ -341,7 +341,12 @@ export default function AdminJobs() {
                           {job.assignedTechnicians.length === 0 ? (
                             <Popover>
                               <PopoverTrigger asChild>
-                                <Button variant="outline" size="sm" className="w-full sm:w-auto">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="w-full sm:w-auto"
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                >
                                   <UserPlus className="h-4 w-4 mr-2" />
                                   Assign Technicians
                                 </Button>
@@ -356,9 +361,11 @@ export default function AdminJobs() {
                                           checked={false}
                                           onCheckedChange={(checked) => {
                                             if (checked) {
+                                              // First technician assigned becomes Lead
                                               setAssignments.mutate({
                                                 jobId: job.id,
                                                 technicianIds: [tech.id],
+                                                leadId: tech.id,
                                               });
                                             }
                                           }}
@@ -378,14 +385,30 @@ export default function AdminJobs() {
                                   <span>{tech.name}</span>
                                   <button
                                     onClick={(e) => {
+                                      e.preventDefault();
                                       e.stopPropagation();
-                                      const remaining = job.assignedTechnicians
-                                        .filter((t: any) => t.id !== tech.id)
-                                        .map((t: any) => t.id);
-                                      setAssignments.mutate({
-                                        jobId: job.id,
-                                        technicianIds: remaining,
-                                      });
+                                      const remaining = job.assignedTechnicians.filter((t: any) => t.id !== tech.id);
+                                      const remainingIds = remaining.map((t: any) => t.id);
+                                      
+                                      if (remainingIds.length === 0) {
+                                        // Removing last technician - no Lead needed
+                                        setAssignments.mutate({
+                                          jobId: job.id,
+                                          technicianIds: [],
+                                          leadId: 0, // Dummy value, will be ignored when empty
+                                        });
+                                      } else {
+                                        // Find current or new Lead
+                                        const currentLead = job.assignedTechnicians.find((t: any) => t.role === 'LEAD');
+                                        const isRemovingLead = tech.id === currentLead?.id;
+                                        const newLeadId = isRemovingLead ? remainingIds[0] : currentLead?.id;
+                                        
+                                        setAssignments.mutate({
+                                          jobId: job.id,
+                                          technicianIds: remainingIds,
+                                          leadId: newLeadId,
+                                        });
+                                      }
                                     }}
                                     className="hover:bg-primary/20 rounded-full p-0.5"
                                   >
@@ -395,7 +418,12 @@ export default function AdminJobs() {
                               ))}
                               <Popover>
                                 <PopoverTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="h-6 px-2">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="h-6 px-2"
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                  >
                                     <Plus className="h-3 w-3" />
                                   </Button>
                                 </PopoverTrigger>
@@ -412,9 +440,11 @@ export default function AdminJobs() {
                                               onCheckedChange={(checked) => {
                                                 if (checked) {
                                                   const newIds = [...job.assignedTechnicians.map((t: any) => t.id), tech.id];
+                                                  const currentLead = job.assignedTechnicians.find((t: any) => t.role === 'LEAD');
                                                   setAssignments.mutate({
                                                     jobId: job.id,
                                                     technicianIds: newIds,
+                                                    leadId: currentLead?.id || newIds[0],
                                                   });
                                                 }
                                               }}

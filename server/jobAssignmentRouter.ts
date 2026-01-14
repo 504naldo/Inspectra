@@ -191,7 +191,7 @@ export const jobAssignmentRouter = router({
       z.object({
         jobId: z.number(),
         technicianIds: z.array(z.number()),
-        leadId: z.number().optional(), // Optional lead technician
+        leadId: z.number(), // REQUIRED lead technician
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -207,6 +207,31 @@ export const jobAssignmentRouter = router({
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Database not available",
+        });
+      }
+
+      // Allow empty assignments (unassign all)
+      if (input.technicianIds.length === 0) {
+        // Delete all assignments and return
+        await db
+          .delete(jobAssignments)
+          .where(eq(jobAssignments.jobId, input.jobId));
+        return { success: true, count: 0 };
+      }
+
+      // Validate leadId is required when assigning technicians
+      if (!input.leadId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Lead technician is required when assigning technicians to a job",
+        });
+      }
+
+      // Validate leadId is included in technicianIds
+      if (!input.technicianIds.includes(input.leadId)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Lead technician must be included in the list of assigned technicians",
         });
       }
 
@@ -328,6 +353,7 @@ export const jobAssignmentRouter = router({
       z.object({
         jobId: z.number(),
         technicianId: z.number(),
+        newLeadId: z.number().optional(), // Required if removing current Lead
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -346,6 +372,46 @@ export const jobAssignmentRouter = router({
         });
       }
 
+      // Check if removing the Lead technician
+      const assignment = await db
+        .select({ role: jobAssignments.role })
+        .from(jobAssignments)
+        .where(and(
+          eq(jobAssignments.jobId, input.jobId),
+          eq(jobAssignments.userId, input.technicianId)
+        ))
+        .limit(1);
+
+      if (assignment.length > 0 && assignment[0].role === 'LEAD') {
+        // Check if there are other assignments
+        const otherAssignments = await db
+          .select({ userId: jobAssignments.userId })
+          .from(jobAssignments)
+          .where(and(
+            eq(jobAssignments.jobId, input.jobId),
+            sql`${jobAssignments.userId} != ${input.technicianId}`
+          ));
+
+        if (otherAssignments.length > 0 && !input.newLeadId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Cannot remove Lead technician without assigning a new Lead. Provide newLeadId.",
+          });
+        }
+
+        // If newLeadId provided, promote them to Lead
+        if (input.newLeadId) {
+          await db
+            .update(jobAssignments)
+            .set({ role: 'LEAD' })
+            .where(and(
+              eq(jobAssignments.jobId, input.jobId),
+              eq(jobAssignments.userId, input.newLeadId)
+            ));
+        }
+      }
+
+      // Remove the assignment
       await db
         .delete(jobAssignments)
         .where(and(
@@ -365,7 +431,7 @@ export const jobAssignmentRouter = router({
         jobIds: z.array(z.number()),
         technicianIds: z.array(z.number()),
         mode: z.enum(['add', 'replace']).default('add'),
-        leadId: z.number().optional(),
+        leadId: z.number(), // REQUIRED lead technician
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -388,6 +454,22 @@ export const jobAssignmentRouter = router({
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Must select at least one job and one technician",
+        });
+      }
+
+      // Validate leadId is required
+      if (!input.leadId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Lead technician is required for bulk assignment",
+        });
+      }
+
+      // Validate leadId is included in technicianIds
+      if (!input.technicianIds.includes(input.leadId)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Lead technician must be included in the list of assigned technicians",
         });
       }
 
