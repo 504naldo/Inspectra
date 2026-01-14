@@ -212,22 +212,22 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     <div className="min-h-screen bg-background safe-top safe-bottom pb-24">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-card border-b">
-        <div className="container flex h-16 items-center gap-4">
+        <div className="container flex h-16 items-center gap-2 sm:gap-4">
           <Link href="/tech/jobs">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="flex-shrink-0">
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-lg truncate">{job.title}</h1>
-            <p className="text-xs text-muted-foreground">{job.jobNumber}</p>
+            <h1 className="font-bold text-base sm:text-lg safe-text">{job.title}</h1>
+            <p className="text-xs text-muted-foreground safe-text">{job.jobNumber}</p>
           </div>
           {isOnline ? (
-            <span className="online-badge flex items-center gap-1 text-xs">
+            <span className="online-badge flex items-center gap-1 text-xs flex-shrink-0">
               <Wifi className="h-3 w-3" />
             </span>
           ) : (
-            <span className="offline-badge flex items-center gap-1 text-xs">
+            <span className="offline-badge flex items-center gap-1 text-xs flex-shrink-0">
               <WifiOff className="h-3 w-3" />
             </span>
           )}

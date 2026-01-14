@@ -312,16 +312,16 @@ export default function AdminJobs() {
               <Link key={job.id} href={`/tech/jobs/${job.id}`}>
                 <Card className="hover:shadow-md transition-shadow cursor-pointer">
                   <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                    <div className="responsive-card-row">
+                      <div className="card-content">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getStatusBadgeClass(job.status)}`}>
                             {job.status.replace('_', ' ')}
                           </span>
                           <span className="text-xs text-muted-foreground">{job.jobNumber}</span>
                         </div>
-                        <h3 className="font-semibold truncate">{job.title}</h3>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                        <h3 className="font-semibold safe-text">{job.title}</h3>
+                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground flex-wrap">
                           {job.scheduledDate && (
                             <span className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
@@ -331,7 +331,7 @@ export default function AdminJobs() {
                           <span>{job.jobType}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="card-actions">
                         <Select
                           value={job.assignedTechnicianId?.toString() || "unassigned"}
                           onValueChange={(value) => {
@@ -342,7 +342,7 @@ export default function AdminJobs() {
                           }}
                         >
                           <SelectTrigger 
-                            className="w-[180px]" 
+                            className="w-full sm:w-[180px] safe-select" 
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -350,7 +350,7 @@ export default function AdminJobs() {
                           >
                             <SelectValue placeholder="Assign to..." />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent position="popper" sideOffset={5}>
                             <SelectItem value="unassigned">Unassigned</SelectItem>
                             {technicians?.map((tech: any) => (
                               <SelectItem key={tech.id} value={tech.id.toString()}>
@@ -373,7 +373,7 @@ export default function AdminJobs() {
                             QA
                           </Button>
                         )}
-                        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                        <ChevronRight className="h-5 w-5 text-muted-foreground hidden sm:block" />
                       </div>
                     </div>
                   </CardContent>

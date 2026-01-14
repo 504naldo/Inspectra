@@ -779,3 +779,28 @@
 - [x] Investigate unassigned dropdown implementation on Admin Jobs page (Dropdown not opening when clicked)
 - [x] Fix dropdown filtering logic for unassigned jobs (Added position="popper" and sideOffset to SelectContent)
 - [x] Test dropdown filters all assignment statuses correctly (Fixed with position="popper" prop)
+
+## Global NO OVERLAP Responsive UI Standard
+
+### Global Layout Guardrails
+- [x] Add responsive utility classes to index.css (safe-flex-row, safe-text, etc.)
+- [ ] Document NO OVERLAP standards in project README
+- [ ] Add min-w-0 to flex containers with text
+
+### Fix High-Impact Screens
+- [x] Fix Jobs list cards (admin + tech) overlap issues
+- [x] Fix Job details header overlap
+- [x] Fix Inspection category cards overlap
+- [x] Fix Device/extinguisher/emergency light list rows
+- [x] Fix Detail screens form fields + action bars
+- [ ] Fix Nav header icon/title collision
+
+### Regression Prevention
+- [ ] Add responsive QA helper showing current breakpoint
+- [ ] Test key pages at 360px, 390px, 414px, 768px widths
+- [ ] Document mobile-first responsive patterns
+
+### Testing
+- [ ] Test all high-impact screens on mobile widths
+- [ ] Verify no text/control collisions anywhere
+- [ ] Verify dropdowns stack properly on mobile

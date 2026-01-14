@@ -281,8 +281,8 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
       </main>
 
       {/* Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 safe-bottom">
-        <div className="container space-y-3">
+      <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 safe-bottom z-40">
+        <div className="container space-y-3 max-w-2xl mx-auto">
           {/* Navigation Buttons */}
           {category && categoryDevices.length > 1 && (
             <div className="grid grid-cols-2 gap-3">
@@ -290,18 +290,18 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
                 variant="outline"
                 onClick={() => previousDevice && navigateToDevice(previousDevice.id)}
                 disabled={!hasPrevious}
-                className="h-12"
+                className="h-12 text-sm sm:text-base"
               >
                 <ChevronLeft className="h-5 w-5 mr-1" />
-                Previous
+                <span className="safe-text">Previous</span>
               </Button>
               <Button
                 variant="outline"
                 onClick={() => nextDevice && navigateToDevice(nextDevice.id)}
                 disabled={!hasNext}
-                className="h-12"
+                className="h-12 text-sm sm:text-base"
               >
-                Next
+                <span className="safe-text">Next</span>
                 <ChevronRight className="h-5 w-5 ml-1" />
               </Button>
             </div>
@@ -309,20 +309,20 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
           
           {/* Position indicator */}
           {category && categoryDevices.length > 1 && (
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-xs sm:text-sm text-muted-foreground safe-text">
               Device {currentIndex + 1} of {categoryDevices.length}
-              {!hasPrevious && <span className="ml-2">(Start of list)</span>}
-              {!hasNext && <span className="ml-2">(End of list)</span>}
+              {!hasPrevious && <span className="ml-2 hidden sm:inline">(Start of list)</span>}
+              {!hasNext && <span className="ml-2 hidden sm:inline">(End of list)</span>}
             </p>
           )}
           
           <Button 
-            className="w-full action-btn"
+            className="w-full action-btn h-12"
             onClick={handleSave}
             disabled={isSaving || result === 'not_tested'}
           >
             <Save className="h-5 w-5 mr-2" />
-            {isSaving ? 'Saving...' : 'Save Result'}
+            <span className="safe-text">{isSaving ? 'Saving...' : 'Save Result'}</span>
           </Button>
         </div>
       </div>

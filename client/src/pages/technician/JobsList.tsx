@@ -234,9 +234,9 @@ export default function JobsList() {
                 <Link key={job.id} href={`/tech/jobs/${job.id}`}>
                   <Card className="inspection-card">
                     <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                      <div className="responsive-card-row">
+                        <div className="card-content">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${getPriorityBadgeClass(job.priority)}`}>
                               {job.priority}
                             </span>
@@ -244,10 +244,10 @@ export default function JobsList() {
                               {job.status.replace('_', ' ')}
                             </span>
                           </div>
-                          <h3 className="font-semibold truncate">{job.title}</h3>
-                          <p className="text-sm text-muted-foreground">{job.jobNumber}</p>
+                          <h3 className="font-semibold safe-text">{job.title}</h3>
+                          <p className="text-sm text-muted-foreground safe-text">{job.jobNumber}</p>
                           
-                          <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
                             {job.scheduledDate && (
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
@@ -263,11 +263,11 @@ export default function JobsList() {
                                 value={job.assignedTechnicianId?.toString() || 'unassigned'}
                                 onValueChange={(value) => handleAssignmentChange(job.id, value)}
                               >
-                                <SelectTrigger className="h-9 text-xs">
+                                <SelectTrigger className="h-9 text-xs w-full sm:w-auto safe-select">
                                   <User className="h-3 w-3 mr-1" />
                                   <SelectValue placeholder="Unassigned" />
                                 </SelectTrigger>
-                                <SelectContent>
+                                <SelectContent position="popper" sideOffset={5}>
                                   <SelectItem value="unassigned">Unassigned</SelectItem>
                                   {technicians?.map(tech => (
                                     <SelectItem key={tech.id} value={tech.id.toString()}>
@@ -279,7 +279,7 @@ export default function JobsList() {
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="card-actions">
                           {isOnline && job.status !== 'completed' && (
                             <Button 
                               variant="ghost" 

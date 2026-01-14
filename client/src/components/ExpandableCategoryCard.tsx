@@ -199,21 +199,23 @@ export function ExpandableCategoryCard({
             {displayDevices.map((device) => (
               <div
                 key={device.id}
-                className="flex items-center justify-between p-3 bg-white/50 dark:bg-black/20 rounded-lg cursor-pointer hover:bg-white/70 dark:hover:bg-black/30 transition-colors"
+                className="safe-flex-row p-3 bg-white/50 dark:bg-black/20 rounded-lg cursor-pointer hover:bg-white/70 dark:hover:bg-black/30 transition-colors gap-3"
                 onClick={(e) => {
                   e.stopPropagation();
                   setLocation(getDeviceRoute(device.id), { replace: true });
                 }}
               >
-                <div className="flex-1 min-w-0 mr-3">
-                  <p className="font-medium text-sm truncate">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm safe-text">
                     {device.deviceType || 'Unknown Device'}
                   </p>
-                  <p className="text-xs text-muted-foreground truncate">
+                  <p className="text-xs text-muted-foreground safe-text">
                     {device.location || 'No location'}
                   </p>
                 </div>
-                {getStatusBadge(device.result)}
+                <div className="flex-shrink-0">
+                  {getStatusBadge(device.result)}
+                </div>
               </div>
             ))}
 
