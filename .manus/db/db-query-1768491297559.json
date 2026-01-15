@@ -1,0 +1,30 @@
+{
+  "query": "SELECT email, MAX(id) as keep_id FROM users WHERE email IN ('chris@ewandf.ca', 'pat@ewandf.ca', 'russ@ewandf.ca', 'markus@ewandf.ca', 'tony@ewandf.ca') GROUP BY email;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT email, MAX(id) as keep_id FROM users WHERE email IN ('chris@ewandf.ca', 'pat@ewandf.ca', 'russ@ewandf.ca', 'markus@ewandf.ca', 'tony@ewandf.ca') GROUP BY email;",
+  "rows": [
+    {
+      "email": "russ@ewandf.ca",
+      "keep_id": "3570016"
+    },
+    {
+      "email": "markus@ewandf.ca",
+      "keep_id": "3570017"
+    },
+    {
+      "email": "chris@ewandf.ca",
+      "keep_id": "3570014"
+    },
+    {
+      "email": "tony@ewandf.ca",
+      "keep_id": "3570018"
+    },
+    {
+      "email": "pat@ewandf.ca",
+      "keep_id": "3570015"
+    }
+  ],
+  "messages": [],
+  "stdout": "email\tkeep_id\nruss@ewandf.ca\t3570016\nmarkus@ewandf.ca\t3570017\nchris@ewandf.ca\t3570014\ntony@ewandf.ca\t3570018\npat@ewandf.ca\t3570015\n",
+  "stderr": "",
+  "execution_time_ms": 483
+}

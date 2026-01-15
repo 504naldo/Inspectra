@@ -165,7 +165,8 @@ export const jobAssignmentRouter = router({
         });
       }
 
-      const technicians = await db
+      // Get all technicians, then dedupe by email in JavaScript
+      const allTechnicians = await db
         .select({
           id: users.id,
           name: users.name,
@@ -178,6 +179,15 @@ export const jobAssignmentRouter = router({
           eq(users.isActive, 1)
         ))
         .orderBy(users.name);
+      
+      // Deduplicate by email, keeping first occurrence (lowest ID due to orderBy)
+      const seen = new Set<string>();
+      const technicians = allTechnicians.filter(tech => {
+        if (!tech.email) return false; // Skip users without email
+        if (seen.has(tech.email)) return false;
+        seen.add(tech.email);
+        return true;
+      });
 
       return technicians;
     }),

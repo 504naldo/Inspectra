@@ -1,0 +1,35 @@
+{
+  "query": "SELECT email, COUNT(*) as count, GROUP_CONCAT(id) as user_ids FROM users GROUP BY email HAVING COUNT(*) > 1 ORDER BY count DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT email, COUNT(*) as count, GROUP_CONCAT(id) as user_ids FROM users GROUP BY email HAVING COUNT(*) > 1 ORDER BY count DESC;",
+  "rows": [
+    {
+      "email": "russ@ewandf.ca",
+      "count": "2",
+      "user_ids": "3420045,3570016"
+    },
+    {
+      "email": "chris@ewandf.ca",
+      "count": "2",
+      "user_ids": "3420043,3570014"
+    },
+    {
+      "email": "markus@ewandf.ca",
+      "count": "2",
+      "user_ids": "3420046,3570017"
+    },
+    {
+      "email": "tony@ewandf.ca",
+      "count": "2",
+      "user_ids": "3420047,3570018"
+    },
+    {
+      "email": "pat@ewandf.ca",
+      "count": "2",
+      "user_ids": "3420044,3570015"
+    }
+  ],
+  "messages": [],
+  "stdout": "email\tcount\tuser_ids\nruss@ewandf.ca\t2\t3420045,3570016\nchris@ewandf.ca\t2\t3420043,3570014\nmarkus@ewandf.ca\t2\t3420046,3570017\ntony@ewandf.ca\t2\t3420047,3570018\npat@ewandf.ca\t2\t3420044,3570015\n",
+  "stderr": "",
+  "execution_time_ms": 425
+}

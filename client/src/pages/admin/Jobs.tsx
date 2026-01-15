@@ -61,6 +61,18 @@ export default function AdminJobs() {
   const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
   const { data: technicians, isLoading: techsLoading, error: techsError } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
   
+  // Deduplicate technicians as a guardrail (backend should already handle this)
+  const uniqueTechnicians = React.useMemo(() => {
+    if (!technicians) return [];
+    const seen = new Set<string>();
+    return technicians.filter(tech => {
+      if (!tech.email) return false; // Skip users without email
+      if (seen.has(tech.email)) return false;
+      seen.add(tech.email);
+      return true;
+    });
+  }, [technicians]);
+  
   // Debug logging
   React.useEffect(() => {
     console.log('[DEBUG] Technicians query:', { 
@@ -68,9 +80,10 @@ export default function AdminJobs() {
       techsLoading, 
       techsError: techsError?.message, 
       technicians,
-      count: technicians?.length 
+      count: technicians?.length,
+      uniqueCount: uniqueTechnicians.length
     });
-  }, [companyId, techsLoading, techsError, technicians]);
+  }, [companyId, techsLoading, techsError, technicians, uniqueTechnicians]);
   
   const setAssignments = trpc.jobAssignment.setJobAssignments.useMutation({
     onSuccess: () => {
@@ -179,7 +192,7 @@ export default function AdminJobs() {
             <SelectContent position="popper" sideOffset={5}>
               <SelectItem value="all">All Jobs</SelectItem>
               <SelectItem value="unassigned">Unassigned</SelectItem>
-              {technicians?.map((tech: any) => (
+              {uniqueTechnicians?.map((tech: any) => (
                 <SelectItem key={tech.id} value={tech.id.toString()}>
                   Assigned to {tech.name}
                 </SelectItem>
@@ -468,7 +481,7 @@ export default function AdminJobs() {
               <div className="text-center py-8 text-destructive">
                 Unable to load technicians. Please try again.
               </div>
-            ) : !technicians || technicians.length === 0 ? (
+            ) : !uniqueTechnicians || uniqueTechnicians.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 No technicians found. Add technicians in Admin.
               </div>
@@ -478,7 +491,7 @@ export default function AdminJobs() {
                 <div className="space-y-3">
                   <Label className="text-sm font-medium">Lead Technician (Required)</Label>
                   <RadioGroup value={selectedLeadId?.toString() || ""} onValueChange={(value) => setSelectedLeadId(Number(value))}>
-                    {technicians.map((tech: any) => (
+                    {uniqueTechnicians.map((tech: any) => (
                   <div key={tech.id} className="flex items-center space-x-2">
                     <RadioGroupItem value={tech.id.toString()} id={`lead-${tech.id}`} />
                     <Label htmlFor={`lead-${tech.id}`} className="font-normal cursor-pointer">
@@ -525,7 +538,7 @@ export default function AdminJobs() {
               Cancel
             </Button>
             <Button
-              disabled={techsLoading || !!techsError || !technicians || technicians.length === 0}
+              disabled={techsLoading || !!techsError || !uniqueTechnicians || uniqueTechnicians.length === 0}
               onClick={() => {
                 if (!selectedLeadId) {
                   toast.error('Please select a Lead technician');

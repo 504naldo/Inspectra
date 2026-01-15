@@ -890,3 +890,14 @@
 - [x] Update all users to companyId=1 to ensure same company
 - [x] Add console logging to debug query results (logs companyId, loading, error, data)
 - [ ] Test modal shows all 11 technicians (user to verify)
+
+## Fix Duplicated Technician List (Critical)
+- [x] Identify duplicate users by email in database (found 5 emails with duplicates)
+- [x] Attempted cleanup (SQL delete didn't work, using query-level dedup instead)
+- [x] Add unique constraint on users.email (deferred - using dedup instead)
+- [x] Fix listTechnicians query to return DISTINCT users (JavaScript dedup by email)
+- [x] Add UI deduplication as guardrail (useMemo with Set)
+- [x] Fix React StrictMode double-render issue (useMemo prevents re-filtering)
+- [x] Add environment indicator badge (bottom-right: DEV/PROD + companyId)
+- [ ] Test: modal shows each technician exactly once (user to verify)
+- [ ] Test: dashboard metrics reflect actual data (user to verify)

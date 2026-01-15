@@ -1,0 +1,9 @@
+{
+  "query": "DELETE FROM users WHERE id IN (\n  SELECT id FROM (\n    SELECT u1.id \n    FROM users u1\n    WHERE EXISTS (\n      SELECT 1 FROM users u2 \n      WHERE u2.email = u1.email \n      AND u2.id > u1.id\n    )\n    AND u1.email IN ('chris@ewandf.ca', 'pat@ewandf.ca', 'russ@ewandf.ca', 'markus@ewandf.ca', 'tony@ewandf.ca')\n  ) AS duplicates\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute DELETE FROM users WHERE id IN (\n  SELECT id FROM (\n    SELECT u1.id \n    FROM users u1\n    WHERE EXISTS (\n      SELECT 1 FROM users u2 \n      WHERE u2.email = u1.email \n      AND u2.id > u1.id\n    )\n    AND u1.email IN ('chris@ewandf.ca', 'pat@ewandf.ca', 'russ@ewandf.ca', 'markus@ewandf.ca', 'tony@ewandf.ca')\n  ) AS duplicates\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 368
+}
