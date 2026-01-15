@@ -1,0 +1,8 @@
+{
+  "query": "INSERT INTO users (email, displayName, role, isActive, companyId, createdAt, updatedAt)\nVALUES \n  ('chris@ewandf.ca', 'Chris Young', 'TECH', true, 1, NOW(), NOW()),\n  ('pat@ewandf.ca', 'Pat McKinney', 'TECH', true, 1, NOW(), NOW()),\n  ('russ@ewandf.ca', 'Russ', 'TECH', true, 1, NOW(), NOW()),\n  ('markus@ewandf.ca', 'Markus', 'TECH', true, 1, NOW(), NOW()),\n  ('tony@ewandf.ca', 'Tony', 'TECH', true, 1, NOW(), NOW())\nON DUPLICATE KEY UPDATE\n  displayName = VALUES(displayName),\n  role = 'TECH',\n  isActive = true,\n  updatedAt = NOW();",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute INSERT INTO users (email, displayName, role, isActive, companyId, createdAt, updatedAt)\nVALUES \n  ('chris@ewandf.ca', 'Chris Young', 'TECH', true, 1, NOW(), NOW()),\n  ('pat@ewandf.ca', 'Pat McKinney', 'TECH', true, 1, NOW(), NOW()),\n  ('russ@ewandf.ca', 'Russ', 'TECH', true, 1, NOW(), NOW()),\n  ('markus@ewandf.ca', 'Markus', 'TECH', true, 1, NOW(), NOW()),\n  ('tony@ewandf.ca', 'Tony', 'TECH', true, 1, NOW(), NOW())\nON DUPLICATE KEY UPDATE\n  displayName = VALUES(displayName),\n  role = 'TECH',\n  isActive = true,\n  updatedAt = NOW();",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'displayName' in 'field list'"
+  ]
+}

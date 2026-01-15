@@ -867,3 +867,18 @@
 - [x] Modal opens with full technician list from backend
 - [x] Cannot save without selecting Lead (validation in onClick)
 - [x] Multiple technicians can be selected (Lead + Assistants)
+
+## End-to-End Technician Assignment Fix (Critical)
+- [x] Create seed script to upsert 5 technician users (Chris, Pat, Russ, Markus, Tony)
+- [x] Run seed script to populate technicians in database (SQL upsert executed)
+- [x] Use 'technician' role (actual enum value in schema)
+- [x] Verify listTechnicians endpoint filters by role='technician' and isActive=1 (confirmed working)
+- [x] Add loading state to assignment modal ("Loading technicians...")
+- [x] Add empty state to assignment modal ("No technicians found")
+- [x] Add error state to assignment modal ("Unable to load technicians")
+- [x] Disable Save button when loading/error/empty
+- [x] Modal shows all 5 seeded technicians (Chris, Pat, Russ, Markus, Tony)
+- [x] Lead selection is required and enforced (toast validation)
+- [x] Assignments save correctly with Lead + Assistants
+- [x] Job cards display assigned techs with Lead star icon (already implemented)
+- [x] Assignment controls do not navigate to inspection (Link wrapper removed)

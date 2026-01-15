@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO users (email, name, role, isActive, companyId, createdAt, updatedAt, openId, lastSignedIn)\nVALUES \n  ('chris@ewandf.ca', 'Chris Young', 'technician', 1, 1, NOW(), NOW(), 'chris_tech', NOW()),\n  ('pat@ewandf.ca', 'Pat McKinney', 'technician', 1, 1, NOW(), NOW(), 'pat_tech', NOW()),\n  ('russ@ewandf.ca', 'Russ', 'technician', 1, 1, NOW(), NOW(), 'russ_tech', NOW()),\n  ('markus@ewandf.ca', 'Markus', 'technician', 1, 1, NOW(), NOW(), 'markus_tech', NOW()),\n  ('tony@ewandf.ca', 'Tony', 'technician', 1, 1, NOW(), NOW(), 'tony_tech', NOW())\nON DUPLICATE KEY UPDATE\n  name = VALUES(name),\n  role = 'technician',\n  isActive = 1,\n  updatedAt = NOW();",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute INSERT INTO users (email, name, role, isActive, companyId, createdAt, updatedAt, openId, lastSignedIn)\nVALUES \n  ('chris@ewandf.ca', 'Chris Young', 'technician', 1, 1, NOW(), NOW(), 'chris_tech', NOW()),\n  ('pat@ewandf.ca', 'Pat McKinney', 'technician', 1, 1, NOW(), NOW(), 'pat_tech', NOW()),\n  ('russ@ewandf.ca', 'Russ', 'technician', 1, 1, NOW(), NOW(), 'russ_tech', NOW()),\n  ('markus@ewandf.ca', 'Markus', 'technician', 1, 1, NOW(), NOW(), 'markus_tech', NOW()),\n  ('tony@ewandf.ca', 'Tony', 'technician', 1, 1, NOW(), NOW(), 'tony_tech', NOW())\nON DUPLICATE KEY UPDATE\n  name = VALUES(name),\n  role = 'technician',\n  isActive = 1,\n  updatedAt = NOW();",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 391
+}

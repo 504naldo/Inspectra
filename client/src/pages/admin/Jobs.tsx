@@ -59,7 +59,7 @@ export default function AdminJobs() {
 
   const { data: sites } = trpc.site.listByCompany.useQuery({ companyId });
   const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
-  const { data: technicians } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
+  const { data: technicians, isLoading: techsLoading, error: techsError } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
   
   const setAssignments = trpc.jobAssignment.setJobAssignments.useMutation({
     onSuccess: () => {
@@ -449,11 +449,25 @@ export default function AdminJobs() {
             <DialogTitle>Assign Technicians</DialogTitle>
           </DialogHeader>
           <div className="space-y-6 py-4">
-            {/* Lead Technician Section */}
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">Lead Technician (Required)</Label>
-              <RadioGroup value={selectedLeadId?.toString() || ""} onValueChange={(value) => setSelectedLeadId(Number(value))}>
-                {technicians?.map((tech: any) => (
+            {techsLoading ? (
+              <div className="text-center py-8 text-muted-foreground">
+                Loading technicians...
+              </div>
+            ) : techsError ? (
+              <div className="text-center py-8 text-destructive">
+                Unable to load technicians. Please try again.
+              </div>
+            ) : !technicians || technicians.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No technicians found. Add technicians in Admin.
+              </div>
+            ) : (
+              <>
+                {/* Lead Technician Section */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Lead Technician (Required)</Label>
+                  <RadioGroup value={selectedLeadId?.toString() || ""} onValueChange={(value) => setSelectedLeadId(Number(value))}>
+                    {technicians.map((tech: any) => (
                   <div key={tech.id} className="flex items-center space-x-2">
                     <RadioGroupItem value={tech.id.toString()} id={`lead-${tech.id}`} />
                     <Label htmlFor={`lead-${tech.id}`} className="font-normal cursor-pointer">
@@ -487,9 +501,11 @@ export default function AdminJobs() {
                         {tech.name}
                       </Label>
                     </div>
-                  ))}
+                    ))}
+                </div>
               </div>
-            </div>
+            </>
+            )}
           </div>
 
           {/* Action Buttons */}
@@ -498,6 +514,7 @@ export default function AdminJobs() {
               Cancel
             </Button>
             <Button
+              disabled={techsLoading || !!techsError || !technicians || technicians.length === 0}
               onClick={() => {
                 if (!selectedLeadId) {
                   toast.error('Please select a Lead technician');
