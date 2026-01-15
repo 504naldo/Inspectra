@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +60,17 @@ export default function AdminJobs() {
   const { data: sites } = trpc.site.listByCompany.useQuery({ companyId });
   const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
   const { data: technicians, isLoading: techsLoading, error: techsError } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
+  
+  // Debug logging
+  React.useEffect(() => {
+    console.log('[DEBUG] Technicians query:', { 
+      companyId, 
+      techsLoading, 
+      techsError: techsError?.message, 
+      technicians,
+      count: technicians?.length 
+    });
+  }, [companyId, techsLoading, techsError, technicians]);
   
   const setAssignments = trpc.jobAssignment.setJobAssignments.useMutation({
     onSuccess: () => {

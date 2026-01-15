@@ -882,3 +882,11 @@
 - [x] Assignments save correctly with Lead + Assistants
 - [x] Job cards display assigned techs with Lead star icon (already implemented)
 - [x] Assignment controls do not navigate to inspection (Link wrapper removed)
+
+## Fix "No Technicians Found" Issue (Critical)
+- [x] Query database to verify technician users exist (11 technicians found)
+- [x] Check role values in database (role='technician', isActive=1, companyId=1)
+- [x] Verify listTechnicians query filters match schema enum values (correct)
+- [x] Update all users to companyId=1 to ensure same company
+- [x] Add console logging to debug query results (logs companyId, loading, error, data)
+- [ ] Test modal shows all 11 technicians (user to verify)

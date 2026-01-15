@@ -1,0 +1,109 @@
+{
+  "query": "SELECT id, email, name, role, isActive, companyId, createdAt FROM users WHERE email LIKE '%@ewandf.ca%' ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT id, email, name, role, isActive, companyId, createdAt FROM users WHERE email LIKE '%@ewandf.ca%' ORDER BY id;",
+  "rows": [
+    {
+      "id": "120001",
+      "email": "ranaldo@ewandf.ca",
+      "name": "Ranaldo Daniels",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "NULL",
+      "createdAt": "2025-12-19 19:47:00"
+    },
+    {
+      "id": "3420043",
+      "email": "chris@ewandf.ca",
+      "name": "Chris Young",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-14 20:51:11"
+    },
+    {
+      "id": "3420044",
+      "email": "pat@ewandf.ca",
+      "name": "Pat McKinney",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-14 20:51:11"
+    },
+    {
+      "id": "3420045",
+      "email": "russ@ewandf.ca",
+      "name": "Russ",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-14 20:51:11"
+    },
+    {
+      "id": "3420046",
+      "email": "markus@ewandf.ca",
+      "name": "Markus",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-14 20:51:11"
+    },
+    {
+      "id": "3420047",
+      "email": "tony@ewandf.ca",
+      "name": "Tony",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-14 20:51:11"
+    },
+    {
+      "id": "3570014",
+      "email": "chris@ewandf.ca",
+      "name": "Chris Young",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-15 00:13:06"
+    },
+    {
+      "id": "3570015",
+      "email": "pat@ewandf.ca",
+      "name": "Pat McKinney",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-15 00:13:06"
+    },
+    {
+      "id": "3570016",
+      "email": "russ@ewandf.ca",
+      "name": "Russ",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-15 00:13:06"
+    },
+    {
+      "id": "3570017",
+      "email": "markus@ewandf.ca",
+      "name": "Markus",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-15 00:13:06"
+    },
+    {
+      "id": "3570018",
+      "email": "tony@ewandf.ca",
+      "name": "Tony",
+      "role": "technician",
+      "isActive": "1",
+      "companyId": "1",
+      "createdAt": "2026-01-15 00:13:06"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\tname\trole\tisActive\tcompanyId\tcreatedAt\n120001\tranaldo@ewandf.ca\tRanaldo Daniels\ttechnician\t1\tNULL\t2025-12-19 19:47:00\n3420043\tchris@ewandf.ca\tChris Young\ttechnician\t1\t1\t2026-01-14 20:51:11\n3420044\tpat@ewandf.ca\tPat McKinney\ttechnician\t1\t1\t2026-01-14 20:51:11\n3420045\truss@ewandf.ca\tRuss\ttechnician\t1\t1\t2026-01-14 20:51:11\n3420046\tmarkus@ewandf.ca\tMarkus\ttechnician\t1\t1\t2026-01-14 20:51:11\n3420047\ttony@ewandf.ca\tTony\ttechnician\t1\t1\t2026-01-14 20:51:11\n3570014\tchris@ewandf.ca\tChris Young\ttechnician\t1\t1\t2026-01-15 00:13:06\n3570015\tpat@ewandf.ca\tPat McKinney\ttechnician\t1\t1\t2026-01-15 00:13:06\n3570016\truss@ewandf.ca\tRuss\ttechnician\t1\t1\t2026-01-15 00:13:06\n3570017\tmarkus@ewandf.ca\tMarkus\ttechnician\t1\t1\t2026-01-15 00:13:06\n3570018\ttony@ewandf.ca\tTony\ttechnician\t1\t1\t2026-01-15 00:13:06\n",
+  "stderr": "",
+  "execution_time_ms": 359
+}

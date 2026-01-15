@@ -1,0 +1,22 @@
+{
+  "query": "SELECT DISTINCT companyId, COUNT(*) as user_count FROM users GROUP BY companyId;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT DISTINCT companyId, COUNT(*) as user_count FROM users GROUP BY companyId;",
+  "rows": [
+    {
+      "companyId": "2",
+      "user_count": "1"
+    },
+    {
+      "companyId": "NULL",
+      "user_count": "1"
+    },
+    {
+      "companyId": "1",
+      "user_count": "10"
+    }
+  ],
+  "messages": [],
+  "stdout": "companyId\tuser_count\n2\t1\nNULL\t1\n1\t10\n",
+  "stderr": "",
+  "execution_time_ms": 356
+}
