@@ -1,147 +1,250 @@
-import AdminLayout from "@/components/AdminLayout";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { useState } from "react";
-import { 
-  Search, 
-  Users as UsersIcon,
-  Shield,
-  User,
-  Briefcase,
-  Building2
-} from "lucide-react";
+import { useState } from 'react';
+import AdminLayout from '@/components/AdminLayout';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/_core/hooks/useAuth';
+import { Search, UserPlus, Edit, Users as UsersIcon, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { toast } from 'sonner';
 
 export default function AdminUsers() {
   const { user } = useAuth();
-  const [searchQuery, setSearchQuery] = useState("");
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [editingUser, setEditingUser] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState('');
+  const [editIsActive, setEditIsActive] = useState(true);
 
-  // Note: In a real app, you'd have a users list endpoint
-  // For now, we show a placeholder
+  const utils = trpc.useUtils();
+  const updateUserMutation = trpc.user.updateUser.useMutation({
+    onSuccess: () => {
+      toast.success('User updated successfully');
+      setEditingUser(null);
+      utils.user.listUsers.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to update user');
+    },
+  });
 
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case 'admin': return <Shield className="h-4 w-4 text-primary" />;
-      case 'office': return <Briefcase className="h-4 w-4 text-blue-500" />;
-      case 'technician': return <User className="h-4 w-4 text-green-500" />;
-      case 'customer': return <Building2 className="h-4 w-4 text-amber-500" />;
-      default: return <User className="h-4 w-4" />;
-    }
+  const handleEditUser = (u: any) => {
+    setEditingUser(u.id);
+    setEditName(u.name || '');
+    setEditRole(u.role);
+    setEditIsActive(u.isActive);
   };
 
-  const getRoleBadgeClass = (role: string) => {
+  const handleSaveUser = () => {
+    if (!editingUser) return;
+    updateUserMutation.mutate({
+      userId: editingUser,
+      name: editName,
+      role: editRole as any,
+      isActive: editIsActive,
+    });
+  };
+
+  if (!user?.companyId) {
+    return (
+      <AdminLayout title="Users">
+        <div className="flex items-center justify-center h-full">
+          <p className="text-muted-foreground">Loading session...</p>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  const { data: usersList, isLoading } = trpc.user.listUsers.useQuery({
+    companyId: user.companyId,
+    search: search || undefined,
+    role: roleFilter !== 'all' ? (roleFilter as any) : undefined,
+    isActive: statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined,
+  });
+
+  const getRoleBadgeVariant = (role: string) => {
     switch (role) {
-      case 'admin': return 'bg-primary/10 text-primary';
-      case 'office': return 'bg-blue-100 text-blue-700';
-      case 'technician': return 'bg-green-100 text-green-700';
-      case 'customer': return 'bg-amber-100 text-amber-700';
-      default: return 'bg-muted text-muted-foreground';
+      case 'admin': return 'default';
+      case 'office': return 'secondary';
+      case 'technician': return 'outline';
+      case 'customer': return 'outline';
+      default: return 'outline';
     }
   };
 
   return (
     <AdminLayout title="Users">
       <div className="space-y-6">
-        {/* Search */}
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
+            <p className="text-muted-foreground">Manage user accounts, roles, and permissions</p>
+          </div>
+          <Button>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Add User
+          </Button>
+        </div>
+
+        {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search users..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name or email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               className="pl-10"
             />
           </div>
+          <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="All Roles" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Roles</SelectItem>
+              <SelectItem value="admin">Admin</SelectItem>
+              <SelectItem value="office">Office</SelectItem>
+              <SelectItem value="technician">Technician</SelectItem>
+              <SelectItem value="customer">Customer</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Role Legend */}
-        <Card>
-          <CardHeader>
-            <CardTitle>User Roles</CardTitle>
-            <CardDescription>Understanding the different access levels</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <div className="p-4 border rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Shield className="h-5 w-5 text-primary" />
-                  <span className="font-semibold">Admin</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Full access to all features, user management, and system settings
-                </p>
-              </div>
-              <div className="p-4 border rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Briefcase className="h-5 w-5 text-blue-500" />
-                  <span className="font-semibold">Office</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Job management, scheduling, reporting, and customer communication
-                </p>
-              </div>
-              <div className="p-4 border rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <User className="h-5 w-5 text-green-500" />
-                  <span className="font-semibold">Technician</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Field inspections, device testing, deficiency reporting
-                </p>
-              </div>
-              <div className="p-4 border rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Building2 className="h-5 w-5 text-amber-500" />
-                  <span className="font-semibold">Customer</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  View reports, track deficiencies, approve inspections
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Users Table */}
+        <div className="border rounded-lg bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    Loading users...
+                  </TableCell>
+                </TableRow>
+              ) : !usersList || usersList.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    <UsersIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-2" />
+                    <p className="text-muted-foreground">No users found</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Try adjusting your search or filters
+                    </p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                usersList.map((u: any) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="font-medium">{u.name || 'Unnamed'}</TableCell>
+                    <TableCell>{u.email}</TableCell>
+                    <TableCell>
+                      <Badge variant={getRoleBadgeVariant(u.role)}>
+                        {u.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={u.isActive ? 'default' : 'secondary'}>
+                        {u.isActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {new Date(u.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditUser(u)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
 
-        {/* Current User */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Current User</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4 p-4 border rounded-lg">
-              <div className="p-3 bg-primary/10 rounded-full">
-                {getRoleIcon(user?.role || 'user')}
+        {/* Edit User Dialog */}
+        <Dialog open={editingUser !== null} onOpenChange={(open) => !open && setEditingUser(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit User</DialogTitle>
+              <DialogDescription>
+                Update user role and account status
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Name</Label>
+                <Input
+                  id="edit-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="User name"
+                />
               </div>
-              <div className="flex-1">
-                <h3 className="font-semibold">{user?.name || 'Unknown User'}</h3>
-                <p className="text-sm text-muted-foreground">{user?.email}</p>
+              <div className="space-y-2">
+                <Label htmlFor="edit-role">Role</Label>
+                <Select value={editRole} onValueChange={setEditRole}>
+                  <SelectTrigger id="edit-role">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="office">Office</SelectItem>
+                    <SelectItem value="technician">Technician</SelectItem>
+                    <SelectItem value="customer">Customer</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getRoleBadgeClass(user?.role || 'user')}`}>
-                {user?.role || 'user'}
-              </span>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="edit-active">Active Status</Label>
+                <Switch
+                  id="edit-active"
+                  checked={editIsActive}
+                  onCheckedChange={setEditIsActive}
+                />
+              </div>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Info */}
-        <Card className="bg-muted/50">
-          <CardContent className="py-6">
-            <div className="flex items-start gap-4">
-              <UsersIcon className="h-8 w-8 text-muted-foreground" />
-              <div>
-                <h3 className="font-semibold mb-1">User Management</h3>
-                <p className="text-sm text-muted-foreground">
-                  To manage users and assign roles, use the database management panel. 
-                  Users are automatically created when they first log in via OAuth. 
-                  You can then update their role in the database to grant appropriate access levels.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingUser(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveUser} disabled={updateUserMutation.isPending}>
+                {updateUserMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );

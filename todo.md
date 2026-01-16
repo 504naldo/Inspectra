@@ -930,3 +930,14 @@
 - [ ] Test: companyId never defaults to 1 (user to verify)
 - [ ] Test: technicians show exactly once in assignment modal (user to verify)
 - [ ] Test: Extinguisher/Emergency cards always visible (user to verify)
+
+## Admin Users Management Page (New)
+- [x] Create backend listUsers procedure (filter by companyId, role, isActive)
+- [x] Create backend updateUser procedure (update role, isActive, name)
+- [x] Create backend mergeUsers procedure (merge duplicate users, update foreign keys)
+- [x] Create Admin Users page UI with user list table
+- [x] Add search/filter by name, email, role, status
+- [x] Add edit user dialog with role dropdown and active/inactive toggle
+- [ ] Add merge duplicate users button and confirmation dialog (backend ready, UI pending)
+- [ ] Add navigation link in AdminLayout sidebar
+- [ ] Test user management functionality

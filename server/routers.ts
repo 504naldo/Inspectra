@@ -14,6 +14,7 @@ import * as checklists from "./complianceChecklists";
 import { fireAlarmRouter } from "./fireAlarmRouter";
 import { sprinklerRouter } from "./sprinklerRouter";
 import { jobAssignmentRouter } from "./jobAssignmentRouter";
+import { userRouter as userManagementRouter } from "./userRouter";
 
 // Role-based procedure helpers
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -2157,7 +2158,10 @@ export const appRouter = router({
   deficiencyReport: deficiencyReportRouter,
   checklist: checklistRouter,
   ai: aiRouter,
-  user: userRouter,
+  user: router({
+    ...userRouter._def.procedures,
+    ...userManagementRouter._def.procedures,
+  }),
   dashboard: dashboardRouter,
   sync: syncRouter,
   fileTag: fileTagRouter,
