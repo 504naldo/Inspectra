@@ -31,12 +31,21 @@ export default function JobsList() {
   // Role-based data fetching
   const isAdmin = user?.role === 'admin' || user?.role === 'office';
   
+  // Block rendering if user or companyId not available (admin only needs it)
+  if (isAdmin && (!user || !user.companyId)) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading session...</p>
+      </div>
+    );
+  }
+  
   // Fetch jobs based on role
   const { data: assignedJobs, isLoading: techJobsLoading } = trpc.jobAssignment.listMyJobs.useQuery(
     undefined,
     { enabled: !isAdmin }
   );
-  const companyId = user?.companyId || 1;
+  const companyId = user?.companyId!;
   const { data: allJobsData, isLoading: adminJobsLoading } = trpc.jobAssignment.listJobsWithAssignees.useQuery(
     { companyId, status: undefined },
     { enabled: isAdmin }

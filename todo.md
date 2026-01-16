@@ -901,3 +901,32 @@
 - [x] Add environment indicator badge (bottom-right: DEV/PROD + companyId)
 - [ ] Test: modal shows each technician exactly once (user to verify)
 - [ ] Test: dashboard metrics reflect actual data (user to verify)
+
+## Fix CompanyId Fallbacks + Technician Dedup + Missing Cards (Critical)
+- [ ] Remove all `user?.companyId || 1` fallbacks from admin pages
+- [ ] Remove all `user?.companyId || 1` fallbacks from technician pages
+- [ ] Add blocking loading state when user or companyId is missing
+- [ ] Fix technician deduplication with normalized lowercase email keys
+- [ ] Dedupe by userId as fallback when email is missing
+- [ ] Use uniqueTechnicians for both Lead and Additional sections
+- [ ] Show clear error message when technician query fails
+- [ ] Always render Fire Extinguisher card (show empty state if count=0)
+- [ ] Always render Emergency Light card (show empty state if count=0)
+- [ ] Add "Import Assets" link in empty state
+- [ ] Add debug console logs for device counts in JobDetails
+- [ ] Test: companyId never defaults to 1 after login
+- [ ] Test: technicians appear exactly once in modal
+- [ ] Test: Extinguisher/Emergency cards always visible
+
+## Fix CompanyId Fallbacks + Missing Cards + Deduplication (Critical)
+- [x] Remove all `user?.companyId || 1` fallbacks from admin pages (Jobs, Dashboard, Sites, Customers)
+- [x] Remove all `user?.companyId || 1` fallbacks from technician pages (JobsList)
+- [x] Add loading guard when user or companyId missing ("Loading session..." message)
+- [x] Fix technician deduplication with normalized lowercase email keys (Set-based dedup)
+- [x] Always render Extinguisher card (empty state when count=0)
+- [x] Always render Emergency Light card (empty state when count=0)
+- [x] Add "Import Assets" button in empty state cards (links to /admin/devices)
+- [x] Add debug console logging for device counts (totalDevices, extinguishers, emergency, fire, smoke)
+- [ ] Test: companyId never defaults to 1 (user to verify)
+- [ ] Test: technicians show exactly once in assignment modal (user to verify)
+- [ ] Test: Extinguisher/Emergency cards always visible (user to verify)

@@ -208,6 +208,15 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const extinguisherStats = getExtinguisherStats();
   const emergencyLightStats = getEmergencyLightStats();
 
+  // Debug counts (dev-only)
+  console.log('[DEBUG] JobDetails device counts:', {
+    totalDevices: devices?.length || 0,
+    extinguishers: extinguisherStats.total,
+    emergencyLights: emergencyLightStats.total,
+    fireAlarms: fireAlarmStats.total,
+    smokeAlarms: smokeStats.total
+  });
+
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom pb-24">
       {/* Header */}
@@ -341,7 +350,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           />
         )}
 
-        {extinguisherStats.total > 0 && (
+        {extinguisherStats.total > 0 ? (
           <ExpandableCategoryCard
             title="Fire Extinguishers"
             description="Portable fire extinguishing equipment"
@@ -364,9 +373,33 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             jobId={jobId}
             onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedExtinguishers.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
           />
+        ) : (
+          <Card className="bg-gradient-to-r from-rose-50 to-pink-50 dark:from-rose-950/20 dark:to-pink-950/20 border-rose-200 dark:border-rose-800">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg">
+                  <FireExtinguisher className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-rose-900 dark:text-rose-100">Fire Extinguishers</CardTitle>
+                  <p className="text-sm text-rose-700 dark:text-rose-300">Portable fire extinguishing equipment</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">No Fire Extinguishers loaded for this site</p>
+                <Link href="/admin/devices">
+                  <Button variant="outline" size="sm">
+                    Import Assets
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
-        {emergencyLightStats.total > 0 && (
+        {emergencyLightStats.total > 0 ? (
           <ExpandableCategoryCard
             title="Emergency Lights"
             description="Emergency and exit lighting"
@@ -389,6 +422,30 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             onToggle={() => setExpandedCard(expandedCard === 'emergency' ? null : 'emergency')}
             getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=emergency`}
           />
+        ) : (
+          <Card className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20 border-yellow-200 dark:border-yellow-800">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                  <Lightbulb className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-yellow-900 dark:text-yellow-100">Emergency Lights</CardTitle>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300">Emergency and exit lighting</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">No Emergency Lights loaded for this site</p>
+                <Link href="/admin/devices">
+                  <Button variant="outline" size="sm">
+                    Import Assets
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Fire Alarm System Inspection */}

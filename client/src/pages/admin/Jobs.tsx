@@ -27,7 +27,21 @@ import { toast } from "sonner";
 
 export default function AdminJobs() {
   const { user } = useAuth();
-  const companyId = user?.companyId || 1;
+  
+  // Block rendering if user or companyId not available
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout title="Jobs">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <p className="text-muted-foreground">Loading session...</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+  
+  const companyId = user.companyId;
   
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -65,10 +79,19 @@ export default function AdminJobs() {
   const uniqueTechnicians = React.useMemo(() => {
     if (!technicians) return [];
     const seen = new Set<string>();
+    const seenIds = new Set<number>();
     return technicians.filter(tech => {
-      if (!tech.email) return false; // Skip users without email
-      if (seen.has(tech.email)) return false;
-      seen.add(tech.email);
+      // Normalize email: trim and lowercase
+      const emailKey = (tech.email ?? '').trim().toLowerCase();
+      
+      // Dedupe by email if available, otherwise by userId
+      if (emailKey) {
+        if (seen.has(emailKey)) return false;
+        seen.add(emailKey);
+      } else {
+        if (seenIds.has(tech.id)) return false;
+        seenIds.add(tech.id);
+      }
       return true;
     });
   }, [technicians]);

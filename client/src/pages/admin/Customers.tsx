@@ -19,7 +19,18 @@ import { toast } from "sonner";
 
 export default function AdminCustomers() {
   const { user } = useAuth();
-  const companyId = user?.companyId || 1;
+  
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout title="Customers">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p className="text-muted-foreground">Loading session...</p>
+        </div>
+      </AdminLayout>
+    );
+  }
+  
+  const companyId = user.companyId;
   
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);

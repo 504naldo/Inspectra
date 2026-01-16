@@ -19,8 +19,15 @@ import { Link } from "wouter";
 export default function AdminDashboard() {
   const { user } = useAuth();
   
-  // For demo, using company ID 1
-  const companyId = user?.companyId || 1;
+  if (!user || !user.companyId) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading session...</p>
+      </div>
+    );
+  }
+  
+  const companyId = user.companyId;
   
   const { data: stats, isLoading } = trpc.dashboard.getStats.useQuery(
     { companyId },
