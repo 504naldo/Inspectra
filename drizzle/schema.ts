@@ -119,8 +119,10 @@ export type InsertArea = typeof areas.$inferInsert;
 export const devices = mysqlTable("devices", {
   id: int("id").autoincrement().primaryKey(),
   siteId: int("siteId").notNull(),
+  companyId: int("companyId").notNull(), // For multi-tenancy
   areaId: int("areaId"),
-  deviceType: varchar("deviceType", { length: 100 }).notNull(), // e.g., "Smoke Detector", "Pull Station", "Horn/Strobe"
+  category: mysqlEnum("category", ["FIRE_EXTINGUISHER", "EMERGENCY_LIGHT", "FIRE_ALARM_DEVICE", "SMOKE_ALARM"]), // High-level grouping
+  deviceType: varchar("deviceType", { length: 100 }).notNull(), // e.g., "Smoke Detector", "Pull Station", "Horn/Strobe", "ABC Extinguisher", "Exit Sign"
   manufacturer: varchar("manufacturer", { length: 100 }),
   model: varchar("model", { length: 100 }),
   serialNumber: varchar("serialNumber", { length: 100 }),
@@ -128,6 +130,7 @@ export const devices = mysqlTable("devices", {
   lastInspectionDate: timestamp("lastInspectionDate"),
   location: varchar("location", { length: 255 }), // Specific location description
   barcode: varchar("barcode", { length: 100 }),
+  externalRef: varchar("externalRef", { length: 255 }), // Stable import key (tag number, identifier, or hash)
   notes: text("notes"),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

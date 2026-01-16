@@ -76,6 +76,16 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     onError: () => toast.error('Failed to mark devices as pass')
   });
 
+  const importAssets = trpc.assetImport.importAssetsFromExcel.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.message);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to import assets');
+    }
+  });
+
   if (isLoading && isOnline) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -389,11 +399,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <CardContent>
               <div className="text-center py-8">
                 <p className="text-muted-foreground mb-4">No Fire Extinguishers loaded for this site</p>
-                <Link href="/admin/devices">
-                  <Button variant="outline" size="sm">
-                    Import Assets
-                  </Button>
-                </Link>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => importAssets.mutate({ jobId })}
+                  disabled={importAssets.isPending}
+                >
+                  {importAssets.isPending ? 'Importing...' : 'Import Assets'}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -438,11 +451,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <CardContent>
               <div className="text-center py-8">
                 <p className="text-muted-foreground mb-4">No Emergency Lights loaded for this site</p>
-                <Link href="/admin/devices">
-                  <Button variant="outline" size="sm">
-                    Import Assets
-                  </Button>
-                </Link>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => importAssets.mutate({ jobId })}
+                  disabled={importAssets.isPending}
+                >
+                  {importAssets.isPending ? 'Importing...' : 'Import Assets'}
+                </Button>
               </div>
             </CardContent>
           </Card>

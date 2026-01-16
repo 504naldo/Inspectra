@@ -15,6 +15,7 @@ import { fireAlarmRouter } from "./fireAlarmRouter";
 import { sprinklerRouter } from "./sprinklerRouter";
 import { jobAssignmentRouter } from "./jobAssignmentRouter";
 import { userRouter as userManagementRouter } from "./userRouter";
+import { assetImportRouter } from "./routers/assetImportRouter";
 
 // Role-based procedure helpers
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -216,6 +217,7 @@ const deviceRouter = router({
   }),
   
   create: officeProcedure.input(z.object({
+    companyId: z.number(),
     siteId: z.number(),
     areaId: z.number().optional(),
     deviceType: z.string().min(1),
@@ -2030,6 +2032,7 @@ const importRouter = router({
           
           // Create new device
           const device = await db.createDevice({
+            companyId: ctx.user.companyId!,
             siteId: input.siteId,
             deviceType: rowData.deviceType || 'Unknown',
             manufacturer: rowData.manufacturer,
@@ -2170,6 +2173,7 @@ export const appRouter = router({
   fireAlarm: fireAlarmRouter,
   sprinkler: sprinklerRouter,
   jobAssignment: jobAssignmentRouter,
+  assetImport: assetImportRouter,
 });
 
 export type AppRouter = typeof appRouter;

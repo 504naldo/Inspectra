@@ -941,3 +941,33 @@
 - [ ] Add merge duplicate users button and confirmation dialog (backend ready, UI pending)
 - [ ] Add navigation link in AdminLayout sidebar
 - [ ] Test user management functionality
+
+## Asset Import Pipeline (Excel → Fire Extinguishers + Emergency Lights)
+- [ ] Define canonical device categories (FIRE_EXTINGUISHER, EMERGENCY_LIGHT, FIRE_ALARM_DEVICE)
+- [ ] Update device schema to support externalRef for stable import keys
+- [ ] Create Excel parsing backend procedure (detect tabs by fuzzy name matching)
+- [ ] Parse "Fire Extinguishers" tab rows (location, identifier, type, status, notes)
+- [ ] Parse "Emergency Lights" tab rows (location, identifier, type, status, notes)
+- [ ] Implement device upsert logic (match by externalRef + siteId + category)
+- [ ] Generate deterministic externalRef from category + location + description when not provided
+- [ ] Wire "Import Assets" button in JobDetails to trigger import
+- [ ] Add import success toast with counts ("Imported X Fire Extinguishers, Y Emergency Lights")
+- [ ] Add error handling for missing Excel file or parsing failures
+- [ ] Test: import populates devices and shows non-zero counts in JobDetails cards
+- [ ] Test: import is idempotent (running twice doesn't duplicate rows)
+- [ ] Test: devices are linked to correct siteId and companyId
+
+## Asset Import Pipeline from Excel (New)
+- [x] Add category enum field to devices table (FIRE_EXTINGUISHER, EMERGENCY_LIGHT, FIRE_ALARM_DEVICE)
+- [x] Add externalRef field to devices table for stable import matching
+- [x] Create assetImportRouter with Excel parsing logic (xlsx library)
+- [x] Implement fuzzy tab name matching for "Fire Extinguishers" and "Emergency Lights" sheets
+- [x] Implement flexible column name matching (location, identifier, type, status, notes)
+- [x] Implement idempotent upsert logic using externalRef (hash of category+location+type)
+- [x] Wire Import Assets button in JobDetails to trigger import mutation
+- [x] Add loading state and success/error toasts for import feedback
+- [x] Test import with sample Excel file
+- [x] Verify device counts appear correctly in JobDetails cards after import
+- [x] Write vitest tests for import functionality (4 tests passing)
+- [x] Test idempotent imports (no duplicates)
+- [x] Test error handling (missing file, missing companyId)
