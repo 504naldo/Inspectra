@@ -971,3 +971,18 @@
 - [x] Write vitest tests for import functionality (4 tests passing)
 - [x] Test idempotent imports (no duplicates)
 - [x] Test error handling (missing file, missing companyId)
+
+## Demo Test Facility Seeding (New)
+- [x] Create seed script for comprehensive test site
+- [x] Create "Demo Test Facility" site (1234 Demo Way, Vancouver, BC)
+- [x] Create "Full System Demo Inspection" job (Annual, In Progress)
+- [x] Seed 15 fire alarm devices with realistic walk order (smoke, heat, pull stations, notification)
+- [x] Seed 8 fire extinguishers with locations and types
+- [x] Seed 6 emergency lights with locations
+- [x] Seed 4 sample deficiencies across systems (critical, major, minor)
+- [x] Create verification script to validate seeded data
+- [ ] Test device walkthrough order and pass/fail/NA flows
+- [ ] Test deficiency creation and reporting
+- [ ] Test annual and deficiency PDF generation
+- [ ] Test resume inspection functionality
+- [ ] Verify dashboard metrics update correctly
