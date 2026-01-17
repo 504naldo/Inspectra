@@ -1478,6 +1478,27 @@ const aiRouter = router({
     codeReference: z.string().optional(),
     priorHistory: z.string().optional(),
   })).mutation(async ({ input }) => {
+    // Validate required fields
+    const missingFields: string[] = [];
+    
+    if (!input.location || input.location.trim() === '' || input.location === 'Unknown location') {
+      missingFields.push('location');
+    }
+    
+    if (!input.observedIssue || input.observedIssue.trim() === '') {
+      missingFields.push('observed issue');
+    }
+    
+    if (!input.deviceType || input.deviceType.trim() === '') {
+      missingFields.push('device type');
+    }
+    
+    if (missingFields.length > 0) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Missing required fields: ${missingFields.join(', ')}. Please provide all required information before generating narrative.`
+      });
+    }
     const prompt = `You are a fire alarm inspection expert. Generate a professional deficiency narrative based on the following information:
 
 Device Type: ${input.deviceType}

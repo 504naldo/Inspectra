@@ -993,3 +993,15 @@
 - [x] Fix device loading issue in JobDetails page (changed deviceCategory to category field)
 - [x] Test that fire extinguishers display correctly with correct count (8)
 - [x] Write vitest tests for device categorization (9 tests passing)
+
+## Deficiency Narrative Generator (Fix & Complete - AI-based)
+- [x] Examine current narrative generator implementation
+- [x] Add validation for required fields (especially location) to AI generator
+- [x] Show clear error messages for missing fields before AI call
+- [x] Ensure generated narrative is saved to deficiency record (already working)
+- [x] Update UI state immediately after generation (already working)
+- [x] Verify narrative remains fully editable (Textarea fields confirmed)
+- [x] Verify narrative appears in Deficiency Report PDF (description & correctiveAction included)
+- [x] Verify narrative appears in Annual Inspection PDF (same fields used)
+- [x] Improve error handling with clear toast messages (error.message displayed)
+- [x] Write test to verify AI narrative generation flow (7 tests passing, including 2 full AI generation tests)

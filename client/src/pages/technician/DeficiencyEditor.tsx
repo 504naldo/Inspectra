@@ -102,19 +102,35 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       setAiDraft(true);
       toast.success('AI narrative generated - review and edit as needed');
     },
-    onError: () => {
-      toast.error('Failed to generate narrative');
+    onError: (error) => {
+      toast.error(error.message || 'Failed to generate narrative');
     }
   });
 
   const handleGenerateNarrative = () => {
-    if (!observedIssue) {
-      toast.error('Please describe the observed issue first');
+    // Validate required fields
+    const missingFields: string[] = [];
+    
+    if (!observedIssue || observedIssue.trim() === '') {
+      missingFields.push('observed issue');
+    }
+    
+    if (!deviceLocation || deviceLocation.trim() === '' || deviceLocation === 'Unknown location') {
+      missingFields.push('location');
+    }
+    
+    if (!deviceType || deviceType.trim() === '') {
+      missingFields.push('device type');
+    }
+    
+    if (missingFields.length > 0) {
+      toast.error(`Please provide: ${missingFields.join(', ')}`);
       return;
     }
+    
     generateNarrative.mutate({
-      deviceType: deviceType || 'Fire alarm device',
-      location: deviceLocation || 'Unknown location',
+      deviceType,
+      location: deviceLocation,
       observedIssue,
       testOutcome: 'FAIL',
       codeReference: codeReference || undefined,
