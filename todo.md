@@ -1005,3 +1005,28 @@
 - [x] Verify narrative appears in Annual Inspection PDF (same fields used)
 - [x] Improve error handling with clear toast messages (error.message displayed)
 - [x] Write test to verify AI narrative generation flow (7 tests passing, including 2 full AI generation tests)
+
+## Bug: Narrative Generator Not Working (URGENT)
+- [ ] Check browser console for errors when clicking Generate
+- [ ] Verify validation logic is triggering correctly
+- [ ] Fix the issue preventing narrative generation
+- [ ] Test that Generate button works with valid inputs
+
+## Inspection PDF Template Improvements
+- [x] Examine current PDF generation code structure
+- [x] Implement enhanced cover page with light textured background
+- [x] Add brand color header accent to cover page
+- [x] Center company logo, report title, property info on cover
+- [x] Create new summary page after cover with deficiency counts
+- [x] Add inspection types completed to summary
+- [x] Add overall inspection status to summary
+- [x] Add footer with company name, page number, report ID, date
+- [ ] Improve inspection section headers with brand-colored background (partially done)
+- [ ] Format checklist items into tables (Item, Pass, Fail, N/A, Notes)
+- [ ] Fix checkbox logic to show only matching result
+- [ ] Ensure deficiency entries don't split across pages
+- [ ] Add consistent spacing and readable font sizes
+- [ ] Prevent overlapping or jumbled text
+- [ ] Enforce minimum line height throughout
+- [ ] Avoid page breaks inside tables or deficiency blocks
+- [ ] Test PDF generation with sample data
