@@ -986,3 +986,10 @@
 - [ ] Test annual and deficiency PDF generation
 - [ ] Test resume inspection functionality
 - [ ] Verify dashboard metrics update correctly
+
+## Bug: Fire Extinguishers Not Loading (FIXED)
+- [x] Verify fire extinguisher data exists in database (8 devices confirmed)
+- [x] Check frontend device query filters for fire extinguishers
+- [x] Fix device loading issue in JobDetails page (changed deviceCategory to category field)
+- [x] Test that fire extinguishers display correctly with correct count (8)
+- [x] Write vitest tests for device categorization (9 tests passing)

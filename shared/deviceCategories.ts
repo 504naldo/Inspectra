@@ -11,13 +11,13 @@ export type DeviceCategory = 'smoke' | 'fire_alarm' | 'extinguisher' | 'emergenc
  */
 export function isSmokeAlarm(device: {
   deviceType?: string | null;
-  deviceCategory?: string | null;
+  category?: string | null;
   model?: string | null;
   description?: string | null;
 }): boolean {
   const searchFields = [
     device.deviceType,
-    device.deviceCategory,
+    device.category,
     device.model,
     device.description,
   ]
@@ -44,10 +44,17 @@ export function isSmokeAlarm(device: {
  */
 export function categorizeDevice(device: {
   deviceType?: string | null;
-  deviceCategory?: string | null;
+  category?: string | null;
   model?: string | null;
   description?: string | null;
 }): DeviceCategory {
+  // First check the database category field directly
+  if (device.category) {
+    const cat = device.category.toLowerCase();
+    if (cat.includes('fire_extinguisher')) return 'extinguisher';
+    if (cat.includes('emergency_light')) return 'emergency';
+    if (cat.includes('fire_alarm') || cat.includes('smoke_alarm')) return 'fire_alarm';
+  }
   // Check smoke alarms first (most specific)
   if (isSmokeAlarm(device)) {
     return 'smoke';
@@ -55,7 +62,7 @@ export function categorizeDevice(device: {
 
   const searchFields = [
     device.deviceType,
-    device.deviceCategory,
+    device.category,
     device.model,
     device.description,
   ]
