@@ -1083,3 +1083,14 @@
 - [x] Insert summary page after cover page in Deficiency Report
 - [x] Ensure layout matches Annual Inspection summary
 - [x] Test PDF generation with summary page (5/5 tests passing)
+
+
+## Bug: PDF Word Spacing and Readability Issues (FIXED)
+- [x] Generate test PDFs to examine current spacing
+- [x] Identify specific text rendering problems (missing lineGap parameter)
+- [x] Fix line height and word spacing in text blocks (added lineGap: 2-4 to all text)
+- [x] Ensure proper text wrapping without overlap (proper width constraints)
+- [x] Add proper leading (space between lines) (PDF_SIZES.lineGap = 4)
+- [x] Fix any compressed or jumbled text (lineGap in tables and paragraphs)
+- [x] Test with long descriptions and multi-line content (all tests passing)
+- [x] Verify readability improvements in both PDFs (10/10 tests passing)

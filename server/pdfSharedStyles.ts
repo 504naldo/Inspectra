@@ -40,6 +40,7 @@ export const PDF_SIZES = {
   pageHeight: 792,
   margin: 40,
   lineHeight: 1.5, // Minimum 1.4-1.6 for readability
+  lineGap: 4, // Additional space between lines (in points)
 };
 
 export const PDF_SPACING = {
@@ -322,7 +323,12 @@ export function drawTable(
           row[colIndex] || '',
           currentX + opts.rowPadding,
           currentY + opts.rowPadding,
-          { width: col.width - opts.rowPadding * 2, align: col.align || 'left' }
+          { 
+            width: col.width - opts.rowPadding * 2, 
+            align: col.align || 'left',
+            lineGap: 2,
+            continued: false
+          }
         );
       
       currentX += col.width;
@@ -553,4 +559,55 @@ export function drawDeficiencySummaryPage(
     });
   
   return currentY + 40;
+}
+
+
+/**
+ * Render text with proper spacing and readability
+ * Fixes common PDFKit issues with cramped or overlapping text
+ */
+export function renderText(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  x: number,
+  y: number,
+  options?: {
+    width?: number;
+    align?: 'left' | 'center' | 'right' | 'justify';
+    lineGap?: number;
+    continued?: boolean;
+  }
+): void {
+  const opts = {
+    width: options?.width || (PDF_SIZES.pageWidth - PDF_SIZES.margin * 2),
+    align: options?.align || 'left',
+    lineGap: options?.lineGap !== undefined ? options.lineGap : PDF_SIZES.lineGap,
+    continued: options?.continued || false,
+  };
+  
+  doc.text(text, x, y, opts);
+}
+
+/**
+ * Render paragraph with proper line spacing
+ * Use this for multi-line text blocks to ensure readability
+ */
+export function renderParagraph(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  x: number,
+  y: number,
+  width?: number
+): number {
+  const textWidth = width || (PDF_SIZES.pageWidth - PDF_SIZES.margin * 2);
+  
+  doc.text(text, x, y, {
+    width: textWidth,
+    align: 'left',
+    lineGap: PDF_SIZES.lineGap,
+    continued: false,
+  });
+  
+  // Return the Y position after the text
+  return doc.y + PDF_SIZES.lineGap;
 }

@@ -157,7 +157,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         
         doc.fontSize(9)
            .font('Helvetica')
-           .text(`${data.missingLocationDeficiencies.length} deficiency/deficiencies missing location information. See appendix for details.`, 60, pageYPos + 24, { width: 492 });
+           .text(`${data.missingLocationDeficiencies.length} deficiency/deficiencies missing location information. See appendix for details.`, 60, pageYPos + 24, { width: 492, lineGap: 3 });
         
         pageYPos += warningHeight + 10;
       }
@@ -202,7 +202,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       // RE line
       yPos += 15;
       doc.font('Helvetica-Bold')
-         .text(`RE: The Fire Protection System at ${data.siteAddress}`, 50, yPos, { width: 512 });
+         .text(`RE: The Fire Protection System at ${data.siteAddress}`, 50, yPos, { width: 512, lineGap: 4 });
       
       // Service details
       yPos += 25;
@@ -232,12 +232,12 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       ];
       
       inspectionItems.forEach(item => {
-        doc.text(`- ${item}`, 60, yPos, { width: 502 });
+        doc.text(`- ${item}`, 60, yPos, { width: 502, lineGap: 3 });
         yPos += 15;
       });
       
       yPos += 5;
-      doc.text('Please review the attached deficiency page for the full details and costs for the required repair(s).', 50, yPos, { width: 512 });
+      doc.text('Please review the attached deficiency page for the full details and costs for the required repair(s).', 50, yPos, { width: 512, lineGap: 4 });
       
       // Backflow note (if applicable)
       yPos += 25;
@@ -405,7 +405,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
             dx += defColWidths[1];
             
             // Device type
-            doc.text(def.deviceType || '-', dx, defY + 5, { width: defColWidths[2] - 10 });
+            doc.text(def.deviceType || '-', dx, defY + 5, { width: defColWidths[2] - 10, lineGap: 2 });
             dx += defColWidths[2];
             
             // Cost
@@ -485,7 +485,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
             defY = 110;
           }
           
-          doc.text(term, 50, defY, { width: 512, align: 'justify' });
+          doc.text(term, 50, defY, { width: 512, align: 'justify', lineGap: 4 });
           defY += 25;
         });
       }
@@ -517,7 +517,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         doc.fontSize(10)
            .fillColor(black)
            .font('Helvetica')
-           .text('The following deficiencies are missing location information and must be updated before final report submission:', 50, appendixY, { width: 512 });
+           .text('The following deficiencies are missing location information and must be updated before final report submission:', 50, appendixY, { width: 512, lineGap: 4 });
         
         appendixY += 30;
         
@@ -567,7 +567,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           ax = 55;
           
           // ID
-          doc.text(def.id.toString(), ax, appendixY + 5, { width: appendixColWidths[0] - 10 });
+          doc.text(def.id.toString(), ax, appendixY + 5, { width: appendixColWidths[0] - 10, lineGap: 2 });
           ax += appendixColWidths[0];
           
           // Description
@@ -575,7 +575,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           ax += appendixColWidths[1];
           
           // Severity
-          doc.text(def.severity.toUpperCase(), ax, appendixY + 5, { width: appendixColWidths[2] - 10 });
+          doc.text(def.severity.toUpperCase(), ax, appendixY + 5, { width: appendixColWidths[2] - 10, lineGap: 2 });
           
           appendixY += rowHeight;
         });

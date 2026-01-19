@@ -460,7 +460,7 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
         doc.rect(440, currentY, 66, itemHeight).stroke('#000000');
         doc.rect(506, currentY, 66, itemHeight).stroke('#000000');
         
-        doc.fontSize(8).font('Helvetica').text(item.text, 45, currentY + 5, { width: 390 });
+        doc.fontSize(8).font('Helvetica').text(item.text, 45, currentY + 5, { width: 390, lineGap: 3 });
         
         doc.fontSize(9).font('Helvetica-Bold').text('Yes', 455, currentY + 8);
         drawCheckbox(doc, 445, currentY + 8, item.yes, 10);
@@ -474,7 +474,7 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
       currentY += 10;
       
       // Technician sign-off
-      doc.fontSize(9).font('Helvetica').text('The following person is responsible for ensuring that the information contained in this Test and Inspection Report is correct and complete:', 40, currentY, { width: 532 });
+      doc.fontSize(9).font('Helvetica').text('The following person is responsible for ensuring that the information contained in this Test and Inspection Report is correct and complete:', 40, currentY, { width: 532, lineGap: 4 });
       currentY += 20;
       
       doc.rect(40, currentY, 532, 80).stroke('#000000');
@@ -582,7 +582,7 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
           doc.rect(528, currentY, 44, itemHeight).stroke('#000000');
           
           doc.fontSize(8).font('Helvetica-Bold').text(item.id, 45, currentY + 5);
-          doc.font('Helvetica').text(item.description, 75, currentY + 5, { width: 360 });
+          doc.font('Helvetica').text(item.description, 75, currentY + 5, { width: 360, lineGap: 3 });
           
           drawCheckbox(doc, 450, currentY + 5, item.result === 'YES', 10);
           drawCheckbox(doc, 494, currentY + 5, item.result === 'NO', 10);
@@ -604,7 +604,7 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
         doc.fontSize(9).font('Helvetica-Bold').text('COMMENTS', 45, currentY + 3);
         doc.rect(140, currentY, 432, 30).stroke('#000000');
         if (section.comments) {
-          doc.fontSize(8).font('Helvetica').text(section.comments, 145, currentY + 3, { width: 420 });
+          doc.fontSize(8).font('Helvetica').text(section.comments, 145, currentY + 3, { width: 420, lineGap: 3 });
         }
       });
       
@@ -653,7 +653,7 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
           
           const resultColor = device.result === 'PASS' ? '#10b981' : device.result === 'DEFICIENT' ? '#ef4444' : '#6b7280';
           doc.fillColor(resultColor).text(device.result, 395, currentY + 3);
-          doc.fillColor('#000000').text(device.notes || '', 495, currentY + 3, { width: 75 });
+          doc.fillColor('#000000').text(device.notes || '', 495, currentY + 3, { width: 75, lineGap: 2 });
           
           currentY += 14;
         });
@@ -763,7 +763,7 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
             doc.fillColor('#6b7280').text('N/A', 325, currentY + 3);
           }
           
-          doc.fillColor('#000000').text(light.comments || '', 425, currentY + 3, { width: 145 });
+          doc.fillColor('#000000').text(light.comments || '', 425, currentY + 3, { width: 145, lineGap: 2 });
           
           currentY += 14;
         });
@@ -810,7 +810,7 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
           
           doc.fontSize(8).font('Helvetica').text(deficiency.system, 45, currentY + 5);
           doc.text(deficiency.location, 195, currentY + 5);
-          doc.text(deficiency.description, 345, currentY + 5, { width: 220 });
+          doc.text(deficiency.description, 345, currentY + 5, { width: 220, lineGap: 3 });
           
           currentY += descHeight;
         });
