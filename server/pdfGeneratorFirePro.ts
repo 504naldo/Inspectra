@@ -3,6 +3,17 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import {
+  PDF_COLORS,
+  PDF_FONTS,
+  PDF_SIZES,
+  PDF_SPACING,
+  drawLogo,
+  drawEnhancedCoverPage,
+  drawTable,
+  drawSectionHeader,
+  applyFootersToAllPages,
+} from './pdfSharedStyles.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -68,14 +79,7 @@ interface ReportData {
   missingLocationDeficiencies?: Array<{ id: number; description: string; severity: string }>; // For admin override mode
 }
 
-// Helper function to draw logo
-function drawLogo(doc: any, x: number, y: number, width: number) {
-  // Use absolute path from project root
-  const logoPath = path.join(process.cwd(), 'assets/ewf-logo.png');
-  if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, x, y, { width });
-  }
-}
+// Helper functions now imported from pdfSharedStyles.ts
 
 export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -101,54 +105,20 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       const warningColor = '#f59e0b';
 
       // ============================================
-      // PAGE 1: COVER PAGE
+      // PAGE 1: COVER PAGE - Using Shared Enhanced Layout
       // ============================================
       
-      // Background - grayscale gradient to simulate hero image
-      doc.rect(0, 0, 612, 792).fill('#d1d5db');
-      
-      // Company logo area (top-left) - EWF logo
-      drawLogo(doc, 50, 50, 150);
-      
-      // Navy blue title block (left side, centered vertically)
-      const titleBlockTop = 250;
-      const titleBlockHeight = 350;
-      doc.rect(50, titleBlockTop, 400, titleBlockHeight).fill(navyBlue);
-      
-      // Title inside navy block
-      doc.fontSize(36)
-         .fillColor(white)
-         .font('Helvetica-Bold')
-         .text('Deficiency Report', 70, titleBlockTop + 40, { width: 360 });
-      
-      // Horizontal line separator
-      doc.moveTo(70, titleBlockTop + 100)
-         .lineTo(250, titleBlockTop + 100)
-         .lineWidth(3)
-         .stroke(white);
-      
-      // Property details
-      doc.fontSize(14)
-         .fillColor(white)
-         .font('Helvetica')
-         .text(data.siteName.toUpperCase(), 70, titleBlockTop + 130, { width: 360 });
-      
-      doc.fontSize(12)
-         .text(data.siteAddress, 70, titleBlockTop + 160, { width: 360 });
-      
-      doc.text(`${data.siteCity}, ${data.siteState}`.toUpperCase(), 70, titleBlockTop + 180, { width: 360 });
-      
-      // Company info at bottom of navy block
-      doc.fontSize(11)
-         .fillColor(white)
-         .font('Helvetica-Bold')
-         .text(data.companyName, 70, titleBlockTop + 260);
-      
-      doc.fontSize(10)
-         .font('Helvetica')
-         .text(data.companyAddress || '102-5489 Byrne Road', 70, titleBlockTop + 280);
-      
-      doc.text(data.companyPhone || '604-299-1030', 70, titleBlockTop + 295);
+      drawEnhancedCoverPage(doc, {
+        reportTitle: 'Deficiency Report',
+        propertyName: data.siteName,
+        propertyAddress: data.siteAddress,
+        propertyCity: data.siteCity,
+        propertyPostalCode: undefined,
+        inspectionDate: data.inspectionDate,
+        companyName: data.companyName,
+        companyPhone: data.companyPhone || '604-299-1030',
+        companyEmail: data.companyEmail || 'info@ewf.ca',
+      });
 
       // ============================================
       // PAGE 2: LETTER-STYLE SUMMARY
@@ -637,6 +607,13 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         );
       }
 
+      // Add footers to all pages using shared utility
+      applyFootersToAllPages(
+        doc,
+        data.companyName,
+        `JOB-${data.jobNumber}`
+      );
+      
       doc.end();
     } catch (error) {
       reject(error);

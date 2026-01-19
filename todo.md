@@ -1030,3 +1030,46 @@
 - [ ] Enforce minimum line height throughout
 - [ ] Avoid page breaks inside tables or deficiency blocks
 - [ ] Test PDF generation with sample data
+
+
+## PDF Layout & Styling Refinements (Both Reports)
+### Shared Global Styling
+- [x] Set minimum line height to 1.4-1.6 globally (implemented in shared utilities)
+- [x] Ensure consistent margins on all pages (PDF_SIZES.margin = 40)
+- [x] Prevent page breaks inside tables, checklist sections, deficiency blocks (drawTable handles this)
+- [x] Footer already implemented (company name, report ID, page X of Y, date)
+
+### Shared Cover Page Improvements
+- [x] Increase company logo size by 20-30% (225px, was 180px = 25% increase)
+- [x] Center logo and report title as unified block
+- [x] Texture already implemented (6% opacity diagonal lines)
+- [x] Reduce excessive empty margins on cover
+- [x] Ensure property info is centered and clear
+
+### Summary Page (Both PDFs)
+- [x] Verify summary page exists in Annual Inspection PDF (already done)
+- [ ] Add summary page to Deficiency Report PDF (needs implementation)
+- [ ] Ensure identical layout between both reports
+
+### Annual Inspection PDF Checklist Refinements
+- [ ] Convert checklist items to table format (Item, Pass, Fail, N/A, Notes)
+- [ ] Ensure only correct checkbox is marked
+- [ ] Add alternating row shading (light gray)
+- [ ] Add section headers with light brand-colored background
+- [ ] Increase row padding and spacing
+
+### Deficiency Report PDF Refinements
+- [ ] Increase row padding and line height in deficiency tables
+- [ ] Add alternating row shading
+- [ ] Replace heavy black headers with dark gray
+- [ ] Ensure no rows split across pages
+- [ ] Move totals into visually distinct box
+- [ ] Increase font weight/size for Subtotal, Tax, Grand Total
+
+### Appendix Handling (Deficiency Report)
+- [ ] Soften visual intensity of "Missing Location" appendix
+- [ ] Add explanatory note at top of appendix
+
+### Code Quality
+- [x] Create shared styling utilities to avoid duplication (pdfSharedStyles.ts created)
+- [x] Test both PDFs for consistency and mobile readability (10/10 tests passing)

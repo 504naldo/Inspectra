@@ -3,6 +3,19 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import {
+  PDF_COLORS,
+  PDF_FONTS,
+  PDF_SIZES,
+  PDF_SPACING,
+  drawLogo,
+  drawCheckbox,
+  drawFooter,
+  drawEnhancedCoverPage,
+  drawTable,
+  drawSectionHeader,
+  applyFootersToAllPages,
+} from './pdfSharedStyles.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -115,47 +128,7 @@ interface ComplianceReportData {
   deficiencies: DeficiencySummary[];
 }
 
-// Helper function to draw logo
-function drawLogo(doc: any, x: number, y: number, width: number) {
-  const logoPath = path.join(process.cwd(), 'assets/ewf-logo.png');
-  if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, x, y, { width });
-  }
-}
-
-// Helper function to draw checkbox
-function drawCheckbox(doc: any, x: number, y: number, checked: boolean, size: number = 10) {
-  doc.rect(x, y, size, size).stroke('#000000');
-  if (checked) {
-    doc.fontSize(12).font('Helvetica-Bold').fillColor('#000000').text('✓', x + 1, y - 1);
-  }
-}
-
-// Helper function to draw professional footer on every page
-function drawFooter(doc: any, data: ComplianceReportData) {
-  const pageCount = doc.bufferedPageRange().count;
-  const currentPage = doc.bufferedPageRange().start + pageCount;
-  
-  // Footer line
-  doc.moveTo(40, 762)
-     .lineTo(572, 762)
-     .lineWidth(1)
-     .stroke('#d1d5db');
-  
-  // Footer text
-  doc.fontSize(8)
-     .font('Helvetica')
-     .fillColor('#6b7280')
-     .text(data.companyName || 'Earth Wind and Fire', 40, 770);
-  
-  // Page number (center)
-  doc.text(`Page ${currentPage}`, 0, 770, { width: 612, align: 'center' });
-  
-  // Report ID and date (right)
-  const reportId = `WO-${data.workOrderNumber}`;
-  const genDate = new Date().toLocaleDateString();
-  doc.text(`${reportId} | Generated: ${genDate}`, 0, 770, { width: 572, align: 'right' });
-}
+// Helper functions now imported from pdfSharedStyles.ts
 
 // Helper function to draw repeating header
 function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
@@ -251,96 +224,21 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
       doc.on('error', reject);
       
       // ============================================
-      // COVER PAGE - Enhanced Professional Layout
+      // COVER PAGE - Using Shared Enhanced Layout
       // ============================================
       
-      // Subtle textured background (light gray with pattern)
-      doc.rect(0, 0, 612, 792).fill('#f8f9fa');
-      
-      // Add subtle diagonal lines texture
-      doc.save();
-      doc.opacity(0.05);
-      for (let i = 0; i < 800; i += 20) {
-        doc.moveTo(0, i).lineTo(i, 0).lineWidth(1).stroke('#000000');
-      }
-      doc.restore();
-      
-      // Brand color header accent (top bar)
-      doc.rect(0, 0, 612, 80).fill('#1e3a8a');
-      
-      // Centered company logo
-      const logoWidth = 180;
-      const centerX = (612 - logoWidth) / 2;
-      drawLogo(doc, centerX, 120, logoWidth);
-      
-      // Report title (centered)
-      doc.fontSize(42)
-         .font('Helvetica-Bold')
-         .fillColor('#1e3a8a')
-         .text('Fire Protection', 0, 320, { width: 612, align: 'center' });
-      
-      doc.fontSize(36)
-         .font('Helvetica-Bold')
-         .fillColor('#1e3a8a')
-         .text('Inspection Report', 0, 365, { width: 612, align: 'center' });
-      
-      // Decorative line
-      const lineY = 420;
-      doc.moveTo(206, lineY)
-         .lineTo(406, lineY)
-         .lineWidth(3)
-         .stroke('#1e3a8a');
-      
-      // Property information box (centered)
-      const boxTop = 460;
-      const boxLeft = 106;
-      const boxWidth = 400;
-      
-      doc.rect(boxLeft, boxTop, boxWidth, 180)
-         .lineWidth(2)
-         .stroke('#1e3a8a');
-      
-      // Property details (centered in box)
-      doc.fontSize(18)
-         .font('Helvetica-Bold')
-         .fillColor('#1e3a8a')
-         .text('Property Information', boxLeft, boxTop + 20, { width: boxWidth, align: 'center' });
-      
-      doc.fontSize(14)
-         .font('Helvetica-Bold')
-         .fillColor('#000000')
-         .text(data.buildingName, boxLeft + 20, boxTop + 55, { width: boxWidth - 40, align: 'center' });
-      
-      doc.fontSize(11)
-         .font('Helvetica')
-         .fillColor('#4b5563')
-         .text(data.buildingAddress, boxLeft + 20, boxTop + 80, { width: boxWidth - 40, align: 'center' });
-      
-      doc.text(`${data.city}${data.postalCode ? ', ' + data.postalCode : ''}`, boxLeft + 20, boxTop + 100, { width: boxWidth - 40, align: 'center' });
-      
-      // Inspection date
-      doc.fontSize(10)
-         .font('Helvetica-Bold')
-         .fillColor('#1e3a8a')
-         .text('Inspection Date:', boxLeft + 20, boxTop + 130, { width: boxWidth - 40, align: 'center' });
-      
-      doc.fontSize(11)
-         .font('Helvetica')
-         .fillColor('#000000')
-         .text(data.dateOfService.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), boxLeft + 20, boxTop + 145, { width: boxWidth - 40, align: 'center' });
-      
-      // Company info footer (centered at bottom)
-      doc.fontSize(11)
-         .font('Helvetica-Bold')
-         .fillColor('#1e3a8a')
-         .text('Earth Wind and Fire', 0, 700, { width: 612, align: 'center' });
-      
-      doc.fontSize(9)
-         .font('Helvetica')
-         .fillColor('#4b5563')
-         .text('Fire Protection Services', 0, 715, { width: 612, align: 'center' });
-      
-      doc.text('604-299-1030 | info@ewf.ca', 0, 730, { width: 612, align: 'center' });
+      drawEnhancedCoverPage(doc, {
+        reportTitle: 'Fire Protection',
+        reportSubtitle: 'Inspection Report',
+        propertyName: data.buildingName,
+        propertyAddress: data.buildingAddress,
+        propertyCity: data.city,
+        propertyPostalCode: data.postalCode,
+        inspectionDate: data.dateOfService,
+        companyName: data.companyName || 'Earth Wind and Fire',
+        companyPhone: data.companyPhone || '604-299-1030',
+        companyEmail: 'info@ewf.ca',
+      });
       
       // ============================================
       // TABLE OF CONTENTS PAGE
@@ -918,12 +816,12 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
         });
       }
       
-      // Add footers to all pages
-      const range = doc.bufferedPageRange();
-      for (let i = 0; i < range.count; i++) {
-        doc.switchToPage(i);
-        drawFooter(doc, data);
-      }
+      // Add footers to all pages using shared utility
+      applyFootersToAllPages(
+        doc,
+        data.companyName || 'Earth Wind and Fire',
+        `WO-${data.workOrderNumber}`
+      );
       
       // Finalize PDF
       doc.end();
