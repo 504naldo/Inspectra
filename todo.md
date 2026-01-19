@@ -1048,8 +1048,8 @@
 
 ### Summary Page (Both PDFs)
 - [x] Verify summary page exists in Annual Inspection PDF (already done)
-- [ ] Add summary page to Deficiency Report PDF (needs implementation)
-- [ ] Ensure identical layout between both reports
+- [x] Add summary page to Deficiency Report PDF (drawDeficiencySummaryPage implemented)
+- [x] Ensure identical layout between both reports (matching brand colors, table format, severity counts)
 
 ### Annual Inspection PDF Checklist Refinements
 - [ ] Convert checklist items to table format (Item, Pass, Fail, N/A, Notes)
@@ -1073,3 +1073,13 @@
 ### Code Quality
 - [x] Create shared styling utilities to avoid duplication (pdfSharedStyles.ts created)
 - [x] Test both PDFs for consistency and mobile readability (10/10 tests passing)
+
+
+## Add Summary Page to Deficiency Report PDF
+- [x] Examine Annual Inspection summary page implementation
+- [x] Create shared summary page function for deficiency reports (drawDeficiencySummaryPage)
+- [x] Calculate deficiency counts by severity (Critical, Major, Minor)
+- [x] Calculate deficiency counts by system category
+- [x] Insert summary page after cover page in Deficiency Report
+- [x] Ensure layout matches Annual Inspection summary
+- [x] Test PDF generation with summary page (5/5 tests passing)

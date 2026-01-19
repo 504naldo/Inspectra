@@ -13,6 +13,7 @@ import {
   drawTable,
   drawSectionHeader,
   applyFootersToAllPages,
+  drawDeficiencySummaryPage,
 } from './pdfSharedStyles.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -121,12 +122,23 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       });
 
       // ============================================
-      // PAGE 2: LETTER-STYLE SUMMARY
+      // PAGE 2: EXECUTIVE SUMMARY
       // ============================================
       
       doc.addPage();
       
-      // Logo header (smaller)
+      // Logo header
+      drawLogo(doc, 50, 50, 100);
+      
+      // Draw executive summary with deficiency counts
+      drawDeficiencySummaryPage(doc, data.deficiencies, 110);
+      
+      // ============================================
+      // PAGE 3: LETTER-STYLE SUMMARY
+      // ============================================
+      
+      doc.addPage();
+      
       // Logo header
       drawLogo(doc, 50, 50, 100);
       

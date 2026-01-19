@@ -379,3 +379,178 @@ export function applyFootersToAllPages(
     drawFooter(doc, companyName, reportId, i + 1, totalPages);
   }
 }
+
+
+/**
+ * Draw deficiency summary page for Deficiency Report PDF
+ * Shows counts by severity and system category
+ */
+export function drawDeficiencySummaryPage(
+  doc: PDFKit.PDFDocument,
+  deficiencies: Array<{
+    severity: string;
+    systemCategory?: string | null;
+  }>,
+  startY: number = PDF_SIZES.margin + 80
+): number {
+  let currentY = startY;
+  
+  // Page title with brand-colored background
+  doc.rect(PDF_SIZES.margin, currentY, PDF_SIZES.pageWidth - PDF_SIZES.margin * 2, 30)
+     .fill(PDF_COLORS.brandNavy);
+  
+  doc.fontSize(16)
+     .font(PDF_FONTS.bold)
+     .fillColor(PDF_COLORS.white)
+     .text('Executive Summary', PDF_SIZES.margin + 10, currentY + 8);
+  
+  currentY += 40;
+  
+  // Deficiency counts by severity section
+  doc.fontSize(13)
+     .font(PDF_FONTS.bold)
+     .fillColor(PDF_COLORS.brandNavy)
+     .text('Deficiency Summary by Severity', PDF_SIZES.margin, currentY);
+  
+  currentY += 25;
+  
+  // Count deficiencies by severity
+  const criticalCount = deficiencies.filter(d => d.severity === 'critical').length;
+  const majorCount = deficiencies.filter(d => d.severity === 'major').length;
+  const minorCount = deficiencies.filter(d => d.severity === 'minor').length;
+  const totalDeficiencies = criticalCount + majorCount + minorCount;
+  
+  // Deficiency table
+  const colWidths = [200, 100, 100];
+  const rowHeight = 25;
+  
+  // Header row
+  doc.rect(PDF_SIZES.margin, currentY, colWidths[0], rowHeight)
+     .fillAndStroke(PDF_COLORS.grayLight, PDF_COLORS.black);
+  doc.rect(PDF_SIZES.margin + colWidths[0], currentY, colWidths[1], rowHeight)
+     .fillAndStroke(PDF_COLORS.grayLight, PDF_COLORS.black);
+  doc.rect(PDF_SIZES.margin + colWidths[0] + colWidths[1], currentY, colWidths[2], rowHeight)
+     .fillAndStroke(PDF_COLORS.grayLight, PDF_COLORS.black);
+  
+  doc.fontSize(10)
+     .font(PDF_FONTS.bold)
+     .fillColor(PDF_COLORS.black)
+     .text('Severity', PDF_SIZES.margin + 10, currentY + 8);
+  doc.text('Count', PDF_SIZES.margin + colWidths[0] + 30, currentY + 8);
+  doc.text('Status', PDF_SIZES.margin + colWidths[0] + colWidths[1] + 25, currentY + 8);
+  
+  currentY += rowHeight;
+  
+  // Data rows
+  const deficiencyRows = [
+    { severity: 'Critical', count: criticalCount, color: PDF_COLORS.dangerRed },
+    { severity: 'Major', count: majorCount, color: PDF_COLORS.warningOrange },
+    { severity: 'Minor', count: minorCount, color: PDF_COLORS.warningYellow }
+  ];
+  
+  deficiencyRows.forEach(row => {
+    doc.rect(PDF_SIZES.margin, currentY, colWidths[0], rowHeight).stroke(PDF_COLORS.black);
+    doc.rect(PDF_SIZES.margin + colWidths[0], currentY, colWidths[1], rowHeight).stroke(PDF_COLORS.black);
+    doc.rect(PDF_SIZES.margin + colWidths[0] + colWidths[1], currentY, colWidths[2], rowHeight).stroke(PDF_COLORS.black);
+    
+    doc.fontSize(10)
+       .font(PDF_FONTS.regular)
+       .fillColor(row.color)
+       .text(row.severity, PDF_SIZES.margin + 10, currentY + 8);
+    
+    doc.fillColor(PDF_COLORS.black)
+       .text(row.count.toString(), PDF_SIZES.margin + colWidths[0] + 40, currentY + 8);
+    
+    const status = row.count === 0 ? 'None' : row.count === 1 ? '1 Issue' : `${row.count} Issues`;
+    doc.text(status, PDF_SIZES.margin + colWidths[0] + colWidths[1] + 15, currentY + 8);
+    
+    currentY += rowHeight;
+  });
+  
+  // Total row
+  doc.rect(PDF_SIZES.margin, currentY, colWidths[0], rowHeight)
+     .fillAndStroke(PDF_COLORS.grayLightest, PDF_COLORS.black);
+  doc.rect(PDF_SIZES.margin + colWidths[0], currentY, colWidths[1], rowHeight)
+     .fillAndStroke(PDF_COLORS.grayLightest, PDF_COLORS.black);
+  doc.rect(PDF_SIZES.margin + colWidths[0] + colWidths[1], currentY, colWidths[2], rowHeight)
+     .fillAndStroke(PDF_COLORS.grayLightest, PDF_COLORS.black);
+  
+  doc.fontSize(10)
+     .font(PDF_FONTS.bold)
+     .fillColor(PDF_COLORS.black)
+     .text('Total', PDF_SIZES.margin + 10, currentY + 8);
+  doc.text(totalDeficiencies.toString(), PDF_SIZES.margin + colWidths[0] + 40, currentY + 8);
+  
+  const totalStatus = totalDeficiencies === 0 ? 'None' : totalDeficiencies === 1 ? '1 Issue' : `${totalDeficiencies} Issues`;
+  doc.text(totalStatus, PDF_SIZES.margin + colWidths[0] + colWidths[1] + 15, currentY + 8);
+  
+  currentY += rowHeight + 30;
+  
+  // Deficiency counts by system category section
+  doc.fontSize(13)
+     .font(PDF_FONTS.bold)
+     .fillColor(PDF_COLORS.brandNavy)
+     .text('Deficiency Summary by System', PDF_SIZES.margin, currentY);
+  
+  currentY += 25;
+  
+  // Count deficiencies by system category
+  const systemCounts: Record<string, number> = {};
+  deficiencies.forEach(d => {
+    const system = d.systemCategory || 'UNCATEGORIZED';
+    systemCounts[system] = (systemCounts[system] || 0) + 1;
+  });
+  
+  // System category labels
+  const systemLabels: Record<string, string> = {
+    'FIRE_ALARM': 'Fire Alarm System',
+    'FIRE_EXTINGUISHER': 'Fire Extinguishers',
+    'EMERGENCY_LIGHTING': 'Emergency Lighting',
+    'SPRINKLER': 'Sprinkler System',
+    'UNCATEGORIZED': 'Other/Uncategorized'
+  };
+  
+  // Draw system counts as bullet list
+  Object.entries(systemCounts).forEach(([system, count]) => {
+    doc.fontSize(10)
+       .font(PDF_FONTS.regular)
+       .fillColor(PDF_COLORS.black)
+       .text('•', PDF_SIZES.margin + 10, currentY);
+    
+    doc.text(
+      `${systemLabels[system] || system}: ${count} ${count === 1 ? 'deficiency' : 'deficiencies'}`,
+      PDF_SIZES.margin + 25,
+      currentY
+    );
+    
+    currentY += 18;
+  });
+  
+  currentY += 20;
+  
+  // Overall status note
+  doc.fontSize(11)
+     .font(PDF_FONTS.bold)
+     .fillColor(PDF_COLORS.brandNavy)
+     .text('Overall Status:', PDF_SIZES.margin, currentY);
+  
+  currentY += 20;
+  
+  const statusText = totalDeficiencies === 0
+    ? 'No deficiencies identified during this inspection.'
+    : criticalCount > 0
+    ? 'Critical deficiencies require immediate attention and corrective action.'
+    : majorCount > 0
+    ? 'Major deficiencies should be addressed promptly to maintain compliance.'
+    : 'Minor deficiencies noted for future maintenance planning.';
+  
+  doc.fontSize(10)
+     .font(PDF_FONTS.regular)
+     .fillColor(PDF_COLORS.grayDark)
+     .text(statusText, PDF_SIZES.margin, currentY, {
+      width: PDF_SIZES.pageWidth - PDF_SIZES.margin * 2,
+      align: 'left'
+    });
+  
+  return currentY + 40;
+}
