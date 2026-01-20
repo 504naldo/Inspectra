@@ -266,7 +266,7 @@ export default function AdminJobDetails() {
                 <div className="flex items-center gap-4">
                   <input
                     type="file"
-                    accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12,.csv,.pdf,.jpg,.jpeg,.png"
+                    accept="*"
                     onChange={handleFileSelect}
                     className="hidden"
                     id="file-upload"

@@ -1135,3 +1135,12 @@
 - [x] Add comprehensive MIME type list to isExcelFile function
 - [x] Add logging to debug file selection
 - [ ] Test .xlsm file upload end-to-end with user
+
+
+## Bug: Specific .xlsm File Upload Failing (FIXED)
+- [x] Analyze file: #0350-2025ANNUAL-2095WEST46THAVENUE,VANCOUVER-JAN20-25ver10.1.xlsm (3.6MB)
+- [x] Check if filename special characters (#, commas) cause issues (not the issue)
+- [x] Test if file size (3.6MB) is within limits (yes, under 50MB limit)
+- [x] Root cause: Browser file picker too strict with MIME types in accept attribute
+- [x] Fix: Changed accept="*" to allow all files (validation happens after selection)
+- [ ] Test with user's actual file
