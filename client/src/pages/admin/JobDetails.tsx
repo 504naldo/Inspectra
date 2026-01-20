@@ -77,12 +77,19 @@ export default function AdminJobDetails() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    console.log("Selected file:", {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    });
+
     if (file.size > 50 * 1024 * 1024) {
       toast.error("File size must be less than 50MB");
       return;
     }
 
     setSelectedFile(file);
+    toast.success(`Selected: ${file.name}`);
   };
 
   const uploadToS3Mutation = trpc.files.uploadToS3.useMutation();
@@ -139,7 +146,15 @@ export default function AdminJobDetails() {
 
   const isExcelFile = (mimeType: string | null) => {
     if (!mimeType) return false;
-    return mimeType.includes("spreadsheet") || mimeType.includes("excel") || mimeType.includes("macroEnabled");
+    const excelMimeTypes = [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+      "application/vnd.ms-excel.sheet.macroEnabled.12", // .xlsm
+      "application/vnd.ms-excel", // .xls
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.template", // .xltx
+    ];
+    return excelMimeTypes.some(type => mimeType.includes(type)) || 
+           mimeType.includes("spreadsheet") || 
+           mimeType.includes("excel");
   };
 
   const getImportStatusBadge = (status: string) => {
@@ -251,7 +266,7 @@ export default function AdminJobDetails() {
                 <div className="flex items-center gap-4">
                   <input
                     type="file"
-                    accept=".xlsx,.xls,.xlsm,.csv,.pdf,.jpg,.jpeg,.png"
+                    accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12,.csv,.pdf,.jpg,.jpeg,.png"
                     onChange={handleFileSelect}
                     className="hidden"
                     id="file-upload"

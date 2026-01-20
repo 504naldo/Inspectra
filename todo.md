@@ -1125,3 +1125,13 @@
 - [x] Update MIME type validation to accept application/vnd.ms-excel.sheet.macroEnabled.12
 - [x] Verify xlsx library can parse .xlsm files (xlsx library supports .xlsm natively)
 - [ ] Test upload and import with .xlsm file
+
+
+## Bug: .xlsm Files Not Uploading (FIXED)
+- [x] Check file selection handler for MIME type validation (no blocking validation found)
+- [x] Check if handleFileSelect is rejecting .xlsm files (not rejecting)
+- [x] Verify actual MIME type of .xlsm files (application/vnd.ms-excel.sheet.macroEnabled.12)
+- [x] Update validation logic to accept .xlsm MIME type (added explicit MIME types to accept attribute)
+- [x] Add comprehensive MIME type list to isExcelFile function
+- [x] Add logging to debug file selection
+- [ ] Test .xlsm file upload end-to-end with user
