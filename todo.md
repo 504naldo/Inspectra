@@ -1152,3 +1152,9 @@
 - [x] Fix: Removed accept attribute entirely to allow all file types
 - [ ] User needs to hard refresh browser (Ctrl+Shift+R) to clear cache
 - [ ] Test with user's .xlsm file after refresh
+
+
+## Add Accepted File Types Hint
+- [x] Add text hint below upload button showing accepted formats
+- [x] List: .xlsx, .xlsm, .xls, .csv, .pdf, .jpg, .jpeg, .png
+- [x] Use muted text color for subtle appearance (text-muted-foreground)

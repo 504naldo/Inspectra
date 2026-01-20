@@ -270,12 +270,17 @@ export default function AdminJobDetails() {
                     className="hidden"
                     id="file-upload"
                   />
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <div className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2">
-                      <Upload className="h-4 w-4 mr-2" />
-                      Choose File
-                    </div>
-                  </label>
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="file-upload" className="cursor-pointer">
+                      <div className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2">
+                        <Upload className="h-4 w-4 mr-2" />
+                        Choose File
+                      </div>
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Accepted: .xlsx, .xlsm, .xls, .csv, .pdf, .jpg, .jpeg, .png
+                    </p>
+                  </div>
                   {selectedFile && (
                     <>
                       <span className="text-sm text-muted-foreground">{selectedFile.name}</span>
