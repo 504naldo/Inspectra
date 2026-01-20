@@ -1144,3 +1144,11 @@
 - [x] Root cause: Browser file picker too strict with MIME types in accept attribute
 - [x] Fix: Changed accept="*" to allow all files (validation happens after selection)
 - [ ] Test with user's actual file
+
+
+## Bug: File Picker Still Not Showing .xlsm Files (FIXED)
+- [x] Verify accept="*" is actually in deployed code (confirmed)
+- [x] Root cause: accept="*" is invalid HTML syntax
+- [x] Fix: Removed accept attribute entirely to allow all file types
+- [ ] User needs to hard refresh browser (Ctrl+Shift+R) to clear cache
+- [ ] Test with user's .xlsm file after refresh

@@ -266,7 +266,6 @@ export default function AdminJobDetails() {
                 <div className="flex items-center gap-4">
                   <input
                     type="file"
-                    accept="*"
                     onChange={handleFileSelect}
                     className="hidden"
                     id="file-upload"
