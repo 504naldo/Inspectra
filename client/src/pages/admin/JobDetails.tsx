@@ -128,13 +128,18 @@ export default function AdminJobDetails() {
 
   const getFileIcon = (mimeType: string | null) => {
     if (!mimeType) return <FileText className="h-5 w-5" />;
-    if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) {
+    if (mimeType.includes("spreadsheet") || mimeType.includes("excel") || mimeType.includes("macroEnabled")) {
       return <FileSpreadsheet className="h-5 w-5 text-green-600" />;
     }
     if (mimeType.includes("image")) {
       return <ImageIcon className="h-5 w-5 text-blue-600" />;
     }
     return <FileText className="h-5 w-5" />;
+  };
+
+  const isExcelFile = (mimeType: string | null) => {
+    if (!mimeType) return false;
+    return mimeType.includes("spreadsheet") || mimeType.includes("excel") || mimeType.includes("macroEnabled");
   };
 
   const getImportStatusBadge = (status: string) => {
@@ -150,9 +155,7 @@ export default function AdminJobDetails() {
     }
   };
 
-  const isExcelFile = (mimeType: string | null) => {
-    return mimeType?.includes("spreadsheet") || mimeType?.includes("excel") || mimeType?.includes("csv");
-  };
+
 
   if (jobLoading) {
     return (
@@ -248,7 +251,7 @@ export default function AdminJobDetails() {
                 <div className="flex items-center gap-4">
                   <input
                     type="file"
-                    accept=".xlsx,.xlsm,.csv,.pdf,.jpg,.jpeg,.png"
+                    accept=".xlsx,.xls,.xlsm,.csv,.pdf,.jpg,.jpeg,.png"
                     onChange={handleFileSelect}
                     className="hidden"
                     id="file-upload"

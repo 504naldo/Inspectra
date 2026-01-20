@@ -1118,3 +1118,10 @@
 - [ ] Test import populates device cards correctly
 - [ ] Test idempotency (running import twice doesn't duplicate)
 - [ ] Test excluded rows are shown in summary
+
+
+## Add .xlsm File Support
+- [x] Update file input accept attribute to include .xlsm
+- [x] Update MIME type validation to accept application/vnd.ms-excel.sheet.macroEnabled.12
+- [x] Verify xlsx library can parse .xlsm files (xlsx library supports .xlsm natively)
+- [ ] Test upload and import with .xlsm file
