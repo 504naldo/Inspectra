@@ -1166,3 +1166,11 @@
 - [x] Filename sanitization in storage key (remove spaces, commas, #)
 - [x] Excel detection using extension fallback (isExcelFile function)
 - [x] Add accept attribute to file input for better UX
+
+
+## Multipart Upload Refactor (Fix .xlsm Payload Size Issues)
+- [x] Create POST /api/upload endpoint with multipart parser (formidable/multer)
+- [x] Implement direct buffer upload to S3 (no base64 encoding)
+- [x] Update client to use FormData instead of base64 + tRPC
+- [x] Keep existing tRPC upload as deprecated fallback
+- [x] Test .xlsm uploads without browser freezing

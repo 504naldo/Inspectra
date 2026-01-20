@@ -73,38 +73,6 @@ export default function AdminJobDetails() {
     },
   });
 
-  // Helper: Infer MIME type from file extension for browsers that don't provide it
-  const inferMimeType = (fileName: string, browserMimeType: string): string => {
-    // If browser provided a specific MIME type (not empty or generic), use it
-    if (browserMimeType && browserMimeType !== "application/octet-stream") {
-      return browserMimeType;
-    }
-
-    // Otherwise, infer from extension
-    const ext = fileName.toLowerCase().split(".").pop();
-    const mimeMap: Record<string, string> = {
-      xlsm: "application/vnd.ms-excel.sheet.macroEnabled.12",
-      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      xls: "application/vnd.ms-excel",
-      csv: "text/csv",
-      pdf: "application/pdf",
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-      png: "image/png",
-    };
-
-    return mimeMap[ext || ""] || "application/octet-stream";
-  };
-
-  // Helper: Sanitize filename for S3 storage key
-  const sanitizeFilename = (fileName: string): string => {
-    // Replace spaces with underscores, remove commas and # symbols
-    return fileName
-      .replace(/\s+/g, "_")
-      .replace(/[,#]/g, "")
-      .replace(/_{2,}/g, "_"); // Collapse multiple underscores
-  };
-
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -131,41 +99,37 @@ export default function AdminJobDetails() {
 
     setIsUploading(true);
     try {
-      // Infer MIME type if browser didn't provide one
-      const inferredMimeType = inferMimeType(selectedFile.name, selectedFile.type);
+      // Use FormData for multipart upload (no base64 encoding)
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("entityType", "job");
+      formData.append("entityId", job.id.toString());
+      formData.append("companyId", user.companyId.toString());
+      formData.append("jobId", job.id.toString());
+      formData.append("siteId", job.siteId.toString());
+      formData.append("userId", user.id.toString());
+
+      // Upload via multipart API endpoint
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Upload failed");
+      }
+
+      const result = await response.json();
       
-      // Sanitize filename for S3 storage
-      const sanitizedFileName = sanitizeFilename(selectedFile.name);
-
-      // Read file as base64
-      const buffer = await selectedFile.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString("base64");
-
-      // Upload to S3 via server
-      const { fileKey, fileUrl } = await uploadToS3Mutation.mutateAsync({
-        fileName: sanitizedFileName,
-        fileSize: selectedFile.size,
-        mimeType: inferredMimeType,
-        companyId: user.companyId,
-        jobId: job.id,
-        fileData: base64,
-      });
-
-      // Create attachment record
-      await uploadMutation.mutateAsync({
-        entityType: "job",
-        entityId: job.id,
-        siteId: job.siteId,
-        jobId: job.id,
-        fileName: sanitizedFileName,
-        fileKey,
-        fileUrl,
-        mimeType: inferredMimeType,
-        fileSize: selectedFile.size,
-      });
+      // Refresh file list
+      await utils.files.listByJob.invalidate();
+      toast.success("File uploaded successfully");
+      setSelectedFile(null);
     } catch (error: unknown) {
       console.error("Upload error:", error);
-      toast.error("Upload failed");
+      toast.error(error instanceof Error ? error.message : "Upload failed");
     } finally {
       setIsUploading(false);
     }
