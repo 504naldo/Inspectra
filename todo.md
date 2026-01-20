@@ -1158,3 +1158,11 @@
 - [x] Add text hint below upload button showing accepted formats
 - [x] List: .xlsx, .xlsm, .xls, .csv, .pdf, .jpg, .jpeg, .png
 - [x] Use muted text color for subtle appearance (text-muted-foreground)
+
+
+## File Upload Reliability Fixes (Chrome Mobile/Desktop MIME Type Issues)
+- [x] Server-side contentType fallback in filesRouter.ts (handle empty MIME types)
+- [x] Client-side MIME inference based on file extension in AdminJobDetails.tsx
+- [x] Filename sanitization in storage key (remove spaces, commas, #)
+- [x] Excel detection using extension fallback (isExcelFile function)
+- [x] Add accept attribute to file input for better UX

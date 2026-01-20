@@ -32,8 +32,11 @@ export const filesRouter = router({
       // Import storage helper
       const { storagePut } = await import("../storage");
       
+      // Fallback for empty MIME types (Chrome mobile/desktop often sends "" or generic types for .xlsm)
+      const contentType = input.mimeType?.trim() || "application/octet-stream";
+      
       // Upload to S3
-      const { url } = await storagePut(fileKey, buffer, input.mimeType);
+      const { url } = await storagePut(fileKey, buffer, contentType);
       
       return {
         fileKey,

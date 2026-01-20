@@ -73,6 +73,38 @@ export default function AdminJobDetails() {
     },
   });
 
+  // Helper: Infer MIME type from file extension for browsers that don't provide it
+  const inferMimeType = (fileName: string, browserMimeType: string): string => {
+    // If browser provided a specific MIME type (not empty or generic), use it
+    if (browserMimeType && browserMimeType !== "application/octet-stream") {
+      return browserMimeType;
+    }
+
+    // Otherwise, infer from extension
+    const ext = fileName.toLowerCase().split(".").pop();
+    const mimeMap: Record<string, string> = {
+      xlsm: "application/vnd.ms-excel.sheet.macroEnabled.12",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      xls: "application/vnd.ms-excel",
+      csv: "text/csv",
+      pdf: "application/pdf",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+    };
+
+    return mimeMap[ext || ""] || "application/octet-stream";
+  };
+
+  // Helper: Sanitize filename for S3 storage key
+  const sanitizeFilename = (fileName: string): string => {
+    // Replace spaces with underscores, remove commas and # symbols
+    return fileName
+      .replace(/\s+/g, "_")
+      .replace(/[,#]/g, "")
+      .replace(/_{2,}/g, "_"); // Collapse multiple underscores
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -99,15 +131,21 @@ export default function AdminJobDetails() {
 
     setIsUploading(true);
     try {
+      // Infer MIME type if browser didn't provide one
+      const inferredMimeType = inferMimeType(selectedFile.name, selectedFile.type);
+      
+      // Sanitize filename for S3 storage
+      const sanitizedFileName = sanitizeFilename(selectedFile.name);
+
       // Read file as base64
       const buffer = await selectedFile.arrayBuffer();
       const base64 = Buffer.from(buffer).toString("base64");
 
       // Upload to S3 via server
       const { fileKey, fileUrl } = await uploadToS3Mutation.mutateAsync({
-        fileName: selectedFile.name,
+        fileName: sanitizedFileName,
         fileSize: selectedFile.size,
-        mimeType: selectedFile.type,
+        mimeType: inferredMimeType,
         companyId: user.companyId,
         jobId: job.id,
         fileData: base64,
@@ -119,10 +157,10 @@ export default function AdminJobDetails() {
         entityId: job.id,
         siteId: job.siteId,
         jobId: job.id,
-        fileName: selectedFile.name,
+        fileName: sanitizedFileName,
         fileKey,
         fileUrl,
-        mimeType: selectedFile.type,
+        mimeType: inferredMimeType,
         fileSize: selectedFile.size,
       });
     } catch (error: unknown) {
@@ -144,17 +182,28 @@ export default function AdminJobDetails() {
     return <FileText className="h-5 w-5" />;
   };
 
-  const isExcelFile = (mimeType: string | null) => {
-    if (!mimeType) return false;
-    const excelMimeTypes = [
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-      "application/vnd.ms-excel.sheet.macroEnabled.12", // .xlsm
-      "application/vnd.ms-excel", // .xls
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.template", // .xltx
-    ];
-    return excelMimeTypes.some(type => mimeType.includes(type)) || 
-           mimeType.includes("spreadsheet") || 
-           mimeType.includes("excel");
+  const isExcelFile = (mimeType: string | null, fileName?: string | null) => {
+    // Check MIME type first
+    if (mimeType) {
+      const excelMimeTypes = [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+        "application/vnd.ms-excel.sheet.macroEnabled.12", // .xlsm
+        "application/vnd.ms-excel", // .xls
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.template", // .xltx
+      ];
+      const mimeMatch = excelMimeTypes.some(type => mimeType.includes(type)) || 
+                        mimeType.includes("spreadsheet") || 
+                        mimeType.includes("excel");
+      if (mimeMatch) return true;
+    }
+
+    // Fallback to extension check (critical for Chrome mobile/desktop with empty/generic MIME)
+    if (fileName) {
+      const ext = fileName.toLowerCase().split(".").pop();
+      return ext === "xlsx" || ext === "xlsm" || ext === "xls" || ext === "csv";
+    }
+
+    return false;
   };
 
   const getImportStatusBadge = (status: string) => {
@@ -269,6 +318,7 @@ export default function AdminJobDetails() {
                     onChange={handleFileSelect}
                     className="hidden"
                     id="file-upload"
+                    accept=".xlsx,.xlsm,.xls,.csv,.pdf,.jpg,.jpeg,.png"
                   />
                   <div className="flex flex-col gap-1">
                     <label htmlFor="file-upload" className="cursor-pointer">
@@ -334,7 +384,7 @@ export default function AdminJobDetails() {
                         </div>
                         <div className="flex items-center gap-2">
                           {getImportStatusBadge(file.importStatus)}
-                          {isExcelFile(file.mimeType) && file.importStatus === "none" && (
+                          {isExcelFile(file.mimeType, file.fileName) && file.importStatus === "none" && (
                             <>
                               <Button
                                 variant="outline"
