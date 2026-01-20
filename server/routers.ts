@@ -16,6 +16,7 @@ import { sprinklerRouter } from "./sprinklerRouter";
 import { jobAssignmentRouter } from "./jobAssignmentRouter";
 import { userRouter as userManagementRouter } from "./userRouter";
 import { assetImportRouter } from "./routers/assetImportRouter";
+import { filesRouter } from "./routers/filesRouter";
 
 // Role-based procedure helpers
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -2195,6 +2196,7 @@ export const appRouter = router({
   sprinkler: sprinklerRouter,
   jobAssignment: jobAssignmentRouter,
   assetImport: assetImportRouter,
+  files: filesRouter,
 });
 
 export type AppRouter = typeof appRouter;

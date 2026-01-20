@@ -1094,3 +1094,27 @@
 - [x] Fix any compressed or jumbled text (lineGap in tables and paragraphs)
 - [x] Test with long descriptions and multi-line content (all tests passing)
 - [x] Verify readability improvements in both PDFs (10/10 tests passing)
+
+
+## File Upload + Excel Import Workflow
+- [x] Verify attachments table schema supports required fields
+- [x] Add importStatus and importSummary fields to attachments table (migration 0016 applied)
+- [x] Create admin file upload UI in job details (AdminJobDetails.tsx)
+- [x] Implement file list display with upload date and uploader
+- [x] Add "Preview Import" and "Import Devices" buttons for Excel files
+- [x] Implement preview import endpoint with Excel parsing (filesRouter.ts)
+- [x] Add fuzzy tab name matching for device categories (implemented)
+- [x] Parse Excel rows into normalized import format (implemented)
+- [x] Return preview counts and sample rows (first 50) (implemented)
+- [x] Implement idempotent import endpoint (filesRouter.importExcelDevices)
+- [x] Generate deterministic deduplication keys (externalRef or hash)
+- [x] Upsert devices by (companyId, siteId, dedupeKey)
+- [x] Handle excluded rows (missing location) with clear reasons
+- [x] Update importStatus and importSummary after import
+- [x] Complete S3 upload integration (server-side via tRPC uploadToS3)
+- [ ] Add technician file viewing in job details (view/download only)
+- [ ] Test upload flow end-to-end
+- [ ] Test preview shows correct counts and sample rows
+- [ ] Test import populates device cards correctly
+- [ ] Test idempotency (running import twice doesn't duplicate)
+- [ ] Test excluded rows are shown in summary

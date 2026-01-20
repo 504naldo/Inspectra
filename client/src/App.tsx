@@ -22,6 +22,7 @@ import ChecklistCompletion from "./pages/tech/ChecklistCompletion";
 import SyncScreen from "./pages/technician/SyncScreen";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminJobs from "./pages/admin/Jobs";
+import AdminJobDetails from "./pages/admin/JobDetails";
 import AdminUsers from "./pages/admin/Users";
 import AdminCustomers from "./pages/admin/Customers";
 import AdminSites from "./pages/admin/Sites";
@@ -184,11 +185,16 @@ function Router() {
           <AdminDashboard />
         </ProtectedRoute>
       </Route>
-      <Route path="/admin/jobs">
-        <ProtectedRoute allowedRoles={['admin', 'office']}>
-          <AdminJobs />
-        </ProtectedRoute>
-      </Route>
+          <Route path="/admin/jobs">
+            <ProtectedRoute allowedRoles={['admin', 'office']}>
+              <AdminJobs />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/admin/jobs/:jobId">
+            <ProtectedRoute allowedRoles={['admin', 'office']}>
+              <AdminJobDetails />
+            </ProtectedRoute>
+          </Route>
       <Route path="/admin/job-assignments">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <JobAssignments />

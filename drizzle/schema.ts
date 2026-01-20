@@ -283,6 +283,9 @@ export const attachments = mysqlTable("attachments", {
   uploadStatus: mysqlEnum("uploadStatus", ["pending", "uploading", "completed", "failed"]).default("completed").notNull(),
   uploadProgress: int("uploadProgress").default(100),
   retryCount: int("retryCount").default(0),
+  // Excel import tracking
+  importStatus: mysqlEnum("importStatus", ["none", "previewed", "imported", "failed"]).default("none").notNull(),
+  importSummary: json("importSummary"), // { imported: {}, updated: {}, excluded: [] }
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
