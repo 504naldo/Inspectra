@@ -17,6 +17,7 @@ import { jobAssignmentRouter } from "./jobAssignmentRouter";
 import { userRouter as userManagementRouter } from "./userRouter";
 import { assetImportRouter } from "./routers/assetImportRouter";
 import { filesRouter } from "./routers/filesRouter";
+import { safeToLower, safeIncludes, safeTrim } from "./safeStringHelpers";
 
 // Role-based procedure helpers
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -1864,9 +1865,10 @@ const importRouter = router({
       // Priority 1: Exact match for "Individual devices" or "Individual device record"
       const exactMatches = ['individual devices', 'individual device record', 'device list'];
       for (const target of exactMatches) {
-        const match = workbook.SheetNames.find(name => 
-          name && String(name).toLowerCase().trim() === target
-        );
+        const match = workbook.SheetNames.find(name => {
+          const lower = safeToLower(name);
+          return lower && safeTrim(lower) === target;
+        });
         if (match) return match;
       }
       
@@ -1878,9 +1880,9 @@ const importRouter = router({
       ];
       
       for (const keyword of highPriorityKeywords) {
-        const match = workbook.SheetNames.find(name => 
-          name && String(name).toLowerCase().includes(keyword)
-        );
+        const match = workbook.SheetNames.find(name => {
+          return safeIncludes(name, keyword);
+        });
         if (match) return match;
       }
       
@@ -1891,9 +1893,9 @@ const importRouter = router({
       ];
       
       for (const keyword of generalKeywords) {
-        const match = workbook.SheetNames.find(name => 
-          name && String(name).toLowerCase().includes(keyword)
-        );
+        const match = workbook.SheetNames.find(name => {
+          return safeIncludes(name, keyword);
+        });
         if (match) return match;
       }
       
@@ -1926,8 +1928,8 @@ const importRouter = router({
     // Check if this looks like a device sheet
     const deviceHeaders = ['location', 'device', 'type', 'model', 'serial'];
     const hasDeviceHeaders = headers.some(h => {
-      const headerStr = String(h || '').toLowerCase();
-      return deviceHeaders.some(dh => headerStr.includes(dh));
+      const lower = safeToLower(h);
+      return lower && deviceHeaders.some(dh => lower.includes(dh));
     });
     
       console.log('[parseFile] Parse successful:', {
