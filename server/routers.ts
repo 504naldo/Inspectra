@@ -1858,7 +1858,7 @@ const importRouter = router({
       const exactMatches = ['individual devices', 'individual device record', 'device list'];
       for (const target of exactMatches) {
         const match = workbook.SheetNames.find(name => 
-          name.toLowerCase().trim() === target
+          name && String(name).toLowerCase().trim() === target
         );
         if (match) return match;
       }
@@ -1872,7 +1872,7 @@ const importRouter = router({
       
       for (const keyword of highPriorityKeywords) {
         const match = workbook.SheetNames.find(name => 
-          name.toLowerCase().includes(keyword)
+          name && String(name).toLowerCase().includes(keyword)
         );
         if (match) return match;
       }
@@ -1885,7 +1885,7 @@ const importRouter = router({
       
       for (const keyword of generalKeywords) {
         const match = workbook.SheetNames.find(name => 
-          name.toLowerCase().includes(keyword)
+          name && String(name).toLowerCase().includes(keyword)
         );
         if (match) return match;
       }

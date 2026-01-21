@@ -1273,3 +1273,9 @@
 - [x] Identify root cause of parse failure (non-string headers like numbers/dates)
 - [x] Fix parse logic to handle file format correctly (convert all headers to strings)
 - [x] Test with real file to verify fix (Individual device record now selected correctly)
+
+
+## Fix Null toLowerCase Error in parseFile
+- [x] Locate all toLowerCase calls in parseFile that don't handle null (lines 1860-1890)
+- [x] Add null checks before all toLowerCase operations (name && String(name).toLowerCase())
+- [x] Test with real file to verify fix (Individual device record selected correctly)
