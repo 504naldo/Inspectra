@@ -1201,3 +1201,14 @@
 - [x] Add validation to exclude blank rows and report missing location rows
 - [x] Return detailed import summary with counts per category and exclusions
 - [x] Ensure devices link to correct siteId and display site context in UI
+
+
+## Site Sheet Import in filesRouter.ts
+- [x] Add Site sheet detection with fuzzy matching in importExcelDevices
+- [x] Parse Site sheet using key/value format (header: 1 mode)
+- [x] Map extracted fields to sites table (name, address, city, state, postalCode, contactName, contactPhone, notes)
+- [x] Update site record with upsert strategy (only overwrite non-empty values)
+- [x] Return siteUpdated info in import response
+- [x] Update previewImportExcel to detect and show Site sheet presence
+- [x] Confirm all device rows are imported (no limits)
+- [x] Keep sprinkler sheets skipped (not supported in device category enum)

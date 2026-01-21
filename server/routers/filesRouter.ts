@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { attachments, devices } from "../../drizzle/schema";
+import { attachments, devices, sites } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import fetch from "node-fetch";
@@ -129,12 +129,42 @@ export const filesRouter = router({
       };
 
       let totalRows = 0;
+      let hasSiteSheet = false;
+      let sitePreview: any = null;
 
       workbook.SheetNames.forEach((sheetName) => {
         const sheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet);
-
         const lowerName = sheetName.toLowerCase();
+        
+        // Check for Site sheet
+        if (lowerName.includes("site") || lowerName.includes("building") || lowerName.includes("property") || lowerName.includes("info")) {
+          hasSiteSheet = true;
+          // Parse as key/value pairs for preview
+          const siteRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
+          
+          const extractValue = (targetKeys: string[]): string => {
+            for (const row of siteRows) {
+              if (row.length < 2) continue;
+              const key = String(row[0] || "").toLowerCase().trim();
+              const value = String(row[1] || "").trim();
+              if (targetKeys.some(tk => key.includes(tk.toLowerCase())) && value) {
+                return value;
+              }
+            }
+            return "";
+          };
+          
+          sitePreview = {
+            name: extractValue(["site name", "building name", "property name", "name"]),
+            address: extractValue(["address", "street"]),
+            city: extractValue(["city", "municipality"]),
+            contactName: extractValue(["contact name", "contact", "site contact"]),
+            contactPhone: extractValue(["contact phone", "phone", "telephone"]),
+          };
+          return; // Skip adding to device categories
+        }
+        
+        const rows = XLSX.utils.sheet_to_json(sheet);
 
         if (lowerName.includes("exting")) {
           categories.extinguishers.push(...rows);
@@ -163,6 +193,8 @@ export const filesRouter = router({
 
       return {
         totalRows,
+        hasSiteSheet,
+        sitePreview,
         counts: {
           fireAlarm: categories.fireAlarm.length,
           extinguishers: categories.extinguishers.length,
@@ -229,6 +261,10 @@ export const filesRouter = router({
       };
 
       const excluded: any[] = [];
+      
+      // Site update tracking
+      let siteFieldsUpdated = 0;
+      const siteUpdatedFields: string[] = [];
 
       let sequenceOrder = 1;
 
@@ -265,9 +301,65 @@ export const filesRouter = router({
         }
         return null;
       };
+      
+      // Helper to extract value from key/value pair row
+      const extractValueFromKeyValue = (rows: any[][], targetKeys: string[]): string => {
+        for (const row of rows) {
+          if (row.length < 2) continue;
+          const key = String(row[0] || "").toLowerCase().trim();
+          const value = String(row[1] || "").trim();
+          if (targetKeys.some(tk => key.includes(tk.toLowerCase())) && value) {
+            return value;
+          }
+        }
+        return "";
+      };
+      
+      // Step 1: Parse Site sheet first (if present)
+      const siteSheetName = workbook.SheetNames.find(name => {
+        const lower = name.toLowerCase();
+        return lower.includes("site") || lower.includes("building") || lower.includes("property") || lower.includes("info");
+      });
+      
+      if (siteSheetName) {
+        const siteSheet = workbook.Sheets[siteSheetName];
+        // Parse as key/value pairs (header: 1 returns array of arrays)
+        const siteRows = XLSX.utils.sheet_to_json(siteSheet, { header: 1, defval: "" }) as any[][];
+        
+        // Extract site fields
+        const siteName = extractValueFromKeyValue(siteRows, ["site name", "building name", "property name", "name"]);
+        const address = extractValueFromKeyValue(siteRows, ["address", "street"]);
+        const city = extractValueFromKeyValue(siteRows, ["city", "municipality"]);
+        const state = extractValueFromKeyValue(siteRows, ["state", "province", "region"]);
+        const postalCode = extractValueFromKeyValue(siteRows, ["postal", "zip", "postal code", "zip code"]);
+        const contactName = extractValueFromKeyValue(siteRows, ["contact name", "contact", "site contact"]);
+        const contactPhone = extractValueFromKeyValue(siteRows, ["contact phone", "phone", "telephone"]);
+        const notes = extractValueFromKeyValue(siteRows, ["notes", "comments", "remarks"]);
+        
+        // Update site record (only overwrite non-empty values)
+        const siteUpdateData: any = {};
+        if (siteName) { siteUpdateData.name = siteName; siteUpdatedFields.push("name"); siteFieldsUpdated++; }
+        if (address) { siteUpdateData.address = address; siteUpdatedFields.push("address"); siteFieldsUpdated++; }
+        if (city) { siteUpdateData.city = city; siteUpdatedFields.push("city"); siteFieldsUpdated++; }
+        if (state) { siteUpdateData.state = state; siteUpdatedFields.push("state"); siteFieldsUpdated++; }
+        if (postalCode) { siteUpdateData.postalCode = postalCode; siteUpdatedFields.push("postalCode"); siteFieldsUpdated++; }
+        if (contactName) { siteUpdateData.contactName = contactName; siteUpdatedFields.push("contactName"); siteFieldsUpdated++; }
+        if (contactPhone) { siteUpdateData.contactPhone = contactPhone; siteUpdatedFields.push("contactPhone"); siteFieldsUpdated++; }
+        if (notes) { siteUpdateData.notes = notes; siteUpdatedFields.push("notes"); siteFieldsUpdated++; }
+        
+        if (Object.keys(siteUpdateData).length > 0) {
+          siteUpdateData.updatedAt = new Date();
+          await db.update(sites).set(siteUpdateData).where(eq(sites.id, input.siteId));
+        }
+      }
 
-      // Process each sheet
+      // Step 2: Process device sheets
       for (const sheetName of workbook.SheetNames) {
+        // Skip site sheet (already processed)
+        const lowerSheetName = sheetName.toLowerCase();
+        if (lowerSheetName.includes("site") || lowerSheetName.includes("building") || lowerSheetName.includes("property") || lowerSheetName.includes("info")) {
+          continue;
+        }
         const sheet = workbook.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json(sheet);
 
@@ -372,6 +464,10 @@ export const filesRouter = router({
         imported,
         updated,
         excluded,
+        siteUpdated: {
+          fieldsUpdated: siteFieldsUpdated,
+          updatedFields: siteUpdatedFields,
+        },
       };
     }),
 });
