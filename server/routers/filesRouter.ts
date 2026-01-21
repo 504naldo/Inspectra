@@ -144,9 +144,10 @@ export const filesRouter = router({
           
           const extractValue = (targetKeys: string[]): string => {
             for (const row of siteRows) {
-              if (row.length < 2) continue;
+              if (row.length < 3) continue;
               const key = String(row[0] || "").toLowerCase().trim();
-              const value = String(row[1] || "").trim();
+              // Try column 3 first (index 2), then column 2 (index 1)
+              const value = String(row[2] || row[1] || "").trim();
               if (targetKeys.some(tk => key.includes(tk.toLowerCase())) && value) {
                 return value;
               }
@@ -277,7 +278,7 @@ export const filesRouter = router({
 
       // Helper to find location column
       const findLocationValue = (row: any): string | null => {
-        const locationKeys = ["location", "Location", "LOCATION", "loc", "Loc"];
+        const locationKeys = ["location", "Location", "LOCATION", "loc", "Loc", "Device Location", "device location"];
         for (const key of locationKeys) {
           if (row[key]) return String(row[key]).trim();
         }
@@ -286,7 +287,7 @@ export const filesRouter = router({
 
       // Helper to find description/label
       const findDescriptionValue = (row: any): string => {
-        const descKeys = ["description", "Description", "DESCRIPTION", "label", "Label", "type", "Type"];
+        const descKeys = ["description", "Description", "DESCRIPTION", "label", "Label", "type", "Type", "Type/Size", "type/size", "Device Type", "device type"];
         for (const key of descKeys) {
           if (row[key]) return String(row[key]).trim();
         }
@@ -295,7 +296,7 @@ export const filesRouter = router({
 
       // Helper to find external ref (tag/ID)
       const findExternalRef = (row: any): string | null => {
-        const refKeys = ["tag", "Tag", "TAG", "id", "ID", "identifier", "Identifier", "barcode", "Barcode"];
+        const refKeys = ["tag", "Tag", "TAG", "id", "ID", "identifier", "Identifier", "barcode", "Barcode", "Unit #", "unit #"];
         for (const key of refKeys) {
           if (row[key]) return String(row[key]).trim();
         }
@@ -305,9 +306,10 @@ export const filesRouter = router({
       // Helper to extract value from key/value pair row
       const extractValueFromKeyValue = (rows: any[][], targetKeys: string[]): string => {
         for (const row of rows) {
-          if (row.length < 2) continue;
+          if (row.length < 3) continue;
           const key = String(row[0] || "").toLowerCase().trim();
-          const value = String(row[1] || "").trim();
+          // Try column 3 first (index 2), then column 2 (index 1)
+          const value = String(row[2] || row[1] || "").trim();
           if (targetKeys.some(tk => key.includes(tk.toLowerCase())) && value) {
             return value;
           }
@@ -361,7 +363,14 @@ export const filesRouter = router({
           continue;
         }
         const sheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet);
+        // Try parsing with default headers (Row 1)
+        let rows = XLSX.utils.sheet_to_json(sheet);
+        
+        // If no valid rows or first row looks like a title, try Row 2 as headers
+        if (rows.length === 0 || (rows[0] && typeof rows[0] === 'object' && !('Location' in rows[0]) && !('location' in rows[0]))) {
+          // Parse with Row 2 as headers
+          rows = XLSX.utils.sheet_to_json(sheet, { range: 1 }); // Start from row 2 (0-indexed)
+        }
 
         const lowerName = sheetName.toLowerCase();
         let category: "FIRE_EXTINGUISHER" | "EMERGENCY_LIGHT" | "FIRE_ALARM_DEVICE" | "SMOKE_ALARM" | null = null;
@@ -376,13 +385,23 @@ export const filesRouter = router({
         } else if (lowerName.includes("sprink")) {
           // Skip sprinkler for now - not in devices category enum
           continue;
-        } else if (
-          lowerName.includes("alarm") ||
-          lowerName.includes("device") ||
-          lowerName.includes("smoke")
-        ) {
+        } else if (lowerName.includes("individual device record")) {
+          // This is the actual Fire Alarm device list
           category = "FIRE_ALARM_DEVICE";
           counterKey = "fireAlarm";
+          // Headers are on Row 3 for this sheet
+          rows = XLSX.utils.sheet_to_json(sheet, { range: 2 }); // Start from row 3 (0-indexed)
+        } else if (lowerName.includes("smoke alarm")) {
+          category = "SMOKE_ALARM";
+          counterKey = "fireAlarm"; // Count as fire alarm devices
+          // This is a legend sheet, skip it
+          continue;
+        } else if (
+          lowerName.includes("alarm") ||
+          lowerName.includes("device")
+        ) {
+          // Skip generic alarm/device sheets that are forms, not device lists
+          continue;
         }
 
         if (!category || !counterKey) continue;

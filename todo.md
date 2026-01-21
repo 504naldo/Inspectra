@@ -1212,3 +1212,13 @@
 - [x] Update previewImportExcel to detect and show Site sheet presence
 - [x] Confirm all device rows are imported (no limits)
 - [x] Keep sprinkler sheets skipped (not supported in device category enum)
+
+
+## Custom Excel Parser for Real-World Format
+- [x] Update Work Site Info parser to handle key/value format in column 1 and 3
+- [x] Update device sheet parser to detect headers on Row 2 instead of Row 1
+- [x] Map custom column names: "Unit #" → tag, "Location" → location, "Type/Size" → deviceType
+- [x] Handle multi-row headers and skip title rows
+- [x] Test with real Excel file (26,806 rows)
+- [x] Verify Site info extracted correctly (BELHAVEN APARTMENT, 2095 WEST 46TH AVENUE)
+- [x] Verify all devices imported with correct categories (43 devices: 37 Fire Alarm, 5 Emergency Lights, 1 Extinguisher)
