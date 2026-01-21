@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import fetch from "node-fetch";
 import crypto from "crypto";
+import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
 
 export const filesRouter = router({
   // Upload file to S3 and return URL
@@ -125,10 +126,10 @@ export const filesRouter = router({
 
       // Helper: Detect if sheet is a device sheet
       const isDeviceSheet = (sheetName: string, sheet: any): { isDevice: boolean; reason: string } => {
-        if (!sheetName || typeof sheetName !== 'string') {
+        const lowerName = safeToLower(sheetName);
+        if (!lowerName) {
           return { isDevice: false, reason: "Invalid sheet name" };
         }
-        const lowerName = sheetName.toLowerCase();
         
         // Exclude sheets with pricing/labour keywords
         const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend"];
@@ -139,7 +140,7 @@ export const filesRouter = router({
         // Get first 10 rows to check headers
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
         const first10Rows = rows.slice(0, 10);
-        const allText = first10Rows.flat().map(cell => String(cell || "").toLowerCase()).join(" ");
+        const allText = first10Rows.flat().map(cell => safeToLower(cell)).join(" ");
         
         // Device sheet indicators
         const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #"];
@@ -166,9 +167,9 @@ export const filesRouter = router({
       const availableSheets: Array<{ name: string; isDevice: boolean; reason: string; rowCount: number }> = [];
 
       workbook.SheetNames.forEach((sheetName) => {
-        if (!sheetName || typeof sheetName !== 'string') return;
+        const lowerName = safeToLower(sheetName);
+        if (!lowerName) return;
         const sheet = workbook.Sheets[sheetName];
-        const lowerName = sheetName.toLowerCase();
         
         // Detect if this is a device sheet
         const detection = isDeviceSheet(sheetName, sheet);
@@ -189,10 +190,10 @@ export const filesRouter = router({
           const extractValue = (targetKeys: string[]): string => {
             for (const row of siteRows) {
               if (row.length < 3) continue;
-              const key = String(row[0] || "").toLowerCase().trim();
+              const key = safeTrim(safeToLower(row[0]));
               // Try column 3 first (index 2), then column 2 (index 1)
               const value = String(row[2] || row[1] || "").trim();
-              if (targetKeys.some(tk => key.includes(tk.toLowerCase())) && value) {
+              if (targetKeys.some(tk => key.includes(safeToLower(tk))) && value) {
                 return value;
               }
             }
@@ -249,7 +250,7 @@ export const filesRouter = router({
       // If a specific sheet is selected, only process that sheet
       if (input.sheetName && typeof input.sheetName === 'string' && workbook.Sheets[input.sheetName]) {
         const sheet = workbook.Sheets[input.sheetName];
-        const lowerName = input.sheetName.toLowerCase();
+        const lowerName = safeToLower(input.sheetName);
         const rows = XLSX.utils.sheet_to_json(sheet);
         
         // Clear categories and only add from selected sheet
@@ -388,10 +389,10 @@ export const filesRouter = router({
       const extractValueFromKeyValue = (rows: any[][], targetKeys: string[]): string => {
         for (const row of rows) {
           if (row.length < 3) continue;
-          const key = String(row[0] || "").toLowerCase().trim();
+          const key = safeTrim(safeToLower(row[0]));
           // Try column 3 first (index 2), then column 2 (index 1)
           const value = String(row[2] || row[1] || "").trim();
-          if (targetKeys.some(tk => key.includes(tk.toLowerCase())) && value) {
+          if (targetKeys.some(tk => key.includes(safeToLower(tk))) && value) {
             return value;
           }
         }
@@ -400,8 +401,8 @@ export const filesRouter = router({
       
       // Step 1: Parse Site sheet first (if present)
       const siteSheetName = workbook.SheetNames.find(name => {
-        if (!name || typeof name !== 'string') return false;
-        const lower = name.toLowerCase();
+        const lower = safeToLower(name);
+        if (!lower) return false;
         return lower.includes("site") || lower.includes("building") || lower.includes("property") || lower.includes("info");
       });
       
@@ -439,13 +440,13 @@ export const filesRouter = router({
 
       // Helper: Detect if sheet is a device sheet (reuse from preview)
       const isDeviceSheet = (sheetName: string, sheet: any): boolean => {
-        if (!sheetName || typeof sheetName !== 'string') return false;
-        const lowerName = sheetName.toLowerCase();
+        const lowerName = safeToLower(sheetName);
+        if (!lowerName) return false;
         const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend"];
         if (excludeKeywords.some(kw => lowerName.includes(kw))) return false;
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
         const first10Rows = rows.slice(0, 10);
-        const allText = first10Rows.flat().map(cell => String(cell || "").toLowerCase()).join(" ");
+        const allText = first10Rows.flat().map(cell => safeToLower(cell)).join(" ");
         const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #"];
         const matchCount = deviceKeywords.filter(kw => allText.includes(kw)).length;
         return matchCount >= 2;
@@ -454,8 +455,8 @@ export const filesRouter = router({
       // Step 2: Process device sheets
       for (const sheetName of workbook.SheetNames) {
         // Skip site sheet (already processed)
-        if (!sheetName || typeof sheetName !== 'string') continue;
-        const lowerSheetName = sheetName.toLowerCase();
+        const lowerSheetName = safeToLower(sheetName);
+        if (!lowerSheetName) continue;
         if (lowerSheetName.includes("site") || lowerSheetName.includes("building") || lowerSheetName.includes("property") || lowerSheetName.includes("info")) {
           continue;
         }
@@ -482,7 +483,7 @@ export const filesRouter = router({
           rows = XLSX.utils.sheet_to_json(sheet, { range: 1 }); // Start from row 2 (0-indexed)
         }
 
-        const lowerName = sheetName.toLowerCase();
+        const lowerName = safeToLower(sheetName);
         let category: "FIRE_EXTINGUISHER" | "EMERGENCY_LIGHT" | "FIRE_ALARM_DEVICE" | "SMOKE_ALARM" | null = null;
         let counterKey: keyof typeof imported | null = null;
 

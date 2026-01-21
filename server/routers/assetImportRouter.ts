@@ -4,6 +4,7 @@ import { getDb } from "../db";
 import { attachments, devices, jobs, sites } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
 import * as XLSX from "xlsx";
+import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
 
 /**
  * Asset Import Router
@@ -107,8 +108,8 @@ export const assetImportRouter = router({
       
       const findSheet = (keywords: string[]): string | null => {
         for (const sheetName of sheetNames) {
-          if (!sheetName || typeof sheetName !== 'string') continue;
-          const lowerName = sheetName.toLowerCase();
+          const lowerName = safeToLower(sheetName);
+          if (!lowerName) continue;
           if (keywords.some((kw) => lowerName.includes(kw))) {
             return sheetName;
           }
@@ -427,8 +428,8 @@ function isRowBlank(row: any): boolean {
  */
 function extractField(row: any, possibleKeys: string[]): string {
   for (const key of Object.keys(row)) {
-    if (!key || typeof key !== 'string') continue;
-    const lowerKey = key.toLowerCase().trim();
+    const lowerKey = safeTrim(safeToLower(key));
+    if (!lowerKey) continue;
     if (possibleKeys.some((pk) => lowerKey.includes(pk))) {
       const value = row[key];
       return typeof value === "string" ? value.trim() : String(value || "");
@@ -441,7 +442,7 @@ function extractField(row: any, possibleKeys: string[]): string {
  * Helper: Create stable hash for externalRef when no identifier exists
  */
 function createHash(location: string, type: string, category: string): string {
-  const combined = `${category}:${location}:${type}`.toLowerCase().replace(/\s+/g, "-");
+  const combined = safeToLower(`${category}:${location}:${type}`).replace(/\s+/g, "-");
   return combined;
 }
 
