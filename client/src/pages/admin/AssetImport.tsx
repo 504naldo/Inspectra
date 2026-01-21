@@ -297,7 +297,7 @@ export default function AssetImport() {
                   ref={fileInputRef}
                   type="file"
                   className="hidden"
-                  accept=".csv,.xls,.xlsx"
+                  accept=".xlsx,.xlsm,.xls,.csv"
                   onChange={handleFileSelect}
                 />
               </div>

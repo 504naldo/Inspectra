@@ -36,6 +36,7 @@ export default function SiteFiles() {
   const { user } = useAuth();
   const params = useParams<{ siteId: string }>();
   const siteId = parseInt(params.siteId || "0");
+  const utils = trpc.useUtils();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -121,32 +122,64 @@ export default function SiteFiles() {
   }, []);
   
   const handleUpload = async () => {
-    if (pendingFiles.length === 0) return;
+    if (pendingFiles.length === 0 || !user?.companyId) return;
     
     setIsUploading(true);
     setUploadProgress(0);
     
-    const filesData = await Promise.all(
-      pendingFiles.map(async (file) => {
-        const buffer = await file.arrayBuffer();
-        const base64 = btoa(
-          new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-        );
-        return {
-          fileName: file.name,
-          fileData: base64,
-          mimeType: file.type || 'application/octet-stream',
-        };
-      })
-    );
-    
-    bulkUploadMutation.mutate({
-      entityType: 'site',
-      entityId: siteId,
-      files: filesData,
-      tags: uploadTags,
-      siteId,
-    });
+    try {
+      // Upload files sequentially using FormData (no base64)
+      let successCount = 0;
+      for (const file of pendingFiles) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("entityType", "site");
+        formData.append("entityId", siteId.toString());
+        formData.append("companyId", user.companyId.toString());
+        formData.append("siteId", siteId.toString());
+        formData.append("userId", user.id.toString());
+        
+        // Add tags if provided
+        if (uploadTags.length > 0) {
+          formData.append("tags", JSON.stringify(uploadTags));
+        }
+
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          console.error("Upload error for", file.name, ":", error);
+          toast.error(`Failed to upload ${file.name}: ${error.error || "Unknown error"}`);
+          continue;
+        }
+
+        successCount++;
+        setUploadProgress(Math.round((successCount / pendingFiles.length) * 100));
+      }
+
+      // Refresh file list
+      await refetchFiles();
+      
+      if (successCount === pendingFiles.length) {
+        toast.success(`Successfully uploaded ${successCount} file(s)`);
+      } else {
+        toast.warning(`Uploaded ${successCount} of ${pendingFiles.length} file(s)`);
+      }
+      
+      // Clear pending files and tags
+      setPendingFiles([]);
+      setUploadTags([]);
+    } catch (error: unknown) {
+      console.error("Upload error:", error);
+      toast.error(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   };
   
   const removePendingFile = (index: number) => {
@@ -460,7 +493,7 @@ export default function SiteFiles() {
                 multiple
                 className="hidden"
                 onChange={handleFileSelect}
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                accept=".xlsx,.xlsm,.xls,.csv,.pdf,.jpg,.jpeg,.png"
               />
             </div>
             

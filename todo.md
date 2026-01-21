@@ -1174,3 +1174,11 @@
 - [x] Update client to use FormData instead of base64 + tRPC
 - [x] Keep existing tRPC upload as deprecated fallback
 - [x] Test .xlsm uploads without browser freezing
+
+
+## Upload Reliability Audit (PC/Laptop Focus)
+- [x] Verify Admin Job Files uses FormData upload (no base64)
+- [x] Update Admin Site Files to use FormData upload
+- [x] Ensure Excel detection uses extension fallback everywhere
+- [x] Add consistent accept filters to all file inputs
+- [x] Add success/error toasts with proper error logging
