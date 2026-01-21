@@ -96,7 +96,10 @@ export const filesRouter = router({
 
   // Preview Excel import
   previewImportExcel: protectedProcedure
-    .input(z.object({ fileId: z.number() }))
+    .input(z.object({ 
+      fileId: z.number(),
+      sheetName: z.string().optional() 
+    }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -232,15 +235,43 @@ export const filesRouter = router({
         .set({ importStatus: "previewed" })
         .where(eq(attachments.id, input.fileId));
 
-      // Find default sheet (first device sheet)
-      const defaultSheet = availableSheets.find(s => s.isDevice)?.name || availableSheets[0]?.name || "";
+      // Determine which sheet to use
+      let selectedSheet = input.sheetName;
+      if (!selectedSheet) {
+        // Smart default: first device sheet (non-ignored)
+        selectedSheet = availableSheets.find(s => s.isDevice)?.name || availableSheets[0]?.name || "";
+      }
+      
+      // If a specific sheet is selected, only process that sheet
+      if (input.sheetName && workbook.Sheets[input.sheetName]) {
+        const sheet = workbook.Sheets[input.sheetName];
+        const lowerName = input.sheetName.toLowerCase();
+        const rows = XLSX.utils.sheet_to_json(sheet);
+        
+        // Clear categories and only add from selected sheet
+        categories.fireAlarm = [];
+        categories.extinguishers = [];
+        categories.emergencyLights = [];
+        categories.sprinkler = [];
+        totalRows = rows.length;
+        
+        if (lowerName.includes("exting")) {
+          categories.extinguishers = rows;
+        } else if (lowerName.includes("emerg") || lowerName.includes("exit") || lowerName.includes("light")) {
+          categories.emergencyLights = rows;
+        } else if (lowerName.includes("sprink")) {
+          categories.sprinkler = rows;
+        } else if (lowerName.includes("alarm") || lowerName.includes("device") || lowerName.includes("smoke")) {
+          categories.fireAlarm = rows;
+        }
+      }
 
       return {
         totalRows,
         hasSiteSheet,
         sitePreview,
         availableSheets,
-        defaultSheet,
+        selectedSheet,
         counts: {
           fireAlarm: categories.fireAlarm.length,
           extinguishers: categories.extinguishers.length,

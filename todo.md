@@ -1233,3 +1233,13 @@
 - [x] Update frontend to show sheet selection dropdown before column mapping
 - [x] Default to first detected device sheet
 - [x] Ensure preview data matches selected sheet
+
+
+## Fix Sheet Selection in Import Flow
+- [x] Update backend preview to use selected sheetName parameter instead of defaulting to first sheet
+- [x] Update backend import to use selected sheetName parameter
+- [x] Add smart default selection (first non-ignored sheet) when sheetName not provided
+- [x] Update frontend to pass selected sheet name to preview and import mutations
+- [x] Block column mapping until worksheet is selected
+- [x] Update preview header to show selected sheet name
+- [x] Test with multi-sheet XLSM to verify correct sheet is used

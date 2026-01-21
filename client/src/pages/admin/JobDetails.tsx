@@ -58,8 +58,8 @@ export default function AdminJobDetails() {
     onSuccess: (data) => {
       setPreviewData(data);
       // Set default to first device sheet
-      if (data.defaultSheet) {
-        setSelectedSheets([data.defaultSheet]);
+      if (data.selectedSheet) {
+        setSelectedSheets([data.selectedSheet]);
       }
       const deviceSheets = data.availableSheets?.filter((s: any) => s.isDevice).length || 0;
       toast.success(`Preview ready: ${deviceSheets} device sheets found, ${data.totalRows} total rows`);
@@ -380,7 +380,12 @@ export default function AdminJobDetails() {
                                   <select
                                     className="text-sm border rounded px-2 py-1"
                                     value={selectedSheets[0] || ""}
-                                    onChange={(e) => setSelectedSheets([e.target.value])}
+                                    onChange={(e) => {
+                                      const newSheet = e.target.value;
+                                      setSelectedSheets([newSheet]);
+                                      // Refresh preview with new sheet
+                                      previewImportMutation.mutate({ fileId: file.id, sheetName: newSheet });
+                                    }}
                                   >
                                     {previewData.availableSheets.map((sheet: any) => (
                                       <option key={sheet.name} value={sheet.name}>
