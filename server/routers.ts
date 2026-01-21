@@ -1853,21 +1853,37 @@ const importRouter = router({
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     
     // Smart default heuristic
-    const getDefaultSheetName = (): string => {
-      // Priority 1: Exact match "Individual devices" (case-insensitive)
-      const exactMatch = workbook.SheetNames.find(name => 
-        name.trim().toLowerCase() === "individual devices"
-      );
-      if (exactMatch) return exactMatch;
+    const getDefaultSheetName = () => {
+      // Priority 1: Exact match for "Individual devices" or "Individual device record"
+      const exactMatches = ['individual devices', 'individual device record', 'device list'];
+      for (const target of exactMatches) {
+        const match = workbook.SheetNames.find(name => 
+          name.toLowerCase().trim() === target
+        );
+        if (match) return match;
+      }
       
-      // Priority 2: Contains device-related keywords
-      const deviceKeywords = [
-        "individual devices", "devices", "device list", 
-        "fire alarm devices", "smoke", "heat", "pull",
+      // Priority 2: Contains high-priority device keywords (ordered by specificity)
+      const highPriorityKeywords = [
+        "individual device",  // Matches "Individual device record"
+        "device list",
+        "fire alarm devices"
+      ];
+      
+      for (const keyword of highPriorityKeywords) {
+        const match = workbook.SheetNames.find(name => 
+          name.toLowerCase().includes(keyword)
+        );
+        if (match) return match;
+      }
+      
+      // Priority 3: Contains general device keywords
+      const generalKeywords = [
+        "devices", "smoke", "heat", "pull",
         "extinguisher", "emergency light", "sprinkler"
       ];
       
-      for (const keyword of deviceKeywords) {
+      for (const keyword of generalKeywords) {
         const match = workbook.SheetNames.find(name => 
           name.toLowerCase().includes(keyword)
         );
@@ -1895,15 +1911,17 @@ const importRouter = router({
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Sheet is empty' });
     }
     
-    const headers = data[0] as string[];
+    // Convert headers to strings (handle numbers, dates, etc.)
+    const headers = (data[0] as any[]).map(h => String(h || ''));
     const rows = data.slice(1, 11); // Preview first 10 rows
     const totalRows = data.length - 1;
     
     // Check if this looks like a device sheet
     const deviceHeaders = ['location', 'device', 'type', 'model', 'serial'];
-    const hasDeviceHeaders = headers.some(h => 
-      deviceHeaders.some(dh => h.toLowerCase().includes(dh))
-    );
+    const hasDeviceHeaders = headers.some(h => {
+      const headerStr = String(h || '').toLowerCase();
+      return deviceHeaders.some(dh => headerStr.includes(dh));
+    });
     
     return {
       headers,

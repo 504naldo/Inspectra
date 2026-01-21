@@ -1266,3 +1266,10 @@
 - [x] Show "Auto-mapped X/Y" badge in UI with visual feedback
 - [x] Add "Reset mapping" action to clear auto-mapped values
 - [x] Test with various Excel formats (different header styles, synonyms)
+
+
+## Fix Parse Error in Admin Sites Import Assets
+- [x] Reproduce parse error with provided Excel file (h.toLowerCase is not a function)
+- [x] Identify root cause of parse failure (non-string headers like numbers/dates)
+- [x] Fix parse logic to handle file format correctly (convert all headers to strings)
+- [x] Test with real file to verify fix (Individual device record now selected correctly)
