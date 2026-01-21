@@ -1848,9 +1848,16 @@ const importRouter = router({
     fileData: z.string(), // Base64 encoded
     sheetName: z.string().optional(), // Optional: if not provided, use smart default
   })).mutation(async ({ input }) => {
-    const XLSX = await import('xlsx');
-    const buffer = Buffer.from(input.fileData, 'base64');
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    try {
+      const XLSX = await import('xlsx');
+      const buffer = Buffer.from(input.fileData, 'base64');
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      
+      console.log('[parseFile] Workbook loaded:', {
+        sheetCount: workbook.SheetNames.length,
+        sheetNames: workbook.SheetNames,
+        requestedSheet: input.sheetName
+      });
     
     // Smart default heuristic
     const getDefaultSheetName = () => {
@@ -1923,15 +1930,33 @@ const importRouter = router({
       return deviceHeaders.some(dh => headerStr.includes(dh));
     });
     
-    return {
-      headers,
-      previewRows: rows,
-      totalRows,
-      sheetName,
-      sheetNames: workbook.SheetNames,
-      defaultSheetName: getDefaultSheetName(),
-      hasDeviceHeaders,
-    };
+      console.log('[parseFile] Parse successful:', {
+        sheetName,
+        headerCount: headers.length,
+        totalRows,
+        hasDeviceHeaders
+      });
+      
+      return {
+        headers,
+        previewRows: rows,
+        totalRows,
+        sheetName,
+        sheetNames: workbook.SheetNames,
+        defaultSheetName: sheetName,
+        hasDeviceHeaders,
+      };
+    } catch (error: any) {
+      console.error('[parseFile] Error:', {
+        message: error.message,
+        stack: error.stack,
+        fileName: input.fileName
+      });
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Failed to parse file: ${error.message}`
+      });
+    }
   }),
   
   // Validate import with column mapping

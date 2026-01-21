@@ -125,6 +125,9 @@ export const filesRouter = router({
 
       // Helper: Detect if sheet is a device sheet
       const isDeviceSheet = (sheetName: string, sheet: any): { isDevice: boolean; reason: string } => {
+        if (!sheetName || typeof sheetName !== 'string') {
+          return { isDevice: false, reason: "Invalid sheet name" };
+        }
         const lowerName = sheetName.toLowerCase();
         
         // Exclude sheets with pricing/labour keywords
@@ -163,6 +166,7 @@ export const filesRouter = router({
       const availableSheets: Array<{ name: string; isDevice: boolean; reason: string; rowCount: number }> = [];
 
       workbook.SheetNames.forEach((sheetName) => {
+        if (!sheetName || typeof sheetName !== 'string') return;
         const sheet = workbook.Sheets[sheetName];
         const lowerName = sheetName.toLowerCase();
         
@@ -243,7 +247,7 @@ export const filesRouter = router({
       }
       
       // If a specific sheet is selected, only process that sheet
-      if (input.sheetName && workbook.Sheets[input.sheetName]) {
+      if (input.sheetName && typeof input.sheetName === 'string' && workbook.Sheets[input.sheetName]) {
         const sheet = workbook.Sheets[input.sheetName];
         const lowerName = input.sheetName.toLowerCase();
         const rows = XLSX.utils.sheet_to_json(sheet);
@@ -396,6 +400,7 @@ export const filesRouter = router({
       
       // Step 1: Parse Site sheet first (if present)
       const siteSheetName = workbook.SheetNames.find(name => {
+        if (!name || typeof name !== 'string') return false;
         const lower = name.toLowerCase();
         return lower.includes("site") || lower.includes("building") || lower.includes("property") || lower.includes("info");
       });
@@ -434,6 +439,7 @@ export const filesRouter = router({
 
       // Helper: Detect if sheet is a device sheet (reuse from preview)
       const isDeviceSheet = (sheetName: string, sheet: any): boolean => {
+        if (!sheetName || typeof sheetName !== 'string') return false;
         const lowerName = sheetName.toLowerCase();
         const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend"];
         if (excludeKeywords.some(kw => lowerName.includes(kw))) return false;
@@ -448,6 +454,7 @@ export const filesRouter = router({
       // Step 2: Process device sheets
       for (const sheetName of workbook.SheetNames) {
         // Skip site sheet (already processed)
+        if (!sheetName || typeof sheetName !== 'string') continue;
         const lowerSheetName = sheetName.toLowerCase();
         if (lowerSheetName.includes("site") || lowerSheetName.includes("building") || lowerSheetName.includes("property") || lowerSheetName.includes("info")) {
           continue;

@@ -107,6 +107,7 @@ export const assetImportRouter = router({
       
       const findSheet = (keywords: string[]): string | null => {
         for (const sheetName of sheetNames) {
+          if (!sheetName || typeof sheetName !== 'string') continue;
           const lowerName = sheetName.toLowerCase();
           if (keywords.some((kw) => lowerName.includes(kw))) {
             return sheetName;
@@ -426,6 +427,7 @@ function isRowBlank(row: any): boolean {
  */
 function extractField(row: any, possibleKeys: string[]): string {
   for (const key of Object.keys(row)) {
+    if (!key || typeof key !== 'string') continue;
     const lowerKey = key.toLowerCase().trim();
     if (possibleKeys.some((pk) => lowerKey.includes(pk))) {
       const value = row[key];

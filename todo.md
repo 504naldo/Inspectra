@@ -1279,3 +1279,10 @@
 - [x] Locate all toLowerCase calls in parseFile that don't handle null (lines 1860-1890)
 - [x] Add null checks before all toLowerCase operations (name && String(name).toLowerCase())
 - [x] Test with real file to verify fix (Individual device record selected correctly)
+
+
+## Add Error Logging to parseFile
+- [ ] Wrap parseFile in comprehensive try-catch
+- [ ] Log sheet names, workbook structure, and operation context
+- [ ] Capture and return detailed error information
+- [ ] Test to identify exact error source
