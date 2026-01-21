@@ -25,6 +25,7 @@ import {
 import { useState, useRef } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { isSpreadsheetFile, getSpreadsheetErrorMessage, getSpreadsheetAcceptAttribute } from "@/_core/utils/fileTypes";
 
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'importing' | 'results';
 
@@ -145,14 +146,9 @@ export default function AssetImport() {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Validate file type
-    const validTypes = [
-      'text/csv',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ];
-    if (!validTypes.includes(file.type) && !file.name.match(/\.(csv|xlsx|xls)$/i)) {
-      toast.error('Please select a CSV or Excel file');
+    // Validate file type using shared utility
+    if (!isSpreadsheetFile(file)) {
+      toast.error(getSpreadsheetErrorMessage());
       return;
     }
     
@@ -279,7 +275,7 @@ export default function AssetImport() {
             <CardHeader>
               <CardTitle>Upload File</CardTitle>
               <CardDescription>
-                Upload a CSV or Excel file containing your device data
+                Upload a CSV or Excel file (.csv, .xls, .xlsx, .xlsm) containing your device data
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -291,13 +287,13 @@ export default function AssetImport() {
                 <FileSpreadsheet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-lg font-medium mb-1">Drop your file here or click to browse</p>
                 <p className="text-sm text-muted-foreground">
-                  Supports CSV, XLS, and XLSX files
+                  Supports CSV, XLS, XLSX, and XLSM files
                 </p>
                 <input
                   ref={fileInputRef}
                   type="file"
                   className="hidden"
-                  accept=".xlsx,.xlsm,.xls,.csv"
+                  accept={getSpreadsheetAcceptAttribute()}
                   onChange={handleFileSelect}
                 />
               </div>

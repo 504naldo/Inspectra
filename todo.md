@@ -1182,3 +1182,11 @@
 - [x] Ensure Excel detection uses extension fallback everywhere
 - [x] Add consistent accept filters to all file inputs
 - [x] Add success/error toasts with proper error logging
+
+
+## Full .XLSM Support (PC + Mobile Chrome)
+- [x] Create shared spreadsheet validation utility in client/src/_core/utils/fileTypes.ts
+- [x] Update AssetImport to accept .xlsm files and use shared validation
+- [x] Update backend MIME inference map to include .xlsm
+- [x] Verify XLSX parser works with .xlsm files
+- [x] Test .xlsm uploads on desktop and mobile Chrome

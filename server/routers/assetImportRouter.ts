@@ -61,6 +61,7 @@ export const assetImportRouter = router({
       // Step 2: Find latest Excel attachment for this job
       const excelMimeTypes = [
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+        "application/vnd.ms-excel.sheet.macroEnabled.12", // .xlsm
         "application/vnd.ms-excel", // .xls
       ];
 
@@ -84,7 +85,7 @@ export const assetImportRouter = router({
       // Verify it's an Excel file
       if (!excelMimeTypes.includes(attachment.mimeType || "")) {
         throw new Error(
-          `File must be an Excel file (.xlsx or .xls). Found: ${attachment.fileName}`
+          `File must be an Excel file (.xlsx, .xlsm, or .xls). Found: ${attachment.fileName}`
         );
       }
 
