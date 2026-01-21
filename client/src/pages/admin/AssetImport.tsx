@@ -26,6 +26,7 @@ import { useState, useRef } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { isSpreadsheetFile, getSpreadsheetErrorMessage, getSpreadsheetAcceptAttribute } from "@/_core/utils/fileTypes";
+import { autoMapColumns } from "@/_core/utils/autoMapping";
 
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'importing' | 'results';
 
@@ -106,17 +107,9 @@ export default function AssetImport() {
         toast.warning("This sheet doesn't look like a device list—choose 'Individual devices' or another worksheet.");
       }
       
-      // Auto-map columns based on header names
-      const autoMapping: ColumnMapping = {};
-      DEVICE_FIELDS.forEach(field => {
-        const matchingHeader = data.headers.find(h => 
-          h.toLowerCase().replace(/[_\s-]/g, '') === field.key.toLowerCase() ||
-          h.toLowerCase().includes(field.label.toLowerCase())
-        );
-        if (matchingHeader) {
-          autoMapping[field.key] = matchingHeader;
-        }
-      });
+      // Auto-map columns using fuzzy matching with synonyms
+      const autoMappingResult = autoMapColumns(data.headers, DEVICE_FIELDS, 60);
+      const autoMapping = autoMappingResult.mapping;
       setColumnMapping(autoMapping);
       setStep('mapping');
     },
@@ -360,10 +353,28 @@ export default function AssetImport() {
             {/* Column Mapping */}
             <Card>
               <CardHeader>
-                <CardTitle>Map Columns</CardTitle>
-                <CardDescription>
-                  Match your file columns to device fields ({getMappedFieldCount()}/{DEVICE_FIELDS.length} mapped)
-                </CardDescription>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle>Map Columns</CardTitle>
+                    <CardDescription className="flex items-center gap-2 mt-1">
+                      Match your file columns to device fields
+                      <Badge variant="secondary" className="ml-2">
+                        Auto-mapped {getMappedFieldCount()}/{DEVICE_FIELDS.length}
+                      </Badge>
+                    </CardDescription>
+                  </div>
+                  {getMappedFieldCount() > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setColumnMapping({})}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                      Reset
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Worksheet Selection */}

@@ -1256,3 +1256,13 @@
 - [x] Add warning for sheets without device headers
 - [x] Ensure imported devices attach to correct siteId
 - [x] Test with workbook where first sheet is not device data
+
+
+## Enhanced Auto-Mapping for Excel Import
+- [x] Create auto-mapping utility with fuzzy matching (case-insensitive, trim, punctuation-stripped)
+- [x] Add synonym mapping for common field variations (Device/Device Type/Type → deviceType)
+- [x] Implement scoring algorithm to choose best match for each field
+- [x] Add auto-mapping on file parse (after headers are detected)
+- [x] Show "Auto-mapped X/Y" badge in UI with visual feedback
+- [x] Add "Reset mapping" action to clear auto-mapped values
+- [x] Test with various Excel formats (different header styles, synonyms)
