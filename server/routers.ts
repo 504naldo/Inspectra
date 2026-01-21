@@ -1846,27 +1846,73 @@ const importRouter = router({
   parseFile: officeProcedure.input(z.object({
     fileName: z.string(),
     fileData: z.string(), // Base64 encoded
+    sheetName: z.string().optional(), // Optional: if not provided, use smart default
   })).mutation(async ({ input }) => {
     const XLSX = await import('xlsx');
     const buffer = Buffer.from(input.fileData, 'base64');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
+    
+    // Smart default heuristic
+    const getDefaultSheetName = (): string => {
+      // Priority 1: Exact match "Individual devices" (case-insensitive)
+      const exactMatch = workbook.SheetNames.find(name => 
+        name.trim().toLowerCase() === "individual devices"
+      );
+      if (exactMatch) return exactMatch;
+      
+      // Priority 2: Contains device-related keywords
+      const deviceKeywords = [
+        "individual devices", "devices", "device list", 
+        "fire alarm devices", "smoke", "heat", "pull",
+        "extinguisher", "emergency light", "sprinkler"
+      ];
+      
+      for (const keyword of deviceKeywords) {
+        const match = workbook.SheetNames.find(name => 
+          name.toLowerCase().includes(keyword)
+        );
+        if (match) return match;
+      }
+      
+      // Fallback: first sheet
+      return workbook.SheetNames[0];
+    };
+    
+    const sheetName = input.sheetName || getDefaultSheetName();
+    
+    // Validate sheet exists
+    if (!workbook.Sheets[sheetName]) {
+      throw new TRPCError({ 
+        code: 'BAD_REQUEST', 
+        message: `Sheet "${sheetName}" not found in workbook` 
+      });
+    }
+    
     const sheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
     
     if (data.length === 0) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'File is empty' });
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Sheet is empty' });
     }
     
     const headers = data[0] as string[];
     const rows = data.slice(1, 11); // Preview first 10 rows
     const totalRows = data.length - 1;
     
+    // Check if this looks like a device sheet
+    const deviceHeaders = ['location', 'device', 'type', 'model', 'serial'];
+    const hasDeviceHeaders = headers.some(h => 
+      deviceHeaders.some(dh => h.toLowerCase().includes(dh))
+    );
+    
     return {
       headers,
       previewRows: rows,
       totalRows,
       sheetName,
+      sheetNames: workbook.SheetNames,
+      defaultSheetName: getDefaultSheetName(),
+      hasDeviceHeaders,
     };
   }),
   
@@ -1877,13 +1923,23 @@ const importRouter = router({
     importType: z.enum(['devices', 'sites', 'areas', 'customers']),
     fileName: z.string(),
     fileData: z.string(),
+    sheetName: z.string(), // Required: which sheet to validate
     columnMapping: z.record(z.string(), z.string()), // targetField -> sourceColumn
     duplicateHandling: z.enum(['skip', 'update', 'create_new']).optional(),
   })).mutation(async ({ input }) => {
     const XLSX = await import('xlsx');
     const buffer = Buffer.from(input.fileData, 'base64');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    
+    // Validate sheet exists
+    if (!workbook.Sheets[input.sheetName]) {
+      throw new TRPCError({ 
+        code: 'BAD_REQUEST', 
+        message: `Sheet "${input.sheetName}" not found` 
+      });
+    }
+    
+    const sheet = workbook.Sheets[input.sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
     
     const headers = data[0] as string[];
@@ -1963,13 +2019,23 @@ const importRouter = router({
     importType: z.enum(['devices', 'sites', 'areas', 'customers']),
     fileName: z.string(),
     fileData: z.string(),
+    sheetName: z.string(), // Required: which sheet to import
     columnMapping: z.record(z.string(), z.string()),
     duplicateHandling: z.enum(['skip', 'update', 'create_new']),
   })).mutation(async ({ input, ctx }) => {
     const XLSX = await import('xlsx');
     const buffer = Buffer.from(input.fileData, 'base64');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    
+    // Validate sheet exists
+    if (!workbook.Sheets[input.sheetName]) {
+      throw new TRPCError({ 
+        code: 'BAD_REQUEST', 
+        message: `Sheet "${input.sheetName}" not found` 
+      });
+    }
+    
+    const sheet = workbook.Sheets[input.sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
     
     const headers = data[0] as string[];

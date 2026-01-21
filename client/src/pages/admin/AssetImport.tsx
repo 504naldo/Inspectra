@@ -66,7 +66,11 @@ export default function AssetImport() {
     previewRows: any[][];
     totalRows: number;
     sheetName: string;
+    sheetNames?: string[];
+    defaultSheetName?: string;
+    hasDeviceHeaders?: boolean;
   } | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState<string>('');
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [duplicateHandling, setDuplicateHandling] = useState<'skip' | 'update' | 'create_new'>('skip');
   const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
@@ -95,6 +99,13 @@ export default function AssetImport() {
   const parseFileMutation = trpc.import.parseFile.useMutation({
     onSuccess: (data) => {
       setParsedData(data);
+      setSelectedSheet(data.sheetName); // Set to smart default
+      
+      // Show warning if not a device sheet
+      if (data.hasDeviceHeaders === false) {
+        toast.warning("This sheet doesn't look like a device list—choose 'Individual devices' or another worksheet.");
+      }
+      
       // Auto-map columns based on header names
       const autoMapping: ColumnMapping = {};
       DEVICE_FIELDS.forEach(field => {
@@ -181,6 +192,7 @@ export default function AssetImport() {
       importType: 'devices',
       fileName: selectedFile.name,
       fileData,
+      sheetName: selectedSheet,
       columnMapping,
       duplicateHandling,
     });
@@ -197,6 +209,7 @@ export default function AssetImport() {
       importType: 'devices',
       fileName: selectedFile.name,
       fileData,
+      sheetName: selectedSheet,
       columnMapping,
       duplicateHandling,
     });
@@ -353,6 +366,45 @@ export default function AssetImport() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Worksheet Selection */}
+                {parsedData.sheetNames && parsedData.sheetNames.length > 1 && (
+                  <div className="border-b pb-4 mb-4">
+                    <Label htmlFor="worksheet-select" className="mb-2 block">
+                      Worksheet
+                    </Label>
+                    <Select
+                      value={selectedSheet}
+                      onValueChange={(value) => {
+                        setSelectedSheet(value);
+                        // Re-parse with new sheet
+                        parseFileMutation.mutate({
+                          fileName: selectedFile?.name || '',
+                          fileData,
+                          sheetName: value,
+                        });
+                      }}
+                    >
+                      <SelectTrigger id="worksheet-select">
+                        <SelectValue placeholder="Select worksheet..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {parsedData.sheetNames.map((sheet) => (
+                          <SelectItem key={sheet} value={sheet}>
+                            {sheet}
+                            {sheet === parsedData.defaultSheetName && " (recommended)"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {parsedData.hasDeviceHeaders === false && (
+                      <p className="text-sm text-amber-600 mt-2 flex items-center gap-1">
+                        <AlertCircle className="h-4 w-4" />
+                        This sheet doesn't look like a device list
+                      </p>
+                    )}
+                  </div>
+                )}
+                
                 {DEVICE_FIELDS.map((field) => (
                   <div key={field.key} className="flex items-center gap-4">
                     <div className="w-1/3">

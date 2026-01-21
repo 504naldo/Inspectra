@@ -1243,3 +1243,16 @@
 - [x] Block column mapping until worksheet is selected
 - [x] Update preview header to show selected sheet name
 - [x] Test with multi-sheet XLSM to verify correct sheet is used
+
+
+## Fix Site Import Worksheet Selection
+- [x] Locate site import flow at /admin/sites/:siteId/import
+- [x] Update backend parse/preview to return sheetNames and defaultSheetName
+- [x] Implement smart default heuristic (prefer "Individual devices" sheet)
+- [x] Add sheetName parameter to parse, validate, and import endpoints
+- [x] Replace workbook.SheetNames[0] with workbook.Sheets[sheetName]
+- [x] Add worksheet dropdown to frontend Map Columns screen
+- [x] Refresh preview when worksheet selection changes
+- [x] Add warning for sheets without device headers
+- [x] Ensure imported devices attach to correct siteId
+- [x] Test with workbook where first sheet is not device data
