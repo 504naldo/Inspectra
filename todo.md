@@ -1190,3 +1190,14 @@
 - [x] Update backend MIME inference map to include .xlsm
 - [x] Verify XLSX parser works with .xlsm files
 - [x] Test .xlsm uploads on desktop and mobile Chrome
+
+
+## Full Workbook Import (No Row Limits + Site Parsing)
+- [x] Audit import code for row limits (slice/take/limit) and remove preview limits from ImportDevices
+- [x] Update database schema to support sprinkler systems and numeric fields
+- [x] Implement Site tab parsing with fuzzy matching
+- [x] Update site record with upsert strategy (preserve existing if Excel blank)
+- [x] Process all device categories: Fire Alarm, Extinguishers, Emergency Lights, Sprinkler Systems
+- [x] Add validation to exclude blank rows and report missing location rows
+- [x] Return detailed import summary with counts per category and exclusions
+- [x] Ensure devices link to correct siteId and display site context in UI
