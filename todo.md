@@ -1222,3 +1222,14 @@
 - [x] Test with real Excel file (26,806 rows)
 - [x] Verify Site info extracted correctly (BELHAVEN APARTMENT, 2095 WEST 46TH AVENUE)
 - [x] Verify all devices imported with correct categories (43 devices: 37 Fire Alarm, 5 Emergency Lights, 1 Extinguisher)
+
+
+## Sheet Selection for Excel Import
+- [x] Add sheet detection logic to identify device vs non-device sheets
+- [x] Detect device sheets based on header keywords (device, location, serial, smoke, heat, extinguisher, emergency light, pull station)
+- [x] Exclude sheets with pricing/labour keywords (labour, rate, pricing, cost, invoice, summary, notes)
+- [x] Update preview to return list of available sheets with detection flags
+- [x] Add sheet selection parameter to import mutation
+- [x] Update frontend to show sheet selection dropdown before column mapping
+- [x] Default to first detected device sheet
+- [x] Ensure preview data matches selected sheet

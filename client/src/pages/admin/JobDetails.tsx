@@ -28,6 +28,8 @@ export default function AdminJobDetails() {
   const { user } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
 
   const utils = trpc.useUtils();
 
@@ -54,8 +56,13 @@ export default function AdminJobDetails() {
 
   const previewImportMutation = trpc.files.previewImportExcel.useMutation({
     onSuccess: (data) => {
-      toast.success(`Preview ready: ${data.totalRows} rows found`);
-      // TODO: Show preview dialog
+      setPreviewData(data);
+      // Set default to first device sheet
+      if (data.defaultSheet) {
+        setSelectedSheets([data.defaultSheet]);
+      }
+      const deviceSheets = data.availableSheets?.filter((s: any) => s.isDevice).length || 0;
+      toast.success(`Preview ready: ${deviceSheets} device sheets found, ${data.totalRows} total rows`);
     },
     onError: (error) => {
       toast.error(`Preview failed: ${error.message}`);
@@ -67,6 +74,9 @@ export default function AdminJobDetails() {
       const summary = `Imported ${data.imported.fireAlarm || 0} fire alarm devices, ${data.imported.extinguishers || 0} extinguishers, ${data.imported.emergencyLights || 0} emergency lights`;
       toast.success(summary);
       utils.files.listByJob.invalidate();
+      // Clear preview data after successful import
+      setPreviewData(null);
+      setSelectedSheets([]);
     },
     onError: (error) => {
       toast.error(`Import failed: ${error.message}`);
@@ -365,13 +375,29 @@ export default function AdminJobDetails() {
                                   </>
                                 )}
                               </Button>
+                              {previewData && previewData.availableSheets && (
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    className="text-sm border rounded px-2 py-1"
+                                    value={selectedSheets[0] || ""}
+                                    onChange={(e) => setSelectedSheets([e.target.value])}
+                                  >
+                                    {previewData.availableSheets.map((sheet: any) => (
+                                      <option key={sheet.name} value={sheet.name}>
+                                        {sheet.name} {sheet.isDevice ? "✓" : "(excluded)"} ({sheet.rowCount} rows)
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
                               <Button
                                 variant="default"
                                 size="sm"
                                 onClick={() => importMutation.mutate({ 
                                   fileId: file.id,
                                   siteId: job.siteId,
-                                  jobId: job.id
+                                  jobId: job.id,
+                                  selectedSheets: selectedSheets.length > 0 ? selectedSheets : undefined
                                 })}
                                 disabled={importMutation.isPending}
                               >

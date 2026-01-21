@@ -120,6 +120,32 @@ export const filesRouter = router({
       const buffer = await response.buffer();
       const workbook = XLSX.read(buffer, { type: "buffer" });
 
+      // Helper: Detect if sheet is a device sheet
+      const isDeviceSheet = (sheetName: string, sheet: any): { isDevice: boolean; reason: string } => {
+        const lowerName = sheetName.toLowerCase();
+        
+        // Exclude sheets with pricing/labour keywords
+        const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend"];
+        if (excludeKeywords.some(kw => lowerName.includes(kw))) {
+          return { isDevice: false, reason: "Excluded by keyword" };
+        }
+        
+        // Get first 10 rows to check headers
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+        const first10Rows = rows.slice(0, 10);
+        const allText = first10Rows.flat().map(cell => String(cell || "").toLowerCase()).join(" ");
+        
+        // Device sheet indicators
+        const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #"];
+        const matchCount = deviceKeywords.filter(kw => allText.includes(kw)).length;
+        
+        if (matchCount >= 2) {
+          return { isDevice: true, reason: `Matched ${matchCount} device keywords` };
+        }
+        
+        return { isDevice: false, reason: "Not enough device keywords" };
+      };
+
       // Parse sheets with fuzzy matching
       const categories = {
         fireAlarm: [] as any[],
@@ -131,10 +157,21 @@ export const filesRouter = router({
       let totalRows = 0;
       let hasSiteSheet = false;
       let sitePreview: any = null;
+      const availableSheets: Array<{ name: string; isDevice: boolean; reason: string; rowCount: number }> = [];
 
       workbook.SheetNames.forEach((sheetName) => {
         const sheet = workbook.Sheets[sheetName];
         const lowerName = sheetName.toLowerCase();
+        
+        // Detect if this is a device sheet
+        const detection = isDeviceSheet(sheetName, sheet);
+        const rows = XLSX.utils.sheet_to_json(sheet);
+        availableSheets.push({
+          name: sheetName,
+          isDevice: detection.isDevice,
+          reason: detection.reason,
+          rowCount: rows.length,
+        });
         
         // Check for Site sheet
         if (lowerName.includes("site") || lowerName.includes("building") || lowerName.includes("property") || lowerName.includes("info")) {
@@ -165,7 +202,10 @@ export const filesRouter = router({
           return; // Skip adding to device categories
         }
         
-        const rows = XLSX.utils.sheet_to_json(sheet);
+        // Skip non-device sheets
+        if (!detection.isDevice) {
+          return;
+        }
 
         if (lowerName.includes("exting")) {
           categories.extinguishers.push(...rows);
@@ -192,10 +232,15 @@ export const filesRouter = router({
         .set({ importStatus: "previewed" })
         .where(eq(attachments.id, input.fileId));
 
+      // Find default sheet (first device sheet)
+      const defaultSheet = availableSheets.find(s => s.isDevice)?.name || availableSheets[0]?.name || "";
+
       return {
         totalRows,
         hasSiteSheet,
         sitePreview,
+        availableSheets,
+        defaultSheet,
         counts: {
           fireAlarm: categories.fireAlarm.length,
           extinguishers: categories.extinguishers.length,
@@ -218,6 +263,7 @@ export const filesRouter = router({
         fileId: z.number(),
         siteId: z.number(),
         jobId: z.number(),
+        selectedSheets: z.array(z.string()).optional(), // Optional: if not provided, import all device sheets
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -355,12 +401,38 @@ export const filesRouter = router({
         }
       }
 
+      // Helper: Detect if sheet is a device sheet (reuse from preview)
+      const isDeviceSheet = (sheetName: string, sheet: any): boolean => {
+        const lowerName = sheetName.toLowerCase();
+        const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend"];
+        if (excludeKeywords.some(kw => lowerName.includes(kw))) return false;
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+        const first10Rows = rows.slice(0, 10);
+        const allText = first10Rows.flat().map(cell => String(cell || "").toLowerCase()).join(" ");
+        const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #"];
+        const matchCount = deviceKeywords.filter(kw => allText.includes(kw)).length;
+        return matchCount >= 2;
+      };
+
       // Step 2: Process device sheets
       for (const sheetName of workbook.SheetNames) {
         // Skip site sheet (already processed)
         const lowerSheetName = sheetName.toLowerCase();
         if (lowerSheetName.includes("site") || lowerSheetName.includes("building") || lowerSheetName.includes("property") || lowerSheetName.includes("info")) {
           continue;
+        }
+        
+        // If selectedSheets provided, only import those sheets
+        if (input.selectedSheets && input.selectedSheets.length > 0) {
+          if (!input.selectedSheets.includes(sheetName)) {
+            continue;
+          }
+        } else {
+          // Auto-detect: skip non-device sheets
+          const sheet = workbook.Sheets[sheetName];
+          if (!isDeviceSheet(sheetName, sheet)) {
+            continue;
+          }
         }
         const sheet = workbook.Sheets[sheetName];
         // Try parsing with default headers (Row 1)
