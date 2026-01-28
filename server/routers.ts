@@ -1847,63 +1847,27 @@ const importRouter = router({
   parseFile: officeProcedure.input(z.object({
     fileName: z.string(),
     fileData: z.string(), // Base64 encoded
-    sheetName: z.string().optional(), // Optional: if not provided, use smart default
+    importType: z.enum(['site', 'fireAlarmDevices', 'fireExtinguishers', 'emergencyLights', 'sprinklerDevices']),
+    sheetName: z.string().optional(), // Optional: if not provided, use smart suggestion
   })).mutation(async ({ input }) => {
     try {
       const XLSX = await import('xlsx');
       const buffer = Buffer.from(input.fileData, 'base64');
       const workbook = XLSX.read(buffer, { type: 'buffer' });
       
+      // Use smart sheet suggestion based on import type
+      const { suggestSheet } = await import('./sheetSuggestion');
+      const suggestedSheetName = suggestSheet(workbook, input.importType, XLSX);
+      
       console.log('[parseFile] Workbook loaded:', {
         sheetCount: workbook.SheetNames.length,
         sheetNames: workbook.SheetNames,
+        importType: input.importType,
+        suggestedSheetName,
         requestedSheet: input.sheetName
       });
     
-    // Smart default heuristic
-    const getDefaultSheetName = () => {
-      // Priority 1: Exact match for "Individual devices" or "Individual device record"
-      const exactMatches = ['individual devices', 'individual device record', 'device list'];
-      for (const target of exactMatches) {
-        const match = workbook.SheetNames.find(name => {
-          const lower = safeToLower(name);
-          return lower && safeTrim(lower) === target;
-        });
-        if (match) return match;
-      }
-      
-      // Priority 2: Contains high-priority device keywords (ordered by specificity)
-      const highPriorityKeywords = [
-        "individual device",  // Matches "Individual device record"
-        "device list",
-        "fire alarm devices"
-      ];
-      
-      for (const keyword of highPriorityKeywords) {
-        const match = workbook.SheetNames.find(name => {
-          return safeIncludes(name, keyword);
-        });
-        if (match) return match;
-      }
-      
-      // Priority 3: Contains general device keywords
-      const generalKeywords = [
-        "devices", "smoke", "heat", "pull",
-        "extinguisher", "emergency light", "sprinkler"
-      ];
-      
-      for (const keyword of generalKeywords) {
-        const match = workbook.SheetNames.find(name => {
-          return safeIncludes(name, keyword);
-        });
-        if (match) return match;
-      }
-      
-      // Fallback: first sheet
-      return workbook.SheetNames[0];
-    };
-    
-    const sheetName = input.sheetName || getDefaultSheetName();
+    const sheetName = input.sheetName || suggestedSheetName || workbook.SheetNames[0];
     
     // Validate sheet exists
     if (!workbook.Sheets[sheetName]) {
@@ -1925,18 +1889,16 @@ const importRouter = router({
     const rows = data.slice(1, 11); // Preview first 10 rows
     const totalRows = data.length - 1;
     
-    // Check if this looks like a device sheet
-    const deviceHeaders = ['location', 'device', 'type', 'model', 'serial'];
-    const hasDeviceHeaders = headers.some(h => {
-      const lower = safeToLower(h);
-      return lower && deviceHeaders.some(dh => lower.includes(dh));
-    });
+    // Auto-map columns based on import type
+    const { autoMapColumns, getMappingStats } = await import('./autoMapper');
+    const autoMapping = autoMapColumns(headers, input.importType);
+    const mappingStats = getMappingStats(autoMapping, input.importType);
     
       console.log('[parseFile] Parse successful:', {
         sheetName,
         headerCount: headers.length,
         totalRows,
-        hasDeviceHeaders
+        mappingStats
       });
       
       return {
@@ -1945,8 +1907,9 @@ const importRouter = router({
         totalRows,
         sheetName,
         sheetNames: workbook.SheetNames,
-        defaultSheetName: sheetName,
-        hasDeviceHeaders,
+        suggestedSheetName,
+        autoMapping,
+        mappingStats,
       };
     } catch (error: any) {
       console.error('[parseFile] Error:', {
@@ -1965,7 +1928,7 @@ const importRouter = router({
   validate: officeProcedure.input(z.object({
     companyId: z.number(),
     siteId: z.number(),
-    importType: z.enum(['devices', 'sites', 'areas', 'customers']),
+    importType: z.enum(['site', 'fireAlarmDevices', 'fireExtinguishers', 'emergencyLights', 'sprinklerDevices']),
     fileName: z.string(),
     fileData: z.string(),
     sheetName: z.string(), // Required: which sheet to validate
@@ -1990,23 +1953,31 @@ const importRouter = router({
     const headers = data[0] as string[];
     const rows = data.slice(1);
     
+    // Get schema for import type
+    const { getImportSchema, shouldSkipRow } = await import('./importSchemas');
+    const schema = getImportSchema(input.importType);
+    
     const validationResults: Array<{
       rowNumber: number;
-      status: 'valid' | 'error' | 'duplicate';
+      status: 'valid' | 'error' | 'duplicate' | 'skipped';
       errors: string[];
+      warnings: string[];
       data: Record<string, any>;
     }> = [];
     
-    const requiredFields = input.importType === 'devices' 
-      ? ['deviceType'] 
-      : input.importType === 'sites' 
-        ? ['name'] 
-        : ['name'];
+    let skippedCount = 0;
     
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      
+      // Skip heading/note rows and pricing tables
+      if (shouldSkipRow(row, headers)) {
+        skippedCount++;
+        continue;
+      }
+      
       const rowData: Record<string, any> = {};
-      const errors: string[] = [];
+      const warnings: string[] = [];
       
       // Map columns to fields
       for (const [targetField, sourceColumn] of Object.entries(input.columnMapping)) {
@@ -2016,16 +1987,18 @@ const importRouter = router({
         }
       }
       
-      // Validate required fields
-      for (const field of requiredFields) {
-        if (!rowData[field] || String(rowData[field]).trim() === '') {
-          errors.push(`Missing required field: ${field}`);
-        }
+      // Validate using schema
+      const validation = schema.validateRow(rowData);
+      const errors = validation.errors;
+      
+      // Warn if location is missing (but don't block)
+      if (!rowData.location || String(rowData.location).trim() === '') {
+        warnings.push('Location is blank');
       }
       
-      // Check for duplicates (for devices)
+      // Check for duplicates (for device imports)
       let isDuplicate = false;
-      if (input.importType === 'devices' && (rowData.serialNumber || rowData.barcode)) {
+      if (input.importType !== 'site' && (rowData.serialNumber || rowData.barcode)) {
         const existing = await db.findDuplicateDevice(
           input.siteId,
           rowData.serialNumber || null,
@@ -2040,6 +2013,7 @@ const importRouter = router({
         rowNumber: i + 2, // 1-indexed, accounting for header
         status: errors.length > 0 ? 'error' : isDuplicate ? 'duplicate' : 'valid',
         errors,
+        warnings,
         data: rowData,
       });
     }
@@ -2053,6 +2027,7 @@ const importRouter = router({
       validCount,
       errorCount,
       duplicateCount,
+      skippedCount,
       results: validationResults,
     };
   }),
@@ -2061,7 +2036,7 @@ const importRouter = router({
   execute: officeProcedure.input(z.object({
     companyId: z.number(),
     siteId: z.number(),
-    importType: z.enum(['devices', 'sites', 'areas', 'customers']),
+    importType: z.enum(['site', 'fireAlarmDevices', 'fireExtinguishers', 'emergencyLights', 'sprinklerDevices']),
     fileName: z.string(),
     fileData: z.string(),
     sheetName: z.string(), // Required: which sheet to import
@@ -2086,12 +2061,19 @@ const importRouter = router({
     const headers = data[0] as string[];
     const rows = data.slice(1);
     
+    // Get schema for import type
+    const { getImportSchema, shouldSkipRow } = await import('./importSchemas');
+    const schema = getImportSchema(input.importType);
+    
+    // Map new import types to legacy DB enum
+    const legacyImportType = input.importType === 'site' ? 'sites' : 'devices';
+    
     // Create import log
     const importLog = await db.createImportLog({
       companyId: input.companyId,
       siteId: input.siteId,
       importedById: ctx.user.id,
-      importType: input.importType,
+      importType: legacyImportType,
       fileName: input.fileName,
       columnMapping: input.columnMapping as any,
       duplicateHandling: input.duplicateHandling,
@@ -2115,6 +2097,13 @@ const importRouter = router({
     
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      
+      // Skip heading/note rows and pricing tables
+      if (shouldSkipRow(row, headers)) {
+        skippedCount++;
+        continue;
+      }
+      
       const rowData: Record<string, any> = {};
       
       // Map columns to fields
@@ -2126,7 +2115,25 @@ const importRouter = router({
       }
       
       try {
-        if (input.importType === 'devices') {
+        if (input.importType === 'site') {
+          // Update site information
+          if (rowData.siteName) {
+            await db.updateSite(input.siteId, {
+              name: rowData.siteName,
+              address: rowData.address,
+              city: rowData.city,
+              notes: rowData.notes,
+            });
+            successCount++;
+            rowResults.push({
+              importLogId: importLog.id,
+              rowNumber: i + 2,
+              status: 'success',
+              entityId: input.siteId,
+              originalData: rowData,
+            });
+          }
+        } else {
           // Check for duplicate
           const existing = await db.findDuplicateDevice(
             input.siteId,
@@ -2163,15 +2170,16 @@ const importRouter = router({
             // create_new falls through to create
           }
           
-          // Create new device
+          // Create new device with category
           const device = await db.createDevice({
             companyId: ctx.user.companyId!,
             siteId: input.siteId,
+            category: schema.category || 'FIRE_ALARM_DEVICE',
             deviceType: rowData.deviceType || 'Unknown',
             manufacturer: rowData.manufacturer,
             model: rowData.model,
             serialNumber: rowData.serialNumber,
-            location: rowData.location,
+            location: rowData.location ? `${rowData.floor ? rowData.floor + ' - ' : ''}${rowData.location}` : undefined,
             barcode: rowData.barcode,
             notes: rowData.notes,
           });

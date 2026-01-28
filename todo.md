@@ -1286,3 +1286,32 @@
 - [ ] Log sheet names, workbook structure, and operation context
 - [ ] Capture and return detailed error information
 - [ ] Test to identify exact error source
+
+## XLSM Import Refactoring (Critical)
+- [ ] Add Import Type selection step (site, fireAlarmDevices, fireExtinguishers, emergencyLights, sprinklerDevices)
+- [ ] Update parseFile to return sheetNames and suggestedSheetName based on Import Type
+- [ ] Add Sheet Picker dropdown with smart default selection
+- [ ] Implement deterministic auto-mapping with normalize + keyword matching
+- [ ] Add "Auto-mapped X/Y" badge and "Reset mapping" button
+- [ ] Update validation to show warnings for missing location but allow import
+- [ ] Implement category-specific schemas (site, fireAlarmDevices, fireExtinguishers, emergencyLights, sprinklerDevices)
+- [ ] Ensure all imported devices bind to siteId from route params
+- [ ] Add row cleaning logic to skip heading/note rows and pricing tables
+- [ ] Implement suggestedSheetName scoring algorithm
+- [ ] Update backend to accept importType, sheetName, columnMapping, siteId
+- [ ] Add "View Devices for this Site" button after import completes
+- [ ] Test multi-tab .xlsm with pricing tab (should not default to pricing)
+- [ ] Verify auto-mapping works for most common fields
+- [ ] Verify imported devices appear in correct category cards
+
+## XLSM Import Refactoring (Completed)
+- [x] Add Import Type selection (site vs device categories)
+- [x] Implement deterministic auto-mapping with keyword matching
+- [x] Add smart sheet suggestion based on import type
+- [x] Update validation to use category-specific schemas
+- [x] Add SPRINKLER category to device enum
+- [x] Update execute mutation to assign correct category
+- [x] Skip heading rows and pricing tables automatically
+- [x] Show "(recommended)" indicator on suggested sheet
+- [x] Display auto-mapping stats (X/Y fields mapped)
+- [x] Fix all toLowerCase() null reference errors with safe string helpers

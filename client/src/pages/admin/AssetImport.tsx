@@ -28,7 +28,9 @@ import { toast } from "sonner";
 import { isSpreadsheetFile, getSpreadsheetErrorMessage, getSpreadsheetAcceptAttribute } from "@/_core/utils/fileTypes";
 import { autoMapColumns } from "@/_core/utils/autoMapping";
 
-type ImportStep = 'upload' | 'mapping' | 'preview' | 'importing' | 'results';
+type ImportStep = 'selectType' | 'upload' | 'mapping' | 'preview' | 'importing' | 'results';
+
+type ImportType = 'site' | 'fireAlarmDevices' | 'fireExtinguishers' | 'emergencyLights' | 'sprinklerDevices';
 
 interface ColumnMapping {
   [targetField: string]: string;
@@ -36,8 +38,9 @@ interface ColumnMapping {
 
 interface ValidationResult {
   rowNumber: number;
-  status: 'valid' | 'error' | 'duplicate';
+  status: 'valid' | 'error' | 'duplicate' | 'skipped';
   errors: string[];
+  warnings?: string[];
   data: Record<string, any>;
 }
 
@@ -59,7 +62,8 @@ export default function AssetImport() {
   const siteId = parseInt(params.siteId || "0");
   const companyId = user?.companyId || 1;
   
-  const [step, setStep] = useState<ImportStep>('upload');
+  const [step, setStep] = useState<ImportStep>('selectType');
+  const [importType, setImportType] = useState<ImportType>('fireAlarmDevices');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileData, setFileData] = useState<string>('');
   const [parsedData, setParsedData] = useState<{
@@ -68,8 +72,9 @@ export default function AssetImport() {
     totalRows: number;
     sheetName: string;
     sheetNames?: string[];
-    defaultSheetName?: string;
-    hasDeviceHeaders?: boolean;
+    suggestedSheetName?: string;
+    autoMapping?: Record<string, string>;
+    mappingStats?: { mapped: number; total: number };
   } | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
@@ -102,15 +107,11 @@ export default function AssetImport() {
       setParsedData(data);
       setSelectedSheet(data.sheetName); // Set to smart default
       
-      // Show warning if not a device sheet
-      if (data.hasDeviceHeaders === false) {
-        toast.warning("This sheet doesn't look like a device list—choose 'Individual devices' or another worksheet.");
+      // Use auto-mapping from backend
+      if (data.autoMapping) {
+        setColumnMapping(data.autoMapping);
       }
       
-      // Auto-map columns using fuzzy matching with synonyms
-      const autoMappingResult = autoMapColumns(data.headers, DEVICE_FIELDS, 60);
-      const autoMapping = autoMappingResult.mapping;
-      setColumnMapping(autoMapping);
       setStep('mapping');
     },
     onError: (error) => {
@@ -171,6 +172,7 @@ export default function AssetImport() {
       parseFileMutation.mutate({
         fileName: file.name,
         fileData: base64,
+        importType,
       });
     };
     reader.readAsArrayBuffer(file);
@@ -182,7 +184,7 @@ export default function AssetImport() {
     validateMutation.mutate({
       companyId,
       siteId,
-      importType: 'devices',
+      importType,
       fileName: selectedFile.name,
       fileData,
       sheetName: selectedSheet,
@@ -199,7 +201,7 @@ export default function AssetImport() {
     executeMutation.mutate({
       companyId,
       siteId,
-      importType: 'devices',
+      importType,
       fileName: selectedFile.name,
       fileData,
       sheetName: selectedSheet,
@@ -276,6 +278,89 @@ export default function AssetImport() {
         </Card>
         
         {/* Step Content */}
+        {step === 'selectType' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Select Import Type</CardTitle>
+              <CardDescription>
+                Choose what type of data you want to import from your Excel file
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <RadioGroup value={importType} onValueChange={(value) => setImportType(value as ImportType)}>
+                <div className="space-y-3">
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                    <RadioGroupItem value="site" id="type-site" />
+                    <div className="flex-1">
+                      <Label htmlFor="type-site" className="font-medium cursor-pointer">
+                        Import Site Info
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Update site name, address, city, and client information
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                    <RadioGroupItem value="fireAlarmDevices" id="type-fire-alarm" />
+                    <div className="flex-1">
+                      <Label htmlFor="type-fire-alarm" className="font-medium cursor-pointer">
+                        Import Devices → Fire Alarm Devices
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Smoke detectors, heat detectors, pull stations, horns, strobes
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                    <RadioGroupItem value="fireExtinguishers" id="type-extinguishers" />
+                    <div className="flex-1">
+                      <Label htmlFor="type-extinguishers" className="font-medium cursor-pointer">
+                        Import Devices → Fire Extinguishers
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        ABC, CO2, K-class, and other fire extinguishers
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                    <RadioGroupItem value="emergencyLights" id="type-emergency" />
+                    <div className="flex-1">
+                      <Label htmlFor="type-emergency" className="font-medium cursor-pointer">
+                        Import Devices → Emergency Lights
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Battery units, exit signs, combo units
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                    <RadioGroupItem value="sprinklerDevices" id="type-sprinkler" />
+                    <div className="flex-1">
+                      <Label htmlFor="type-sprinkler" className="font-medium cursor-pointer">
+                        Import Devices → Sprinkler Devices
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Valves, switches, gauges, test connections
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </RadioGroup>
+              
+              <div className="flex justify-end pt-4">
+                <Button onClick={() => setStep('upload')}>
+                  Continue
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        
         {step === 'upload' && (
           <Card>
             <CardHeader>
@@ -358,9 +443,11 @@ export default function AssetImport() {
                     <CardTitle>Map Columns</CardTitle>
                     <CardDescription className="flex items-center gap-2 mt-1">
                       Match your file columns to device fields
-                      <Badge variant="secondary" className="ml-2">
-                        Auto-mapped {getMappedFieldCount()}/{DEVICE_FIELDS.length}
-                      </Badge>
+                      {parsedData.mappingStats && (
+                        <Badge variant="secondary" className="ml-2">
+                          Auto-mapped {parsedData.mappingStats.mapped}/{parsedData.mappingStats.total}
+                        </Badge>
+                      )}
                     </CardDescription>
                   </div>
                   {getMappedFieldCount() > 0 && (
@@ -391,6 +478,7 @@ export default function AssetImport() {
                         parseFileMutation.mutate({
                           fileName: selectedFile?.name || '',
                           fileData,
+                          importType,
                           sheetName: value,
                         });
                       }}
@@ -402,15 +490,15 @@ export default function AssetImport() {
                         {parsedData.sheetNames.map((sheet) => (
                           <SelectItem key={sheet} value={sheet}>
                             {sheet}
-                            {sheet === parsedData.defaultSheetName && " (recommended)"}
+                            {sheet === parsedData.suggestedSheetName && " (recommended)"}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    {parsedData.hasDeviceHeaders === false && (
-                      <p className="text-sm text-amber-600 mt-2 flex items-center gap-1">
-                        <AlertCircle className="h-4 w-4" />
-                        This sheet doesn't look like a device list
+                    {parsedData.suggestedSheetName && selectedSheet === parsedData.suggestedSheetName && (
+                      <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
+                        <Check className="h-4 w-4" />
+                        Recommended sheet for {importType}
                       </p>
                     )}
                   </div>
