@@ -255,6 +255,74 @@ const deviceRouter = router({
   }),
 });
 
+// Smoke Alarm router
+const smokeAlarmRouter = router({
+  listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+    return db.getSmokeAlarmsBySite(input.siteId);
+  }),
+  
+  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+    return db.getSmokeAlarmsByJob(input.jobId);
+  }),
+  
+  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    return db.getDeviceById(input.id);
+  }),
+  
+  create: technicianProcedure.input(z.object({
+    companyId: z.number(),
+    siteId: z.number(),
+    suiteNumber: z.string().min(1),
+    location: z.string().optional(),
+    powerType: z.enum(['hardwired', 'battery', 'sealed', 'unknown']).optional(),
+    installDate: z.string().optional(), // ISO date string
+    notes: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const { installDate, ...rest } = input;
+    return db.createDevice({
+      ...rest,
+      category: 'SMOKE_ALARM',
+      deviceType: 'Smoke Alarm',
+      installDate: installDate ? new Date(installDate) : undefined,
+    });
+  }),
+  
+  update: technicianProcedure.input(z.object({
+    id: z.number(),
+    suiteNumber: z.string().optional(),
+    location: z.string().optional(),
+    powerType: z.enum(['hardwired', 'battery', 'sealed', 'unknown']).optional(),
+    installDate: z.string().optional(), // ISO date string
+    notes: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, installDate, ...data } = input;
+    await db.updateDevice(id, {
+      ...data,
+      installDate: installDate ? new Date(installDate) : undefined,
+    });
+    return { success: true };
+  }),
+  
+  recordTest: technicianProcedure.input(z.object({
+    id: z.number(),
+    testResult: z.enum(['pass', 'fail', 'no_access', 'na']),
+    notes: z.string().optional(),
+  })).mutation(async ({ input }) => {
+    await db.updateSmokeAlarmTestResult(input.id, input.testResult, input.notes);
+    
+    // If test failed or no access, prompt for deficiency
+    if (input.testResult === 'fail' || input.testResult === 'no_access') {
+      return { success: true, requiresDeficiency: true };
+    }
+    
+    return { success: true, requiresDeficiency: false };
+  }),
+  
+  getCount: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+    return db.getSmokeAlarmCountBySite(input.siteId);
+  }),
+});
+
 // Job router
 const jobRouter = router({
   listByCompany: officeProcedure.input(z.object({ 
@@ -2292,6 +2360,7 @@ export const appRouter = router({
   site: siteRouter,
   area: areaRouter,
   device: deviceRouter,
+  smokeAlarm: smokeAlarmRouter,
   job: jobRouter,
   inspectionResult: inspectionResultRouter,
   deficiency: deficiencyRouter,

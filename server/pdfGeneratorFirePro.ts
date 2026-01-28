@@ -37,7 +37,7 @@ interface Deficiency {
   deviceType?: string;
   location?: string;
   estimatedCost?: number;
-  systemCategory?: 'FIRE_ALARM' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHTING' | 'SPRINKLER' | null;
+  systemCategory?: 'FIRE_ALARM' | 'SMOKE_ALARM' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHTING' | 'SPRINKLER' | null;
 }
 
 interface InspectionResult {
@@ -280,6 +280,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         // Group deficiencies by system type
         const deficienciesBySystem: Record<string, Array<typeof data.deficiencies[0]>> = {
           'Fire Alarm Deficiencies': [],
+          'Smoke Alarm Deficiencies': [],
           'Fire Extinguisher Deficiencies': [],
           'Emergency Lighting Deficiencies': [],
           'Sprinkler Deficiencies': []
@@ -293,6 +294,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           if (def.systemCategory) {
             const categoryMap: Record<string, string> = {
               'FIRE_ALARM': 'Fire Alarm Deficiencies',
+              'SMOKE_ALARM': 'Smoke Alarm Deficiencies',
               'FIRE_EXTINGUISHER': 'Fire Extinguisher Deficiencies',
               'EMERGENCY_LIGHTING': 'Emergency Lighting Deficiencies',
               'SPRINKLER': 'Sprinkler Deficiencies'
@@ -303,7 +305,9 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
             const deviceType = def.deviceType || '';
             const typeLower = deviceType.toLowerCase();
             
-            if (typeLower.includes('extinguisher')) {
+            if (typeLower.includes('smoke alarm')) {
+              systemCategory = 'Smoke Alarm Deficiencies';
+            } else if (typeLower.includes('extinguisher')) {
               systemCategory = 'Fire Extinguisher Deficiencies';
             } else if (typeLower.includes('emergency') || typeLower.includes('light')) {
               systemCategory = 'Emergency Lighting Deficiencies';

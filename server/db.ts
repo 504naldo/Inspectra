@@ -305,6 +305,65 @@ export async function getDeviceCountBySite(siteId: number) {
 }
 
 // ============================================
+// SMOKE ALARM QUERIES
+// ============================================
+export async function getSmokeAlarmsBySite(siteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devices).where(
+    and(
+      eq(devices.siteId, siteId),
+      eq(devices.category, 'SMOKE_ALARM'),
+      eq(devices.isActive, true)
+    )
+  ).orderBy(asc(devices.suiteNumber), asc(devices.location));
+}
+
+export async function getSmokeAlarmsByJob(jobId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Get job to find siteId
+  const job = await getJobById(jobId);
+  if (!job) return [];
+  
+  return getSmokeAlarmsBySite(job.siteId);
+}
+
+export async function getSmokeAlarmCountBySite(siteId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ count: sql<number>`count(*)` }).from(devices).where(
+    and(
+      eq(devices.siteId, siteId),
+      eq(devices.category, 'SMOKE_ALARM'),
+      eq(devices.isActive, true)
+    )
+  );
+  return result[0]?.count ?? 0;
+}
+
+export async function updateSmokeAlarmTestResult(
+  deviceId: number,
+  testResult: 'pass' | 'fail' | 'no_access' | 'na',
+  notes?: string
+) {
+  const db = await getDb();
+  if (!db) return;
+  
+  const updateData: Partial<InsertDevice> = {
+    testResult,
+    lastInspectionDate: new Date(),
+  };
+  
+  if (notes !== undefined) {
+    updateData.notes = notes;
+  }
+  
+  await db.update(devices).set(updateData).where(eq(devices.id, deviceId));
+}
+
+// ============================================
 // JOB QUERIES
 // ============================================
 export async function createJob(data: InsertJob) {

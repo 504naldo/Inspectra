@@ -318,8 +318,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             testedCount={smokeStats.tested}
             totalCount={smokeStats.total}
             deficiencyCount={smokeStats.deficiencies}
-            route={`/tech/jobs/${jobId}?category=smoke`}
-            resumeRoute={getProgress()?.route.includes('smoke') ? getProgress()?.route : undefined}
+            route={`/tech/jobs/${jobId}/smoke-alarms`}
+            resumeRoute={getProgress()?.route.includes('smoke-alarm') ? getProgress()?.route : undefined}
             gradientFrom="from-red-50"
             gradientTo="to-orange-50 dark:from-red-950/20 dark:to-orange-950/20"
             borderColor="border-red-200 dark:border-red-800"

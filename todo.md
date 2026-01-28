@@ -1315,3 +1315,17 @@
 - [x] Show "(recommended)" indicator on suggested sheet
 - [x] Display auto-mapping stats (X/Y fields mapped)
 - [x] Fix all toLowerCase() null reference errors with safe string helpers
+
+## Smoke Alarms Inspection Category (New)
+- [x] Add SMOKE_ALARM to device category enum (already exists, verified)
+- [x] Add smoke alarm specific fields (suiteNumber, powerType, installDate, testResult)
+- [x] Create smoke alarm CRUD API endpoints
+- [x] Add smoke alarm testing workflow API
+- [x] Build smoke alarm inspection UI card on job details page
+- [x] Add smoke alarm entry form with suite number and install date
+- [x] Implement test result recording (Pass/Fail/No Access/N/A)
+- [x] Add deficiency prompt for Fail/No Access results
+- [x] Update Annual Inspection Report PDF with smoke alarm section
+- [x] Update Deficiency Report PDF to include smoke alarms
+- [x] Add permission checks (technician vs admin/office)
+- [x] Write unit tests for smoke alarm functionality

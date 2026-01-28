@@ -132,6 +132,10 @@ export const devices = mysqlTable("devices", {
   barcode: varchar("barcode", { length: 100 }),
   externalRef: varchar("externalRef", { length: 255 }), // Stable import key (tag number, identifier, or hash)
   notes: text("notes"),
+  // Smoke alarm specific fields
+  suiteNumber: varchar("suiteNumber", { length: 50 }), // Required for SMOKE_ALARM category
+  powerType: mysqlEnum("powerType", ["hardwired", "battery", "sealed", "unknown"]), // Power source type
+  testResult: mysqlEnum("testResult", ["pass", "fail", "no_access", "na"]), // Test result
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
