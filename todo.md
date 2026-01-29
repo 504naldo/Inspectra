@@ -1348,3 +1348,10 @@
 - [x] Improve client error display with file name, size, and actionable hints
 - [x] Add "Copy debug info" button with error code, fileId, size, first-bytes hex
 - [x] Test .xlsm upload from mobile Chrome with diagnostics
+
+## Auto-Mapping Destructuring Error Fix (Critical)
+- [x] Analyze actual Excel file to identify undefined header issues
+- [x] Fix autoMapColumns to handle undefined/null headers in normalization loop
+- [x] Add null checks before destructuring in for loop
+- [x] Test with actual file (#0816 - 2026 ANNUAL - 2860 TRETHEWAY ST)
+- [x] Add unit test for undefined headers in auto-mapping

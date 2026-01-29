@@ -99,11 +99,13 @@ export function autoMapColumns(
   const mapping: Record<string, string> = {};
   const usedHeaders = new Set<string>();
 
-  // Normalize all headers
-  const normalizedHeaders = headers.map(h => ({
-    original: h,
-    normalized: normalizeHeader(h),
-  }));
+  // Normalize all headers, filtering out null/undefined
+  const normalizedHeaders = headers
+    .filter(h => h != null && h !== '') // Skip null, undefined, and empty strings
+    .map(h => ({
+      original: String(h), // Ensure it's a string
+      normalized: normalizeHeader(String(h)),
+    }));
 
   // Sort rules by priority (highest first)
   const sortedRules = [...rules].sort((a, b) => b.priority - a.priority);
