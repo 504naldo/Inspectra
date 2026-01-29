@@ -116,6 +116,14 @@ export default function AssetImport() {
   const { data: importHistory } = trpc.import.listBySite.useQuery({ siteId }, { enabled: siteId > 0 });
   
   // Mutations
+  const [parseError, setParseError] = useState<{
+    message: string;
+    fileName?: string;
+    fileSize?: number;
+    first16Bytes?: string;
+    errorType?: string;
+  } | null>(null);
+  
   const parseFileMutation = trpc.import.parseFile.useMutation({
     onSuccess: (data) => {
       setParsedData(data);
@@ -126,10 +134,23 @@ export default function AssetImport() {
         setColumnMapping(data.autoMapping);
       }
       
+      setParseError(null);
       setStep('mapping');
     },
-    onError: (error) => {
-      toast.error(`Failed to parse file: ${error.message}`);
+    onError: (error: any) => {
+      // Extract error details from cause if available
+      const details = error.data?.cause?.details || {};
+      const errorMessage = error.message || 'Failed to parse file';
+      
+      setParseError({
+        message: errorMessage,
+        fileName: details.fileName || selectedFile?.name,
+        fileSize: details.byteSize || selectedFile?.size,
+        first16Bytes: details.first16Bytes,
+        errorType: details.errorType
+      });
+      
+      toast.error(errorMessage, { duration: 5000 });
     },
   });
   
@@ -420,6 +441,54 @@ export default function AssetImport() {
                 <div className="flex items-center justify-center gap-2 text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Parsing file...
+                </div>
+              )}
+              
+              {parseError && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+                    <div className="flex-1">
+                      <h4 className="font-medium text-destructive mb-1">Parse Failed</h4>
+                      <p className="text-sm text-muted-foreground mb-2">{parseError.message}</p>
+                      
+                      <div className="text-xs space-y-1 text-muted-foreground">
+                        {parseError.fileName && (
+                          <div><span className="font-medium">File:</span> {parseError.fileName}</div>
+                        )}
+                        {parseError.fileSize && (
+                          <div><span className="font-medium">Size:</span> {(parseError.fileSize / 1024).toFixed(2)} KB</div>
+                        )}
+                        {parseError.errorType && (
+                          <div><span className="font-medium">Error Type:</span> {parseError.errorType}</div>
+                        )}
+                      </div>
+                      
+                      <p className="text-xs text-muted-foreground mt-3">
+                        💡 This usually happens if the upload is incomplete or the workbook is protected/corrupted.
+                        Try re-uploading the file or saving it as a new Excel file.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const debugInfo = [
+                        `Error: ${parseError.message}`,
+                        `File: ${parseError.fileName || 'unknown'}`,
+                        `Size: ${parseError.fileSize ? (parseError.fileSize / 1024).toFixed(2) + ' KB' : 'unknown'}`,
+                        parseError.first16Bytes ? `First 16 bytes: ${parseError.first16Bytes}` : '',
+                        parseError.errorType ? `Error Type: ${parseError.errorType}` : ''
+                      ].filter(Boolean).join('\n');
+                      
+                      navigator.clipboard.writeText(debugInfo);
+                      toast.success('Debug info copied to clipboard');
+                    }}
+                  >
+                    Copy Debug Info
+                  </Button>
                 </div>
               )}
               

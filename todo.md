@@ -1337,3 +1337,14 @@
 - [x] Update execute mutation to handle smoke alarm imports
 - [x] Add smoke alarm import option to AssetImport UI
 - [x] Test smoke alarm bulk import with sample data
+
+## Excel Import Parse Error Fix (Critical)
+- [x] Add comprehensive diagnostics to parseFile endpoint (fileId, fileName, contentType, byteSize, first 16 bytes hex)
+- [x] Wrap parsing in try/catch with structured error response (PARSE_FAILED code)
+- [x] Log error message and stack trace server-side
+- [x] Ensure binary handling uses ArrayBuffer/Uint8Array (not strings or base64)
+- [x] Update SheetJS read configuration for XLSM (type: "array", cellDates: true)
+- [x] Add size guardrails (< 1KB = empty, truncated upload detection)
+- [x] Improve client error display with file name, size, and actionable hints
+- [x] Add "Copy debug info" button with error code, fileId, size, first-bytes hex
+- [x] Test .xlsm upload from mobile Chrome with diagnostics

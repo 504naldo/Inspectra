@@ -1919,9 +1919,57 @@ const importRouter = router({
     sheetName: z.string().optional(), // Optional: if not provided, use smart suggestion
   })).mutation(async ({ input }) => {
     try {
-      const XLSX = await import('xlsx');
+      // Decode base64 to buffer
       const buffer = Buffer.from(input.fileData, 'base64');
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      const byteSize = buffer.length;
+      
+      // Get first 16 bytes as hex for diagnostics (ZIP header should start with 50 4B 03 04)
+      const first16Bytes = buffer.slice(0, 16).toString('hex').toUpperCase();
+      const first4Bytes = first16Bytes.slice(0, 8); // First 4 bytes
+      
+      // Log diagnostics
+      console.log('[parseFile] Diagnostics:', {
+        fileName: input.fileName,
+        byteSize,
+        first16BytesHex: first16Bytes,
+        isZipHeader: first4Bytes === '504B0304', // PK.. ZIP header
+        importType: input.importType
+      });
+      
+      // Size guardrails
+      if (byteSize < 1024) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'PARSE_FAILED: File is too small (< 1KB). The upload may be empty or corrupted.',
+          cause: { code: 'PARSE_FAILED', details: { byteSize, first16Bytes } }
+        });
+      }
+      
+      // Check for ZIP header (Excel files are ZIP archives)
+      if (first4Bytes !== '504B0304') {
+        console.warn('[parseFile] Invalid ZIP header:', {
+          expected: '504B0304',
+          actual: first4Bytes,
+          fileName: input.fileName
+        });
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'PARSE_FAILED: File does not appear to be a valid Excel file. Expected ZIP header not found.',
+          cause: { code: 'PARSE_FAILED', details: { first16Bytes, byteSize } }
+        });
+      }
+      
+      // Convert buffer to Uint8Array for SheetJS
+      const XLSX = await import('xlsx');
+      const uint8Data = new Uint8Array(buffer);
+      
+      // Use correct SheetJS configuration for XLSM
+      const workbook = XLSX.read(uint8Data, { 
+        type: 'array', 
+        cellDates: true,
+        cellFormula: false,
+        cellStyles: false
+      });
       
       // Use smart sheet suggestion based on import type
       const { suggestSheet } = await import('./sheetSuggestion');
@@ -1980,14 +2028,31 @@ const importRouter = router({
         mappingStats,
       };
     } catch (error: any) {
-      console.error('[parseFile] Error:', {
-        message: error.message,
-        stack: error.stack,
-        fileName: input.fileName
+      // If it's already a TRPCError, rethrow it
+      if (error.code) {
+        throw error;
+      }
+      
+      // Log full error details server-side
+      console.error('[parseFile] Parse failed:', {
+        fileName: input.fileName,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        errorName: error.name
       });
+      
+      // Return structured error with safe details
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: `Failed to parse file: ${error.message}`
+        message: `PARSE_FAILED: Failed to parse Excel workbook. ${error.message || 'Unknown error'}`,
+        cause: { 
+          code: 'PARSE_FAILED', 
+          details: {
+            fileName: input.fileName,
+            errorType: error.name,
+            errorMessage: error.message
+          }
+        }
       });
     }
   }),
