@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Plus, CheckCircle2, XCircle, Ban, Minus } from "lucide-react";
+import { ArrowLeft, Plus, CheckCircle2, XCircle, Ban, Minus, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 
@@ -18,6 +18,7 @@ interface SmokeAlarmInspectionProps {
 export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProps) {
   const [, setLocation] = useLocation();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [expiryFilter, setExpiryFilter] = useState<'all' | 'expired' | 'expiring_soon'>('all');
   const [newAlarm, setNewAlarm] = useState({
     suiteNumber: "",
     location: "",
@@ -111,9 +112,51 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
     return d.toLocaleDateString();
   };
 
+  const getExpiryBadge = (expiryInfo: any) => {
+    if (!expiryInfo || expiryInfo.status === 'ok') return null;
+    
+    const badges = {
+      expired: { color: "text-red-600 bg-red-50 dark:bg-red-950/20 border-red-200", label: "Expired" },
+      expiring_soon: { color: "text-orange-600 bg-orange-50 dark:bg-orange-950/20 border-orange-200", label: "Expiring Soon" },
+      unknown: { color: "text-gray-600 bg-gray-50 dark:bg-gray-950/20 border-gray-200", label: "Install Date Required" },
+    };
+
+    const badge = badges[expiryInfo.status as keyof typeof badges];
+    if (!badge) return null;
+
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border ${badge.color}`}>
+        <AlertTriangle className="h-3 w-3" />
+        {expiryInfo.warningMessage || badge.label}
+      </span>
+    );
+  };
+
+  // Filter and sort smoke alarms
+  const filteredAndSortedAlarms = smokeAlarms
+    .filter(alarm => {
+      if (expiryFilter === 'all') return true;
+      return alarm.expiryInfo?.status === expiryFilter;
+    })
+    .sort((a, b) => {
+      // Sort by expiry status: expired first, then expiring soon, then by days remaining
+      const statusPriority = { expired: 0, expiring_soon: 1, unknown: 2, ok: 3 };
+      const aPriority = statusPriority[a.expiryInfo?.status || 'ok'];
+      const bPriority = statusPriority[b.expiryInfo?.status || 'ok'];
+      
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      
+      // Within same status, sort by days remaining (ascending)
+      const aDays = a.expiryInfo?.daysRemaining ?? Infinity;
+      const bDays = b.expiryInfo?.daysRemaining ?? Infinity;
+      return aDays - bDays;
+    });
+
   const testedCount = smokeAlarms.filter(a => a.testResult).length;
   const passedCount = smokeAlarms.filter(a => a.testResult === "pass").length;
   const failedCount = smokeAlarms.filter(a => a.testResult === "fail" || a.testResult === "no_access").length;
+  const expiredCount = smokeAlarms.filter(a => a.expiryInfo?.status === 'expired').length;
+  const expiringSoonCount = smokeAlarms.filter(a => a.expiryInfo?.status === 'expiring_soon').length;
 
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom">
@@ -214,7 +257,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
       </header>
 
       {/* Stats */}
-      <div className="container py-4">
+      <div className="container py-4 space-y-3">
         <Card>
           <CardContent className="pt-6">
             <div className="grid grid-cols-4 gap-4 text-center">
@@ -237,11 +280,50 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
             </div>
           </CardContent>
         </Card>
+        
+        {/* Expiry Filter */}
+        {(expiredCount > 0 || expiringSoonCount > 0) && (
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant={expiryFilter === 'all' ? 'default' : 'outline'}
+              onClick={() => setExpiryFilter('all')}
+            >
+              All ({smokeAlarms.length})
+            </Button>
+            {expiredCount > 0 && (
+              <Button
+                size="sm"
+                variant={expiryFilter === 'expired' ? 'default' : 'outline'}
+                className={expiryFilter === 'expired' ? '' : 'text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20'}
+                onClick={() => setExpiryFilter('expired')}
+              >
+                Expired ({expiredCount})
+              </Button>
+            )}
+            {expiringSoonCount > 0 && (
+              <Button
+                size="sm"
+                variant={expiryFilter === 'expiring_soon' ? 'default' : 'outline'}
+                className={expiryFilter === 'expiring_soon' ? '' : 'text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/20'}
+                onClick={() => setExpiryFilter('expiring_soon')}
+              >
+                Expiring Soon ({expiringSoonCount})
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Smoke Alarm List */}
       <div className="container pb-6 space-y-3">
-        {smokeAlarms.length === 0 ? (
+        {filteredAndSortedAlarms.length === 0 && smokeAlarms.length > 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <p>No smoke alarms match the selected filter</p>
+            </CardContent>
+          </Card>
+        ) : smokeAlarms.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <p>No smoke alarms added yet</p>
@@ -249,17 +331,20 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
             </CardContent>
           </Card>
         ) : (
-          smokeAlarms.map((alarm) => (
+          filteredAndSortedAlarms.map((alarm) => (
             <Card key={alarm.id}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
-                  <div>
+                  <div className="flex-1">
                     <CardTitle className="text-base">Suite {alarm.suiteNumber}</CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
                       {alarm.location || "No location specified"}
                     </p>
                   </div>
-                  {getTestResultBadge(alarm.testResult)}
+                  <div className="flex flex-col items-end gap-1">
+                    {getTestResultBadge(alarm.testResult)}
+                    {getExpiryBadge(alarm.expiryInfo)}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">

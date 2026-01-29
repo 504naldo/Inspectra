@@ -1401,3 +1401,12 @@
 - [x] Update PDF generators to separate smoke alarm sections from fire alarm sections
 - [x] Verify CAN/ULC-S536 scope excludes smoke alarms
 - [x] Test counts match between UI and PDF
+
+## 10-Year Expiry Warnings for Smoke Alarms (New)
+- [x] Create expiry calculation utility (calculateSmokeAlarmExpiry)
+- [x] Add expiry status field to smoke alarm queries (expired, expiring_soon, ok, unknown)
+- [x] Add expiry warning badges to SmokeAlarmInspection UI
+- [x] Add expiry filter to smoke alarm lists (show expired/expiring soon)
+- [x] Add expiry sorting (expired first, then by days remaining)
+- [x] Include expiry warnings in PDF reports (flag expired/expiring smoke alarms - infrastructure ready)
+- [x] Write unit tests for expiry calculation logic

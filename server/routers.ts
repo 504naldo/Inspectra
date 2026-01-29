@@ -258,11 +258,21 @@ const deviceRouter = router({
 // Smoke Alarm router
 const smokeAlarmRouter = router({
   listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
-    return db.getSmokeAlarmsBySite(input.siteId);
+    const { calculateSmokeAlarmExpiry } = await import('../shared/smokeAlarmExpiry');
+    const smokeAlarms = await db.getSmokeAlarmsBySite(input.siteId);
+    return smokeAlarms.map(alarm => ({
+      ...alarm,
+      expiryInfo: calculateSmokeAlarmExpiry(alarm.installDate, alarm.powerType),
+    }));
   }),
   
   listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
-    return db.getSmokeAlarmsByJob(input.jobId);
+    const { calculateSmokeAlarmExpiry } = await import('../shared/smokeAlarmExpiry');
+    const smokeAlarms = await db.getSmokeAlarmsByJob(input.jobId);
+    return smokeAlarms.map(alarm => ({
+      ...alarm,
+      expiryInfo: calculateSmokeAlarmExpiry(alarm.installDate, alarm.powerType),
+    }));
   }),
   
   get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
