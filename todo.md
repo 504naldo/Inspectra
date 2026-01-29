@@ -1392,3 +1392,12 @@
 - [x] Update PDF generators to use shared summary calculation (infrastructure ready)
 - [x] Test summary sync between UI and PDF (all 7 tests passing)
 - [x] Verify mobile layout without overflow
+
+## Smoke Alarm Separation from Fire Alarm Devices (Critical)
+- [x] Update pdfSummaryCalculator to exclude SMOKE_ALARM from fireAlarmDevices count
+- [x] Update jobSummary to separate smoke alarms from fire alarm devices
+- [x] Update InspectionSummary UI component to display smoke alarms separately
+- [x] Update JobDetails cards to exclude smoke alarms from Fire Alarm Devices
+- [x] Update PDF generators to separate smoke alarm sections from fire alarm sections
+- [x] Verify CAN/ULC-S536 scope excludes smoke alarms
+- [x] Test counts match between UI and PDF

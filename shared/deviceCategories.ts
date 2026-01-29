@@ -24,11 +24,12 @@ export function isSmokeAlarm(device: {
     .filter(Boolean)
     .map(f => f!.toLowerCase());
 
-  // Check if any field contains "smoke"
-  const hasSmoke = searchFields.some(field => field.includes('smoke'));
+  // Check if any field contains "smoke alarm" specifically
+  const hasSmokeAlarm = searchFields.some(field => field.includes('smoke alarm'));
   
   // Exclude devices that are clearly not smoke alarms even if they mention smoke
   const isNotSmokeAlarm = searchFields.some(field => 
+    field.includes('detector') || // Smoke detectors are fire alarm system devices
     field.includes('extinguisher') ||
     field.includes('pull') ||
     field.includes('horn') ||
@@ -36,7 +37,7 @@ export function isSmokeAlarm(device: {
     field.includes('bell')
   );
 
-  return hasSmoke && !isNotSmokeAlarm;
+  return hasSmokeAlarm && !isNotSmokeAlarm;
 }
 
 /**
@@ -51,9 +52,10 @@ export function categorizeDevice(device: {
   // First check the database category field directly
   if (device.category) {
     const cat = device.category.toLowerCase();
+    if (cat.includes('smoke_alarm')) return 'smoke'; // Check smoke_alarm BEFORE fire_alarm
     if (cat.includes('fire_extinguisher')) return 'extinguisher';
     if (cat.includes('emergency_light')) return 'emergency';
-    if (cat.includes('fire_alarm') || cat.includes('smoke_alarm')) return 'fire_alarm';
+    if (cat.includes('fire_alarm')) return 'fire_alarm';
   }
   // Check smoke alarms first (most specific)
   if (isSmokeAlarm(device)) {

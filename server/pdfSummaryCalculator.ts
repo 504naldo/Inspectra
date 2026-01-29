@@ -86,10 +86,10 @@ export function calculateSystemCoverage(
   const resultTypes = inspectionResults.map(r => r.deviceType.toLowerCase());
   const allTypes = [...deviceTypes, ...resultTypes];
   
-  // Fire Alarm System: any fire alarm devices
+  // Fire Alarm System: any fire alarm devices (excludes smoke alarms)
   const fireAlarmKeywords = ['smoke detector', 'heat detector', 'pull station', 'horn', 'strobe', 'panel', 'annunciator'];
   const hasFireAlarm = allTypes.some(type => 
-    fireAlarmKeywords.some(kw => type.includes(kw))
+    !type.includes('smoke alarm') && fireAlarmKeywords.some(kw => type.includes(kw))
   );
   
   // Sprinkler ITM: any sprinkler components
@@ -138,7 +138,13 @@ export function calculateInspectionTotals(
   deviceSummaries.forEach(summary => {
     const type = summary.deviceType.toLowerCase();
     
-    // Fire Alarm Devices
+    // Smoke Alarms (check first to exclude from fire alarm devices)
+    if (type.includes('smoke alarm')) {
+      smokeAlarms += summary.total;
+      return; // Skip other categories
+    }
+    
+    // Fire Alarm Devices (system devices only, excludes smoke alarms)
     const fireAlarmKeywords = ['smoke detector', 'heat detector', 'pull station', 'horn', 'strobe', 'panel', 'annunciator'];
     if (fireAlarmKeywords.some(kw => type.includes(kw))) {
       fireAlarmDevices += summary.total;
@@ -148,11 +154,6 @@ export function calculateInspectionTotals(
     const sprinklerKeywords = ['sprinkler', 'valve', 'riser', 'standpipe', 'hose', 'siamese'];
     if (sprinklerKeywords.some(kw => type.includes(kw))) {
       sprinklerComponents += summary.total;
-    }
-    
-    // Smoke Alarms
-    if (type.includes('smoke alarm')) {
-      smokeAlarms += summary.total;
     }
     
     // Fire Extinguishers
