@@ -1371,3 +1371,15 @@
 - [x] Update error messages for unrecognized power types
 - [x] Test with real Fire-Pro values (SA/CO-I, SA-P, DU, Dual battery)
 - [x] Verify 419 validation errors are resolved
+
+## PDF Summary Embedding (New)
+- [ ] Analyze current PDF Site Information structure
+- [x] Calculate system coverage checkboxes (Fire Alarm, Sprinkler, Extinguishers, Emergency Lights, Smoke Alarms)
+- [x] Calculate inspection totals by category
+- [x] Calculate deficiency breakdown (Critical/Major/Minor)
+- [x] Calculate deficiency cost summary (labour, materials, tax, total)
+- [x] Redesign Site Information page layout with embedded summary block
+- [x] Add technician notes section (editable by tech role)
+- [x] Add office notes section (editable by admin/office only)
+- [ ] Test Annual PDF with embedded summary
+- [ ] Test Deficiency PDF with cost breakdown

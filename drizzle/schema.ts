@@ -165,6 +165,8 @@ export const jobs = mysqlTable("jobs", {
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
   notes: text("notes"),
+  technicianNotes: text("technicianNotes"), // Editable by technician role
+  officeNotes: text("officeNotes"), // Editable by admin/office only
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
