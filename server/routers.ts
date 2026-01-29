@@ -421,6 +421,19 @@ const jobRouter = router({
   })).query(async ({ input }) => {
     return db.searchJobs(input.companyId, input.query);
   }),
+  
+  getSummary: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const { getJobSummary } = await import('./jobSummary');
+    const summary = await getJobSummary(input.id);
+    
+    // Customer can only see their own job summaries
+    const job = await db.getJobById(input.id);
+    if (ctx.user.role === 'customer' && job && ctx.user.customerOrgId !== job.customerOrgId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    
+    return summary;
+  }),
 });
 
 // Inspection Result router

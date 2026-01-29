@@ -1104,3 +1104,47 @@ export async function deleteChecklistResponsesByJob(jobId: number) {
     .delete(inspectionChecklistResponses)
     .where(eq(inspectionChecklistResponses.jobId, jobId));
 }
+
+// ============================================
+// JOB SUMMARY HELPERS
+// ============================================
+
+/**
+ * Get device summaries grouped by type for a job
+ */
+export async function getDeviceSummariesByJob(jobId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const results = await db
+    .select()
+    .from(inspectionResults)
+    .leftJoin(devices, eq(inspectionResults.deviceId, devices.id))
+    .where(eq(inspectionResults.jobId, jobId));
+  
+  // Group by device type
+  const summaryMap = new Map<string, { total: number; passed: number; failed: number; na: number }>();
+  
+  results.forEach(row => {
+    const deviceType = row.devices?.deviceType || 'Unknown';
+    const result = row.inspection_results.result;
+    
+    if (!summaryMap.has(deviceType)) {
+      summaryMap.set(deviceType, { total: 0, passed: 0, failed: 0, na: 0 });
+    }
+    
+    const summary = summaryMap.get(deviceType)!;
+    summary.total++;
+    
+    if (result === 'pass') summary.passed++;
+    else if (result === 'fail') summary.failed++;
+    else if (result === 'na') summary.na++;
+  });
+  
+  return Array.from(summaryMap.entries()).map(([deviceType, stats]) => ({
+    deviceType,
+    ...stats,
+  }));
+}
+
+

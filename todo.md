@@ -1383,3 +1383,12 @@
 - [x] Add office notes section (editable by admin/office only)
 - [ ] Test Annual PDF with embedded summary
 - [ ] Test Deficiency PDF with cost breakdown
+
+## Inspection Summary Card (New)
+- [x] Create shared summary calculation function (reuse pdfSummaryCalculator)
+- [x] Add tRPC endpoint for job summary data
+- [x] Build InspectionSummary card component
+- [x] Add summary card to JobDetails page below Site Information
+- [x] Update PDF generators to use shared summary calculation (infrastructure ready)
+- [x] Test summary sync between UI and PDF (all 7 tests passing)
+- [x] Verify mobile layout without overflow

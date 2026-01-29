@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { useInspectionProgress } from "@/hooks/useInspectionProgress";
 import { ExpandableCategoryCard } from "@/components/ExpandableCategoryCard";
+import { InspectionSummary } from "@/components/InspectionSummary";
 import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
 import { sortByWalkOrderThenLocation } from "@shared/deviceHelpers";
 import { 
@@ -279,6 +280,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Inspection Summary */}
+        <InspectionSummary jobId={jobId} />
 
         {/* Progress */}
         <Card>
