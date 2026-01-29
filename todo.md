@@ -1363,3 +1363,11 @@
 - [x] Add debug logging for sheet selection, header detection, and suite number extraction
 - [x] Test with actual file (#0816 - 2026 ANNUAL - 2860 TRETHEWAY ST)
 - [x] Verify Suite Number auto-mapping works correctly
+
+## Smoke Alarm Power Type Normalization (Critical)
+- [x] Create normalizePowerType utility function with keyword matching
+- [x] Integrate normalization into import validation before schema check
+- [x] Integrate normalization into import execution
+- [x] Update error messages for unrecognized power types
+- [x] Test with real Fire-Pro values (SA/CO-I, SA-P, DU, Dual battery)
+- [x] Verify 419 validation errors are resolved

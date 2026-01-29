@@ -2348,8 +2348,10 @@ const importRouter = router({
           
           // Add smoke alarm specific fields
           if (input.importType === 'smokeAlarms') {
+            const { normalizePowerType } = await import('./powerTypeNormalization');
             deviceData.suiteNumber = rowData.suiteNumber;
-            deviceData.powerType = rowData.powerType ? String(rowData.powerType).toLowerCase().trim() : 'unknown';
+            // Normalize power type (already normalized in validation, but ensure it's correct)
+            deviceData.powerType = rowData.powerType ? normalizePowerType(rowData.powerType) : 'unknown';
             deviceData.installDate = rowData.installDate ? new Date(rowData.installDate) : null;
             deviceData.deviceType = 'Smoke Alarm';
           }

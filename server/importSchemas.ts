@@ -136,12 +136,18 @@ const smokeAlarmsSchema: ImportSchema = {
       errors.push('Suite number is required');
     }
     
-    // Validate power type if provided
+    // Normalize power type before validation
     if (row.powerType) {
-      const validPowerTypes = ['hardwired', 'battery', 'sealed', 'unknown'];
-      const powerType = String(row.powerType).toLowerCase().trim();
-      if (!validPowerTypes.includes(powerType)) {
-        errors.push(`Invalid power type: ${row.powerType}. Must be one of: hardwired, battery, sealed, unknown`);
+      const { normalizePowerType, isValidPowerType } = require('./powerTypeNormalization');
+      const originalValue = row.powerType;
+      const normalized = normalizePowerType(originalValue);
+      
+      // Replace with normalized value
+      row.powerType = normalized;
+      
+      // Validation should always pass now since normalization guarantees valid enum
+      if (!isValidPowerType(normalized)) {
+        errors.push(`Unrecognized power type value: "${originalValue}"`);
       }
     }
     
