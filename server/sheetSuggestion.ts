@@ -6,6 +6,7 @@
 
 import { safeToLower } from "./safeStringHelpers";
 import { ImportType, MAPPING_RULES } from "./autoMapper";
+import { detectHeaderRow } from "./headerDetection";
 
 export interface SheetScore {
   sheetName: string;
@@ -137,7 +138,9 @@ export function suggestSheet(
     
     if (data.length === 0) continue;
     
-    const headers = (data[0] as any[]).map(h => String(h || ''));
+    // Use smart header detection instead of assuming row 0
+    const headerDetection = detectHeaderRow(data, importType, 30);
+    const headers = headerDetection.headers;
     const sheetScore = scoreSheet(sheetName, headers, importType);
     
     // Apply exclusion penalty

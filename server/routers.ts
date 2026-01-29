@@ -2000,21 +2000,44 @@ const importRouter = router({
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Sheet is empty' });
     }
     
+    // Use smart header detection to find the actual header row
+    const { detectHeaderRow } = await import('./headerDetection');
+    const headerDetection = detectHeaderRow(data, input.importType, 30);
+    
+    console.log('[parseFile] Header detection:', {
+      sheetName,
+      headerRowIndex: headerDetection.headerRowIndex,
+      dataStartIndex: headerDetection.dataStartIndex,
+      detectedHeaders: headerDetection.headers.slice(0, 10) // First 10 headers
+    });
+    
     // Convert headers to strings (handle numbers, dates, etc.)
-    const headers = (data[0] as any[]).map(h => String(h || ''));
-    const rows = data.slice(1, 11); // Preview first 10 rows
-    const totalRows = data.length - 1;
+    const headers = headerDetection.headers;
+    const dataRows = data.slice(headerDetection.dataStartIndex);
+    const rows = dataRows.slice(0, 10); // Preview first 10 data rows
+    const totalRows = dataRows.length;
     
     // Auto-map columns based on import type
     const { autoMapColumns, getMappingStats } = await import('./autoMapper');
     const autoMapping = autoMapColumns(headers, input.importType);
     const mappingStats = getMappingStats(autoMapping, input.importType);
     
+    // For smoke alarms, extract first 3 suite numbers for verification
+    let sampleSuiteNumbers: any[] = [];
+    if (input.importType === 'smokeAlarms' && autoMapping.suiteNumber) {
+      const suiteColIndex = headers.indexOf(autoMapping.suiteNumber);
+      if (suiteColIndex >= 0) {
+        sampleSuiteNumbers = dataRows.slice(0, 3).map(row => row[suiteColIndex]);
+      }
+    }
+    
       console.log('[parseFile] Parse successful:', {
         sheetName,
         headerCount: headers.length,
         totalRows,
-        mappingStats
+        mappingStats,
+        headerRowIndex: headerDetection.headerRowIndex,
+        sampleSuiteNumbers: input.importType === 'smokeAlarms' ? sampleSuiteNumbers : undefined
       });
       
       return {
@@ -2083,8 +2106,11 @@ const importRouter = router({
     const sheet = workbook.Sheets[input.sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
     
-    const headers = data[0] as string[];
-    const rows = data.slice(1);
+    // Use smart header detection
+    const { detectHeaderRow } = await import('./headerDetection');
+    const headerDetection = detectHeaderRow(data, input.importType, 30);
+    const headers = headerDetection.headers;
+    const rows = data.slice(headerDetection.dataStartIndex);
     
     // Get schema for import type
     const { getImportSchema, shouldSkipRow } = await import('./importSchemas');
@@ -2191,8 +2217,11 @@ const importRouter = router({
     const sheet = workbook.Sheets[input.sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
     
-    const headers = data[0] as string[];
-    const rows = data.slice(1);
+    // Use smart header detection
+    const { detectHeaderRow } = await import('./headerDetection');
+    const headerDetection = detectHeaderRow(data, input.importType, 30);
+    const headers = headerDetection.headers;
+    const rows = data.slice(headerDetection.dataStartIndex);
     
     // Get schema for import type
     const { getImportSchema, shouldSkipRow } = await import('./importSchemas');

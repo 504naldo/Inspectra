@@ -1355,3 +1355,11 @@
 - [x] Add null checks before destructuring in for loop
 - [x] Test with actual file (#0816 - 2026 ANNUAL - 2860 TRETHEWAY ST)
 - [x] Add unit test for undefined headers in auto-mapping
+
+## Smoke Alarm XLSM Import Fix (Critical)
+- [x] Implement smart worksheet selection for Smoke Alarm sheet (exact + fallback matches)
+- [x] Add header row detection (scan first 30 rows for suite/location/install keywords)
+- [x] Update auto-mapper to prioritize Suite Number column mapping
+- [x] Add debug logging for sheet selection, header detection, and suite number extraction
+- [x] Test with actual file (#0816 - 2026 ANNUAL - 2860 TRETHEWAY ST)
+- [x] Verify Suite Number auto-mapping works correctly
