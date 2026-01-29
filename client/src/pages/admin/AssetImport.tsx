@@ -30,7 +30,7 @@ import { autoMapColumns } from "@/_core/utils/autoMapping";
 
 type ImportStep = 'selectType' | 'upload' | 'mapping' | 'preview' | 'importing' | 'results';
 
-type ImportType = 'site' | 'fireAlarmDevices' | 'fireExtinguishers' | 'emergencyLights' | 'sprinklerDevices';
+type ImportType = 'site' | 'fireAlarmDevices' | 'fireExtinguishers' | 'emergencyLights' | 'sprinklerDevices' | 'smokeAlarms';
 
 interface ColumnMapping {
   [targetField: string]: string;
@@ -45,15 +45,29 @@ interface ValidationResult {
 }
 
 // Target fields for device import
-const DEVICE_FIELDS = [
-  { key: 'deviceType', label: 'Device Type', required: true },
-  { key: 'manufacturer', label: 'Manufacturer', required: false },
-  { key: 'model', label: 'Model', required: false },
-  { key: 'serialNumber', label: 'Serial Number', required: false },
-  { key: 'location', label: 'Location', required: false },
-  { key: 'barcode', label: 'Barcode', required: false },
-  { key: 'notes', label: 'Notes', required: false },
-];
+const getFieldsForImportType = (importType: ImportType) => {
+  if (importType === 'smokeAlarms') {
+    return [
+      { key: 'suiteNumber', label: 'Suite Number', required: true },
+      { key: 'location', label: 'Location', required: false },
+      { key: 'powerType', label: 'Power Type', required: false },
+      { key: 'installDate', label: 'Install Date', required: false },
+      { key: 'manufacturer', label: 'Manufacturer', required: false },
+      { key: 'model', label: 'Model', required: false },
+      { key: 'notes', label: 'Notes', required: false },
+    ];
+  }
+  
+  return [
+    { key: 'deviceType', label: 'Device Type', required: true },
+    { key: 'manufacturer', label: 'Manufacturer', required: false },
+    { key: 'model', label: 'Model', required: false },
+    { key: 'serialNumber', label: 'Serial Number', required: false },
+    { key: 'location', label: 'Location', required: false },
+    { key: 'barcode', label: 'Barcode', required: false },
+    { key: 'notes', label: 'Notes', required: false },
+  ];
+};
 
 export default function AssetImport() {
   const { user } = useAuth();
@@ -226,7 +240,8 @@ export default function AssetImport() {
   };
   
   const getRequiredFieldsMapped = () => {
-    return DEVICE_FIELDS.filter(f => f.required).every(f => columnMapping[f.key]);
+    const fields = getFieldsForImportType(importType);
+    return fields.filter(f => f.required).every(f => columnMapping[f.key]);
   };
   
   return (
@@ -333,6 +348,18 @@ export default function AssetImport() {
                       </Label>
                       <p className="text-sm text-muted-foreground mt-1">
                         Battery units, exit signs, combo units
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                    <RadioGroupItem value="smokeAlarms" id="type-smoke-alarms" />
+                    <div className="flex-1">
+                      <Label htmlFor="type-smoke-alarms" className="font-medium cursor-pointer">
+                        Import Devices → Smoke Alarms
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        In-suite smoke alarms with suite number, location, power type, and install date
                       </p>
                     </div>
                   </div>
@@ -504,7 +531,7 @@ export default function AssetImport() {
                   </div>
                 )}
                 
-                {DEVICE_FIELDS.map((field) => (
+                {getFieldsForImportType(importType).map((field) => (
                   <div key={field.key} className="flex items-center gap-4">
                     <div className="w-1/3">
                       <Label className="flex items-center gap-1">

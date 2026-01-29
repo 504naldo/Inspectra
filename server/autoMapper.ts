@@ -6,7 +6,7 @@
 
 import { safeToLower, safeTrim } from "./safeStringHelpers";
 
-export type ImportType = 'site' | 'fireAlarmDevices' | 'fireExtinguishers' | 'emergencyLights' | 'sprinklerDevices';
+export type ImportType = 'site' | 'fireAlarmDevices' | 'fireExtinguishers' | 'emergencyLights' | 'sprinklerDevices' | 'smokeAlarms';
 
 export interface MappingRule {
   targetField: string;
@@ -75,6 +75,15 @@ export const MAPPING_RULES: Record<ImportType, MappingRule[]> = {
     { targetField: 'serialNumber', keywords: ['serial', 'serial number', 'serial #', 's n', 'sn'], priority: 8 },
     { targetField: 'location', keywords: ['location', 'room', 'area', 'suite', 'unit', 'zone'], priority: 10 },
     { targetField: 'floor', keywords: ['floor', 'level', 'storey'], priority: 8 },
+    { targetField: 'notes', keywords: ['notes', 'comments', 'remarks', 'description'], priority: 5 },
+  ],
+  smokeAlarms: [
+    { targetField: 'suiteNumber', keywords: ['suite', 'suite number', 'suite #', 'unit', 'unit number', 'unit #', 'apt', 'apartment'], priority: 10 },
+    { targetField: 'location', keywords: ['location', 'room', 'area', 'position'], priority: 9 },
+    { targetField: 'powerType', keywords: ['power', 'power type', 'power source', 'battery', 'hardwired', 'type'], priority: 8 },
+    { targetField: 'installDate', keywords: ['install date', 'installation date', 'installed', 'date installed', 'install', 'date'], priority: 9 },
+    { targetField: 'manufacturer', keywords: ['manufacturer', 'mfr', 'make', 'brand'], priority: 7 },
+    { targetField: 'model', keywords: ['model', 'model number', 'model #'], priority: 7 },
     { targetField: 'notes', keywords: ['notes', 'comments', 'remarks', 'description'], priority: 5 },
   ],
 };

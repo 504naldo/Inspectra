@@ -73,6 +73,7 @@ function getSheetNameBonus(sheetNameLower: string, importType: ImportType): numb
     fireExtinguishers: ['extinguisher', 'fire extinguisher', 'extinguishers'],
     emergencyLights: ['emergency', 'emergency light', 'exit', 'exit sign', 'lighting'],
     sprinklerDevices: ['sprinkler', 'sprinklers', 'fire sprinkler', 'suppression'],
+    smokeAlarms: ['smoke alarm', 'smoke alarms', 'smoke detector', 'suite', 'unit', 'apartment'],
   };
 
   const keywords = bonusKeywords[importType];

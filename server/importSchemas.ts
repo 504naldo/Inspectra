@@ -9,7 +9,7 @@ import { ImportType } from "./autoMapper";
 export interface ImportSchema {
   requiredFields: string[];
   optionalFields: string[];
-  category?: 'FIRE_ALARM_DEVICE' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHT' | 'SPRINKLER';
+  category?: 'FIRE_ALARM_DEVICE' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHT' | 'SPRINKLER' | 'SMOKE_ALARM';
   validateRow: (row: Record<string, any>) => { valid: boolean; errors: string[] };
 }
 
@@ -123,6 +123,36 @@ const sprinklerDevicesSchema: ImportSchema = {
 };
 
 /**
+ * Smoke Alarms import schema
+ */
+const smokeAlarmsSchema: ImportSchema = {
+  requiredFields: ['suiteNumber'],
+  optionalFields: ['location', 'powerType', 'installDate', 'manufacturer', 'model', 'notes'],
+  category: 'SMOKE_ALARM',
+  validateRow: (row) => {
+    const errors: string[] = [];
+    
+    if (!row.suiteNumber || String(row.suiteNumber).trim() === '') {
+      errors.push('Suite number is required');
+    }
+    
+    // Validate power type if provided
+    if (row.powerType) {
+      const validPowerTypes = ['hardwired', 'battery', 'sealed', 'unknown'];
+      const powerType = String(row.powerType).toLowerCase().trim();
+      if (!validPowerTypes.includes(powerType)) {
+        errors.push(`Invalid power type: ${row.powerType}. Must be one of: hardwired, battery, sealed, unknown`);
+      }
+    }
+    
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  },
+};
+
+/**
  * Get schema for import type
  */
 export function getImportSchema(importType: ImportType): ImportSchema {
@@ -132,6 +162,7 @@ export function getImportSchema(importType: ImportType): ImportSchema {
     fireExtinguishers: fireExtinguishersSchema,
     emergencyLights: emergencyLightsSchema,
     sprinklerDevices: sprinklerDevicesSchema,
+    smokeAlarms: smokeAlarmsSchema,
   };
   
   return schemas[importType];

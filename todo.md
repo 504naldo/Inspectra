@@ -1329,3 +1329,11 @@
 - [x] Update Deficiency Report PDF to include smoke alarms
 - [x] Add permission checks (technician vs admin/office)
 - [x] Write unit tests for smoke alarm functionality
+
+## Smoke Alarm Bulk Import (New)
+- [x] Add smoke alarm import type to importType enum
+- [x] Create smoke alarm validation schema with suite number, location, power type, install date
+- [x] Add auto-mapping keywords for smoke alarm columns
+- [x] Update execute mutation to handle smoke alarm imports
+- [x] Add smoke alarm import option to AssetImport UI
+- [x] Test smoke alarm bulk import with sample data

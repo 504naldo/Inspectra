@@ -1915,7 +1915,7 @@ const importRouter = router({
   parseFile: officeProcedure.input(z.object({
     fileName: z.string(),
     fileData: z.string(), // Base64 encoded
-    importType: z.enum(['site', 'fireAlarmDevices', 'fireExtinguishers', 'emergencyLights', 'sprinklerDevices']),
+    importType: z.enum(['site', 'fireAlarmDevices', 'fireExtinguishers', 'emergencyLights', 'sprinklerDevices', 'smokeAlarms']),
     sheetName: z.string().optional(), // Optional: if not provided, use smart suggestion
   })).mutation(async ({ input }) => {
     try {
@@ -1996,7 +1996,7 @@ const importRouter = router({
   validate: officeProcedure.input(z.object({
     companyId: z.number(),
     siteId: z.number(),
-    importType: z.enum(['site', 'fireAlarmDevices', 'fireExtinguishers', 'emergencyLights', 'sprinklerDevices']),
+    importType: z.enum(['site', 'fireAlarmDevices', 'fireExtinguishers', 'emergencyLights', 'sprinklerDevices', 'smokeAlarms']),
     fileName: z.string(),
     fileData: z.string(),
     sheetName: z.string(), // Required: which sheet to validate
@@ -2104,7 +2104,7 @@ const importRouter = router({
   execute: officeProcedure.input(z.object({
     companyId: z.number(),
     siteId: z.number(),
-    importType: z.enum(['site', 'fireAlarmDevices', 'fireExtinguishers', 'emergencyLights', 'sprinklerDevices']),
+    importType: z.enum(['site', 'fireAlarmDevices', 'fireExtinguishers', 'emergencyLights', 'sprinklerDevices', 'smokeAlarms']),
     fileName: z.string(),
     fileData: z.string(),
     sheetName: z.string(), // Required: which sheet to import
@@ -2239,7 +2239,7 @@ const importRouter = router({
           }
           
           // Create new device with category
-          const device = await db.createDevice({
+          const deviceData: any = {
             companyId: ctx.user.companyId!,
             siteId: input.siteId,
             category: schema.category || 'FIRE_ALARM_DEVICE',
@@ -2250,7 +2250,17 @@ const importRouter = router({
             location: rowData.location ? `${rowData.floor ? rowData.floor + ' - ' : ''}${rowData.location}` : undefined,
             barcode: rowData.barcode,
             notes: rowData.notes,
-          });
+          };
+          
+          // Add smoke alarm specific fields
+          if (input.importType === 'smokeAlarms') {
+            deviceData.suiteNumber = rowData.suiteNumber;
+            deviceData.powerType = rowData.powerType ? String(rowData.powerType).toLowerCase().trim() : 'unknown';
+            deviceData.installDate = rowData.installDate ? new Date(rowData.installDate) : null;
+            deviceData.deviceType = 'Smoke Alarm';
+          }
+          
+          const device = await db.createDevice(deviceData);
           
           successCount++;
           rowResults.push({
