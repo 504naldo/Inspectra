@@ -1410,3 +1410,11 @@
 - [x] Add expiry sorting (expired first, then by days remaining)
 - [x] Include expiry warnings in PDF reports (flag expired/expiring smoke alarms - infrastructure ready)
 - [x] Write unit tests for expiry calculation logic
+
+## Login Redirect Fix for Non-Admin Users (Critical)
+- [x] Analyze current authentication flow and redirect logic
+- [x] Implement role-based redirect function (admin → /dashboard, technician → /jobs, viewer → /reports)
+- [x] Add loading state handling to wait for user profile before redirecting
+- [x] Update route guards to prevent redirect loops
+- [x] Add fallback handling for missing role
+- [x] Test login flow for admin, technician, and viewer roles

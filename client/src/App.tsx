@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
 import { useEffect } from "react";
+import { getRoleBasedPath } from "./lib/roleRedirect";
 
 // Pages
 import Home from "./pages/Home";
@@ -68,13 +69,8 @@ function ProtectedRoute({
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
     // Redirect to appropriate dashboard based on role
-    if (user.role === 'customer') {
-      return <Redirect to="/customer" />;
-    } else if (user.role === 'technician') {
-      return <Redirect to="/tech/jobs" />;
-    } else {
-      return <Redirect to="/admin" />;
-    }
+    const targetPath = getRoleBasedPath(user.role);
+    return <Redirect to={targetPath} />;
   }
 
   return <>{children}</>;
@@ -89,14 +85,9 @@ function Router() {
     // Only run after auth state is loaded
     if (loading) return;
     
-    // If user is authenticated and on home page, redirect to dashboard
+    // If user is authenticated and on home page, redirect to role-based dashboard
     if (isAuthenticated && user && location === '/') {
-      let targetPath = '/admin'; // default
-      if (user.role === 'customer') {
-        targetPath = '/customer';
-      } else if (user.role === 'technician') {
-        targetPath = '/tech/jobs';
-      }
+      const targetPath = getRoleBasedPath(user.role);
       setLocation(targetPath);
     }
   }, [loading, isAuthenticated, user, location, setLocation]);

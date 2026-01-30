@@ -5,6 +5,7 @@ import { getLoginUrl } from "@/const";
 import { Shield } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useMemo } from "react";
+import { getPostLoginPath } from "@/lib/roleRedirect";
 
 export default function Login() {
   const { user, loading, isAuthenticated } = useAuth();
@@ -21,15 +22,11 @@ export default function Login() {
 
   useEffect(() => {
     if (!loading && isAuthenticated && user) {
-      if (user.role === 'customer') {
-        setLocation('/customer');
-      } else if (user.role === 'technician') {
-        setLocation('/tech');
-      } else {
-        setLocation('/admin');
-      }
+      // Get the appropriate redirect path based on role and returnTo parameter
+      const targetPath = getPostLoginPath(user.role, returnTo);
+      setLocation(targetPath);
     }
-  }, [loading, isAuthenticated, user, setLocation]);
+  }, [loading, isAuthenticated, user, returnTo, setLocation]);
 
   if (loading) {
     return (
