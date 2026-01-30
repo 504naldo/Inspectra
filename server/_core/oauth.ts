@@ -44,18 +44,6 @@ export function registerOAuthRoutes(app: Express) {
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      // Decode state parameter to get the intended post-login route
-      let targetRoute = '/admin'; // default fallback
-      try {
-        const decodedState = Buffer.from(state, 'base64').toString('utf-8');
-        // Validate to prevent open redirects: must be same-origin path starting with "/"
-        if (decodedState && decodedState.startsWith('/') && !decodedState.startsWith('//')) {
-          targetRoute = decodedState;
-        }
-      } catch (error) {
-        console.warn('[OAuth] Failed to decode state, using default route:', error);
-      }
-
       // Check if user is active
       const user = await db.getUserByOpenId(userInfo.openId);
       if (user && user.isActive === 0) {
@@ -84,8 +72,20 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      // If target route is "/", redirect to role-based dashboard instead
-      if (targetRoute === '/') {
+      // Decode state parameter to get the intended post-login route
+      let targetRoute = ''; // empty means use role-based redirect
+      try {
+        const decodedState = Buffer.from(state, 'base64').toString('utf-8');
+        // Validate to prevent open redirects: must be same-origin path starting with "/"
+        if (decodedState && decodedState.startsWith('/') && !decodedState.startsWith('//')) {
+          targetRoute = decodedState;
+        }
+      } catch (error) {
+        console.warn('[OAuth] Failed to decode state, using role-based redirect:', error);
+      }
+
+      // If target route is empty or "/", redirect to role-based dashboard
+      if (!targetRoute || targetRoute === '/') {
         if (user?.role === 'customer') {
           targetRoute = '/customer';
         } else if (user?.role === 'technician') {

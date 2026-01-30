@@ -1427,3 +1427,7 @@
 - [x] Added office role handling in OAuth callback
 - [x] Removed verbose CORS logging
 - [x] Restarted server with OAuth callback fix
+- [x] Fixed getLoginUrl to not default to /admin - let OAuth callback determine redirect based on user role
+- [x] Updated OAuth callback to determine redirect based on user's actual role from database
+- [x] Added 16 unit tests for OAuth callback role-based redirect logic
+- [x] All tests passing - users now redirect to correct role-based dashboards
