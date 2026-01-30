@@ -1,0 +1,40 @@
+{
+  "query": "SELECT id, name, email, role FROM users WHERE role = 'technician' LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT id, name, email, role FROM users WHERE role = 'technician' LIMIT 5;",
+  "rows": [
+    {
+      "id": "120001",
+      "name": "Ranaldo Daniels",
+      "email": "ranaldo@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "3570014",
+      "name": "Chris Young",
+      "email": "chris@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "3570015",
+      "name": "Pat McKinney",
+      "email": "pat@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "3570016",
+      "name": "Russ",
+      "email": "russ@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "3570017",
+      "name": "Markus",
+      "email": "markus@ewandf.ca",
+      "role": "technician"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\n120001\tRanaldo Daniels\tranaldo@ewandf.ca\ttechnician\n3570014\tChris Young\tchris@ewandf.ca\ttechnician\n3570015\tPat McKinney\tpat@ewandf.ca\ttechnician\n3570016\tRuss\truss@ewandf.ca\ttechnician\n3570017\tMarkus\tmarkus@ewandf.ca\ttechnician\n",
+  "stderr": "",
+  "execution_time_ms": 730
+}

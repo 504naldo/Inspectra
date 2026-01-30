@@ -11,10 +11,18 @@ function getQueryParam(req: Request, key: string): string | undefined {
 
 export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
+    console.log('[OAuth] Callback received');
+    console.log('[OAuth] Full URL:', req.originalUrl);
+    console.log('[OAuth] Query params:', JSON.stringify(req.query));
+    
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");
 
+    console.log('[OAuth] Extracted code:', code ? 'present' : 'missing');
+    console.log('[OAuth] Extracted state:', state ? 'present' : 'missing');
+
     if (!code || !state) {
+      console.error('[OAuth] Missing required parameters');
       res.status(400).json({ error: "code and state are required" });
       return;
     }
@@ -76,6 +84,7 @@ export function registerOAuthRoutes(app: Express) {
       let targetRoute = ''; // empty means use role-based redirect
       try {
         const decodedState = Buffer.from(state, 'base64').toString('utf-8');
+        console.log('[OAuth] Decoded state:', decodedState);
         // Validate to prevent open redirects: must be same-origin path starting with "/"
         if (decodedState && decodedState.startsWith('/') && !decodedState.startsWith('//')) {
           targetRoute = decodedState;
@@ -83,6 +92,9 @@ export function registerOAuthRoutes(app: Express) {
       } catch (error) {
         console.warn('[OAuth] Failed to decode state, using role-based redirect:', error);
       }
+
+      console.log('[OAuth] User role:', user?.role);
+      console.log('[OAuth] Target route before role check:', targetRoute);
 
       // If target route is empty or "/", redirect to role-based dashboard
       if (!targetRoute || targetRoute === '/') {
@@ -95,8 +107,10 @@ export function registerOAuthRoutes(app: Express) {
         } else {
           targetRoute = '/admin'; // admin role or fallback
         }
+        console.log('[OAuth] Role-based redirect determined:', targetRoute);
       }
 
+      console.log('[OAuth] Final redirect to:', targetRoute);
       res.redirect(302, targetRoute);
     } catch (error) {
       console.error("[OAuth] Callback failed", error);
