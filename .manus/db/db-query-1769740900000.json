@@ -1,0 +1,70 @@
+{
+  "query": "SELECT id, name, email, role FROM users LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT id, name, email, role FROM users LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Ranaldo Daniels",
+      "email": "myblock2183@gmail.com",
+      "role": "admin"
+    },
+    {
+      "id": "120001",
+      "name": "Ranaldo Daniels",
+      "email": "ranaldo@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "3570014",
+      "name": "Chris Young",
+      "email": "chris@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "3570015",
+      "name": "Pat McKinney",
+      "email": "pat@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "3570016",
+      "name": "Russ",
+      "email": "russ@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "3570017",
+      "name": "Markus",
+      "email": "markus@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "3570018",
+      "name": "Tony",
+      "email": "tony@ewandf.ca",
+      "role": "technician"
+    },
+    {
+      "id": "4170007",
+      "name": "Test User",
+      "email": "test@example.com",
+      "role": "admin"
+    },
+    {
+      "id": "4320001",
+      "name": "Sheet Test User",
+      "email": "NULL",
+      "role": "admin"
+    },
+    {
+      "id": "4320002",
+      "name": "Sheet Test User",
+      "email": "NULL",
+      "role": "admin"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\n1\tRanaldo Daniels\tmyblock2183@gmail.com\tadmin\n120001\tRanaldo Daniels\tranaldo@ewandf.ca\ttechnician\n3570014\tChris Young\tchris@ewandf.ca\ttechnician\n3570015\tPat McKinney\tpat@ewandf.ca\ttechnician\n3570016\tRuss\truss@ewandf.ca\ttechnician\n3570017\tMarkus\tmarkus@ewandf.ca\ttechnician\n3570018\tTony\ttony@ewandf.ca\ttechnician\n4170007\tTest User\ttest@example.com\tadmin\n4320001\tSheet Test User\tNULL\tadmin\n4320002\tSheet Test User\tNULL\tadmin\n",
+  "stderr": "",
+  "execution_time_ms": 164
+}

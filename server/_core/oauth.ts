@@ -89,9 +89,11 @@ export function registerOAuthRoutes(app: Express) {
         if (user?.role === 'customer') {
           targetRoute = '/customer';
         } else if (user?.role === 'technician') {
-          targetRoute = '/tech';
-        } else {
+          targetRoute = '/tech/jobs';
+        } else if (user?.role === 'office') {
           targetRoute = '/admin';
+        } else {
+          targetRoute = '/admin'; // admin role or fallback
         }
       }
 

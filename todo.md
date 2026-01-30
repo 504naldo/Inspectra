@@ -1418,3 +1418,12 @@
 - [x] Update route guards to prevent redirect loops
 - [x] Add fallback handling for missing role
 - [x] Test login flow for admin, technician, and viewer roles
+
+## Login Redirect Bug - Non-Admin Users Still Redirected to Home (Critical)
+- [x] Fixed CORS origin pattern to allow new dev server URL format (.us2.manus.computer)
+- [x] Added CORS logging to debug rejected origins
+- [x] Restarted server with updated CORS configuration
+- [x] Fixed OAuth callback to redirect technicians to /tech/jobs instead of /tech
+- [x] Added office role handling in OAuth callback
+- [x] Removed verbose CORS logging
+- [x] Restarted server with OAuth callback fix

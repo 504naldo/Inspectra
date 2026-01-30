@@ -43,7 +43,8 @@ async function startServer() {
       // Allow all manus.space subdomains, manus VM domains, and localhost for development
       const allowedOrigins = [
         /^https:\/\/[a-zA-Z0-9-]+\.manus\.space$/,
-        /^https:\/\/[0-9]+-[a-zA-Z0-9-]+\.manusvm\.computer$/,  // Dev server URLs
+        /^https:\/\/[0-9]+-[a-zA-Z0-9-]+\.manusvm\.computer$/,  // Old dev server URLs
+        /^https:\/\/[0-9]+-[a-zA-Z0-9-]+\.[a-z0-9]+\.manus\.computer$/,  // New dev server URLs
         /^http:\/\/localhost:\d+$/,
         /^https:\/\/localhost:\d+$/,
       ];
