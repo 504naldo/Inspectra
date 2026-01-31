@@ -18,6 +18,8 @@ interface DeviceItem {
   id: number;
   deviceType?: string | null;
   location?: string | null;
+  suiteNumber?: string | null;
+  category?: string | null;
   result?: string | null;
   walkOrder?: number | null;
 }
@@ -210,7 +212,11 @@ export function ExpandableCategoryCard({
                     {device.deviceType || 'Unknown Device'}
                   </p>
                   <p className="text-xs text-muted-foreground safe-text">
-                    {device.location || 'No location'}
+                    {/* Show suite number for smoke alarms, otherwise show location */}
+                    {device.category === 'SMOKE_ALARM' && device.suiteNumber 
+                      ? `Suite ${device.suiteNumber}${device.location ? ` - ${device.location}` : ''}`
+                      : device.location || 'No location'
+                    }
                   </p>
                 </div>
                 <div className="flex-shrink-0">

@@ -1486,3 +1486,11 @@
 - [ ] No "Invalid power type: SA/CO-1" errors (codes map to model/deviceTypeCode)
 - [ ] Technician screen shows Summary section
 - [ ] Smoke Alarms separated from Fire Alarm Devices
+
+
+## Suite Number Display Bug (Critical)
+- [x] Debug why suite numbers are not showing after smoke alarm import
+- [x] Found issue: ExpandableCategoryCard was only showing device.location, not device.suiteNumber
+- [x] Added suiteNumber and category fields to DeviceItem interface
+- [x] Updated display logic to show "Suite {number}" for smoke alarms
+- [x] Suite numbers now display correctly in technician job details
