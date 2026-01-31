@@ -78,12 +78,15 @@ export const MAPPING_RULES: Record<ImportType, MappingRule[]> = {
     { targetField: 'notes', keywords: ['notes', 'comments', 'remarks', 'description'], priority: 5 },
   ],
   smokeAlarms: [
-    { targetField: 'suiteNumber', keywords: ['suite', 'suite number', 'suite #', 'unit', 'unit number', 'unit #', 'apt', 'apartment'], priority: 10 },
+    { targetField: 'suiteNumber', keywords: ['suite', 'suite number', 'suite #', 'unit', 'unit number', 'unit #', 'apt', 'apartment', 'room'], priority: 10 },
+    // Power-related fields (ordered by specificity)
+    { targetField: 'powerType', keywords: ['power type', 'power source', 'power', 'battery', 'hardwired'], priority: 10 },
+    // Model/Type field (for device codes like SA/CO-1)
+    { targetField: 'model', keywords: ['type', 'model', 'model number', 'model #', 'device type', 'device model'], priority: 9 },
+    // Other fields
     { targetField: 'location', keywords: ['location', 'room', 'area', 'position'], priority: 9 },
-    { targetField: 'powerType', keywords: ['power', 'power type', 'power source', 'battery', 'hardwired', 'type'], priority: 8 },
-    { targetField: 'installDate', keywords: ['install date', 'installation date', 'installed', 'date installed', 'install', 'date'], priority: 9 },
+    { targetField: 'installDate', keywords: ['install date', 'installation date', 'installed', 'date installed', 'install', 'date', 'in service date'], priority: 9 },
     { targetField: 'manufacturer', keywords: ['manufacturer', 'mfr', 'make', 'brand'], priority: 7 },
-    { targetField: 'model', keywords: ['model', 'model number', 'model #'], priority: 7 },
     { targetField: 'notes', keywords: ['notes', 'comments', 'remarks', 'description'], priority: 5 },
   ],
 };

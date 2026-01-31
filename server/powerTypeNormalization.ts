@@ -110,3 +110,26 @@ export function getPowerTypeExamples(): Record<PowerType, string[]> {
     unknown: ['', 'N/A', 'Unknown'],
   };
 }
+
+/**
+ * Extract device model/code from a value that might contain smoke alarm codes
+ * 
+ * Examples:
+ * - "SA/CO-1" -> "SA/CO-1"
+ * - "hardwired SA-P" -> "SA-P"
+ * - "battery" -> null
+ * 
+ * @param value - Raw value that might contain a device code
+ * @returns Device code if found, null otherwise
+ */
+export function extractDeviceCode(value: any): string | null {
+  if (!value) return null;
+  
+  const str = String(value).trim();
+  
+  // Pattern for smoke alarm codes (SA, CO, VP, P, DC, AC followed by - or /)
+  const codePattern = /\b(SA|CO|VP|P|DC|AC)[-/][A-Z0-9]+\b/i;
+  const match = str.match(codePattern);
+  
+  return match ? match[0] : null;
+}

@@ -5,6 +5,7 @@
  */
 
 import { ImportType } from "./autoMapper";
+import { normalizePowerType, isValidPowerType, extractDeviceCode } from "./powerTypeNormalization";
 
 export interface ImportSchema {
   requiredFields: string[];
@@ -132,13 +133,27 @@ const smokeAlarmsSchema: ImportSchema = {
   validateRow: (row) => {
     const errors: string[] = [];
     
+    // Normalize suite number: strip leading # (e.g., #0816 → 0816)
+    if (row.suiteNumber) {
+      const suiteStr = String(row.suiteNumber).trim();
+      if (suiteStr.startsWith('#')) {
+        row.suiteNumber = suiteStr.substring(1);
+      }
+    }
+    
     if (!row.suiteNumber || String(row.suiteNumber).trim() === '') {
       errors.push('Suite number is required');
     }
     
+    // Extract device code if present (e.g., SA/CO-1, SA-P)
+    const deviceCode = extractDeviceCode(row.powerType);
+    if (deviceCode && !row.model) {
+      // If powerType contains a device code and model is empty, move it to model
+      row.model = deviceCode;
+    }
+    
     // Normalize power type before validation
     if (row.powerType) {
-      const { normalizePowerType, isValidPowerType } = require('./powerTypeNormalization');
       const originalValue = row.powerType;
       const normalized = normalizePowerType(originalValue);
       

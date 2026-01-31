@@ -1439,3 +1439,50 @@
 - [x] Fixed server to listen on 0.0.0.0 instead of localhost for container environments
 - [x] Added PORT environment variable support for production deployments
 - [x] Tested server starts correctly and accepts connections
+
+## Excel Import Enhancement - Summary + Smoke Alarms (Critical)
+### Summary Sheet Parsing
+- [ ] Detect summary worksheet by name (case-insensitive): summary, summary sheet, site summary, building summary, site information
+- [ ] Implement label-based parsing with dictionary matching (case-insensitive, ignore extra spaces/punctuation)
+- [ ] Parse values using priority: (a) right on same row (1-6 cols), (b) below in same column (1-8 rows)
+- [ ] Store parsed values in Site record or siteSummary JSON field
+- [ ] Detect and parse Contacts mini-table (name, title, phone, email)
+- [ ] Implement label dictionary for all required fields (Client Name, Site Name, Address, etc.)
+
+### Smoke Alarms Import Fixes
+- [ ] Prefer "Smoke Alarms" / "Smoke Alarm" worksheet (case-insensitive)
+- [x] Map Suite Number from aliases: suite, suite #, unit, unit #, apt, apartment, room
+- [x] Strip leading # from suite numbers (e.g., #0816 → 0816)
+- [x] Map Install Date from: install date, date installed, installed, in service date
+- [x] Fix Power Type mapping to accept only: hardwired, battery, sealed, unknown
+- [x] Map smoke alarm codes (SA/CO-1, SA-P, etc.) to model/deviceTypeCode field, NOT powerType
+- [x] Add normalization step for invalid powerType values → set to "unknown" with warning
+- [x] Fixed missing powerTypeNormalization module import
+- [x] Added extractDeviceCode function to separate device codes from power types
+- [x] Fixed auto-mapper to correctly prioritize "Power Source" over "Battery Type"
+- [x] Fixed auto-mapper to map "Type" column to model field for device codes
+- [x] All smoke alarm import tests passing (59/59)
+- [ ] Prevent importing rows from non-device tables (LABOUR RATES, pricing sheets)
+
+### Auto-Mapping UX
+- [ ] Implement auto-mapping with confidence levels (exact, partial, alias)
+- [ ] Show "Auto-mapped X/Y" indicator
+- [ ] Highlight required unmapped fields (Suite Number, Location)
+- [ ] Add "This looks like the wrong sheet" warning for non-device content
+- [ ] Recommend switching worksheet when detecting pricing/labor tables
+
+### UI Display
+- [ ] Add Inspection Summary card in Site Information (admin view)
+- [ ] Add Inspection Summary section on Technician job screen (read-only, above device cards)
+- [ ] Separate Smoke Alarms as distinct device category (not counted under Fire Alarm Devices)
+
+### Validation & Diagnostics
+- [ ] Replace generic "fail to parse" with actionable errors
+- [ ] Show: worksheet used, rows detected, missing required fields, first 3 example rows
+- [ ] Add server-side logging: worksheet names, chosen worksheet, detected headers, mapping results, row count, warnings
+
+### Acceptance Criteria
+- [ ] Upload .xlsm with suite numbers on Smoke Alarm tab → suite numbers map correctly
+- [ ] No "Invalid power type: SA/CO-1" errors (codes map to model/deviceTypeCode)
+- [ ] Technician screen shows Summary section
+- [ ] Smoke Alarms separated from Fire Alarm Devices

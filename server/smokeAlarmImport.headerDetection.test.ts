@@ -58,11 +58,12 @@ describe('Smoke Alarm Import with Header Detection', () => {
     expect(mapping.suiteNumber).toBe('Suite Number / Location');
     
     // Should map other fields
-    // Type matches 'type' keyword in powerType, so it gets mapped first
-    expect(mapping.powerType).toBe('Type');
+    // Type now maps to model (for device codes like SA/CO-1, SA-P)
+    expect(mapping.model).toBe('Type');
+    // Power Source maps to powerType
+    expect(mapping.powerType).toBe('Power Source');
     expect(mapping.installDate).toBe('In Service Date');
     
-    // Power Source doesn't get mapped because Type already took powerType slot
     // Location is part of "Suite Number / Location" which is used for suiteNumber
   });
 
@@ -73,6 +74,7 @@ describe('Smoke Alarm Import with Header Detection', () => {
     
     expect(mapping.suiteNumber).toBe('Suite #');
     expect(mapping.location).toBe('Location');
+    // Power Type should map to powerType
     expect(mapping.powerType).toBe('Power Type');
     expect(mapping.installDate).toBe('Install Date');
   });

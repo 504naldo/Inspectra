@@ -74,15 +74,17 @@ describe('Smoke Alarm Import Validation', () => {
     });
   });
 
-  it('should reject invalid power type', () => {
+  it('should normalize invalid power type to unknown', () => {
     const invalidRow = {
       suiteNumber: '101',
       powerType: 'solar',
     };
     
     const result = schema.validateRow(invalidRow);
-    expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain('Invalid power type');
+    // Should pass validation (normalized to 'unknown')
+    expect(result.valid).toBe(true);
+    // Power type should be normalized
+    expect(invalidRow.powerType).toBe('unknown');
   });
 
   it('should accept smoke alarm without optional fields', () => {
