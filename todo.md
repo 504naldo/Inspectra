@@ -1580,3 +1580,53 @@
 - [x] ranaldo@ewandf.ca can log in and access admin dashboard (granted admin role, isActive=1)
 - [x] New users are auto-created with default role (upsertUser creates with technician role by default)
 - [x] Unauthorized users see clear error message (Forbidden page with role info and next steps)
+
+
+## Site Summary Sheet Feature
+### Database Schema
+- [x] Add summary JSON field to sites table
+- [x] Define summary structure: client, building, address, billing, contacts, monitoring, building info, estimates
+- [x] Add totals counters: fireAlarmDevicesCount, smokeAlarmsCount, emergencyLightsCount, fireExtinguishersCount, sprinklerDevicesCount
+- [x] Run database migration to add summary field (migration 0020_stiff_spitfire.sql)
+
+### Excel Import - Summary Sheet Parsing
+- [x] Detect "Summary Sheet" worksheet (case-insensitive)
+- [x] Implement label-based parsing for known fields:
+  - Name of Client, Name of Building or Site, Site Address, Billing Address
+  - Contact Names, Contact Phone, Email, Position
+  - Monitoring Company, Account #, Phone, Password
+  - Building Year, Class, Stories, Estimated Servicing Hours, Repair Budget
+- [x] Parse contact list (multiple contacts with name/role/phone/email)
+- [x] Store parsed data in site.summary JSON
+- [x] Calculate device totals after import (fireAlarmDevicesCount, smokeAlarmsCount, etc.)
+- [x] Handle missing/partial Summary Sheet gracefully (try-catch with logging)
+
+### Technician UI - Inspection Summary
+- [ ] Add "Inspection Summary" section at top of job details page
+- [ ] Display system coverage checklist (Fire Alarm, Sprinkler, Extinguishers, Lights, Smoke Alarms)
+- [ ] Show totals by category (keep Smoke Alarms separate from Fire Alarm Devices)
+- [ ] Display deficiency counts by severity
+- [ ] Show key site summary fields (client/building/address + primary contact)
+- [ ] Add "View Full Summary Sheet" button
+
+### Technician UI - Full Summary Sheet View
+- [ ] Create dedicated Full Summary Sheet page/modal
+- [ ] Layout resembling Excel Summary Sheet (grouped blocks)
+- [ ] Display: Client/Site, Billing, Contacts, Monitoring, Building info, estimates/budget
+- [ ] Allow tech edits for: servicing hours estimate, notes fields, field observations
+- [ ] Make admin-only fields read-only for technicians
+- [ ] Responsive design for mobile
+
+### Admin UI - Summary Sheet Editor
+- [ ] Add "Summary Sheet" panel in admin site details page
+- [ ] Allow admin to edit all summary fields (client, billing, contacts)
+- [ ] Ensure editing summary does NOT alter inspection results
+- [ ] Save changes to site.summary JSON
+
+### Acceptance Criteria
+- [ ] New sites show "Inspection Summary" section immediately (even if blank)
+- [ ] Excel import with Summary Sheet populates summary fields automatically
+- [ ] Smoke Alarms NOT counted under Fire Alarm Devices
+- [ ] Totals reflect actual device tables (not placeholders)
+- [ ] No routing regressions
+- [ ] Works on mobile (responsive stacking, no overlapping text)

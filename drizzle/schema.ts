@@ -77,6 +77,56 @@ export type InsertCustomerOrg = typeof customerOrgs.$inferInsert;
 // ============================================
 // SITE (Inspection Location)
 // ============================================
+
+// Site Summary type definition
+export type SiteSummary = {
+  client?: {
+    name?: string;
+  };
+  building?: {
+    name?: string;
+    year?: string;
+    class?: string;
+    stories?: string;
+  };
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+  };
+  billing?: {
+    address?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+  };
+  contacts?: Array<{
+    name?: string;
+    role?: string;
+    phone?: string;
+    email?: string;
+  }>;
+  monitoring?: {
+    company?: string;
+    accountNumber?: string;
+    phone?: string;
+    password?: string;
+  };
+  estimates?: {
+    servicingHours?: string;
+    repairBudget?: string;
+  };
+  totals?: {
+    fireAlarmDevicesCount?: number;
+    smokeAlarmsCount?: number;
+    emergencyLightsCount?: number;
+    fireExtinguishersCount?: number;
+    sprinklerDevicesCount?: number;
+  };
+  notes?: string;
+};
+
 export const sites = mysqlTable("sites", {
   id: int("id").autoincrement().primaryKey(),
   companyId: int("companyId").notNull(),
@@ -89,6 +139,7 @@ export const sites = mysqlTable("sites", {
   contactName: varchar("contactName", { length: 255 }),
   contactPhone: varchar("contactPhone", { length: 50 }),
   notes: text("notes"),
+  summary: json("summary").$type<SiteSummary>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

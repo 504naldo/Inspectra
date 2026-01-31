@@ -141,6 +141,13 @@
       "when": 1769723998237,
       "tag": "0019_acoustic_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1769892413214,
+      "tag": "0020_stiff_spitfire",
+      "breakpoints": true
     }
   ]
 }

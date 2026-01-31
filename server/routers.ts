@@ -2405,6 +2405,48 @@ const importRouter = router({
     // Save row results
     await db.createBulkImportRowResults(rowResults);
     
+    // Parse Summary Sheet if it exists and update site summary
+    try {
+      const summarySheetNames = ['Summary', 'summary', 'SUMMARY', 'Summary Sheet', 'SUMMARY SHEET'];
+      const summarySheetName = workbook.SheetNames.find(name => 
+        summarySheetNames.some(s => name.toLowerCase().includes(s.toLowerCase()))
+      );
+      
+      if (summarySheetName && workbook.Sheets[summarySheetName]) {
+        const { parseSummarySheet } = await import('./summarySheetParser');
+        const summarySheet = workbook.Sheets[summarySheetName];
+        const summaryData = XLSX.utils.sheet_to_json(summarySheet, { header: 1 }) as any[][];
+        const parsedSummary = parseSummarySheet(summaryData);
+        
+        // Calculate device totals from imported devices
+        const siteDevices = await db.getDevicesBySite(input.siteId);
+        const totals = {
+          fireAlarmDevicesCount: siteDevices.filter(d => d.category === 'FIRE_ALARM_DEVICE').length,
+          smokeAlarmsCount: siteDevices.filter(d => d.category === 'SMOKE_ALARM').length,
+          emergencyLightsCount: siteDevices.filter(d => d.category === 'EMERGENCY_LIGHT').length,
+          fireExtinguishersCount: siteDevices.filter(d => d.category === 'FIRE_EXTINGUISHER').length,
+          sprinklerDevicesCount: siteDevices.filter(d => d.category === 'SPRINKLER').length,
+        };
+        
+        // Merge totals into parsed summary
+        parsedSummary.totals = totals;
+        
+        // Update site with summary data
+        await db.updateSite(input.siteId, {
+          summary: parsedSummary as any,
+        });
+        
+        console.log('[execute] Summary Sheet parsed and saved:', {
+          siteId: input.siteId,
+          summarySheetName,
+          totals,
+        });
+      }
+    } catch (summaryError: any) {
+      console.error('[execute] Failed to parse Summary Sheet:', summaryError);
+      // Don't fail the entire import if summary parsing fails
+    }
+    
     // Update import log
     await db.updateImportLog(importLog.id, {
       status: errorCount > 0 ? 'partial' : 'completed',
