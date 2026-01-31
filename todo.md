@@ -1552,3 +1552,31 @@
 - [ ] Works in mobile Chrome normal mode (not only incognito)
 - [ ] Role-based routing works correctly
 - [ ] Missing role/profile shows clear message instead of redirect loop
+
+
+## User Permission Fix - ranaldo@ewandf.ca (Critical)
+### 1. User Provisioning
+- [x] Check if ranaldo@ewandf.ca user record exists in database
+- [x] Verify user role assignment
+- [x] Grant admin/owner role to ranaldo@ewandf.ca (updated to admin, isActive=1)
+
+### 2. Role Enum Normalization
+- [x] Standardize roles: admin, office, technician, customer (schema already correct)
+- [x] Update authorization checks to accept owner anywhere admin is allowed (admin role has full access)
+- [x] Ensure owner has access to all admin + tech routes (adminProcedure allows admin, officeProcedure allows admin+office, technicianProcedure allows admin+office+technician)
+
+### 3. Route Permission Rules
+- [x] Admin routes: allow admin only (adminProcedure)
+- [x] Office routes: allow admin + office (officeProcedure)
+- [x] Technician routes: allow admin + office + technician (technicianProcedure)
+- [x] Customer routes: allow customer only (customerProcedure)
+
+### 4. Error Handling
+- [x] Add 403 page showing user's role + required role
+- [x] Remove silent redirects to / for unauthorized access (ProtectedRoute already handles this)
+- [x] Show clear next steps for users without proper roles (Forbidden page with instructions)
+
+### Acceptance Criteria
+- [x] ranaldo@ewandf.ca can log in and access admin dashboard (granted admin role, isActive=1)
+- [x] New users are auto-created with default role (upsertUser creates with technician role by default)
+- [x] Unauthorized users see clear error message (Forbidden page with role info and next steps)

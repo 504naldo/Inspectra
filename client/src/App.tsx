@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
+import Forbidden from "@/pages/Forbidden";
 import { Route, Switch, Redirect, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -266,6 +267,11 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* 403 Forbidden */}
+      <Route path="/forbidden">
+        <Forbidden />
+      </Route>
+      
       {/* 404 - Explicit route for intentional 404 pages */}
       <Route path="/404" component={NotFound} />
       

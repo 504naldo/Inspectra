@@ -1,0 +1,20 @@
+{
+  "query": "SELECT id, openId, name, email, role, isActive, createdAt, lastSignedIn FROM users WHERE email = 'ranaldo@ewandf.ca';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT id, openId, name, email, role, isActive, createdAt, lastSignedIn FROM users WHERE email = 'ranaldo@ewandf.ca';",
+  "rows": [
+    {
+      "id": "120001",
+      "openId": "ThEnPXvW3yedLQ7EiLTZGz",
+      "name": "Ranaldo Daniels",
+      "email": "ranaldo@ewandf.ca",
+      "role": "technician",
+      "isActive": "1",
+      "createdAt": "2025-12-19 19:47:00",
+      "lastSignedIn": "2026-01-30 15:53:20"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\topenId\tname\temail\trole\tisActive\tcreatedAt\tlastSignedIn\n120001\tThEnPXvW3yedLQ7EiLTZGz\tRanaldo Daniels\tranaldo@ewandf.ca\ttechnician\t1\t2025-12-19 19:47:00\t2026-01-30 15:53:20\n",
+  "stderr": "",
+  "execution_time_ms": 365
+}

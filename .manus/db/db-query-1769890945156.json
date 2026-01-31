@@ -1,0 +1,16 @@
+{
+  "query": "SELECT id, email, role, isActive FROM users WHERE email = 'ranaldo@ewandf.ca';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT id, email, role, isActive FROM users WHERE email = 'ranaldo@ewandf.ca';",
+  "rows": [
+    {
+      "id": "120001",
+      "email": "ranaldo@ewandf.ca",
+      "role": "admin",
+      "isActive": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\trole\tisActive\n120001\tranaldo@ewandf.ca\tadmin\t1\n",
+  "stderr": "",
+  "execution_time_ms": 343
+}
