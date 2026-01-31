@@ -82,12 +82,18 @@ async function startServer() {
   );
 
   // Serve static files and setup Vite
-  app.use(serveStatic);
-  await setupVite(app, server);
+  if (process.env.NODE_ENV === "production") {
+    serveStatic(app);
+  } else {
+    await setupVite(app, server);
+  }
 
-  const port = await findAvailablePort();
-  server.listen(port, "localhost", () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  // Use PORT from environment (production) or find available port (development)
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : await findAvailablePort();
+  
+  // Listen on 0.0.0.0 to accept connections from any interface (required for containers/production)
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${port}/`);
   });
 }
 
