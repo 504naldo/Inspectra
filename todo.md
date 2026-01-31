@@ -1494,3 +1494,12 @@
 - [x] Added suiteNumber and category fields to DeviceItem interface
 - [x] Updated display logic to show "Suite {number}" for smoke alarms
 - [x] Suite numbers now display correctly in technician job details
+
+
+## Suite Number Sorting
+- [x] Update sorting logic to order smoke alarms by suite number descending (highest to lowest)
+- [x] Ensure numeric sorting (631 > 101, not alphabetic)
+- [x] Test with mixed numeric and alphanumeric suite numbers
+- [x] Created sortBySuiteNumberDescending function in deviceHelpers
+- [x] Updated JobDetails to use new sorting for smoke alarms
+- [x] All 8 suite number sorting tests passing

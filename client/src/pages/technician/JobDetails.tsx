@@ -9,7 +9,7 @@ import { useInspectionProgress } from "@/hooks/useInspectionProgress";
 import { ExpandableCategoryCard } from "@/components/ExpandableCategoryCard";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
-import { sortByWalkOrderThenLocation } from "@shared/deviceHelpers";
+import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending } from "@shared/deviceHelpers";
 import { 
   ArrowLeft, 
   MapPin, 
@@ -149,7 +149,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const emergencyLights = devices?.filter((d: any) => categorizeDevice(d) === 'emergency') || [];
 
   // Sort devices by walk order and add inspection results
-  const sortedSmokeAlarms = sortByWalkOrderThenLocation(smokeAlarms).map((d: any) => ({
+  // Smoke alarms are sorted by suite number descending (highest to lowest)
+  const sortedSmokeAlarms = sortBySuiteNumberDescending(smokeAlarms).map((d: any) => ({
     ...d,
     result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
   }));
