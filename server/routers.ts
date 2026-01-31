@@ -2476,10 +2476,18 @@ const deficiencyReportRouter = router({
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(opts => {
+      // Set no-cache headers to prevent stale auth state
+      opts.ctx.res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      opts.ctx.res.setHeader('Pragma', 'no-cache');
+      opts.ctx.res.setHeader('Expires', '0');
+      return opts.ctx.user;
+    }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      // Set no-cache headers
+      ctx.res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
       return { success: true } as const;
     }),
   }),

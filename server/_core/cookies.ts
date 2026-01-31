@@ -42,7 +42,7 @@ export function getSessionCookieOptions(
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
+    sameSite: "lax", // Changed from 'none' to 'lax' for mobile Chrome compatibility
     secure: isSecureRequest(req),
   };
 }

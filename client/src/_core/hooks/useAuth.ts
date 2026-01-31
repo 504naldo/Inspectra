@@ -3,6 +3,10 @@ import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
 
+export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+
+const IS_DEV = import.meta.env.DEV;
+
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
   redirectPath?: string;
@@ -36,21 +40,56 @@ export function useAuth(options?: UseAuthOptions) {
       }
       throw error;
     } finally {
+      // Clear auth state
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
+      
+      // Clear localStorage auth keys
+      localStorage.removeItem('manus-runtime-user-info');
+      
+      if (IS_DEV) {
+        console.log('[AUTH] Logout complete - cleared session and localStorage');
+      }
     }
   }, [logoutMutation, utils]);
 
   const state = useMemo(() => {
+    const loading = meQuery.isLoading || logoutMutation.isPending;
+    const user = meQuery.data ?? null;
+    const isAuthenticated = Boolean(user);
+    
+    // Determine auth status
+    let status: AuthStatus;
+    if (loading) {
+      status = 'loading';
+    } else if (isAuthenticated) {
+      status = 'authenticated';
+    } else {
+      status = 'unauthenticated';
+    }
+    
+    // Store user info in localStorage
     localStorage.setItem(
       "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
+      JSON.stringify(user)
     );
+    
+    // Debug logging in dev mode
+    if (IS_DEV) {
+      console.log('[AUTH]', {
+        status,
+        hasSession: isAuthenticated,
+        role: user?.role,
+        path: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
+      });
+    }
+    
     return {
-      user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
+      status,
+      user,
+      loading,
       error: meQuery.error ?? logoutMutation.error ?? null,
-      isAuthenticated: Boolean(meQuery.data),
+      isAuthenticated,
     };
   }, [
     meQuery.data,

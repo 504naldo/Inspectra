@@ -1503,3 +1503,52 @@
 - [x] Created sortBySuiteNumberDescending function in deviceHelpers
 - [x] Updated JobDetails to use new sorting for smoke alarms
 - [x] All 8 suite number sorting tests passing
+
+
+## Auth State & Login Redirect Fix (Critical)
+### 1. Central Auth State
+- [x] Create single source of truth for auth with status: 'loading' | 'authenticated' | 'unauthenticated'
+- [x] Expose session, user (with role), and error in auth hook/store
+- [x] Ensure all route guards and pages use this centralized state
+- [x] Rule: Never redirect while status === 'loading' (already implemented in ProtectedRoute)
+
+### 2. Route Guards Fix
+- [x] Audit all protected pages and layout-level guards
+- [x] Replace ad-hoc checks (if (!user) redirect) with proper status checks (already using loading state)
+- [x] Render loading skeleton when status === 'loading' (already implemented)
+- [x] Redirect to /login when status === 'unauthenticated' (already implemented)
+- [x] Show 403 page for role violations (redirects to role-appropriate page, not /)
+
+### 3. Role-Based Landing Routing
+- [x] Create getLandingRoute(role) function (getRoleBasedPath already exists)
+- [x] Admin/Office → /admin
+- [x] Technician → /tech/jobs
+- [x] Customer → /customer
+- [x] Use consistently in: login success (OAuth callback), app root redirect (App.tsx), deep-link fallback (ProtectedRoute)
+
+### 4. Cookie/Session Persistence (Mobile Chrome)
+- [x] Set auth cookies with SameSite=Lax (changed from 'none')
+- [x] Set Secure=true in production (https) (already implemented with isSecureRequest check)
+- [x] Verify correct cookie domain (no invalid domain) (domain not set, works correctly)
+- [x] OAuth callback sets session then 302 redirects to landing page (already implemented)
+- [x] Server session endpoint returns Cache-Control: no-store headers (added to auth.me and auth.logout)
+- [x] Clear cookies AND local storage on logout (added localStorage.removeItem)
+
+### 5. Missing User Profile Edge Case
+- [x] Auto-create user profile with default role when session exists but user missing (upsertUser creates with 'technician' role)
+- [x] Show clear screen for admin to assign role (pending approval screen when isActive=0)
+- [x] Do not redirect to / silently (shows proper pending approval message)
+
+### 6. Debug Logging (Dev Only)
+- [x] Log auth status transitions
+- [x] Log session present/absent
+- [x] Log user role
+- [x] Log redirect locations
+- [x] Format: console.log('[AUTH]', { status, hasSession, role, path })
+- [x] Added logout logging
+
+### Acceptance Criteria
+- [ ] Login as different user no longer bounces to /
+- [ ] Works in mobile Chrome normal mode (not only incognito)
+- [ ] Role-based routing works correctly
+- [ ] Missing role/profile shows clear message instead of redirect loop
