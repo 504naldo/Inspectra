@@ -1630,3 +1630,14 @@
 - [ ] Totals reflect actual device tables (not placeholders)
 - [ ] No routing regressions
 - [ ] Works on mobile (responsive stacking, no overlapping text)
+
+
+## Chrome Mobile Login Redirect Bug (Critical)
+- [ ] Add comprehensive debug logging to OAuth callback
+- [ ] Add debug logging to App.tsx auth guard
+- [ ] Add debug logging to Home.tsx redirect logic
+- [ ] Test login flow on Chrome mobile and capture logs
+- [ ] Identify why user is redirected to homepage instead of role-based dashboard
+- [ ] Fix the redirect logic
+- [ ] Verify fix works on Chrome mobile
+- [x] Replace wouter setLocation with window.location.href for hard redirect in App.tsx

@@ -83,15 +83,32 @@ function Router() {
 
   // Global auth guard: redirect authenticated users from home to dashboard
   useEffect(() => {
+    console.log('[App] Auth guard check:', {
+      loading,
+      isAuthenticated,
+      userRole: user?.role,
+      location,
+    });
+    
     // Only run after auth state is loaded
-    if (loading) return;
+    if (loading) {
+      console.log('[App] Still loading auth state, skipping redirect');
+      return;
+    }
     
     // If user is authenticated and on home page, redirect to role-based dashboard
     if (isAuthenticated && user && location === '/') {
       const targetPath = getRoleBasedPath(user.role);
-      setLocation(targetPath);
+      console.log('[App] Redirecting from home to:', targetPath);
+      // Use window.location.href for hard redirect (more reliable on mobile Chrome)
+      window.location.href = targetPath;
+    } else if (location === '/') {
+      console.log('[App] On home page but not redirecting:', {
+        isAuthenticated,
+        hasUser: !!user,
+      });
     }
-  }, [loading, isAuthenticated, user, location, setLocation]);
+  }, [loading, isAuthenticated, user, location]);
 
   return (
     <Switch>
