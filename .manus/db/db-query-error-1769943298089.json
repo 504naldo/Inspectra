@@ -1,0 +1,8 @@
+{
+  "query": "-- Add unique functional index on normalized email + companyId\n-- This prevents duplicate users with same email (case-insensitive, trimmed)\nCREATE UNIQUE INDEX idx_users_normalized_email_company \nON users (companyId, (LOWER(TRIM(email))));",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute -- Add unique functional index on normalized email + companyId\n-- This prevents duplicate users with same email (case-insensitive, trimmed)\nCREATE UNIQUE INDEX idx_users_normalized_email_company \nON users (companyId, (LOWER(TRIM(email))));",
+  "returncode": 1,
+  "logs": [
+    "ERROR 8200 (HY000) at line 3: Unsupported creating expression index containing unsafe functions without allow-expression-index in config"
+  ]
+}

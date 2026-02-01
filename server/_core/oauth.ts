@@ -36,12 +36,49 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
+      // Determine company assignment
+      const allCompanies = await db.getAllCompanies();
+      let companyId: number | undefined;
+      
+      if (allCompanies.length === 1) {
+        // Single company - assign to it
+        companyId = allCompanies[0].id;
+      } else if (allCompanies.length > 1) {
+        // Multiple companies - for now, use first company
+        // TODO: Implement domain-based company matching
+        companyId = allCompanies[0].id;
+      }
+
+      // Determine role and activation based on email
+      const email = userInfo.email?.toLowerCase() || '';
+      let role: 'admin' | 'office' | 'technician' | 'customer' = 'technician';
+      let isActive = 1; // Default to active for EWF emails
+
+      if (email === 'ranaldo@ewandf.ca') {
+        role = 'admin';
+        isActive = 1;
+      } else if (email.endsWith('@ewandf.ca')) {
+        // Other EWF emails: active technicians by default
+        role = 'technician';
+        isActive = 1;
+      }
+
       await db.upsertUser({
         openId: userInfo.openId,
         name: userInfo.name || null,
         email: userInfo.email ?? null,
         loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
         lastSignedIn: new Date(),
+        companyId,
+        role,
+        isActive,
+      });
+
+      console.log('[OAuth] User upserted:', {
+        email: userInfo.email,
+        role,
+        companyId,
+        isActive,
       });
 
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
@@ -110,7 +147,12 @@ export function registerOAuthRoutes(app: Express) {
         console.log('[OAuth] Role-based redirect determined:', targetRoute);
       }
 
-      console.log('[OAuth] Final redirect to:', targetRoute);
+      console.log('[OAuth] Final redirect to:', targetRoute, {
+        email: userInfo.email,
+        role: user?.role,
+        companyId: user?.companyId,
+        isActive: user?.isActive,
+      });
       res.redirect(302, targetRoute);
     } catch (error) {
       console.error("[OAuth] Callback failed", error);

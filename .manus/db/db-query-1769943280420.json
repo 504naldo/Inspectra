@@ -1,0 +1,9 @@
+{
+  "query": "-- First, check for existing duplicates\nSELECT \n  LOWER(TRIM(email)) as normalized_email,\n  companyId,\n  COUNT(*) as count,\n  GROUP_CONCAT(id ORDER BY id) as user_ids\nFROM users\nWHERE email IS NOT NULL AND companyId IS NOT NULL\nGROUP BY LOWER(TRIM(email)), companyId\nHAVING COUNT(*) > 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute -- First, check for existing duplicates\nSELECT \n  LOWER(TRIM(email)) as normalized_email,\n  companyId,\n  COUNT(*) as count,\n  GROUP_CONCAT(id ORDER BY id) as user_ids\nFROM users\nWHERE email IS NOT NULL AND companyId IS NOT NULL\nGROUP BY LOWER(TRIM(email)), companyId\nHAVING COUNT(*) > 1;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 375
+}

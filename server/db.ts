@@ -73,6 +73,12 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = user.lastSignedIn;
     }
     
+    // Handle companyId
+    if (user.companyId !== undefined) {
+      values.companyId = user.companyId;
+      updateSet.companyId = user.companyId;
+    }
+    
     // Handle role assignment
     if (user.role !== undefined) {
       values.role = user.role;
@@ -85,15 +91,13 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = 'technician';
     }
     
-    // Handle isActive for new users
-    if (!existing) {
-      // New users start as inactive (pending approval)
-      values.isActive = 0;
-    }
-    // For existing users, don't change isActive unless explicitly provided
+    // Handle isActive - respect explicit value from OAuth callback
     if (user.isActive !== undefined) {
       values.isActive = user.isActive;
       updateSet.isActive = user.isActive;
+    } else if (!existing) {
+      // New users: default to active (OAuth callback will set to 0 if needed)
+      values.isActive = 1;
     }
 
     if (!values.lastSignedIn) {

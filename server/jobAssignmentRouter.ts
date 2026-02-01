@@ -165,7 +165,7 @@ export const jobAssignmentRouter = router({
         });
       }
 
-      // Get all technicians, then dedupe by email in JavaScript
+      // Get all technicians, then dedupe by normalized email in JavaScript
       const allTechnicians = await db
         .select({
           id: users.id,
@@ -180,12 +180,13 @@ export const jobAssignmentRouter = router({
         ))
         .orderBy(users.name);
       
-      // Deduplicate by email, keeping first occurrence (lowest ID due to orderBy)
+      // Deduplicate by normalized email (trim + lowercase), keeping first occurrence
       const seen = new Set<string>();
       const technicians = allTechnicians.filter(tech => {
         if (!tech.email) return false; // Skip users without email
-        if (seen.has(tech.email)) return false;
-        seen.add(tech.email);
+        const normalizedEmail = tech.email.trim().toLowerCase();
+        if (seen.has(normalizedEmail)) return false;
+        seen.add(normalizedEmail);
         return true;
       });
 

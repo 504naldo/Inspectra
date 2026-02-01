@@ -43,3 +43,23 @@ export const adminProcedure = t.procedure.use(
     });
   }),
 );
+
+export const adminOrOfficeProcedure = t.procedure.use(
+  t.middleware(async opts => {
+    const { ctx, next } = opts;
+
+    if (!ctx.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'office')) {
+      throw new TRPCError({ 
+        code: "FORBIDDEN", 
+        message: "Admin or office role required" 
+      });
+    }
+
+    return next({
+      ctx: {
+        ...ctx,
+        user: ctx.user,
+      },
+    });
+  }),
+);

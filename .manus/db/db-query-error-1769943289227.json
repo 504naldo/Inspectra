@@ -1,0 +1,8 @@
+{
+  "query": "-- Add unique index on normalized email + companyId\n-- Using a generated column for the normalized email\nALTER TABLE users \nADD COLUMN email_normalized VARCHAR(320) GENERATED ALWAYS AS (LOWER(TRIM(email))) STORED;\n\nALTER TABLE users \nADD UNIQUE INDEX idx_users_normalized_email_company (companyId, email_normalized);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute -- Add unique index on normalized email + companyId\n-- Using a generated column for the normalized email\nALTER TABLE users \nADD COLUMN email_normalized VARCHAR(320) GENERATED ALWAYS AS (LOWER(TRIM(email))) STORED;\n\nALTER TABLE users \nADD UNIQUE INDEX idx_users_normalized_email_company (companyId, email_normalized);",
+  "returncode": 1,
+  "logs": [
+    "ERROR 3106 (HY000) at line 3: 'Adding generated stored column through ALTER TABLE' is not supported for generated columns."
+  ]
+}
