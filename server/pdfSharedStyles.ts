@@ -100,28 +100,40 @@ export function drawFooter(
      .lineWidth(1)
      .stroke(PDF_COLORS.grayLight);
   
-  // Footer text
+  // Save current position before drawing footer
+  const savedY = doc.y;
+  
+  // Footer text - company name (left)
   doc.fontSize(8)
      .font(PDF_FONTS.regular)
-     .fillColor(PDF_COLORS.grayMedium)
-     .text(companyName, PDF_SIZES.margin, 770);
+     .fillColor(PDF_COLORS.grayMedium);
   
-  // Page number (center)
+  doc.text(companyName, PDF_SIZES.margin, 770, { 
+    lineBreak: false,
+    continued: false
+  });
+  
+  // Page number (center) - reset Y position
+  doc.y = 770;
   doc.text(
     `Page ${pageNumber} of ${totalPages}`,
     0,
     770,
-    { width: PDF_SIZES.pageWidth, align: 'center' }
+    { width: PDF_SIZES.pageWidth, align: 'center', lineBreak: false, continued: false }
   );
   
-  // Report ID and date (right)
+  // Report ID and date (right) - reset Y position
+  doc.y = 770;
   const genDate = new Date().toLocaleDateString();
   doc.text(
     `${reportId} | Generated: ${genDate}`,
     0,
     770,
-    { width: PDF_SIZES.pageWidth - PDF_SIZES.margin, align: 'right' }
+    { width: PDF_SIZES.pageWidth - PDF_SIZES.margin, align: 'right', lineBreak: false, continued: false }
   );
+  
+  // Restore Y position to prevent cursor advancement
+  doc.y = savedY;
 }
 
 /**

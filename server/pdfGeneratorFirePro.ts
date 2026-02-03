@@ -106,7 +106,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       const warningColor = '#f59e0b';
 
       // ============================================
-      // PAGE 1: COVER PAGE - Using Shared Enhanced Layout
+      // PAGE 1: COVER PAGE
       // ============================================
       
       drawEnhancedCoverPage(doc, {
@@ -425,6 +425,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         // Pricing totals section - only add page if insufficient space (need ~100px for totals)
         if (defY > 650) {
           doc.addPage();
+
           drawLogo(doc, 50, 50, 100);
           defY = 110;
         }
@@ -502,6 +503,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         // Only add new page if insufficient space for appendix header
         if (defY > 650) {
           doc.addPage();
+
           drawLogo(doc, 50, 50, 100);
           defY = 110;
         } else {
@@ -589,46 +591,31 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       // FOOTER ON ALL PAGES
       // ============================================
       
+      // Add footers to all pages
       const pages = doc.bufferedPageRange();
-      for (let i = 0; i < pages.count; i++) {
+      const totalPages = pages.count;
+      for (let i = 0; i < totalPages; i++) {
         doc.switchToPage(i);
         
-        // Skip footer on cover page (page 0)
-        if (i === 0) continue;
-        
-        // Footer line
-        doc.moveTo(50, 720).lineTo(562, 720).lineWidth(0.5).stroke(grayText);
-        
-        // Footer text
+        // Simple footer at bottom
+        const footerY = 770;
         doc.fontSize(8)
-           .fillColor(grayText)
-           .font('Helvetica')
-           .text(
-             `${data.companyAddress || '15-3871 NORTH FRASER WAY, BURNABY BC V5G 5J6'}`,
-             50, 728,
-             { align: 'center', width: 512 }
-           );
+           .fillColor('#6b7280')
+           .font('Helvetica');
         
-        doc.text(
-          `${data.companyPhone || '604-299-1030'} | ${data.companyEmail || 'INFO@MYFIREPRO.CA'}`,
-          50, 738,
-          { align: 'center', width: 512 }
-        );
+        // Company name on left
+        doc.text(data.companyName, 50, footerY, { lineBreak: false });
         
-        // Page number (right side)
-        doc.text(
-          `${i} of ${pages.count - 1}`,
-          50, 748,
-          { align: 'right', width: 512 }
-        );
+        // Page number in center
+        const pageText = `Page ${i + 1} of ${totalPages}`;
+        const pageTextWidth = doc.widthOfString(pageText);
+        doc.text(pageText, (612 - pageTextWidth) / 2, footerY, { lineBreak: false });
+        
+        // Job ID on right
+        const jobText = `JOB-${data.jobNumber}`;
+        const jobTextWidth = doc.widthOfString(jobText);
+        doc.text(jobText, 612 - 50 - jobTextWidth, footerY, { lineBreak: false });
       }
-
-      // Add footers to all pages using shared utility
-      applyFootersToAllPages(
-        doc,
-        data.companyName,
-        `JOB-${data.jobNumber}`
-      );
       
       doc.end();
     } catch (error) {

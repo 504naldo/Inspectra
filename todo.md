@@ -1641,3 +1641,12 @@
 - [ ] Fix the redirect logic
 - [ ] Verify fix works on Chrome mobile
 - [x] Replace wouter setLocation with window.location.href for hard redirect in App.tsx
+
+
+## Deficiency PDF Blank Pages Bug
+- [x] Locate deficiency PDF template/render code
+- [x] Add debug instrumentation (section headers and outline styles)
+- [x] Regenerate PDF and identify which element creates blank pages
+- [x] Fix the root cause (conditional page breaks, empty sections, or spacers)
+- [x] Remove debug styles after confirming fix
+- [x] Test with 3 scenarios: with deficiencies, without deficiencies, with appendix
