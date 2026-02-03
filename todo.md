@@ -1660,3 +1660,13 @@
 - [x] Test Site Details display on mobile (responsive card layout)
 - [x] Verify permissions (tech read-only, admin editable)
 - [x] Write and run unit tests (7 tests passing)
+
+
+## Site Details Sync & Reliability Fix
+- [x] Fix site.create to always initialize summary with consistent shape (never null)
+- [x] Add summary fallback in site.get for old sites without summary
+- [x] Fix site.update to keep summary in sync with flat columns
+- [x] Resolve contactEmail storage (use summary.contacts[0].email)
+- [x] Verify Excel import populates summary correctly (syncs flat columns too)
+- [x] Update Admin Edit Site form to sync with summary (added contactEmail field)
+- [x] Test Site Details display with new/old/imported sites (7 tests passing)

@@ -152,23 +152,33 @@ const siteRouter = router({
     contactEmail: z.string().optional(),
     notes: z.string().optional(),
   })).mutation(async ({ input }) => {
-    // Build summary object from form data
+    // Build summary object from form data - always initialize with complete structure
     const summary = {
+      client: {
+        name: input.name, // Use site name as client name initially
+      },
       building: {
-        name: input.name,
+        name: input.name || '',
       },
       address: {
-        street: input.address,
-        city: input.city,
-        state: input.state,
-        postalCode: input.postalCode,
+        street: input.address || '',
+        city: input.city || '',
+        state: input.state || '',
+        postalCode: input.postalCode || '',
       },
-      contacts: input.contactName || input.contactPhone || input.contactEmail ? [{
-        name: input.contactName,
-        phone: input.contactPhone,
-        email: input.contactEmail,
-      }] : [],
-      notes: input.notes,
+      contacts: [{
+        name: input.contactName || '',
+        phone: input.contactPhone || '',
+        email: input.contactEmail || '',
+        role: 'Primary Contact',
+      }],
+      monitoring: {
+        company: '',
+        accountNumber: '',
+        phone: '',
+        password: '',
+      },
+      notes: input.notes || '',
     };
     
     return db.createSite({ ...input, summary });
@@ -183,10 +193,59 @@ const siteRouter = router({
     postalCode: z.string().optional(),
     contactName: z.string().optional(),
     contactPhone: z.string().optional(),
+    contactEmail: z.string().optional(),
     notes: z.string().optional(),
   })).mutation(async ({ input }) => {
     const { id, ...data } = input;
-    await db.updateSite(id, data);
+    
+    // Get existing site to merge with updates
+    const existingSite = await db.getSiteById(id);
+    if (!existingSite) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });
+    }
+    
+    // Update summary to keep it in sync with flat columns
+    const updatedSummary = {
+      ...existingSite.summary,
+      client: {
+        ...existingSite.summary?.client,
+        name: data.name ?? existingSite.summary?.client?.name ?? existingSite.name ?? '',
+      },
+      building: {
+        ...existingSite.summary?.building,
+        name: data.name ?? existingSite.summary?.building?.name ?? existingSite.name ?? '',
+      },
+      address: {
+        ...existingSite.summary?.address,
+        street: data.address ?? existingSite.summary?.address?.street ?? existingSite.address ?? '',
+        city: data.city ?? existingSite.summary?.address?.city ?? existingSite.city ?? '',
+        state: data.state ?? existingSite.summary?.address?.state ?? existingSite.state ?? '',
+        postalCode: data.postalCode ?? existingSite.summary?.address?.postalCode ?? existingSite.postalCode ?? '',
+      },
+      contacts: existingSite.summary?.contacts?.length ? [
+        {
+          ...existingSite.summary.contacts[0],
+          name: data.contactName ?? existingSite.summary.contacts[0]?.name ?? '',
+          phone: data.contactPhone ?? existingSite.summary.contacts[0]?.phone ?? '',
+          email: data.contactEmail ?? existingSite.summary.contacts[0]?.email ?? '',
+        },
+        ...existingSite.summary.contacts.slice(1),
+      ] : [{
+        name: data.contactName ?? existingSite.contactName ?? '',
+        phone: data.contactPhone ?? existingSite.contactPhone ?? '',
+        email: data.contactEmail ?? '',
+        role: 'Primary Contact',
+      }],
+      monitoring: existingSite.summary?.monitoring || {
+        company: '',
+        accountNumber: '',
+        phone: '',
+        password: '',
+      },
+      notes: data.notes ?? existingSite.summary?.notes ?? existingSite.notes ?? '',
+    };
+    
+    await db.updateSite(id, { ...data, summary: updatedSummary });
     return { success: true };
   }),
 });
@@ -2451,10 +2510,30 @@ const importRouter = router({
         // Merge totals into parsed summary
         parsedSummary.totals = totals;
         
-        // Update site with summary data
-        await db.updateSite(input.siteId, {
+        // Update site with summary data and sync flat columns
+        const updateData: any = {
           summary: parsedSummary as any,
-        });
+        };
+        
+        // Sync key flat columns from summary for search/indexing
+        if (parsedSummary.building?.name) {
+          updateData.name = parsedSummary.building.name;
+        }
+        if (parsedSummary.address) {
+          if (parsedSummary.address.street) updateData.address = parsedSummary.address.street;
+          if (parsedSummary.address.city) updateData.city = parsedSummary.address.city;
+          if (parsedSummary.address.state) updateData.state = parsedSummary.address.state;
+          if (parsedSummary.address.postalCode) updateData.postalCode = parsedSummary.address.postalCode;
+        }
+        if (parsedSummary.contacts?.[0]) {
+          if (parsedSummary.contacts[0].name) updateData.contactName = parsedSummary.contacts[0].name;
+          if (parsedSummary.contacts[0].phone) updateData.contactPhone = parsedSummary.contacts[0].phone;
+        }
+        if (parsedSummary.notes) {
+          updateData.notes = parsedSummary.notes;
+        }
+        
+        await db.updateSite(input.siteId, updateData);
         
         console.log('[execute] Summary Sheet parsed and saved:', {
           siteId: input.siteId,

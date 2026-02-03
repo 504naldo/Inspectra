@@ -228,7 +228,40 @@ export async function getSiteById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(sites).where(eq(sites.id, id)).limit(1);
-  return result[0];
+  const site = result[0];
+  
+  // Add summary fallback for old sites without summary data
+  if (site && !site.summary) {
+    site.summary = {
+      client: {
+        name: site.name || '',
+      },
+      building: {
+        name: site.name || '',
+      },
+      address: {
+        street: site.address || '',
+        city: site.city || '',
+        state: site.state || '',
+        postalCode: site.postalCode || '',
+      },
+      contacts: [{
+        name: site.contactName || '',
+        phone: site.contactPhone || '',
+        email: '',
+        role: 'Primary Contact',
+      }],
+      monitoring: {
+        company: '',
+        accountNumber: '',
+        phone: '',
+        password: '',
+      },
+      notes: site.notes || '',
+    };
+  }
+  
+  return site;
 }
 
 export async function updateSite(id: number, data: Partial<InsertSite>) {
