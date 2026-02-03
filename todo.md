@@ -1650,3 +1650,13 @@
 - [x] Fix the root cause (conditional page breaks, empty sections, or spacers)
 - [x] Remove debug styles after confirming fix
 - [x] Test with 3 scenarios: with deficiencies, without deficiencies, with appendix
+
+
+## Site Details Display & Population (New)
+- [x] Add Site Details fields to sites table schema (already existed as summary JSON field)
+- [x] Update Admin Create Site form to capture Site Details
+- [x] Update Excel import to parse Summary Sheet and populate Site Details (already implemented)
+- [x] Create Site Details UI component for Job/Site screen (read-only for tech, editable for admin)
+- [x] Test Site Details display on mobile (responsive card layout)
+- [x] Verify permissions (tech read-only, admin editable)
+- [x] Write and run unit tests (7 tests passing)

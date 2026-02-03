@@ -8,6 +8,7 @@ import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { useInspectionProgress } from "@/hooks/useInspectionProgress";
 import { ExpandableCategoryCard } from "@/components/ExpandableCategoryCard";
 import { InspectionSummary } from "@/components/InspectionSummary";
+import { SiteDetails } from "@/components/SiteDetails";
 import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
 import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending } from "@shared/deviceHelpers";
 import { 
@@ -281,6 +282,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Site Details */}
+        <SiteDetails 
+          summary={site.summary}
+          siteName={site.name}
+          siteAddress={site.address}
+          siteCity={site.city}
+        />
 
         {/* Inspection Summary */}
         <InspectionSummary jobId={jobId} />

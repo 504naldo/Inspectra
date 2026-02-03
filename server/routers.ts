@@ -149,9 +149,29 @@ const siteRouter = router({
     postalCode: z.string().optional(),
     contactName: z.string().optional(),
     contactPhone: z.string().optional(),
+    contactEmail: z.string().optional(),
     notes: z.string().optional(),
   })).mutation(async ({ input }) => {
-    return db.createSite(input);
+    // Build summary object from form data
+    const summary = {
+      building: {
+        name: input.name,
+      },
+      address: {
+        street: input.address,
+        city: input.city,
+        state: input.state,
+        postalCode: input.postalCode,
+      },
+      contacts: input.contactName || input.contactPhone || input.contactEmail ? [{
+        name: input.contactName,
+        phone: input.contactPhone,
+        email: input.contactEmail,
+      }] : [],
+      notes: input.notes,
+    };
+    
+    return db.createSite({ ...input, summary });
   }),
   
   update: officeProcedure.input(z.object({

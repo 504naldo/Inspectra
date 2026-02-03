@@ -49,6 +49,7 @@ export default function AdminSites() {
     postalCode: "",
     contactName: "",
     contactPhone: "",
+    contactEmail: "",
   });
 
   const { data: sites, isLoading, refetch } = trpc.site.listByCompany.useQuery({ companyId });
@@ -67,6 +68,7 @@ export default function AdminSites() {
         postalCode: "",
         contactName: "",
         contactPhone: "",
+        contactEmail: "",
       });
       refetch();
     },
@@ -98,6 +100,7 @@ export default function AdminSites() {
       postalCode: newSite.postalCode || undefined,
       contactName: newSite.contactName || undefined,
       contactPhone: newSite.contactPhone || undefined,
+      contactEmail: newSite.contactEmail || undefined,
     });
   };
 
@@ -187,19 +190,31 @@ export default function AdminSites() {
                   </div>
                 </div>
 
+                <div className="space-y-2">
+                  <Label>Contact Name</Label>
+                  <Input
+                    value={newSite.contactName}
+                    onChange={(e) => setNewSite({ ...newSite, contactName: e.target.value })}
+                    placeholder="Primary contact name"
+                  />
+                </div>
+                
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Contact Name</Label>
-                    <Input
-                      value={newSite.contactName}
-                      onChange={(e) => setNewSite({ ...newSite, contactName: e.target.value })}
-                    />
-                  </div>
                   <div className="space-y-2">
                     <Label>Contact Phone</Label>
                     <Input
                       value={newSite.contactPhone}
                       onChange={(e) => setNewSite({ ...newSite, contactPhone: e.target.value })}
+                      placeholder="(123) 456-7890"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Contact Email</Label>
+                    <Input
+                      value={newSite.contactEmail}
+                      onChange={(e) => setNewSite({ ...newSite, contactEmail: e.target.value })}
+                      placeholder="contact@example.com"
+                      type="email"
                     />
                   </div>
                 </div>
