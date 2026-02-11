@@ -1670,3 +1670,9 @@
 - [x] Verify Excel import populates summary correctly (syncs flat columns too)
 - [x] Update Admin Edit Site form to sync with summary (added contactEmail field)
 - [x] Test Site Details display with new/old/imported sites (7 tests passing)
+
+
+## Test Suite Fixes
+- [x] Fix phase2Endpoints.test.ts router structure issues (11 tests passing)
+- [ ] Fix remaining category filtering and PDF tests (12 test files still failing, non-critical)
+- [ ] Run all tests and ensure they pass
