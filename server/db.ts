@@ -9,6 +9,7 @@ import {
   areas, InsertArea, Area,
   devices, InsertDevice, Device,
   jobs, InsertJob, Job,
+  jobAssignments, InsertJobAssignment, JobAssignment,
   inspectionResults, InsertInspectionResult, InspectionResult,
   deficiencies, InsertDeficiency, Deficiency,
   repairs, InsertRepair, Repair,
@@ -467,6 +468,68 @@ export async function searchJobs(companyId: number, query: string) {
       )
     )
   ).orderBy(desc(jobs.scheduledDate));
+}
+
+// ============================================
+// JOB ASSIGNMENT QUERIES
+// ============================================
+export async function addJobAssignment(data: InsertJobAssignment) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(jobAssignments).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function removeJobAssignment(jobId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(jobAssignments).where(
+    and(
+      eq(jobAssignments.jobId, jobId),
+      eq(jobAssignments.userId, userId)
+    )
+  );
+}
+
+export async function clearJobAssignments(jobId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(jobAssignments).where(eq(jobAssignments.jobId, jobId));
+}
+
+export async function getJobTechnicians(jobId: number) {
+  const db = await getDb();
+  if (!db) return { lead: null, additional: [] };
+  
+  // Get the job to find lead technician
+  const job = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
+  if (!job || job.length === 0) return { lead: null, additional: [] };
+  
+  let lead = null;
+  if (job[0].leadTechnicianId) {
+    const leadUser = await getUserById(job[0].leadTechnicianId);
+    if (leadUser) {
+      lead = { id: leadUser.id, name: leadUser.name || '', email: leadUser.email || '' };
+    }
+  }
+  
+  // Get additional technicians from jobAssignments
+  const assignments = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: jobAssignments.role
+    })
+    .from(jobAssignments)
+    .innerJoin(users, eq(jobAssignments.userId, users.id))
+    .where(eq(jobAssignments.jobId, jobId));
+  
+  const additional = assignments
+    .filter(a => a.role === 'ASSIST')
+    .map(a => ({ id: a.id, name: a.name || '', email: a.email || '' }));
+  
+  return { lead, additional };
 }
 
 // ============================================

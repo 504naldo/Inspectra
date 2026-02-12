@@ -523,6 +523,126 @@ const jobRouter = router({
     
     return summary;
   }),
+  
+  // Multi-tech assignment procedures
+  assignLeadTechnician: officeProcedure.input(z.object({
+    jobId: z.number(),
+    technicianId: z.number()
+  })).mutation(async ({ input, ctx }) => {
+    // Verify technician exists and is active
+    const technician = await db.getUserById(input.technicianId);
+    if (!technician || technician.role !== 'technician' || !technician.isActive) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid technician' });
+    }
+    
+    await db.updateJob(input.jobId, {
+      leadTechnicianId: input.technicianId,
+      assignedAt: new Date(),
+      assignedByUserId: ctx.user.id
+    });
+    
+    return { success: true };
+  }),
+  
+  addAdditionalTechnician: officeProcedure.input(z.object({
+    jobId: z.number(),
+    technicianId: z.number()
+  })).mutation(async ({ input, ctx }) => {
+    const job = await db.getJobById(input.jobId);
+    if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
+    
+    // Cannot add lead as additional
+    if (job.leadTechnicianId === input.technicianId) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Lead technician cannot be added as additional' });
+    }
+    
+    // Verify technician exists and is active
+    const technician = await db.getUserById(input.technicianId);
+    if (!technician || technician.role !== 'technician' || !technician.isActive) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid technician' });
+    }
+    
+    await db.addJobAssignment({
+      jobId: input.jobId,
+      userId: input.technicianId,
+      role: 'ASSIST',
+      assignedByUserId: ctx.user.id
+    });
+    
+    return { success: true };
+  }),
+  
+  removeAdditionalTechnician: officeProcedure.input(z.object({
+    jobId: z.number(),
+    technicianId: z.number()
+  })).mutation(async ({ input }) => {
+    await db.removeJobAssignment(input.jobId, input.technicianId);
+    return { success: true };
+  }),
+  
+  setTechnicians: officeProcedure.input(z.object({
+    jobId: z.number(),
+    leadTechnicianId: z.number(),
+    additionalTechnicianIds: z.array(z.number())
+  })).mutation(async ({ input, ctx }) => {
+    // Verify lead technician
+    const leadTech = await db.getUserById(input.leadTechnicianId);
+    if (!leadTech || leadTech.role !== 'technician' || !leadTech.isActive) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid lead technician' });
+    }
+    
+    // Remove lead from additional list if present
+    const additionalIds = input.additionalTechnicianIds.filter(id => id !== input.leadTechnicianId);
+    
+    // Verify all additional technicians
+    for (const techId of additionalIds) {
+      const tech = await db.getUserById(techId);
+      if (!tech || tech.role !== 'technician' || !tech.isActive) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid technician: ${techId}` });
+      }
+    }
+    
+    // Update lead
+    await db.updateJob(input.jobId, {
+      leadTechnicianId: input.leadTechnicianId,
+      assignedAt: new Date(),
+      assignedByUserId: ctx.user.id
+    });
+    
+    // Clear existing additional technicians
+    await db.clearJobAssignments(input.jobId);
+    
+    // Add new additional technicians
+    for (const techId of additionalIds) {
+      await db.addJobAssignment({
+        jobId: input.jobId,
+        userId: techId,
+        role: 'ASSIST',
+        assignedByUserId: ctx.user.id
+      });
+    }
+    
+    return { success: true };
+  }),
+  
+  unassignJob: officeProcedure.input(z.object({
+    jobId: z.number()
+  })).mutation(async ({ input }) => {
+    await db.updateJob(input.jobId, {
+      leadTechnicianId: null,
+      assignedAt: null,
+      assignedByUserId: null,
+      status: 'pending'
+    });
+    await db.clearJobAssignments(input.jobId);
+    return { success: true };
+  }),
+  
+  getJobTechnicians: protectedProcedure.input(z.object({
+    jobId: z.number()
+  })).query(async ({ input }) => {
+    return db.getJobTechnicians(input.jobId);
+  }),
 });
 
 // Inspection Result router

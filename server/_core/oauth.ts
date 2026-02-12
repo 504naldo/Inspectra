@@ -23,7 +23,42 @@ export function registerOAuthRoutes(app: Express) {
 
     if (!code || !state) {
       console.error('[OAuth] Missing required parameters');
-      res.status(400).json({ error: "code and state are required" });
+      console.error('[OAuth] This usually means the OAuth callback was accessed directly');
+      console.error('[OAuth] or the OAuth provider did not include the required parameters');
+      
+      // Return user-friendly HTML error page
+      res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Login Error</title>
+            <style>
+              body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f5f5f5; }
+              .message { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 500px; }
+              h1 { color: #e53e3e; margin-top: 0; }
+              p { color: #666; line-height: 1.6; }
+              .button { display: inline-block; background: #3b82f6; color: white; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; margin-top: 1rem; }
+              .button:hover { background: #2563eb; }
+              .details { background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-top: 1rem; font-size: 0.875rem; color: #666; }
+            </style>
+          </head>
+          <body>
+            <div class="message">
+              <h1>Login Failed</h1>
+              <p>The login process was interrupted. This can happen if:</p>
+              <ul>
+                <li>You accessed this page directly instead of clicking the login button</li>
+                <li>Your browser blocked the redirect</li>
+                <li>The OAuth session expired</li>
+              </ul>
+              <a href="/" class="button">Return to Home & Try Again</a>
+              <div class="details">
+                <strong>Technical details:</strong> OAuth callback received without required code and state parameters.
+              </div>
+            </div>
+          </body>
+        </html>
+      `);
       return;
     }
 

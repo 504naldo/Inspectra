@@ -148,6 +148,13 @@
       "when": 1769892413214,
       "tag": "0020_stiff_spitfire",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1770879713487,
+      "tag": "0021_thin_black_bolt",
+      "breakpoints": true
     }
   ]
 }

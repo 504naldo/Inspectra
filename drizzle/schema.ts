@@ -203,7 +203,8 @@ export const jobs = mysqlTable("jobs", {
   companyId: int("companyId").notNull(),
   siteId: int("siteId").notNull(),
   customerOrgId: int("customerOrgId").notNull(),
-  assignedTechnicianId: int("assignedTechnicianId"),
+  assignedTechnicianId: int("assignedTechnicianId"), // DEPRECATED: Use leadTechnicianId + jobAssignments instead
+  leadTechnicianId: int("leadTechnicianId"), // Primary technician responsible for the job
   assignedAt: timestamp("assignedAt"),
   assignedByUserId: int("assignedByUserId"),
   jobNumber: varchar("jobNumber", { length: 50 }).notNull(),

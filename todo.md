@@ -1676,3 +1676,25 @@
 - [x] Fix phase2Endpoints.test.ts router structure issues (11 tests passing)
 - [ ] Fix remaining category filtering and PDF tests (12 test files still failing, non-critical)
 - [ ] Run all tests and ensure they pass
+
+
+## OAuth Callback Error Fix
+- [ ] Restart dev server and verify OAuth callback is working
+- [ ] Check OAuth redirect URL configuration
+- [ ] Investigate why OAuth callback receives requests without code/state parameters
+- [ ] Test OAuth login flow end-to-end on dev server
+
+
+## Multi-Tech Job Assignment (Lead + Additional Technicians)
+- [x] Add leadTechnicianId column to jobs table
+- [x] Create jobAssignments table for additional techs (already existed)
+- [x] Backfill existing jobs: assignedTechnicianId → leadTechnicianId
+- [x] Add tRPC procedures: setLeadTechnician, addAdditionalTechnician, removeAdditionalTechnician, getJobTechnicians
+- [x] Add database helpers for job assignments (7 tests passing)
+- [ ] Update Admin Jobs UI with lead dropdown and additional techs multi-select
+- [ ] Add Unassign action and Unassigned filter pill
+- [ ] Update My Jobs query to filter by lead OR additional tech
+- [ ] Add Lead-only and Assigned-to-me filters for technicians
+- [ ] Update PDF headers to show lead + additional technicians (Annual, Deficiency, Sprinkler)
+- [ ] Test assignment flow: assign lead, add additional, unassign, bulk actions
+- [ ] Verify no duplicate technicians in lists
