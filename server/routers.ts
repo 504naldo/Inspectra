@@ -1324,7 +1324,7 @@ const reportRouter = router({
           correctiveAction: d.correctiveAction,
           deviceType,
           location,
-          estimatedCost: 0, // TODO: Add estimatedCost field to deficiencies table
+          estimatedCost: d.estimatedCost, // Keep as string (MySQL decimal), PDF generator will convert when needed
           systemCategory: d.systemCategory,
         };
       })),

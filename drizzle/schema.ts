@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique, decimal } from "drizzle-orm/mysql-core";
 
 // ============================================
 // CORE USER TABLE (Extended from template)
@@ -49,6 +49,8 @@ export const companies = mysqlTable("companies", {
   address: text("address"),
   phone: varchar("phone", { length: 50 }),
   email: varchar("email", { length: 320 }),
+  // BUG-05 fix: used for domain-based company matching during OAuth sign-in
+  emailDomain: varchar("emailDomain", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -276,13 +278,16 @@ export const deficiencies = mysqlTable("deficiencies", {
   reportedById: int("reportedById").notNull(),
   status: mysqlEnum("status", ["open", "in_progress", "resolved", "closed", "deferred"]).default("open").notNull(),
   severity: mysqlEnum("severity", ["critical", "major", "minor", "observation"]).default("major").notNull(),
-  systemCategory: mysqlEnum("systemCategory", ["FIRE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER"]),
+  // BUG-02 fix: added SMOKE_ALARM. BUG-03 fix: EMERGENCY_LIGHTING (was missing SMOKE_ALARM, now consistent with pdfGenerator)
+  systemCategory: mysqlEnum("systemCategory", ["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER"]),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   observedIssue: text("observedIssue"),
   correctiveAction: text("correctiveAction"),
   customerExplanation: text("customerExplanation"),
   codeReference: varchar("codeReference", { length: 255 }),
+  // BUG-01 fix: estimatedCost was used throughout PDF generator but missing from schema
+  estimatedCost: decimal("estimatedCost", { precision: 10, scale: 2 }),
   aiGenerated: boolean("aiGenerated").default(false),
   resolvedAt: timestamp("resolvedAt"),
   resolvedById: int("resolvedById"),

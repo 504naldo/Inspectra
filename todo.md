@@ -1698,3 +1698,11 @@
 - [ ] Update PDF headers to show lead + additional technicians (Annual, Deficiency, Sprinkler)
 - [ ] Test assignment flow: assign lead, add additional, unassign, bulk actions
 - [ ] Verify no duplicate technicians in lists
+
+
+## Schema Bug Fixes (Applied Feb 22, 2026)
+- [x] BUG-01: Add estimatedCost field to deficiencies table (decimal 10,2)
+- [x] BUG-02: Add SMOKE_ALARM to deficiencies systemCategory enum
+- [x] BUG-03: Ensure EMERGENCY_LIGHTING is in systemCategory (already present)
+- [x] BUG-05: Add emailDomain field to companies table for domain-based OAuth matching
+- [x] Push schema changes to database (migration 0022_harsh_natasha_romanoff)

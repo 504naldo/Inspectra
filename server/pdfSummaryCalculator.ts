@@ -18,7 +18,7 @@ interface Deficiency {
   title: string;
   severity: string;
   status: string;
-  estimatedCost?: number;
+  estimatedCost?: string | null; // MySQL decimal returns string from Drizzle
   systemCategory?: 'FIRE_ALARM' | 'SMOKE_ALARM' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHTING' | 'SPRINKLER' | null;
 }
 
@@ -204,7 +204,7 @@ export function calculateCostSummary(
   
   // For now, assume 60% labour, 40% materials split
   // In future, this should come from actual pricing breakdown
-  const totalCost = openDeficiencies.reduce((sum, d) => sum + (d.estimatedCost || 0), 0);
+  const totalCost = openDeficiencies.reduce((sum, d) => sum + (typeof d.estimatedCost === 'string' ? parseFloat(d.estimatedCost) : (d.estimatedCost || 0)), 0);
   const labourSubtotal = totalCost * 0.6;
   const materialsSubtotal = totalCost * 0.4;
   const subtotal = labourSubtotal + materialsSubtotal;
@@ -215,19 +215,19 @@ export function calculateCostSummary(
   const byCategory = {
     fireAlarm: openDeficiencies
       .filter(d => d.systemCategory === 'FIRE_ALARM')
-      .reduce((sum, d) => sum + (d.estimatedCost || 0), 0),
+      .reduce((sum, d) => sum + (typeof d.estimatedCost === 'string' ? parseFloat(d.estimatedCost) : (d.estimatedCost || 0)), 0),
     sprinkler: openDeficiencies
       .filter(d => d.systemCategory === 'SPRINKLER')
-      .reduce((sum, d) => sum + (d.estimatedCost || 0), 0),
+      .reduce((sum, d) => sum + (typeof d.estimatedCost === 'string' ? parseFloat(d.estimatedCost) : (d.estimatedCost || 0)), 0),
     extinguishers: openDeficiencies
       .filter(d => d.systemCategory === 'FIRE_EXTINGUISHER')
-      .reduce((sum, d) => sum + (d.estimatedCost || 0), 0),
+      .reduce((sum, d) => sum + (typeof d.estimatedCost === 'string' ? parseFloat(d.estimatedCost) : (d.estimatedCost || 0)), 0),
     emergencyLights: openDeficiencies
       .filter(d => d.systemCategory === 'EMERGENCY_LIGHTING')
-      .reduce((sum, d) => sum + (d.estimatedCost || 0), 0),
+      .reduce((sum, d) => sum + (typeof d.estimatedCost === 'string' ? parseFloat(d.estimatedCost) : (d.estimatedCost || 0)), 0),
     smokeAlarms: openDeficiencies
       .filter(d => d.systemCategory === 'SMOKE_ALARM')
-      .reduce((sum, d) => sum + (d.estimatedCost || 0), 0),
+      .reduce((sum, d) => sum + (typeof d.estimatedCost === 'string' ? parseFloat(d.estimatedCost) : (d.estimatedCost || 0)), 0),
   };
   
   return {

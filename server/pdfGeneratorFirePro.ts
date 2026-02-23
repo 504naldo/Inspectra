@@ -36,7 +36,7 @@ interface Deficiency {
   correctiveAction?: string | null;
   deviceType?: string;
   location?: string;
-  estimatedCost?: number;
+  estimatedCost?: string | null; // MySQL decimal returns string from Drizzle, convert to number when using
   systemCategory?: 'FIRE_ALARM' | 'SMOKE_ALARM' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHTING' | 'SPRINKLER' | null;
 }
 
@@ -320,7 +320,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         });
 
         // Calculate totals
-        const subtotal = data.deficiencies.reduce((sum, def) => sum + (def.estimatedCost || 0), 0);
+        const subtotal = data.deficiencies.reduce((sum, def) => sum + (typeof def.estimatedCost === 'string' ? parseFloat(def.estimatedCost) : (def.estimatedCost || 0)), 0);
         const taxRate = 0.12; // 12% tax (GST + PST)
         const taxAmount = subtotal * taxRate;
         const grandTotal = subtotal + taxAmount;
@@ -413,7 +413,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
             dx += defColWidths[2];
             
             // Cost
-            const cost = def.estimatedCost || 0;
+            const cost = typeof def.estimatedCost === 'string' ? parseFloat(def.estimatedCost) : (def.estimatedCost || 0);
             doc.text(`$${cost.toFixed(2)}`, dx, defY + 5, { width: defColWidths[3] - 10, align: 'right' });
             
             defY += rowHeight;
