@@ -134,79 +134,107 @@ interface ComplianceReportData {
 function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
   const pageWidth = 612;
   const margin = 40;
-  
-  // Draw logo
+
+  // ── Logo (top-left, 80 px tall) ──────────────────────────────────────────
   drawLogo(doc, margin, margin, 80);
-  
-  // Company info (left side, below logo)
-  doc.fontSize(9)
-     .font('Helvetica-Bold')
-     .fillColor('#000000')
-     .text('EARTH WIND AND FIRE', margin, margin + 85);
-  doc.fontSize(7)
-     .font('Helvetica')
-     .text('Fire Protection Services', margin, margin + 97);
-  doc.text('604-299-1030 | info@ewf.ca', margin, margin + 107);
-  
-  // Right side header box
+
+  // ── Right-side header box ────────────────────────────────────────────────
   const rightBoxX = 320;
   const rightBoxWidth = pageWidth - rightBoxX - margin;
-  
-  // Date of Service and Work Order
+
+  // Row 1 – Date of Service + Work Order Number (20 px)
   doc.rect(rightBoxX, margin, rightBoxWidth, 20).stroke('#000000');
-  doc.fontSize(8).font('Helvetica-Bold').text('Date of Service:', rightBoxX + 5, margin + 5);
-  doc.font('Helvetica').text(data.dateOfService.toLocaleDateString(), rightBoxX + 75, margin + 5);
-  doc.font('Helvetica-Bold').text('Work Order Number:', rightBoxX + 130, margin + 5);
-  doc.font('Helvetica').text(data.workOrderNumber, rightBoxX + 215, margin + 5);
-  
-  // Inspection frequency checkboxes
-  const freqY = margin + 22;
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#000000')
+     .text('Date of Service:', rightBoxX + 5, margin + 6);
+  doc.font('Helvetica')
+     .text(data.dateOfService.toLocaleDateString(), rightBoxX + 75, margin + 6);
+  doc.font('Helvetica-Bold')
+     .text('Work Order Number:', rightBoxX + 130, margin + 6);
+  doc.font('Helvetica')
+     .text(data.workOrderNumber, rightBoxX + 215, margin + 6);
+
+  // Row 2 – Inspection frequency checkboxes (30 px)
+  const freqY = margin + 20;
   doc.rect(rightBoxX, freqY, rightBoxWidth, 30).stroke('#000000');
-  
   const frequencies = [
-    { label: 'Daily', value: 'Daily', x: rightBoxX + 5, y: freqY + 5 },
-    { label: 'Weekly', value: 'Weekly', x: rightBoxX + 60, y: freqY + 5 },
-    { label: 'Monthly', value: 'Monthly', x: rightBoxX + 120, y: freqY + 5 },
+    { label: 'Daily',     value: 'Daily',     x: rightBoxX + 5,   y: freqY + 5 },
+    { label: 'Weekly',    value: 'Weekly',    x: rightBoxX + 60,  y: freqY + 5 },
+    { label: 'Monthly',   value: 'Monthly',   x: rightBoxX + 120, y: freqY + 5 },
     { label: 'Quarterly', value: 'Quarterly', x: rightBoxX + 180, y: freqY + 5 },
-    { label: 'Annual', value: 'Annual', x: rightBoxX + 5, y: freqY + 17 },
-    { label: '3 Year', value: '3 Year', x: rightBoxX + 60, y: freqY + 17 },
-    { label: '5 Year', value: '5 Year', x: rightBoxX + 120, y: freqY + 17 },
-    { label: '25 Year', value: '25 Year', x: rightBoxX + 180, y: freqY + 17 },
+    { label: 'Annual',    value: 'Annual',    x: rightBoxX + 5,   y: freqY + 17 },
+    { label: '3 Year',    value: '3 Year',    x: rightBoxX + 60,  y: freqY + 17 },
+    { label: '5 Year',    value: '5 Year',    x: rightBoxX + 120, y: freqY + 17 },
+    { label: '25 Year',   value: '25 Year',   x: rightBoxX + 180, y: freqY + 17 },
   ];
-  
   frequencies.forEach(freq => {
     drawCheckbox(doc, freq.x, freq.y, data.inspectionFrequency === freq.value, 8);
     doc.fontSize(7).font('Helvetica').text(freq.label, freq.x + 12, freq.y);
   });
-  
-  // Contact person and phone
-  const contactY = margin + 54;
-  doc.rect(rightBoxX, contactY, rightBoxWidth, 12).stroke('#000000');
-  doc.fontSize(7).font('Helvetica-Bold').text('Contact Person:', rightBoxX + 5, contactY + 3);
-  doc.font('Helvetica').text(data.contactPerson, rightBoxX + 65, contactY + 3);
-  doc.font('Helvetica-Bold').text('Phone:', rightBoxX + 150, contactY + 3);
-  doc.font('Helvetica').text(data.contactPhone, rightBoxX + 175, contactY + 3);
-  
-  // Building info section
-  const buildingY = margin + 68;
-  doc.rect(margin, buildingY, pageWidth - 2 * margin, 12).stroke('#000000');
-  doc.fontSize(7).font('Helvetica-Bold').text('Building Name:', margin + 5, buildingY + 3);
-  doc.font('Helvetica').text(data.buildingName, margin + 70, buildingY + 3);
-  doc.font('Helvetica-Bold').text('PM or Owner:', rightBoxX + 5, buildingY + 3);
-  doc.font('Helvetica').text(data.pmOrOwner || '', rightBoxX + 55, buildingY + 3);
-  doc.font('Helvetica-Bold').text('Phone:', rightBoxX + 150, buildingY + 3);
-  doc.font('Helvetica').text(data.ownerPhone || '', rightBoxX + 175, buildingY + 3);
-  
+
+  // Row 3 – Contact person + phone (14 px)
+  const contactY = freqY + 30;
+  doc.rect(rightBoxX, contactY, rightBoxWidth, 14).stroke('#000000');
+  doc.fontSize(7).font('Helvetica-Bold')
+     .text('Contact Person:', rightBoxX + 5, contactY + 4);
+  doc.font('Helvetica')
+     .text(data.contactPerson, rightBoxX + 65, contactY + 4);
+  doc.font('Helvetica-Bold')
+     .text('Phone:', rightBoxX + 150, contactY + 4);
+  doc.font('Helvetica')
+     .text(data.contactPhone, rightBoxX + 175, contactY + 4);
+
+  // ── Full-width rows (Building Name + Address) ────────────────────────────
+  // These rows span the full content width and sit below both the logo and the
+  // right-side box.  The right-side box bottom is at margin + 20 + 30 + 14 = 104.
+  // The logo is 80 px tall so its bottom is at margin + 80 = 120.
+  // We start the full-width rows at max(120, 104) + 4 = 124.
+  const fullRowStartY = margin + 84; // = 124 (logo bottom + 4 px gap)
+
+  // Building Name row (14 px)
+  const buildingY = fullRowStartY;
+  doc.rect(margin, buildingY, pageWidth - 2 * margin, 14).stroke('#000000');
+  doc.fontSize(7).font('Helvetica-Bold')
+     .text('Building Name:', margin + 5, buildingY + 4);
+  doc.font('Helvetica')
+     .text(data.buildingName, margin + 70, buildingY + 4);
+  doc.font('Helvetica-Bold')
+     .text('PM or Owner:', rightBoxX + 5, buildingY + 4);
+  doc.font('Helvetica')
+     .text(data.pmOrOwner || '', rightBoxX + 55, buildingY + 4);
+  doc.font('Helvetica-Bold')
+     .text('Phone:', rightBoxX + 150, buildingY + 4);
+  doc.font('Helvetica')
+     .text(data.ownerPhone || '', rightBoxX + 175, buildingY + 4);
+
+  // City / Postal Code row (14 px)
   const addressY = buildingY + 14;
-  doc.rect(margin, addressY, pageWidth - 2 * margin, 12).stroke('#000000');
-  doc.fontSize(7).font('Helvetica-Bold').text('Address:', margin + 5, addressY + 3);
-  doc.font('Helvetica').text(data.buildingAddress, margin + 40, addressY + 3);
-  doc.font('Helvetica-Bold').text('City:', rightBoxX + 5, addressY + 3);
-  doc.font('Helvetica').text(data.city, rightBoxX + 25, addressY + 3);
-  doc.font('Helvetica-Bold').text('Postal Code:', rightBoxX + 150, addressY + 3);
-  doc.font('Helvetica').text(data.postalCode || '', rightBoxX + 195, addressY + 3);
-  
-  return addressY + 20; // Return Y position where content can start
+  doc.rect(margin, addressY, pageWidth - 2 * margin, 14).stroke('#000000');
+  doc.fontSize(7).font('Helvetica-Bold')
+     .text('City:', margin + 5, addressY + 4);
+  doc.font('Helvetica')
+     .text(data.city, margin + 25, addressY + 4);
+  doc.font('Helvetica-Bold')
+     .text('Postal Code:', rightBoxX + 5, addressY + 4);
+  doc.font('Helvetica')
+     .text(data.postalCode || '', rightBoxX + 65, addressY + 4);
+
+  // ── Company info (left side, inside the logo column) ────────────────────
+  // Draw AFTER the full-width rows so it sits in the white space to the left
+  // of the right-side box, between the logo bottom and the full-width rows.
+  // Logo bottom ≈ margin + 80 = 120.  Full-width rows start at 124.
+  // We have only 4 px of gap – not enough for three lines.  Instead we place
+  // the company text BELOW the address row so it never overlaps anything.
+  const companyTextY = addressY + 18;
+  doc.fontSize(8)
+     .font('Helvetica-Bold')
+     .fillColor('#000000')
+     .text(data.companyName || 'Earth Wind and Fire', margin, companyTextY);
+  doc.fontSize(7)
+     .font('Helvetica')
+     .text(data.companyPhone ? `${data.companyPhone} | info@ewf.ca` : 'Fire Protection Services', margin, companyTextY + 11);
+
+  // Return Y where body content should start (8 px gap below company text)
+  return companyTextY + 24;
 }
 
 export function generateComplianceReportPDF(data: ComplianceReportData): Promise<Buffer> {

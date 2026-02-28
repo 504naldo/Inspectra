@@ -1748,3 +1748,9 @@
 ## Deficiency CSV Export (New)
 - [x] Add Export CSV button to Deficiencies tab in Admin Job Details
 - [x] Include all columns: ID, Title, Severity, System, Status, Est. Cost, Observed Issue, Corrective Action, Code Reference, Created At
+
+## Compliance PDF Text Spacing Fix (New)
+- [x] Fix company name/address overlapping section title in page header (left side header text bleeds into section heading)
+- [x] Fix header info block row height so text is not cramped
+- [x] Ensure section title has enough top margin to clear the header text block
+- [x] Use dynamic companyName/companyPhone from data instead of hardcoded strings
