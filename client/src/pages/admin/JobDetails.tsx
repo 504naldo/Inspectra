@@ -24,9 +24,11 @@ import {
   ShieldCheck,
   ShieldAlert,
   ShieldX,
-  FileDown
+  FileDown,
+  RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 // S3 upload is handled server-side via tRPC
 
 export default function AdminJobDetails() {
@@ -38,8 +40,10 @@ export default function AdminJobDetails() {
   const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
   const [verifyResult, setVerifyResult] = useState<any>(null);
+  const [reInspectDialogOpen, setReInspectDialogOpen] = useState(false);
 
   const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
 
   const verifyHashQuery = trpc.compliance.verifyJobHash.useQuery(
     { jobId: parseInt(jobId!) },
@@ -76,6 +80,17 @@ export default function AdminJobDetails() {
     URL.revokeObjectURL(url);
     toast.success(`Exported ${deficiencies.length} deficiencies to CSV`);
   };
+
+  const cloneMutation = trpc.job.clone.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Re-inspect job created: ${data.jobNumber}`);
+      setReInspectDialogOpen(false);
+      navigate(`/admin/jobs/${data.newJobId}`);
+    },
+    onError: (err) => {
+      toast.error(`Failed to create re-inspect job: ${err.message}`);
+    },
+  });
 
   const handleVerifyHash = async () => {
     setVerifyDialogOpen(true);
@@ -310,6 +325,17 @@ export default function AdminJobDetails() {
               >
                 <ShieldCheck className="h-4 w-4" />
                 Verify Integrity
+              </Button>
+            )}
+            {(user?.role === "admin" || user?.role === "office") && (job.status === 'completed' || !!job.finalizedAt) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+                onClick={() => setReInspectDialogOpen(true)}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Re-inspect
               </Button>
             )}
             {(user?.role === "admin" || user?.role === "office") && (
@@ -720,6 +746,53 @@ export default function AdminJobDetails() {
                 </div>
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Re-inspect Confirmation Dialog */}
+      <Dialog open={reInspectDialogOpen} onOpenChange={setReInspectDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-orange-600" />
+              Create Re-inspect Job
+            </DialogTitle>
+            <DialogDescription>
+              This will create a new draft job copied from the current one. The following will be carried over:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+              <li>Site and customer organisation</li>
+              <li>Job type, priority, and description</li>
+              <li>Assigned technician (if any)</li>
+            </ul>
+            <p className="text-sm text-muted-foreground">
+              Inspection results, deficiencies, and reports are <strong>not</strong> copied — the new job starts as a clean draft.
+            </p>
+            {job && (
+              <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+                <p className="font-medium">Source: {job.title}</p>
+                <p className="text-muted-foreground">Job #{job.id} &middot; {job.status}</p>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setReInspectDialogOpen(false)} disabled={cloneMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+              onClick={() => cloneMutation.mutate({ jobId: parseInt(jobId!) })}
+              disabled={cloneMutation.isPending}
+            >
+              {cloneMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating...</>
+              ) : (
+                <><RefreshCw className="h-4 w-4 mr-2" />Create Re-inspect Job</>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

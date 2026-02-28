@@ -653,6 +653,41 @@ const jobRouter = router({
   })).query(async ({ input }) => {
     return db.getJobTechnicians(input.jobId);
   }),
+
+  clone: officeProcedure.input(z.object({
+    jobId: z.number(),
+    scheduledDate: z.date().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    // Load the source job
+    const sourceJob = await db.getJobById(input.jobId);
+    if (!sourceJob) throw new TRPCError({ code: 'NOT_FOUND', message: 'Source job not found' });
+
+    // Only allow cloning finalized or completed jobs
+    if (!['completed', 'finalized'].includes(sourceJob.status)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only completed or finalized jobs can be re-inspected' });
+    }
+
+    // Generate a new job number
+    const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
+
+    // Create the new draft job copying key fields from the source
+    const newJob = await db.createJob({
+      companyId: sourceJob.companyId,
+      siteId: sourceJob.siteId,
+      customerOrgId: sourceJob.customerOrgId,
+      assignedTechnicianId: sourceJob.assignedTechnicianId ?? undefined,
+      title: `Re-inspect: ${sourceJob.title}`,
+      description: sourceJob.description ?? undefined,
+      jobType: sourceJob.jobType ?? undefined,
+      priority: sourceJob.priority ?? undefined,
+      scheduledDate: input.scheduledDate,
+      jobNumber,
+    });
+
+    await withAudit(ctx, 'job.clone', async () => {});
+
+    return { newJobId: newJob.id, jobNumber };
+  }),
 });
 
 // Inspection Result router

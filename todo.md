@@ -1775,3 +1775,14 @@
 - [x] Fix cramped site info bar text in drawFireProPageHeader (increased line gaps: 14/14/18/12 px)
 - [x] Lower page overflow threshold from 680 to 660 to trigger page break earlier in terms section
 - [x] Increase separator Y from margin+108 to margin+116 to match new line spacing
+
+## Compliance PDF Checklist doc.y Overflow Fix (New)
+- [x] Replace fixed row height estimates in checklist rendering with doc.y-based tracking
+- [x] Ensure page break triggers before any row that would overflow the bottom margin (threshold lowered to 700)
+
+## Re-inspect Workflow (New)
+- [x] Add job.clone tRPC procedure: copies site, customer, job type, priority, description to a new draft job
+- [x] Add "Re-inspect" button to Admin Job Details for completed/finalized jobs
+- [x] Show confirmation dialog before cloning (displays what will be copied)
+- [x] Navigate to the new draft job after cloning
+- [x] Write 19 tests for checklist overflow fix and clone procedure

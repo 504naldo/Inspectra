@@ -590,30 +590,40 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
         currentY += 20;
         
         // Checklist items
-        section.items.forEach((item, itemIndex) => {
-          const itemHeight = 20;
-          
-          // Check if we need a new page
-          if (currentY + itemHeight > 720) {
+        section.items.forEach((item) => {
+          // Estimate row height: at fontSize 8 with 360 px width, ~60 chars/line
+          // Use a minimum of 20 px; trigger page break with 40 px safety margin
+          const estimatedLines = Math.max(1, Math.ceil(item.description.length / 60));
+          const estimatedHeight = Math.max(20, estimatedLines * 12 + 8);
+
+          // Check if we need a new page before drawing
+          if (currentY + estimatedHeight > 700) {
             doc.addPage();
             currentY = drawRepeatingHeader(doc, data);
             currentY += 10;
           }
-          
-          doc.rect(40, currentY, 30, itemHeight).stroke('#000000');
-          doc.rect(70, currentY, 370, itemHeight).stroke('#000000');
-          doc.rect(440, currentY, 44, itemHeight).stroke('#000000');
-          doc.rect(484, currentY, 44, itemHeight).stroke('#000000');
-          doc.rect(528, currentY, 44, itemHeight).stroke('#000000');
-          
-          doc.fontSize(8).font('Helvetica-Bold').text(item.id, 45, currentY + 5);
-          doc.font('Helvetica').text(item.description, 75, currentY + 5, { width: 360, lineGap: 3 });
-          
-          drawCheckbox(doc, 450, currentY + 5, item.result === 'YES', 10);
-          drawCheckbox(doc, 494, currentY + 5, item.result === 'NO', 10);
-          drawCheckbox(doc, 538, currentY + 5, item.result === 'N/A', 10);
-          
-          currentY += itemHeight;
+
+          const rowStartY = currentY;
+
+          // Draw description text first to get actual rendered height via doc.y
+          doc.fontSize(8).font('Helvetica-Bold').text(item.id, 45, rowStartY + 5);
+          doc.font('Helvetica').text(item.description, 75, rowStartY + 5, { width: 360, lineGap: 3 });
+
+          // Actual row height based on rendered text (minimum 20 px)
+          const actualRowHeight = Math.max(20, doc.y - rowStartY + 5);
+
+          // Draw borders using actual height
+          doc.rect(40, rowStartY, 30, actualRowHeight).stroke('#000000');
+          doc.rect(70, rowStartY, 370, actualRowHeight).stroke('#000000');
+          doc.rect(440, rowStartY, 44, actualRowHeight).stroke('#000000');
+          doc.rect(484, rowStartY, 44, actualRowHeight).stroke('#000000');
+          doc.rect(528, rowStartY, 44, actualRowHeight).stroke('#000000');
+
+          drawCheckbox(doc, 450, rowStartY + 5, item.result === 'YES', 10);
+          drawCheckbox(doc, 494, rowStartY + 5, item.result === 'NO', 10);
+          drawCheckbox(doc, 538, rowStartY + 5, item.result === 'N/A', 10);
+
+          currentY = rowStartY + actualRowHeight;
         });
         
         // Result and comments
