@@ -46,13 +46,19 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const searchParams = new URLSearchParams(window.location.search);
   const categoryFilter = searchParams.get('category');
 
-  const { data, isLoading, refetch } = trpc.job.getWithDetails.useQuery(
+  const { data, isLoading, error, refetch } = trpc.job.getWithDetails.useQuery(
     { id: jobId },
-    { enabled: isOnline }
+    { 
+      // Always try to fetch - navigator.onLine is unreliable on mobile networks
+      // and can cause false "offline" detection, blocking the query entirely
+      enabled: true,
+      retry: isOnline ? 2 : 0,
+      retryDelay: 1500,
+    }
   );
 
-  // Try to get cached data if offline
-  const cachedData = !isOnline ? getCachedJobData(jobId) : null;
+  // Fall back to cached data only when the query actually errors (not just when browser thinks offline)
+  const cachedData = (error && !data) ? getCachedJobData(jobId) : null;
   const jobData = data || cachedData;
 
   const startJob = trpc.job.start.useMutation({
@@ -89,7 +95,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     }
   });
 
-  if (isLoading && isOnline) {
+  if (isLoading && !cachedData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />

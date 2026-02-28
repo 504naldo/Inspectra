@@ -43,18 +43,18 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
 
   const { data: device, isLoading: deviceLoading } = trpc.device.get.useQuery(
     { id: deviceId },
-    { enabled: isOnline }
+    { enabled: true, retry: isOnline ? 2 : 0 }
   );
 
   const { data: existingResult } = trpc.inspectionResult.getByJobAndDevice.useQuery(
     { jobId, deviceId },
-    { enabled: isOnline }
+    { enabled: true, retry: isOnline ? 2 : 0 }
   );
 
   // Get job details for category navigation
   const { data: jobData } = trpc.job.getWithDetails.useQuery(
     { id: jobId },
-    { enabled: isOnline }
+    { enabled: true, retry: isOnline ? 2 : 0 }
   );
 
   // Calculate category devices for navigation
@@ -163,7 +163,7 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
     setLocation(`/tech/deficiency/new/${jobId}?deviceId=${deviceId}`);
   };
 
-  if (deviceLoading && isOnline) {
+  if (deviceLoading && !device) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
