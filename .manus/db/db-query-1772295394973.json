@@ -1,0 +1,70 @@
+{
+  "query": "SELECT id, title, status, companyId FROM jobs ORDER BY id LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT id, title, status, companyId FROM jobs ORDER BY id LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "title": "Annual Inspection - 12500 Trites Road",
+      "status": "completed",
+      "companyId": "2"
+    },
+    {
+      "id": "30001",
+      "title": "Test Checklist Job",
+      "status": "in_progress",
+      "companyId": "1"
+    },
+    {
+      "id": "60001",
+      "title": "Test Checklist Job",
+      "status": "in_progress",
+      "companyId": "1"
+    },
+    {
+      "id": "90001",
+      "title": "Test Checklist Job",
+      "status": "in_progress",
+      "companyId": "1"
+    },
+    {
+      "id": "120001",
+      "title": "2026 Repair",
+      "status": "in_progress",
+      "companyId": "2"
+    },
+    {
+      "id": "150001",
+      "title": "Repair 2",
+      "status": "pending",
+      "companyId": "2"
+    },
+    {
+      "id": "240001",
+      "title": "Repair Test",
+      "status": "in_progress",
+      "companyId": "1"
+    },
+    {
+      "id": "300001",
+      "title": "Full System Demo Inspection",
+      "status": "completed",
+      "companyId": "1"
+    },
+    {
+      "id": "330004",
+      "title": "Test Job Without File",
+      "status": "pending",
+      "companyId": "120003"
+    },
+    {
+      "id": "390002",
+      "title": "2025 Annual Inspection - 2095 West 46th Avenue",
+      "status": "in_progress",
+      "companyId": "180002"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttitle\tstatus\tcompanyId\n1\tAnnual Inspection - 12500 Trites Road\tcompleted\t2\n30001\tTest Checklist Job\tin_progress\t1\n60001\tTest Checklist Job\tin_progress\t1\n90001\tTest Checklist Job\tin_progress\t1\n120001\t2026 Repair\tin_progress\t2\n150001\tRepair 2\tpending\t2\n240001\tRepair Test\tin_progress\t1\n300001\tFull System Demo Inspection\tcompleted\t1\n330004\tTest Job Without File\tpending\t120003\n390002\t2025 Annual Inspection - 2095 West 46th Avenue\tin_progress\t180002\n",
+  "stderr": "",
+  "execution_time_ms": 349
+}

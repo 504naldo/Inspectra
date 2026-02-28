@@ -81,7 +81,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       setCustomerExplanation(def.customerExplanation || "");
       setCodeReference(def.codeReference || "");
       setDeviceId(def.deviceId || undefined);
-      setAiDraft(def.aiGenerated || false);
+      setAiDraft(!!def.aiGeneratedAt);
       setSystemCategory(def.systemCategory || undefined);
     }
   }, [existingDef]);
@@ -191,7 +191,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         correctiveAction,
         customerExplanation,
         codeReference,
-        aiGenerated: aiDraft,
+        aiGeneratedAt: aiDraft ? new Date() : undefined,
         systemCategory: systemCategory as any,
       });
     }

@@ -1,0 +1,82 @@
+{
+  "query": "SELECT j.id, j.title, j.status, j.companyId FROM jobs j ORDER BY j.id LIMIT 10;\nSELECT u.id, u.name, u.email, u.role, u.companyId, u.isActive FROM users u ORDER BY u.id LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT j.id, j.title, j.status, j.companyId FROM jobs j ORDER BY j.id LIMIT 10;\nSELECT u.id, u.name, u.email, u.role, u.companyId, u.isActive FROM users u ORDER BY u.id LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "title": "Annual Inspection - 12500 Trites Road",
+      "status": "completed",
+      "companyId": "2"
+    },
+    {
+      "id": "30001",
+      "title": "Test Checklist Job",
+      "status": "in_progress",
+      "companyId": "1"
+    },
+    {
+      "id": "60001",
+      "title": "Test Checklist Job",
+      "status": "in_progress",
+      "companyId": "1"
+    },
+    {
+      "id": "90001",
+      "title": "Test Checklist Job",
+      "status": "in_progress",
+      "companyId": "1"
+    },
+    {
+      "id": "120001",
+      "title": "2026 Repair",
+      "status": "in_progress",
+      "companyId": "2"
+    },
+    {
+      "id": "150001",
+      "title": "Repair 2",
+      "status": "pending",
+      "companyId": "2"
+    },
+    {
+      "id": "240001",
+      "title": "Repair Test",
+      "status": "in_progress",
+      "companyId": "1"
+    },
+    {
+      "id": "300001",
+      "title": "Full System Demo Inspection",
+      "status": "completed",
+      "companyId": "1"
+    },
+    {
+      "id": "330004",
+      "title": "Test Job Without File",
+      "status": "pending",
+      "companyId": "120003"
+    },
+    {
+      "id": "390002",
+      "title": "2025 Annual Inspection - 2095 West 46th Avenue",
+      "status": "in_progress",
+      "companyId": "180002"
+    }
+  ],
+  "messages": [
+    "id\tname\temail\trole\tcompanyId\tisActive",
+    "1\tRanaldo Daniels\tmyblock2183@gmail.com\tadmin\t1\t1",
+    "120001\tRanaldo Daniels\tranaldo@ewandf.ca\tadmin\t1\t1",
+    "3570014\tChris Young\tchris@ewandf.ca\ttechnician\t1\t1",
+    "3570015\tPat McKinney\tpat@ewandf.ca\ttechnician\t1\t1",
+    "3570016\tRuss\truss@ewandf.ca\ttechnician\t1\t1",
+    "3570017\tMarkus\tmarkus@ewandf.ca\ttechnician\t1\t1",
+    "3570018\tTony\ttony@ewandf.ca\ttechnician\t1\t1",
+    "4170007\tTest User\ttest@example.com\tadmin\tNULL\t1",
+    "4320001\tSheet Test User\tNULL\tadmin\t210001\t1",
+    "4320002\tSheet Test User\tNULL\tadmin\t210002\t1"
+  ],
+  "stdout": "id\ttitle\tstatus\tcompanyId\n1\tAnnual Inspection - 12500 Trites Road\tcompleted\t2\n30001\tTest Checklist Job\tin_progress\t1\n60001\tTest Checklist Job\tin_progress\t1\n90001\tTest Checklist Job\tin_progress\t1\n120001\t2026 Repair\tin_progress\t2\n150001\tRepair 2\tpending\t2\n240001\tRepair Test\tin_progress\t1\n300001\tFull System Demo Inspection\tcompleted\t1\n330004\tTest Job Without File\tpending\t120003\n390002\t2025 Annual Inspection - 2095 West 46th Avenue\tin_progress\t180002\nid\tname\temail\trole\tcompanyId\tisActive\n1\tRanaldo Daniels\tmyblock2183@gmail.com\tadmin\t1\t1\n120001\tRanaldo Daniels\tranaldo@ewandf.ca\tadmin\t1\t1\n3570014\tChris Young\tchris@ewandf.ca\ttechnician\t1\t1\n3570015\tPat McKinney\tpat@ewandf.ca\ttechnician\t1\t1\n3570016\tRuss\truss@ewandf.ca\ttechnician\t1\t1\n3570017\tMarkus\tmarkus@ewandf.ca\ttechnician\t1\t1\n3570018\tTony\ttony@ewandf.ca\ttechnician\t1\t1\n4170007\tTest User\ttest@example.com\tadmin\tNULL\t1\n4320001\tSheet Test User\tNULL\tadmin\t210001\t1\n4320002\tSheet Test User\tNULL\tadmin\t210002\t1\n",
+  "stderr": "",
+  "execution_time_ms": 394
+}

@@ -775,8 +775,8 @@ const deficiencyRouter = router({
     correctiveAction: z.string().optional(),
     customerExplanation: z.string().optional(),
     codeReference: z.string().optional(),
-    aiGenerated: z.boolean().optional(),
-    systemCategory: z.enum(['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING', 'SPRINKLER']).optional(),
+    aiGeneratedAt: z.date().optional(),
+    systemCategory: z.enum(['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING', 'SPRINKLER', 'SMOKE_ALARM']).optional(),
   })).mutation(async ({ input, ctx }) => {
     return db.createDeficiency({ ...input, reportedById: ctx.user.id });
   }),

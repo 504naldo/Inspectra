@@ -169,6 +169,13 @@
       "when": 1772270166297,
       "tag": "0023_round_skrulls",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1772298310797,
+      "tag": "0024_stale_eddie_brock",
+      "breakpoints": true
     }
   ]
 }

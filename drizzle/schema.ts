@@ -298,7 +298,6 @@ export const deficiencies = mysqlTable("deficiencies", {
   codeReference: varchar("codeReference", { length: 255 }),
   // BUG-01 fix: estimatedCost was used throughout PDF generator but missing from schema
   estimatedCost: decimal("estimatedCost", { precision: 10, scale: 2 }),
-  aiGenerated: boolean("aiGenerated").default(false),
   // --- Compliance Hardening: AI Provenance ---
   aiGeneratedAt: timestamp("aiGeneratedAt"),
   aiModelId: varchar("aiModelId", { length: 64 }),
