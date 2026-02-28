@@ -1769,3 +1769,9 @@
 - [x] Set contentStartY = addressY + 16 for clean 16 px gap below city row
 - [x] Verify TypeScript compiles cleanly after fix
 - [x] Write 16 geometry tests for the corrected header layout
+
+## FirePro PDF Terms & Conditions Spacing Fix (New)
+- [x] Fix overlapping paragraph lines in terms & conditions section (use doc.y + 10 instead of fixed defY += 25)
+- [x] Fix cramped site info bar text in drawFireProPageHeader (increased line gaps: 14/14/18/12 px)
+- [x] Lower page overflow threshold from 680 to 660 to trigger page break earlier in terms section
+- [x] Increase separator Y from margin+108 to margin+116 to match new line spacing

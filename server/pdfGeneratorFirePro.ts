@@ -106,25 +106,25 @@ function drawFireProPageHeader(doc: any, data: ReportData): number {
      .fillColor('#000000')
      .text(data.siteName, barX, barY, { width: barWidth });
 
-  // Street address
+  // Street address (14 px below site name)
   doc.fontSize(7)
      .font('Helvetica')
-     .text(data.siteAddress, barX, barY + 12, { width: barWidth });
+     .text(data.siteAddress, barX, barY + 14, { width: barWidth });
 
-  // City / province / postal
+  // City / province / postal (14 px below address)
   const cityLine = [data.siteCity, data.siteState, data.customerPostalCode]
     .filter(Boolean).join(', ');
-  doc.text(cityLine, barX, barY + 22, { width: barWidth });
+  doc.text(cityLine, barX, barY + 28, { width: barWidth });
 
-  // Job number + date (right-aligned)
+  // Job number + date (right-aligned, 18 px below city line)
   doc.fontSize(7)
      .font('Helvetica-Bold')
-     .text(`Job #: ${data.jobNumber}`, barX, barY + 34, { width: barWidth, align: 'right' });
+     .text(`Job #: ${data.jobNumber}`, barX, barY + 46, { width: barWidth, align: 'right' });
   doc.font('Helvetica')
-     .text(data.inspectionDate.toLocaleDateString(), barX, barY + 44, { width: barWidth, align: 'right' });
+     .text(data.inspectionDate.toLocaleDateString(), barX, barY + 58, { width: barWidth, align: 'right' });
 
   // Thin separator line below the header area
-  const separatorY = margin + 108;
+  const separatorY = margin + 116;
   doc.moveTo(margin, separatorY)
      .lineTo(margin + contentWidth, separatorY)
      .lineWidth(0.5)
@@ -526,13 +526,17 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         ];
         
         terms.forEach(term => {
-          if (defY > 680) {
+          // Measure how tall this paragraph will be before drawing it
+          // PDFKit renders ~10 px per line at fontSize 8; use 680 as safe threshold
+          if (defY > 660) {
             doc.addPage();
             defY = drawFireProPageHeader(doc, data);
           }
           
-          doc.text(term, 50, defY, { width: 512, align: 'justify', lineGap: 4 });
-          defY += 25;
+          // lineGap: 3 keeps lines readable; paragraphGap is handled by defY increment
+          doc.text(term, 50, defY, { width: 512, align: 'justify', lineGap: 3 });
+          // Move down by the actual rendered height + 10 px inter-paragraph gap
+          defY = doc.y + 10;
         });
       }
 
