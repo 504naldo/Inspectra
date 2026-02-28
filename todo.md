@@ -1761,3 +1761,11 @@
 - [x] Replace all bare drawLogo calls on FirePro content pages with drawFireProPageHeader
 - [x] Add building street address row to compliance PDF page header (between Building Name and City rows)
 - [x] Add building street address row to FirePro PDF page header (siteAddress in site info bar)
+
+## Compliance PDF Spacing Audit Fix (New)
+- [x] Audit all pages of the compliance PDF for text overlap and spacing issues
+- [x] Identify root cause: company text block in repeating header overlaps section titles on all content pages (pages 2-69)
+- [x] Fix: remove company text block from drawRepeatingHeader() (company name already in footer + cover page)
+- [x] Set contentStartY = addressY + 16 for clean 16 px gap below city row
+- [x] Verify TypeScript compiles cleanly after fix
+- [x] Write 16 geometry tests for the corrected header layout

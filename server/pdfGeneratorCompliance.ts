@@ -226,23 +226,12 @@ function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
   doc.font('Helvetica')
      .text(data.postalCode || '', rightBoxX + 65, addressY + 4);
 
-  // ── Company info (left side, inside the logo column) ────────────────────
-  // Draw AFTER the full-width rows so it sits in the white space to the left
-  // of the right-side box, between the logo bottom and the full-width rows.
-  // Logo bottom ≈ margin + 80 = 120.  Full-width rows start at 124.
-  // We have only 4 px of gap – not enough for three lines.  Instead we place
-  // the company text BELOW the address row so it never overlaps anything.
-  const companyTextY = addressY + 18;
-  doc.fontSize(8)
-     .font('Helvetica-Bold')
-     .fillColor('#000000')
-     .text(data.companyName || 'Earth Wind and Fire', margin, companyTextY);
-  doc.fontSize(7)
-     .font('Helvetica')
-     .text(data.companyPhone ? `${data.companyPhone} | info@ewf.ca` : 'Fire Protection Services', margin, companyTextY + 11);
-
-  // Return Y where body content should start (8 px gap below company text)
-  return companyTextY + 24;
+  // ── Content start Y ────────────────────────────────────────────────────────
+  // The company name and phone already appear in the page footer on every page
+  // and on the cover page, so we do NOT repeat them here — doing so caused the
+  // company text to overlap the section title heading on every content page.
+  // Return Y with a 16 px gap below the last full-width row (city row).
+  return addressY + 16;
 }
 
 export function generateComplianceReportPDF(data: ComplianceReportData): Promise<Buffer> {
