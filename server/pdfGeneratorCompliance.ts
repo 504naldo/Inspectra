@@ -15,6 +15,7 @@ import {
   drawTable,
   drawSectionHeader,
   applyFootersToAllPages,
+  drawSignatureTable,
 } from './pdfSharedStyles.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -497,45 +498,30 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
       });
       
       currentY += 10;
-      
-      // Technician sign-off
-      doc.fontSize(9).font('Helvetica').text('The following person is responsible for ensuring that the information contained in this Test and Inspection Report is correct and complete:', 40, currentY, { width: 532, lineGap: 4 });
-      currentY += 20;
-      
-      doc.rect(40, currentY, 532, 80).stroke('#000000');
-      doc.fontSize(9).font('Helvetica-Bold').text('Printed Name:', 45, currentY + 5);
-      doc.font('Helvetica').text(data.technicianName, 120, currentY + 5);
-      doc.font('Helvetica-Bold').text('Certificate/ID Number (short formed):', 45, currentY + 20);
-      doc.font('Helvetica').text(data.technicianCertificateNumber, 220, currentY + 20);
-      doc.font('Helvetica-Bold').text('Signature (This certifies that the information contained in this Fire Alarm System', 45, currentY + 35);
-      doc.text('Annual Test and Inspection Report is correct and complete)', 45, currentY + 47);
-      
-      currentY += 90;
-      
-      if (data.secondaryTechnicianName) {
-        doc.fontSize(9).font('Helvetica').text('Was there a secondary person who conducted the Test and Inspection?', 40, currentY);
-        drawCheckbox(doc, 450, currentY, true, 10);
-        doc.text('Yes', 465, currentY);
-        drawCheckbox(doc, 500, currentY, false, 10);
-        doc.text('No', 515, currentY);
-        
-        currentY += 20;
-        
-        doc.rect(40, currentY, 532, 60).stroke('#000000');
-        doc.fontSize(9).font('Helvetica-Bold').text('Printed Name:', 45, currentY + 5);
-        doc.font('Helvetica').text(data.secondaryTechnicianName, 120, currentY + 5);
-        doc.font('Helvetica-Bold').text('Certificate/ID Number:', 45, currentY + 20);
-        doc.font('Helvetica').text(data.secondaryTechnicianCertificateNumber || '', 150, currentY + 20);
-        doc.font('Helvetica-Bold').text('Signature (This certifies that the information contained in this Fire Alarm System', 45, currentY + 35);
-        doc.text('Annual Test and Inspection Report is correct and complete)', 45, currentY + 47);
-        
-        currentY += 70;
-      }
-      
+
+      // ── ASTTBC-compliant affirmation + signature table ───────────────────
+      // Page count is estimated from buffered pages at this point; we use a
+      // placeholder and the footer pass will have the real count.
+      const estimatedPageCount = doc.bufferedPageRange().count + data.checklists.length + 2;
+      currentY = drawSignatureTable(
+        doc,
+        currentY,
+        estimatedPageCount,
+        data.technicianName,
+        data.technicianCertificateNumber,
+        data.dateOfService,
+        data.companyName,
+        data.secondaryTechnicianName,
+        data.secondaryTechnicianCertificateNumber,
+        40,
+        532
+      );
+
+      // Company conducting test row
       doc.rect(40, currentY, 266, 15).stroke('#000000');
       doc.fontSize(9).font('Helvetica-Bold').text('Company Conducting Test:', 45, currentY + 3);
       doc.font('Helvetica').text(data.companyName, 165, currentY + 3);
-      
+
       doc.rect(306, currentY, 266, 15).stroke('#000000');
       doc.font('Helvetica-Bold').text('Company Phone Number:', 311, currentY + 3);
       doc.font('Helvetica').text(data.companyPhone, 430, currentY + 3);

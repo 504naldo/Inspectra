@@ -623,3 +623,221 @@ export function renderParagraph(
   // Return the Y position after the text
   return doc.y + PDF_SIZES.lineGap;
 }
+
+// ============================================
+// ASTTBC SIGNATURE BLOCK HELPERS
+// ============================================
+
+/**
+ * Draw the ASTTBC RFPT professional seal as a bordered rectangular box.
+ * Matches the Fire Protection seal design from ASTTBC Professional Seal Guideline V2.0.
+ *
+ * Layout (top → bottom inside the box):
+ *   ┌─────────────────────────┐
+ *   │     FIRE PROTECTION     │  ← top band (dark navy bg, white text)
+ *   │         ASTTBC          │  ← middle (bold)
+ *   │   Technician Full Name  │  ← name row
+ *   │       FP1234            │  ← registration number
+ *   │  AL  EM  EX  SP-P  WA  │  ← discipline codes (optional)
+ *   └─────────────────────────┘
+ *
+ * @param doc        PDFKit document
+ * @param x          Left edge of the seal box
+ * @param y          Top edge of the seal box
+ * @param name       Technician full name (e.g. "J. A. SMITH")
+ * @param certNumber RFPT registration number (e.g. "FP1234")
+ * @param disciplines Optional discipline codes string (e.g. "AL EM EX SP-P WA")
+ * @returns          Y position immediately below the seal box
+ */
+export function drawRFPTSeal(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  name: string,
+  certNumber: string,
+  disciplines?: string
+): number {
+  const sealWidth = 120;
+  const topBandH = 14;
+  const bodyRowH = 13;
+  const rowCount = disciplines ? 4 : 3; // ASTTBC row + name + cert + optional disciplines
+  const sealHeight = topBandH + rowCount * bodyRowH + 4; // 4px bottom padding
+
+  // Outer border
+  doc.rect(x, y, sealWidth, sealHeight).lineWidth(1).stroke('#000000');
+
+  // Top band – dark navy background with white "FIRE PROTECTION" text
+  doc.rect(x, y, sealWidth, topBandH).fill('#1e3a8a');
+  doc.fillColor('#FFFFFF')
+     .fontSize(7)
+     .font('Helvetica-Bold')
+     .text('FIRE PROTECTION', x, y + 3, { width: sealWidth, align: 'center' });
+
+  // Row 1 – "ASTTBC" in bold
+  const r1Y = y + topBandH + 2;
+  doc.fillColor('#000000')
+     .fontSize(8)
+     .font('Helvetica-Bold')
+     .text('ASTTBC', x, r1Y, { width: sealWidth, align: 'center' });
+
+  // Row 2 – technician name (uppercase)
+  const r2Y = r1Y + bodyRowH;
+  doc.fontSize(7)
+     .font('Helvetica-Bold')
+     .text(name.toUpperCase(), x, r2Y, { width: sealWidth, align: 'center' });
+
+  // Row 3 – registration number
+  const r3Y = r2Y + bodyRowH;
+  doc.fontSize(7)
+     .font('Helvetica')
+     .text(certNumber, x, r3Y, { width: sealWidth, align: 'center' });
+
+  // Row 4 – discipline codes (optional)
+  if (disciplines) {
+    const r4Y = r3Y + bodyRowH;
+    doc.fontSize(6)
+       .font('Helvetica')
+       .text(disciplines, x, r4Y, { width: sealWidth, align: 'center' });
+  }
+
+  return y + sealHeight + 4;
+}
+
+/**
+ * Draw the ULC S536-compliant affirmation + signature table.
+ *
+ * Structure:
+ *   Affirmation paragraph (full width)
+ *   ┌──────────────────────┬──────────────────┬──────────┬───────────┐
+ *   │ Supervising/Primary  │ Cert Number/Seal │  Date    │ Signature │
+ *   │ Technician Name      │                  │          │           │
+ *   ├──────────────────────┼──────────────────┼──────────┼───────────┤
+ *   │ [name]               │ [RFPT seal box]  │ [date]   │ [blank]   │
+ *   ├──────────────────────┼──────────────────┼──────────┼───────────┤
+ *   │ Technician Conducting│ Cert Number/Seal │  Date    │ Signature │
+ *   │ Test and Inspection  │                  │          │           │
+ *   ├──────────────────────┼──────────────────┼──────────┼───────────┤
+ *   │ [secondary name]     │ [RFPT seal box]  │ [date]   │ [blank]   │
+ *   └──────────────────────┴──────────────────┴──────────┴───────────┘
+ *
+ * @param doc                PDFKit document
+ * @param startY             Y position to begin drawing
+ * @param pageCount          Number of pages in the report (used in affirmation text)
+ * @param primaryName        Primary technician full name
+ * @param primaryCertNumber  Primary technician RFPT number (e.g. "FP1234")
+ * @param inspectionDate     Date of inspection
+ * @param companyName        Service company name
+ * @param secondaryName      Optional secondary technician name
+ * @param secondaryCertNumber Optional secondary technician RFPT number
+ * @param leftMargin         Left margin (default 40)
+ * @param contentWidth       Usable width (default 532)
+ * @returns                  Y position immediately below the table
+ */
+export function drawSignatureTable(
+  doc: PDFKit.PDFDocument,
+  startY: number,
+  pageCount: number,
+  primaryName: string,
+  primaryCertNumber: string,
+  inspectionDate: Date,
+  companyName: string,
+  secondaryName?: string,
+  secondaryCertNumber?: string,
+  leftMargin = 40,
+  contentWidth = 532
+): number {
+  let y = startY;
+
+  // ── Affirmation paragraph ────────────────────────────────────────────────
+  const affirmationText =
+    `The information in this report, which comprises ${pageCount} pages, affirms that the equipment ` +
+    `listed here-in was tested and inspected in conformance with ULC 536:2019 (2024); Standard for ` +
+    `Inspection and Testing of Fire Alarm Systems, applicable codes, bylaws, Standards, and the ` +
+    `manufacturer's requirements by a qualified technician. The equipment was left in an operational ` +
+    `condition except as noted above.`;
+
+  doc.fontSize(8)
+     .font('Helvetica')
+     .fillColor('#000000')
+     .text(affirmationText, leftMargin, y, { width: contentWidth, lineGap: 3 });
+
+  y = doc.y + 10;
+
+  // ── Column widths ────────────────────────────────────────────────────────
+  const col1W = 170; // Technician Name
+  const col2W = 150; // Cert Number / Seal
+  const col3W = 80;  // Date
+  const col4W = contentWidth - col1W - col2W - col3W; // Signature (~132)
+
+  const headerRowH = 22;
+  const dataRowH = 70; // tall enough for the RFPT seal box (≈ 60 px)
+
+  const drawRow = (
+    rowY: number,
+    isHeader: boolean,
+    col1Text: string,
+    col2Content: 'header' | { name: string; cert: string },
+    col3Text: string,
+    col4Text: string
+  ) => {
+    const rowH = isHeader ? headerRowH : dataRowH;
+    const bgColor = isHeader ? '#1e3a8a' : '#ffffff';
+    const fgColor = isHeader ? '#ffffff' : '#000000';
+
+    // Background
+    doc.rect(leftMargin, rowY, contentWidth, rowH).fill(bgColor);
+
+    // Column dividers
+    doc.rect(leftMargin, rowY, contentWidth, rowH).lineWidth(0.5).stroke('#000000');
+    doc.moveTo(leftMargin + col1W, rowY).lineTo(leftMargin + col1W, rowY + rowH).stroke('#000000');
+    doc.moveTo(leftMargin + col1W + col2W, rowY).lineTo(leftMargin + col1W + col2W, rowY + rowH).stroke('#000000');
+    doc.moveTo(leftMargin + col1W + col2W + col3W, rowY).lineTo(leftMargin + col1W + col2W + col3W, rowY + rowH).stroke('#000000');
+
+    if (isHeader) {
+      // Header labels
+      doc.fillColor(fgColor).fontSize(8).font('Helvetica-Bold');
+      doc.text(col1Text, leftMargin + 4, rowY + 7, { width: col1W - 8 });
+      doc.text('Certification Number /\nSeal', leftMargin + col1W + 4, rowY + 4, { width: col2W - 8 });
+      doc.text(col3Text, leftMargin + col1W + col2W + 4, rowY + 7, { width: col3W - 8 });
+      doc.text(col4Text, leftMargin + col1W + col2W + col3W + 4, rowY + 7, { width: col4W - 8 });
+    } else {
+      // Data row
+      doc.fillColor('#000000').fontSize(8).font('Helvetica');
+
+      // Col 1 – name
+      doc.text(col1Text, leftMargin + 4, rowY + 6, { width: col1W - 8 });
+
+      // Col 2 – RFPT seal box (centered vertically in the cell)
+      if (typeof col2Content === 'object') {
+        const sealX = leftMargin + col1W + 10;
+        const sealY = rowY + 5;
+        drawRFPTSeal(doc, sealX, sealY, col2Content.name, col2Content.cert);
+      }
+
+      // Col 3 – date
+      doc.text(col3Text, leftMargin + col1W + col2W + 4, rowY + 6, { width: col3W - 8 });
+
+      // Col 4 – company name placeholder (grey)
+      doc.fillColor('#9ca3af').fontSize(7)
+         .text(companyName, leftMargin + col1W + col2W + col3W + 4, rowY + 6, { width: col4W - 8 });
+    }
+  };
+
+  const dateStr = inspectionDate.toLocaleDateString('en-CA'); // YYYY-MM-DD
+
+  // ── Primary technician rows ──────────────────────────────────────────────
+  drawRow(y, true, 'Supervising / Primary Technician Name', 'header', 'Date', 'Signature');
+  y += headerRowH;
+  drawRow(y, false, primaryName, { name: primaryName, cert: primaryCertNumber }, dateStr, '');
+  y += dataRowH;
+
+  // ── Secondary technician rows (optional) ─────────────────────────────────
+  if (secondaryName) {
+    drawRow(y, true, 'Technician Conducting Test and Inspection', 'header', 'Date', 'Signature');
+    y += headerRowH;
+    drawRow(y, false, secondaryName, { name: secondaryName, cert: secondaryCertNumber || '' }, dateStr, '');
+    y += dataRowH;
+  }
+
+  return y + 10;
+}

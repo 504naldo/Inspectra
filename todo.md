@@ -1786,3 +1786,22 @@
 - [x] Show confirmation dialog before cloning (displays what will be copied)
 - [x] Navigate to the new draft job after cloning
 - [x] Write 19 tests for checklist overflow fix and clone procedure
+
+## ASTTBC Digital Signature Block (New)
+- [ ] Add drawRFPTSeal() helper: renders the rectangular ASTTBC RFPT seal box in the PDF (name, FP number, ASTTBC text, discipline codes)
+- [ ] Add drawSignatureTable() helper: renders the 4-column ULC S536 signature table (Technician Name | Cert Number/Seal | Date | Signature)
+- [ ] Replace existing certification statement in compliance PDF with the full ULC S536-compliant affirmation paragraph + signature table
+- [ ] Add RFPT seal box in the Certification Number/Seal cell of the signature table
+- [ ] Apply the same signature table to the FirePro PDF last page
+- [ ] Wire certNumber and certificationLevel from technician user record into the seal
+- [ ] Write tests for the seal and signature table geometry
+
+## ASTTBC Digital Signature Block (New)
+- [x] Research ASTTBC Professional Seal Guideline V2.0 and ULC S536 signature requirements
+- [x] Add drawRFPTSeal() helper to pdfSharedStyles.ts (120px bordered box: FIRE PROTECTION band, ASTTBC, name, cert number, optional disciplines)
+- [x] Add drawSignatureTable() helper to pdfSharedStyles.ts (affirmation paragraph + 4-column table: name, seal, date, signature)
+- [x] Replace old compliance PDF sign-off block with drawSignatureTable()
+- [x] Add drawSignatureTable() to FirePro PDF after terms section
+- [x] Add technicianCertNumber field to FirePro ReportData interface
+- [x] Wire technicianCertNumber from DB into FirePro PDF data assembly in routers.ts
+- [x] Write 18 vitest tests for seal geometry, table content, and integration

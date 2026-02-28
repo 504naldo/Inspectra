@@ -14,6 +14,7 @@ import {
   drawSectionHeader,
   applyFootersToAllPages,
   drawDeficiencySummaryPage,
+  drawSignatureTable,
 } from './pdfSharedStyles.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -67,6 +68,7 @@ interface ReportData {
   completedDate?: Date | null;
   technicianName?: string;
   technicianTitle?: string;
+  technicianCertNumber?: string;
   technicianEmail?: string;
   companyName: string;
   companyAddress?: string;
@@ -538,6 +540,35 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           // Move down by the actual rendered height + 10 px inter-paragraph gap
           defY = doc.y + 10;
         });
+      }
+
+      // ============================================
+      // ASTTBC SIGNATURE TABLE
+      // ============================================
+
+      if (data.technicianName) {
+        // Ensure enough space for the signature table (~200 px for one technician)
+        if (defY > 560) {
+          doc.addPage();
+          defY = drawFireProPageHeader(doc, data);
+        } else {
+          defY += 20;
+        }
+
+        const estimatedPageCount = doc.bufferedPageRange().count;
+        defY = drawSignatureTable(
+          doc,
+          defY,
+          estimatedPageCount,
+          data.technicianName,
+          data.technicianCertNumber || '',
+          data.inspectionDate,
+          data.companyName,
+          undefined,
+          undefined,
+          50,
+          512
+        );
       }
 
       // ============================================

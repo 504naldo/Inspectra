@@ -1371,6 +1371,7 @@ const reportRouter = router({
       completedDate: job.completedAt,
       technicianName: technician?.name || ctx.user.name || undefined,
       technicianTitle: (technician as any)?.certificationLevel || 'Fire Alarm Technician',
+      technicianCertNumber: (technician as any)?.certNumber || '',
       technicianEmail: technician?.email || ctx.user.email || undefined,
       companyName: company?.name || 'Fire Inspect Pro',
       companyAddress: '15-3871 North Fraser Way, Burnaby BC V5G 5J6',
