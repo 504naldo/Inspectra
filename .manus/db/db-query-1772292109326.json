@@ -1,0 +1,98 @@
+{
+  "query": "SHOW COLUMNS FROM fire_alarm_checklist_templates;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SHOW COLUMNS FROM fire_alarm_checklist_templates;",
+  "rows": [
+    {
+      "Field": "id",
+      "Type": "int(11)",
+      "Null": "NO",
+      "Key": "PRI",
+      "Default": "NULL",
+      "Extra": "auto_increment"
+    },
+    {
+      "Field": "sectionName",
+      "Type": "varchar(255)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "sectionOrder",
+      "Type": "int(11)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "itemLetter",
+      "Type": "varchar(10)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "itemDescription",
+      "Type": "text",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "requirementType",
+      "Type": "enum('inspection','test','both')",
+      "Null": "YES",
+      "Key": "",
+      "Default": "both",
+      "Extra": ""
+    },
+    {
+      "Field": "isRequired",
+      "Type": "tinyint(1)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "createdAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": ""
+    },
+    {
+      "Field": "inputType",
+      "Type": "enum('checkbox','numeric','text','voltage','current','date','time','year')",
+      "Null": "YES",
+      "Key": "",
+      "Default": "checkbox",
+      "Extra": ""
+    },
+    {
+      "Field": "numericLabel",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "numericUnit",
+      "Type": "varchar(50)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nid\tint(11)\tNO\tPRI\tNULL\tauto_increment\nsectionName\tvarchar(255)\tNO\t\tNULL\t\nsectionOrder\tint(11)\tNO\t\tNULL\t\nitemLetter\tvarchar(10)\tYES\t\tNULL\t\nitemDescription\ttext\tNO\t\tNULL\t\nrequirementType\tenum('inspection','test','both')\tYES\t\tboth\t\nisRequired\ttinyint(1)\tYES\t\t1\t\ncreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t\ninputType\tenum('checkbox','numeric','text','voltage','current','date','time','year')\tYES\t\tcheckbox\t\nnumericLabel\tvarchar(100)\tYES\t\tNULL\t\nnumericUnit\tvarchar(50)\tYES\t\tNULL\t\n",
+  "stderr": "",
+  "execution_time_ms": 349
+}

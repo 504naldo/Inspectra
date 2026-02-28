@@ -1,0 +1,54 @@
+{
+  "query": "SELECT COLUMN_NAME, ORDINAL_POSITION FROM information_schema.COLUMNS \nWHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fire_alarm_checklist_templates'\nORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT COLUMN_NAME, ORDINAL_POSITION FROM information_schema.COLUMNS \nWHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fire_alarm_checklist_templates'\nORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id",
+      "ORDINAL_POSITION": "1"
+    },
+    {
+      "COLUMN_NAME": "sectionName",
+      "ORDINAL_POSITION": "2"
+    },
+    {
+      "COLUMN_NAME": "sectionOrder",
+      "ORDINAL_POSITION": "3"
+    },
+    {
+      "COLUMN_NAME": "itemLetter",
+      "ORDINAL_POSITION": "4"
+    },
+    {
+      "COLUMN_NAME": "itemDescription",
+      "ORDINAL_POSITION": "5"
+    },
+    {
+      "COLUMN_NAME": "requirementType",
+      "ORDINAL_POSITION": "6"
+    },
+    {
+      "COLUMN_NAME": "isRequired",
+      "ORDINAL_POSITION": "7"
+    },
+    {
+      "COLUMN_NAME": "createdAt",
+      "ORDINAL_POSITION": "8"
+    },
+    {
+      "COLUMN_NAME": "inputType",
+      "ORDINAL_POSITION": "9"
+    },
+    {
+      "COLUMN_NAME": "numericLabel",
+      "ORDINAL_POSITION": "10"
+    },
+    {
+      "COLUMN_NAME": "numericUnit",
+      "ORDINAL_POSITION": "11"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\tORDINAL_POSITION\nid\t1\nsectionName\t2\nsectionOrder\t3\nitemLetter\t4\nitemDescription\t5\nrequirementType\t6\nisRequired\t7\ncreatedAt\t8\ninputType\t9\nnumericLabel\t10\nnumericUnit\t11\n",
+  "stderr": "",
+  "execution_time_ms": 369
+}

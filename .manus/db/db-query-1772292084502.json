@@ -1,0 +1,25 @@
+{
+  "query": "\nSELECT COUNT(*) AS non_innodb_tables FROM information_schema.TABLES \nWHERE TABLE_SCHEMA = DATABASE() AND ENGINE != 'InnoDB';\n\nSELECT COUNT(*) AS orphan_count\nFROM fire_alarm_inspection_results r\nLEFT JOIN fire_alarm_checklist_templates t ON r.checklistItemId = t.id\nWHERE t.id IS NULL;\n\nSELECT COUNT(*) AS audit_log_exists FROM information_schema.TABLES \nWHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('audit_log', 'migration_log');\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute \nSELECT COUNT(*) AS non_innodb_tables FROM information_schema.TABLES \nWHERE TABLE_SCHEMA = DATABASE() AND ENGINE != 'InnoDB';\n\nSELECT COUNT(*) AS orphan_count\nFROM fire_alarm_inspection_results r\nLEFT JOIN fire_alarm_checklist_templates t ON r.checklistItemId = t.id\nWHERE t.id IS NULL;\n\nSELECT COUNT(*) AS audit_log_exists FROM information_schema.TABLES \nWHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('audit_log', 'migration_log');\n",
+  "rows": [
+    {
+      "non_innodb_tables": "0"
+    },
+    {
+      "non_innodb_tables": "orphan_count"
+    },
+    {
+      "non_innodb_tables": "0"
+    },
+    {
+      "non_innodb_tables": "audit_log_exists"
+    },
+    {
+      "non_innodb_tables": "2"
+    }
+  ],
+  "messages": [],
+  "stdout": "non_innodb_tables\n0\norphan_count\n0\naudit_log_exists\n2\n",
+  "stderr": "",
+  "execution_time_ms": 2027
+}

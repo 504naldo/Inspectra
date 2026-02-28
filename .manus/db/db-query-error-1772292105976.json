@@ -1,0 +1,8 @@
+{
+  "query": "ALTER TABLE `fire_alarm_checklist_templates`\n  ADD COLUMN `standardId`       VARCHAR(64)  NULL AFTER `isRequired`,\n  ADD COLUMN `standardVersion`  VARCHAR(32)  NULL AFTER `standardId`,\n  ADD COLUMN `effectiveDate`    DATE         NULL AFTER `standardVersion`,\n  ADD COLUMN `supersededAt`     DATE         NULL AFTER `effectiveDate`,\n  ADD COLUMN `isActive`         TINYINT(1)   NOT NULL DEFAULT 1 AFTER `supersededAt`;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute ALTER TABLE `fire_alarm_checklist_templates`\n  ADD COLUMN `standardId`       VARCHAR(64)  NULL AFTER `isRequired`,\n  ADD COLUMN `standardVersion`  VARCHAR(32)  NULL AFTER `standardId`,\n  ADD COLUMN `effectiveDate`    DATE         NULL AFTER `standardVersion`,\n  ADD COLUMN `supersededAt`     DATE         NULL AFTER `effectiveDate`,\n  ADD COLUMN `isActive`         TINYINT(1)   NOT NULL DEFAULT 1 AFTER `supersededAt`;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'standardid' in 'fire_alarm_checklist_templates'"
+  ]
+}
