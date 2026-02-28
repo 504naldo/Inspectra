@@ -23,7 +23,8 @@ import {
   AlertCircle,
   ShieldCheck,
   ShieldAlert,
-  ShieldX
+  ShieldX,
+  FileDown
 } from "lucide-react";
 import { toast } from "sonner";
 // S3 upload is handled server-side via tRPC
@@ -44,6 +45,37 @@ export default function AdminJobDetails() {
     { jobId: parseInt(jobId!) },
     { enabled: false }
   );
+
+  const handleExportCSV = () => {
+    if (!deficiencies || deficiencies.length === 0) return;
+    const headers = ['ID', 'Title', 'Severity', 'System Category', 'Status', 'Est. Cost ($)', 'Observed Issue', 'Corrective Action', 'Code Reference', 'Created At'];
+    const escape = (v: any) => {
+      if (v == null) return '';
+      const s = String(v).replace(/"/g, '""');
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s}"` : s;
+    };
+    const rows = deficiencies.map((d: any) => [
+      d.id,
+      escape(d.title),
+      escape(d.severity),
+      escape(d.systemCategory ? d.systemCategory.replace(/_/g, ' ') : ''),
+      escape(d.status?.replace(/_/g, ' ')),
+      d.estimatedCost != null ? parseFloat(String(d.estimatedCost)).toFixed(2) : '',
+      escape(d.observedIssue),
+      escape(d.correctiveAction),
+      escape(d.codeReference),
+      d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-CA') : '',
+    ].join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `deficiencies-job-${jobId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${deficiencies.length} deficiencies to CSV`);
+  };
 
   const handleVerifyHash = async () => {
     setVerifyDialogOpen(true);
@@ -391,8 +423,17 @@ export default function AdminJobDetails() {
 
                   {/* Deficiency Table */}
                   <Card>
-                    <CardHeader>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                       <CardTitle>Deficiencies ({deficiencies.length})</CardTitle>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={handleExportCSV}
+                      >
+                        <FileDown className="h-4 w-4" />
+                        Export CSV
+                      </Button>
                     </CardHeader>
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">

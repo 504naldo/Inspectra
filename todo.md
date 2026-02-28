@@ -1744,3 +1744,7 @@
 
 ## bulkMarkPass withAudit (New)
 - [x] Wire withAudit() + assertJobNotFinalized into inspectionResult.bulkMarkPass
+
+## Deficiency CSV Export (New)
+- [x] Add Export CSV button to Deficiencies tab in Admin Job Details
+- [x] Include all columns: ID, Title, Severity, System, Status, Est. Cost, Observed Issue, Corrective Action, Code Reference, Created At
