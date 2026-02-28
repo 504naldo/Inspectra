@@ -1713,3 +1713,11 @@
 - [x] Integrate Finalize button into Admin Job Detail page (visible to admin/office roles only)
 - [x] Lock job editing UI (technician bottom bar) when job.finalizedAt is set
 - [x] Show finalization hash and timestamp banner in Admin Job Detail details tab
+
+## Technician Certification Fields (New)
+- [x] Add certNumber, certificationLevel, certExpiry columns to users table in schema.ts
+- [x] Run db:push migration to apply schema changes to live TiDB
+- [x] Add certification fields to admin User Management edit form
+- [ ] Add certification fields to technician profile view (read-only)
+- [x] Wire certNumber and certExpiry into PDF report technician signature block
+- [x] Write vitest tests for certification field procedures (11 passing)

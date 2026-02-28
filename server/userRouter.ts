@@ -46,6 +46,9 @@ export const userRouter = router({
           role: users.role,
           isActive: users.isActive,
           createdAt: users.createdAt,
+          certNumber: users.certNumber,
+          certificationLevel: users.certificationLevel,
+          certExpiry: users.certExpiry,
         })
         .from(users)
         .where(and(...conditions))
@@ -61,9 +64,12 @@ export const userRouter = router({
       name: z.string().optional(),
       role: z.enum(['admin', 'office', 'technician', 'customer']).optional(),
       isActive: z.boolean().optional(),
+      certNumber: z.string().max(64).optional().nullable(),
+      certificationLevel: z.string().max(128).optional().nullable(),
+      certExpiry: z.string().optional().nullable(), // ISO date string YYYY-MM-DD
     }))
     .mutation(async ({ input, ctx }) => {
-      const { userId, name, role, isActive } = input;
+      const { userId, name, role, isActive, certNumber, certificationLevel, certExpiry } = input;
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
       
@@ -87,6 +93,12 @@ export const userRouter = router({
       if (name !== undefined) updates.name = name;
       if (role !== undefined) updates.role = role;
       if (isActive !== undefined) updates.isActive = isActive;
+      if (certNumber !== undefined) updates.certNumber = certNumber;
+      if (certificationLevel !== undefined) updates.certificationLevel = certificationLevel;
+      if (certExpiry !== undefined) {
+        // Convert ISO string to Date or null for the date column
+        updates.certExpiry = certExpiry ? new Date(certExpiry) : null;
+      }
       
       if (Object.keys(updates).length === 0) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No updates provided' });

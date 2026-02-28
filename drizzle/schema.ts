@@ -17,6 +17,10 @@ export const users = mysqlTable("users", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
   seenAssignmentsAt: timestamp("seenAssignmentsAt"),
+  // Technician certification fields (ULC S536 compliance)
+  certNumber: varchar("certNumber", { length: 64 }),       // e.g. "CFAA-12345"
+  certificationLevel: varchar("certificationLevel", { length: 128 }), // e.g. "Level II Fire Alarm Technician"
+  certExpiry: date("certExpiry"),                          // Certification expiry date
 });
 
 export type User = typeof users.$inferSelect;

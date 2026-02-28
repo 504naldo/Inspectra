@@ -1,0 +1,9 @@
+{
+  "query": "\nALTER TABLE users\n  ADD COLUMN IF NOT EXISTS certNumber varchar(64) DEFAULT NULL,\n  ADD COLUMN IF NOT EXISTS certificationLevel varchar(128) DEFAULT NULL,\n  ADD COLUMN IF NOT EXISTS certExpiry date DEFAULT NULL;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute \nALTER TABLE users\n  ADD COLUMN IF NOT EXISTS certNumber varchar(64) DEFAULT NULL,\n  ADD COLUMN IF NOT EXISTS certificationLevel varchar(128) DEFAULT NULL,\n  ADD COLUMN IF NOT EXISTS certExpiry date DEFAULT NULL;\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1494
+}

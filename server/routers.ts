@@ -1306,7 +1306,7 @@ const reportRouter = router({
       inspectionDate: job.scheduledDate || new Date(),
       completedDate: job.completedAt,
       technicianName: technician?.name || ctx.user.name || undefined,
-      technicianTitle: 'Fire Alarm Technician',
+      technicianTitle: (technician as any)?.certificationLevel || 'Fire Alarm Technician',
       technicianEmail: technician?.email || ctx.user.email || undefined,
       companyName: company?.name || 'Fire Inspect Pro',
       companyAddress: '15-3871 North Fraser Way, Burnaby BC V5G 5J6',
@@ -1679,7 +1679,7 @@ const reportRouter = router({
       recommendationsIdentified: false,
       
       technicianName: technician?.name || ctx.user.name || 'Unknown',
-      technicianCertificateNumber: '1448',
+      technicianCertificateNumber: (technician as any)?.certNumber || '',
       secondaryTechnicianName: undefined,
       secondaryTechnicianCertificateNumber: undefined,
       companyName: 'Earth Wind and Fire',

@@ -7,10 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { Search, UserPlus, Edit, Users as UsersIcon, X } from 'lucide-react';
+import { Search, UserPlus, Edit, Users as UsersIcon, Award } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 
 export default function AdminUsers() {
@@ -22,6 +23,9 @@ export default function AdminUsers() {
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
+  const [editCertNumber, setEditCertNumber] = useState('');
+  const [editCertLevel, setEditCertLevel] = useState('');
+  const [editCertExpiry, setEditCertExpiry] = useState('');
 
   const utils = trpc.useUtils();
   const updateUserMutation = trpc.user.updateUser.useMutation({
@@ -39,7 +43,16 @@ export default function AdminUsers() {
     setEditingUser(u.id);
     setEditName(u.name || '');
     setEditRole(u.role);
-    setEditIsActive(u.isActive);
+    setEditIsActive(!!u.isActive);
+    setEditCertNumber(u.certNumber || '');
+    setEditCertLevel(u.certificationLevel || '');
+    // certExpiry comes back as a Date or ISO string; normalise to YYYY-MM-DD for <input type="date">
+    if (u.certExpiry) {
+      const d = new Date(u.certExpiry);
+      setEditCertExpiry(d.toISOString().slice(0, 10));
+    } else {
+      setEditCertExpiry('');
+    }
   };
 
   const handleSaveUser = () => {
@@ -49,6 +62,9 @@ export default function AdminUsers() {
       name: editName,
       role: editRole as any,
       isActive: editIsActive,
+      certNumber: editCertNumber || null,
+      certificationLevel: editCertLevel || null,
+      certExpiry: editCertExpiry || null,
     });
   };
 
@@ -137,6 +153,7 @@ export default function AdminUsers() {
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead>Cert #</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -145,13 +162,13 @@ export default function AdminUsers() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     Loading users...
                   </TableCell>
                 </TableRow>
               ) : !usersList || usersList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     <UsersIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-2" />
                     <p className="text-muted-foreground">No users found</p>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -168,6 +185,16 @@ export default function AdminUsers() {
                       <Badge variant={getRoleBadgeVariant(u.role)}>
                         {u.role}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {u.certNumber ? (
+                        <span className="flex items-center gap-1">
+                          <Award className="h-3 w-3 text-amber-500" />
+                          {u.certNumber}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={u.isActive ? 'default' : 'secondary'}>
@@ -195,14 +222,15 @@ export default function AdminUsers() {
 
         {/* Edit User Dialog */}
         <Dialog open={editingUser !== null} onOpenChange={(open) => !open && setEditingUser(null)}>
-          <DialogContent>
+          <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Edit User</DialogTitle>
               <DialogDescription>
-                Update user role and account status
+                Update user role, account status, and certification details
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              {/* Basic info */}
               <div className="space-y-2">
                 <Label htmlFor="edit-name">Name</Label>
                 <Input
@@ -232,6 +260,46 @@ export default function AdminUsers() {
                   id="edit-active"
                   checked={editIsActive}
                   onCheckedChange={setEditIsActive}
+                />
+              </div>
+
+              <Separator />
+
+              {/* Certification section */}
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Award className="h-4 w-4 text-amber-500" />
+                  <p className="text-sm font-medium">Technician Certification</p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Required for ULC S536 compliance — appears on PDF inspection reports.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-cert-number">Certification Number</Label>
+                <Input
+                  id="edit-cert-number"
+                  value={editCertNumber}
+                  onChange={(e) => setEditCertNumber(e.target.value)}
+                  placeholder="e.g. CFAA-12345"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-cert-level">Certification Level / Description</Label>
+                <Input
+                  id="edit-cert-level"
+                  value={editCertLevel}
+                  onChange={(e) => setEditCertLevel(e.target.value)}
+                  placeholder="e.g. Level II Fire Alarm Technician"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-cert-expiry">Certification Expiry Date</Label>
+                <Input
+                  id="edit-cert-expiry"
+                  type="date"
+                  value={editCertExpiry}
+                  onChange={(e) => setEditCertExpiry(e.target.value)}
                 />
               </div>
             </div>
