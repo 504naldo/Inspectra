@@ -66,6 +66,11 @@ export default function AdminJobDetails() {
     { enabled: !!jobId }
   );
 
+  const { data: deficiencies, isLoading: deficienciesLoading } = trpc.deficiency.listByJob.useQuery(
+    { jobId: parseInt(jobId!) },
+    { enabled: !!jobId }
+  );
+
   const uploadMutation = trpc.files.create.useMutation({
     onSuccess: () => {
       toast.success("File uploaded successfully");
@@ -292,6 +297,14 @@ export default function AdminJobDetails() {
         <Tabs defaultValue="files" className="w-full">
           <TabsList>
             <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="deficiencies">
+              Deficiencies
+              {deficiencies && deficiencies.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-destructive/15 text-destructive text-[10px] font-semibold px-1.5 py-0.5">
+                  {deficiencies.length}
+                </span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="files">Files</TabsTrigger>
           </TabsList>
 
@@ -339,6 +352,117 @@ export default function AdminJobDetails() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="deficiencies" className="space-y-4">
+            {deficienciesLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !deficiencies || deficiencies.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <AlertCircle className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-40" />
+                  <p className="text-muted-foreground">No deficiencies recorded for this job.</p>
+                </CardContent>
+              </Card>
+            ) : (() => {
+              const totalCost = deficiencies.reduce((sum: number, d: any) => {
+                const c = d.estimatedCost != null ? parseFloat(String(d.estimatedCost)) : 0;
+                return sum + (isNaN(c) ? 0 : c);
+              }, 0);
+              const withCost = deficiencies.filter((d: any) => d.estimatedCost != null && parseFloat(String(d.estimatedCost)) > 0).length;
+              return (
+                <>
+                  {/* Cost Summary Banner */}
+                  {totalCost > 0 && (
+                    <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+                      <CardContent className="py-4 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Total Estimated Repair Cost</p>
+                          <p className="text-xs text-amber-600 dark:text-amber-400">{withCost} of {deficiencies.length} deficiencies have cost estimates</p>
+                        </div>
+                        <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">
+                          ${totalCost.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Deficiency Table */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Deficiencies ({deficiencies.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/50">
+                              <th className="text-left px-4 py-3 font-medium">Title</th>
+                              <th className="text-left px-4 py-3 font-medium">Severity</th>
+                              <th className="text-left px-4 py-3 font-medium">System</th>
+                              <th className="text-left px-4 py-3 font-medium">Status</th>
+                              <th className="text-right px-4 py-3 font-medium">Est. Cost</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {deficiencies.map((def: any) => {
+                              const cost = def.estimatedCost != null ? parseFloat(String(def.estimatedCost)) : null;
+                              return (
+                                <tr key={def.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                                  <td className="px-4 py-3">
+                                    <p className="font-medium">{def.title}</p>
+                                    {def.observedIssue && (
+                                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{def.observedIssue}</p>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                      def.severity === 'critical' ? 'bg-red-100 text-red-700' :
+                                      def.severity === 'major' ? 'bg-orange-100 text-orange-700' :
+                                      def.severity === 'minor' ? 'bg-yellow-100 text-yellow-700' :
+                                      'bg-blue-100 text-blue-700'
+                                    }`}>{def.severity}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-muted-foreground text-xs">
+                                    {def.systemCategory ? def.systemCategory.replace(/_/g, ' ') : '—'}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                      def.status === 'open' ? 'bg-red-100 text-red-700' :
+                                      def.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                                      def.status === 'resolved' || def.status === 'closed' ? 'bg-green-100 text-green-700' :
+                                      'bg-gray-100 text-gray-700'
+                                    }`}>{def.status?.replace(/_/g, ' ')}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-mono">
+                                    {cost != null && !isNaN(cost) && cost > 0
+                                      ? `$${cost.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                      : <span className="text-muted-foreground">—</span>
+                                    }
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          {totalCost > 0 && (
+                            <tfoot>
+                              <tr className="border-t bg-muted/50 font-semibold">
+                                <td colSpan={4} className="px-4 py-3 text-right">Total Estimated Cost</td>
+                                <td className="px-4 py-3 text-right font-mono">
+                                  ${totalCost.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          )}
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              );
+            })()}
           </TabsContent>
 
           <TabsContent value="files" className="space-y-4">

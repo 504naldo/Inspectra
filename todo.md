@@ -1737,3 +1737,10 @@
 - [x] Add verifyJobHash tRPC procedure (confirmed existing compliance.verifyJobHash)
 - [x] Add "Verify Integrity" button to Admin Job Details for finalized jobs
 - [x] Show verification result dialog (hash match / mismatch with details)
+
+## Estimated Cost in Admin Deficiency List (New)
+- [x] Add estimatedCost column to deficiency list in Admin Job Details
+- [x] Show total estimated repair cost per job (sum of all deficiency costs)
+
+## bulkMarkPass withAudit (New)
+- [x] Wire withAudit() + assertJobNotFinalized into inspectionResult.bulkMarkPass
