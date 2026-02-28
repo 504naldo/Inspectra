@@ -206,8 +206,16 @@ function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
   doc.font('Helvetica')
      .text(data.ownerPhone || '', rightBoxX + 175, buildingY + 4);
 
+  // Street Address row (14 px)
+  const streetY = buildingY + 14;
+  doc.rect(margin, streetY, pageWidth - 2 * margin, 14).stroke('#000000');
+  doc.fontSize(7).font('Helvetica-Bold')
+     .text('Address:', margin + 5, streetY + 4);
+  doc.font('Helvetica')
+     .text(data.buildingAddress || '', margin + 45, streetY + 4);
+
   // City / Postal Code row (14 px)
-  const addressY = buildingY + 14;
+  const addressY = streetY + 14;
   doc.rect(margin, addressY, pageWidth - 2 * margin, 14).stroke('#000000');
   doc.fontSize(7).font('Helvetica-Bold')
      .text('City:', margin + 5, addressY + 4);

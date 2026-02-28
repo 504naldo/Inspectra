@@ -1754,3 +1754,10 @@
 - [x] Fix header info block row height so text is not cramped
 - [x] Ensure section title has enough top margin to clear the header text block
 - [x] Use dynamic companyName/companyPhone from data instead of hardcoded strings
+
+## FirePro PDF Header Fix + Address Row (New)
+- [x] Audit pdfGeneratorFirePro.ts repeating header for same overlap issues
+- [x] Add drawFireProPageHeader() helper with logo + site address bar + separator line
+- [x] Replace all bare drawLogo calls on FirePro content pages with drawFireProPageHeader
+- [x] Add building street address row to compliance PDF page header (between Building Name and City rows)
+- [x] Add building street address row to FirePro PDF page header (siteAddress in site info bar)

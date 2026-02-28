@@ -82,6 +82,57 @@ interface ReportData {
 
 // Helper functions now imported from pdfSharedStyles.ts
 
+/**
+ * Draws the repeating page header for FirePro content pages.
+ * Returns the Y position where body content should start.
+ */
+function drawFireProPageHeader(doc: any, data: ReportData): number {
+  const margin = 50;
+  const pageWidth = 612;
+  const contentWidth = pageWidth - 2 * margin; // 512
+
+  // Logo (100 px tall)
+  drawLogo(doc, margin, margin, 100);
+
+  // Site info bar – a slim row to the right of the logo
+  // Logo right edge ≈ margin + 100 = 150; bar starts at 260 to leave breathing room
+  const barX = 260;
+  const barWidth = pageWidth - barX - margin; // ≈ 302
+  const barY = margin;
+
+  // Site name
+  doc.fontSize(8)
+     .font('Helvetica-Bold')
+     .fillColor('#000000')
+     .text(data.siteName, barX, barY, { width: barWidth });
+
+  // Street address
+  doc.fontSize(7)
+     .font('Helvetica')
+     .text(data.siteAddress, barX, barY + 12, { width: barWidth });
+
+  // City / province / postal
+  const cityLine = [data.siteCity, data.siteState, data.customerPostalCode]
+    .filter(Boolean).join(', ');
+  doc.text(cityLine, barX, barY + 22, { width: barWidth });
+
+  // Job number + date (right-aligned)
+  doc.fontSize(7)
+     .font('Helvetica-Bold')
+     .text(`Job #: ${data.jobNumber}`, barX, barY + 34, { width: barWidth, align: 'right' });
+  doc.font('Helvetica')
+     .text(data.inspectionDate.toLocaleDateString(), barX, barY + 44, { width: barWidth, align: 'right' });
+
+  // Thin separator line below the header area
+  const separatorY = margin + 108;
+  doc.moveTo(margin, separatorY)
+     .lineTo(margin + contentWidth, separatorY)
+     .lineWidth(0.5)
+     .stroke('#cccccc');
+
+  return separatorY + 8; // content starts 8 px below separator
+}
+
 export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
@@ -127,11 +178,11 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       
       doc.addPage();
       
-      // Logo header
-      drawLogo(doc, 50, 50, 100);
+      // Logo + site info header
+      const execSummaryStartY = drawFireProPageHeader(doc, data);
       
       // Draw executive summary with deficiency counts
-      drawDeficiencySummaryPage(doc, data.deficiencies, 110);
+      drawDeficiencySummaryPage(doc, data.deficiencies, execSummaryStartY);
       
       // ============================================
       // PAGE 3: LETTER-STYLE SUMMARY
@@ -139,10 +190,8 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       
       doc.addPage();
       
-      // Logo header
-      drawLogo(doc, 50, 50, 100);
-      
-      let pageYPos = 110;
+      // Logo + site info header
+      let pageYPos = drawFireProPageHeader(doc, data);
       
       // Warning banner if missing locations (admin override mode)
       if (data.missingLocationDeficiencies && data.missingLocationDeficiencies.length > 0) {
@@ -273,9 +322,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
       
       if (data.deficiencies.length > 0) {
         doc.addPage();
-        drawLogo(doc, 50, 50, 100);
-        
-        defY = 110;
+        defY = drawFireProPageHeader(doc, data);
         
         // Group deficiencies by system type
         const deficienciesBySystem: Record<string, Array<typeof data.deficiencies[0]>> = {
@@ -335,8 +382,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           // Check if we need a new page
           if (defY > 700) {
             doc.addPage();
-            drawLogo(doc, 50, 50, 100);
-            defY = 110;
+            defY = drawFireProPageHeader(doc, data);
           }
 
           // System category header
@@ -368,8 +414,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
           systemDeficiencies.forEach((def, i) => {
             if (defY > 680) {
               doc.addPage();
-              drawLogo(doc, 50, 50, 100);
-              defY = 110;
+              defY = drawFireProPageHeader(doc, data);
               
               // Redraw table header on new page
               doc.rect(50, defY, defTableWidth, 20).fill(black);
@@ -425,9 +470,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         // Pricing totals section - only add page if insufficient space (need ~100px for totals)
         if (defY > 650) {
           doc.addPage();
-
-          drawLogo(doc, 50, 50, 100);
-          defY = 110;
+          defY = drawFireProPageHeader(doc, data);
         }
 
         defY += 10; // Reduced spacing before totals
@@ -485,9 +528,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         terms.forEach(term => {
           if (defY > 680) {
             doc.addPage();
-            // Logo header on new page
-            drawLogo(doc, 50, 50, 100);
-            defY = 110;
+            defY = drawFireProPageHeader(doc, data);
           }
           
           doc.text(term, 50, defY, { width: 512, align: 'justify', lineGap: 4 });
@@ -503,9 +544,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         // Only add new page if insufficient space for appendix header
         if (defY > 650) {
           doc.addPage();
-
-          drawLogo(doc, 50, 50, 100);
-          defY = 110;
+          defY = drawFireProPageHeader(doc, data);
         } else {
           defY += 30; // Add spacing if continuing on same page
         }
@@ -549,8 +588,7 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         data.missingLocationDeficiencies.forEach((def) => {
           if (appendixY > 680) {
             doc.addPage();
-            drawLogo(doc, 50, 50, 100);
-            appendixY = 110;
+            appendixY = drawFireProPageHeader(doc, data);
             
             // Redraw header
             doc.rect(50, appendixY, appendixTableWidth, 20).fill(dangerColor);
