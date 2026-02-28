@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import FinalizeJobDialog from "@/components/FinalizeJobDialog";
 import { 
   ArrowLeft, 
   Upload, 
@@ -18,7 +19,8 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck
 } from "lucide-react";
 import { toast } from "sonner";
 // S3 upload is handled server-side via tRPC
@@ -239,7 +241,19 @@ export default function AdminJobDetails() {
               <p className="text-sm text-muted-foreground">{job.title}</p>
             </div>
           </div>
-          <Badge>{job.status}</Badge>
+          <div className="flex items-center gap-2">
+            <Badge>{job.status}</Badge>
+            {(user?.role === "admin" || user?.role === "office") && (
+              <FinalizeJobDialog
+                jobId={job.id}
+                jobNumber={job.jobNumber ?? undefined}
+                isFinalized={!!job.finalizedAt}
+                finalizedAt={job.finalizedAt}
+                finalizationHash={job.finalizationHash}
+                onFinalized={() => utils.job.get.invalidate({ id: job.id })}
+              />
+            )}
+          </div>
         </div>
 
         {/* Tabs */}
@@ -250,6 +264,22 @@ export default function AdminJobDetails() {
           </TabsList>
 
           <TabsContent value="details" className="space-y-4">
+            {job.finalizedAt && (
+              <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4">
+                <ShieldCheck className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-green-800">Record Sealed — Immutable</p>
+                  <p className="text-xs text-green-700 mt-0.5">
+                    Finalized on {new Date(job.finalizedAt).toLocaleString()}. No further edits are permitted.
+                    {job.finalizationHash && (
+                      <span className="block mt-1 font-mono text-[10px] break-all text-green-600">
+                        SHA-256: {job.finalizationHash}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
             <Card>
               <CardHeader>
                 <CardTitle>Job Information</CardTitle>

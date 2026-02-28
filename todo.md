@@ -1706,3 +1706,9 @@
 - [x] BUG-03: Ensure EMERGENCY_LIGHTING is in systemCategory (already present)
 - [x] BUG-05: Add emailDomain field to companies table for domain-based OAuth matching
 - [x] Push schema changes to database (migration 0022_harsh_natasha_romanoff)
+
+## Finalize Job UI (Compliance)
+- [x] Build FinalizeJobDialog component with confirmation, hash display, and sync assertion checkbox
+- [x] Integrate Finalize button into Admin Job Detail page (visible to admin/office roles only)
+- [x] Lock job editing UI (technician bottom bar) when job.finalizedAt is set
+- [x] Show finalization hash and timestamp banner in Admin Job Detail details tab

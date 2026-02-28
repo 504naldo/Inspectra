@@ -25,7 +25,8 @@ import {
   Flame,
   FireExtinguisher,
   Lightbulb,
-  Droplets
+  Droplets,
+  Lock
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -122,6 +123,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   }
 
   const { job, site, devices, inspectionResults, deficiencies, stats } = jobData;
+  const isFinalized = !!(job as any).finalizedAt;
   
   const testedCount = inspectionResults?.length || 0;
   const totalDevices = devices?.length || 0;
@@ -608,7 +610,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       {/* Bottom Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 safe-bottom">
         <div className="container">
-          {job.status === 'pending' || job.status === 'scheduled' ? (
+          {isFinalized ? (
+            <Button className="w-full action-btn" variant="secondary" disabled>
+              <Lock className="h-5 w-5 mr-2" />
+              Job Finalized — Record Sealed
+            </Button>
+          ) : job.status === 'pending' || job.status === 'scheduled' ? (
             <Button 
               className="w-full action-btn"
               onClick={() => startJob.mutate({ id: jobId })}
