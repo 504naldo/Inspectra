@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import FinalizeJobDialog from "@/components/FinalizeJobDialog";
@@ -20,7 +21,9 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  ShieldCheck
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX
 } from "lucide-react";
 import { toast } from "sonner";
 // S3 upload is handled server-side via tRPC
@@ -32,8 +35,26 @@ export default function AdminJobDetails() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<any>(null);
   const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
+  const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<any>(null);
 
   const utils = trpc.useUtils();
+
+  const verifyHashQuery = trpc.compliance.verifyJobHash.useQuery(
+    { jobId: parseInt(jobId!) },
+    { enabled: false }
+  );
+
+  const handleVerifyHash = async () => {
+    setVerifyDialogOpen(true);
+    setVerifyResult(null);
+    try {
+      const result = await utils.compliance.verifyJobHash.fetch({ jobId: parseInt(jobId!) });
+      setVerifyResult(result);
+    } catch (err: any) {
+      setVerifyResult({ error: err.message || 'Verification failed' });
+    }
+  };
 
   const { data: job, isLoading: jobLoading } = trpc.job.get.useQuery(
     { id: parseInt(jobId!) },
@@ -243,6 +264,17 @@ export default function AdminJobDetails() {
           </div>
           <div className="flex items-center gap-2">
             <Badge>{job.status}</Badge>
+            {user?.role === "admin" && job.finalizedAt && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                onClick={handleVerifyHash}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Verify Integrity
+              </Button>
+            )}
             {(user?.role === "admin" || user?.role === "office") && (
               <FinalizeJobDialog
                 jobId={job.id}
@@ -464,6 +496,68 @@ export default function AdminJobDetails() {
           </TabsContent>
         </Tabs>
       </div>
+      {/* Hash Verify Dialog */}
+      <Dialog open={verifyDialogOpen} onOpenChange={setVerifyDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5" />
+              Record Integrity Verification
+            </DialogTitle>
+            <DialogDescription>
+              Recomputes the SHA-256 finalization hash and compares it to the stored value.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            {!verifyResult ? (
+              <div className="flex items-center justify-center py-8 gap-3 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>Verifying record integrity...</span>
+              </div>
+            ) : verifyResult.error ? (
+              <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+                <ShieldX className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold text-red-800">Verification Error</p>
+                  <p className="text-sm text-red-700 mt-1">{verifyResult.error}</p>
+                </div>
+              </div>
+            ) : verifyResult.hashMatch ? (
+              <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4">
+                <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold text-green-800">Integrity Confirmed</p>
+                  <p className="text-sm text-green-700 mt-1">{verifyResult.message}</p>
+                  <p className="text-xs text-green-600 mt-2 font-mono break-all">{verifyResult.storedHash}</p>
+                  {verifyResult.finalizedAt && (
+                    <p className="text-xs text-green-600 mt-1">Sealed: {new Date(verifyResult.finalizedAt).toLocaleString()}</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+                  <ShieldAlert className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-red-800">Hash Mismatch — Record May Be Tampered</p>
+                    <p className="text-sm text-red-700 mt-1">{verifyResult.message}</p>
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3 space-y-2 text-xs font-mono">
+                  <div>
+                    <p className="text-muted-foreground font-sans font-medium">Stored hash:</p>
+                    <p className="break-all text-foreground">{verifyResult.storedHash}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground font-sans font-medium">Recomputed hash:</p>
+                    <p className="break-all text-red-600">{verifyResult.recomputedHash}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

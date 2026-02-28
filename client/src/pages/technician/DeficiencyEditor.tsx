@@ -47,6 +47,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
   const [deviceType, setDeviceType] = useState("");
   const [deviceLocation, setDeviceLocation] = useState("");
   const [aiDraft, setAiDraft] = useState(false);
+  const [estimatedCost, setEstimatedCost] = useState<string>("");  // stored as string for input, converted to number on save
 
   // Get device ID from URL params if creating new
   useEffect(() => {
@@ -83,6 +84,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       setDeviceId(def.deviceId || undefined);
       setAiDraft(!!def.aiGeneratedAt);
       setSystemCategory(def.systemCategory || undefined);
+      setEstimatedCost(def.estimatedCost != null ? String(def.estimatedCost) : "");
     }
   }, [existingDef]);
 
@@ -179,6 +181,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         customerExplanation,
         codeReference,
         systemCategory: systemCategory as any,
+        estimatedCost: estimatedCost !== "" ? parseFloat(estimatedCost) : undefined,
       });
     } else {
       createDeficiency.mutate({
@@ -193,6 +196,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         codeReference,
         aiGeneratedAt: aiDraft ? new Date() : undefined,
         systemCategory: systemCategory as any,
+        estimatedCost: estimatedCost !== "" ? parseFloat(estimatedCost) : undefined,
       });
     }
   };
@@ -389,6 +393,24 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
               value={codeReference}
               onChange={(e) => setCodeReference(e.target.value)}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="estimatedCost">Estimated Repair Cost (Optional)</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+              <Input
+                id="estimatedCost"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={estimatedCost}
+                onChange={(e) => setEstimatedCost(e.target.value)}
+                className="pl-7"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">Estimated cost to repair this deficiency (appears on reports).</p>
           </div>
         </div>
       </main>

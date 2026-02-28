@@ -674,13 +674,16 @@ const inspectionResultRouter = router({
     result: z.enum(['pass', 'fail', 'na', 'not_tested']),
     notes: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
-    const data = {
-      ...input,
-      technicianId: ctx.user.id,
-      testedAt: new Date(),
-      syncedAt: new Date(),
-    };
-    return db.upsertInspectionResult(data);
+    return withAudit(ctx, 'inspectionResult.upsert', async (_tx) => {
+      await assertJobNotFinalized(input.jobId, _tx);
+      const data = {
+        ...input,
+        technicianId: ctx.user.id,
+        testedAt: new Date(),
+        syncedAt: new Date(),
+      };
+      return db.upsertInspectionResult(data);
+    });
   }),
   
   bulkMarkPass: technicianProcedure.input(z.object({
@@ -777,8 +780,17 @@ const deficiencyRouter = router({
     codeReference: z.string().optional(),
     aiGeneratedAt: z.date().optional(),
     systemCategory: z.enum(['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING', 'SPRINKLER', 'SMOKE_ALARM']).optional(),
+    estimatedCost: z.number().nonnegative().optional(),
   })).mutation(async ({ input, ctx }) => {
-    return db.createDeficiency({ ...input, reportedById: ctx.user.id });
+    return withAudit(ctx, 'deficiency.create', async (_tx) => {
+      await assertJobNotFinalized(input.jobId, _tx);
+      const { estimatedCost, ...rest } = input;
+      return db.createDeficiency({
+        ...rest,
+        reportedById: ctx.user.id,
+        ...(estimatedCost != null ? { estimatedCost: String(estimatedCost) } : {}),
+      });
+    });
   }),
   
   update: technicianProcedure.input(z.object({
@@ -792,19 +804,27 @@ const deficiencyRouter = router({
     customerExplanation: z.string().optional(),
     codeReference: z.string().optional(),
     resolutionNotes: z.string().optional(),
-    systemCategory: z.enum(['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING', 'SPRINKLER']).optional(),
+    systemCategory: z.enum(['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING', 'SPRINKLER', 'SMOKE_ALARM']).optional(),
+    estimatedCost: z.number().nonnegative().optional(),
   })).mutation(async ({ input, ctx }) => {
-    const { id, status, ...data } = input;
-    const updateData: any = { ...data };
-    if (status) {
-      updateData.status = status;
-      if (status === 'resolved' || status === 'closed') {
-        updateData.resolvedAt = new Date();
-        updateData.resolvedById = ctx.user.id;
+    // Fetch the deficiency to get jobId for finalization guard
+    const existing = await db.getDeficiencyById(input.id);
+    if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deficiency not found' });
+    return withAudit(ctx, 'deficiency.update', async (_tx) => {
+      await assertJobNotFinalized(existing.jobId, _tx);
+      const { id, status, estimatedCost, ...data } = input;
+      const updateData: any = { ...data };
+      if (estimatedCost != null) updateData.estimatedCost = String(estimatedCost);
+      if (status) {
+        updateData.status = status;
+        if (status === 'resolved' || status === 'closed') {
+          updateData.resolvedAt = new Date();
+          updateData.resolvedById = ctx.user.id;
+        }
       }
-    }
-    await db.updateDeficiency(id, updateData);
-    return { success: true };
+      await db.updateDeficiency(id, updateData);
+      return { success: true };
+    });
   }),
 });
 
@@ -825,7 +845,13 @@ const repairRouter = router({
     laborHours: z.number().optional(),
     aiRecommendations: z.any().optional(),
   })).mutation(async ({ input, ctx }) => {
-    return db.createRepair({ ...input, technicianId: ctx.user.id });
+    // Fetch deficiency to get jobId for finalization guard
+    const deficiency = await db.getDeficiencyById(input.deficiencyId);
+    if (!deficiency) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deficiency not found' });
+    return withAudit(ctx, 'repair.create', async (_tx) => {
+      await assertJobNotFinalized(deficiency.jobId, _tx);
+      return db.createRepair({ ...input, technicianId: ctx.user.id });
+    });
   }),
   
   update: technicianProcedure.input(z.object({

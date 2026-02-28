@@ -1721,3 +1721,19 @@
 - [ ] Add certification fields to technician profile view (read-only)
 - [x] Wire certNumber and certExpiry into PDF report technician signature block
 - [x] Write vitest tests for certification field procedures (11 passing)
+
+## Estimated Cost in Deficiency Editor (New)
+- [x] Add estimatedCost number input to DeficiencyEditor.tsx
+- [x] Pass estimatedCost through deficiency.create and deficiency.update procedures
+- [ ] Display estimatedCost in deficiency list/detail views (deferred)
+
+## Audit Logging via withAudit() (New)
+- [x] Wire withAudit() into deficiency.create procedure
+- [x] Wire withAudit() into deficiency.update procedure
+- [x] Wire withAudit() into inspection result save procedure (inspectionResult.upsert)
+- [x] Wire withAudit() into repair.create procedure
+
+## Hash Verify Button for Admins (New)
+- [x] Add verifyJobHash tRPC procedure (confirmed existing compliance.verifyJobHash)
+- [x] Add "Verify Integrity" button to Admin Job Details for finalized jobs
+- [x] Show verification result dialog (hash match / mismatch with details)
