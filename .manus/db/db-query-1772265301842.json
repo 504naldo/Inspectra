@@ -1,0 +1,66 @@
+{
+  "query": "SELECT TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX, COLUMN_NAME, NON_UNIQUE, INDEX_TYPE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('inspection_results', 'fire_alarm_inspection_results', 'deficiencies', 'repairs', 'job_assignments') ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX, COLUMN_NAME, NON_UNIQUE, INDEX_TYPE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('inspection_results', 'fire_alarm_inspection_results', 'deficiencies', 'repairs', 'job_assignments') ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX;",
+  "rows": [
+    {
+      "TABLE_NAME": "deficiencies",
+      "INDEX_NAME": "PRIMARY",
+      "SEQ_IN_INDEX": "1",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0",
+      "INDEX_TYPE": "BTREE"
+    },
+    {
+      "TABLE_NAME": "fire_alarm_inspection_results",
+      "INDEX_NAME": "PRIMARY",
+      "SEQ_IN_INDEX": "1",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0",
+      "INDEX_TYPE": "BTREE"
+    },
+    {
+      "TABLE_NAME": "inspection_results",
+      "INDEX_NAME": "PRIMARY",
+      "SEQ_IN_INDEX": "1",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0",
+      "INDEX_TYPE": "BTREE"
+    },
+    {
+      "TABLE_NAME": "job_assignments",
+      "INDEX_NAME": "PRIMARY",
+      "SEQ_IN_INDEX": "1",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0",
+      "INDEX_TYPE": "BTREE"
+    },
+    {
+      "TABLE_NAME": "job_assignments",
+      "INDEX_NAME": "job_assignments_jobId_userId_unique",
+      "SEQ_IN_INDEX": "1",
+      "COLUMN_NAME": "jobId",
+      "NON_UNIQUE": "0",
+      "INDEX_TYPE": "BTREE"
+    },
+    {
+      "TABLE_NAME": "job_assignments",
+      "INDEX_NAME": "job_assignments_jobId_userId_unique",
+      "SEQ_IN_INDEX": "2",
+      "COLUMN_NAME": "userId",
+      "NON_UNIQUE": "0",
+      "INDEX_TYPE": "BTREE"
+    },
+    {
+      "TABLE_NAME": "repairs",
+      "INDEX_NAME": "PRIMARY",
+      "SEQ_IN_INDEX": "1",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0",
+      "INDEX_TYPE": "BTREE"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\tINDEX_NAME\tSEQ_IN_INDEX\tCOLUMN_NAME\tNON_UNIQUE\tINDEX_TYPE\ndeficiencies\tPRIMARY\t1\tid\t0\tBTREE\nfire_alarm_inspection_results\tPRIMARY\t1\tid\t0\tBTREE\ninspection_results\tPRIMARY\t1\tid\t0\tBTREE\njob_assignments\tPRIMARY\t1\tid\t0\tBTREE\njob_assignments\tjob_assignments_jobId_userId_unique\t1\tjobId\t0\tBTREE\njob_assignments\tjob_assignments_jobId_userId_unique\t2\tuserId\t0\tBTREE\nrepairs\tPRIMARY\t1\tid\t0\tBTREE\n",
+  "stderr": "",
+  "execution_time_ms": 349
+}

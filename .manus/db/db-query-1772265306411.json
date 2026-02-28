@@ -1,0 +1,214 @@
+{
+  "query": "SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX;",
+  "rows": [
+    {
+      "TABLE_NAME": "__drizzle_migrations",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "__drizzle_migrations",
+      "INDEX_NAME": "id",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "areas",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "attachments",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "companies",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "customer_orgs",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "deficiencies",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "devices",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "file_tags",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "fire_alarm_annunciators",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "fire_alarm_checklist_templates",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "fire_alarm_control_units",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "fire_alarm_inspection_results",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "fire_alarm_systems",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "import_logs",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "import_row_results",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "inspection_checklist_responses",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "inspection_results",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "job_assignments",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "job_assignments",
+      "INDEX_NAME": "job_assignments_jobId_userId_unique",
+      "COLUMN_NAME": "jobId",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "job_assignments",
+      "INDEX_NAME": "job_assignments_jobId_userId_unique",
+      "COLUMN_NAME": "userId",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "jobs",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "knowledge_base",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "repairs",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "reports",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "sites",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "sprinkler_checklist_items",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "sprinkler_devices",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "sprinkler_inspections",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "sprinkler_systems",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "sync_logs",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "upload_queue",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "users",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "users",
+      "INDEX_NAME": "users_openId_unique",
+      "COLUMN_NAME": "openId",
+      "NON_UNIQUE": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\tINDEX_NAME\tCOLUMN_NAME\tNON_UNIQUE\n__drizzle_migrations\tPRIMARY\tid\t0\n__drizzle_migrations\tid\tid\t0\nareas\tPRIMARY\tid\t0\nattachments\tPRIMARY\tid\t0\ncompanies\tPRIMARY\tid\t0\ncustomer_orgs\tPRIMARY\tid\t0\ndeficiencies\tPRIMARY\tid\t0\ndevices\tPRIMARY\tid\t0\nfile_tags\tPRIMARY\tid\t0\nfire_alarm_annunciators\tPRIMARY\tid\t0\nfire_alarm_checklist_templates\tPRIMARY\tid\t0\nfire_alarm_control_units\tPRIMARY\tid\t0\nfire_alarm_inspection_results\tPRIMARY\tid\t0\nfire_alarm_systems\tPRIMARY\tid\t0\nimport_logs\tPRIMARY\tid\t0\nimport_row_results\tPRIMARY\tid\t0\ninspection_checklist_responses\tPRIMARY\tid\t0\ninspection_results\tPRIMARY\tid\t0\njob_assignments\tPRIMARY\tid\t0\njob_assignments\tjob_assignments_jobId_userId_unique\tjobId\t0\njob_assignments\tjob_assignments_jobId_userId_unique\tuserId\t0\njobs\tPRIMARY\tid\t0\nknowledge_base\tPRIMARY\tid\t0\nrepairs\tPRIMARY\tid\t0\nreports\tPRIMARY\tid\t0\nsites\tPRIMARY\tid\t0\nsprinkler_checklist_items\tPRIMARY\tid\t0\nsprinkler_devices\tPRIMARY\tid\t0\nsprinkler_inspections\tPRIMARY\tid\t0\nsprinkler_systems\tPRIMARY\tid\t0\nsync_logs\tPRIMARY\tid\t0\nupload_queue\tPRIMARY\tid\t0\nusers\tPRIMARY\tid\t0\nusers\tusers_openId_unique\topenId\t0\n",
+  "stderr": "",
+  "execution_time_ms": 353
+}

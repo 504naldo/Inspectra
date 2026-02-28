@@ -1,0 +1,9 @@
+{
+  "query": "SHOW TABLE STATUS WHERE Engine != 'InnoDB';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SHOW TABLE STATUS WHERE Engine != 'InnoDB';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2922
+}

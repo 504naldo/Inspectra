@@ -162,6 +162,13 @@
       "when": 1771826219023,
       "tag": "0022_harsh_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1772270166297,
+      "tag": "0023_round_skrulls",
+      "breakpoints": true
     }
   ]
 }

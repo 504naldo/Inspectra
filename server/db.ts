@@ -1,6 +1,10 @@
 import { eq, and, desc, asc, sql, inArray, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import * as schema from "../drizzle/schema";
+import { TRPCError } from "@trpc/server";
+import { JOB_FINALIZED_IMMUTABLE } from "../shared/_core/errors";
+import type { TrpcContext } from "./_core/context";
 import {
   InsertUser, users, User,
   companies, InsertCompany, Company,
@@ -1248,3 +1252,111 @@ export async function getDeviceSummariesByJob(jobId: number) {
 }
 
 
+
+// ============================================================
+// COMPLIANCE: Audit Transaction Wrapper
+// ============================================================
+
+/**
+ * assertJobNotFinalized
+ *
+ * Guards audited mutations against finalized jobs.
+ * Must be called within a withAudit transaction before any DML.
+ * Throws TRPCError with code JOB_FINALIZED_IMMUTABLE if the job is sealed.
+ */
+export async function assertJobNotFinalized(
+  jobId: number,
+  db: ReturnType<typeof drizzle>
+): Promise<void> {
+  const rows = await db
+    .select({ finalizedAt: schema.jobs.finalizedAt })
+    .from(schema.jobs)
+    .where(eq(schema.jobs.id, jobId));
+
+  if (rows.length === 0) {
+    throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found` });
+  }
+
+  if (rows[0].finalizedAt !== null) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: JOB_FINALIZED_IMMUTABLE,
+    });
+  }
+}
+
+/**
+ * withAudit
+ *
+ * Executes a database mutation inside a single MySQL connection with:
+ *   1. A transaction (BEGIN / COMMIT / ROLLBACK)
+ *   2. Session variables set for audit triggers:
+ *      @audit_actor, @audit_procedure, @audit_request_id, @audit_ip, @audit_user_agent
+ *
+ * Usage:
+ *   await withAudit(ctx, "procedure.name", async (tx) => {
+ *     await assertJobNotFinalized(jobId, tx);
+ *     await tx.update(schema.inspectionResults).set({...}).where(...);
+ *   });
+ *
+ * If ctx.user is null, the mutation is rejected — unattributed compliance writes
+ * must not succeed silently.
+ */
+export async function withAudit<T>(
+  ctx: TrpcContext,
+  procedureName: string,
+  fn: (tx: ReturnType<typeof drizzle>) => Promise<T>
+): Promise<T> {
+  if (!ctx.user) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Authenticated user required for audited mutations",
+    });
+  }
+
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is not configured");
+  }
+
+  // Create a dedicated connection for this transaction so session variables
+  // are scoped to this connection only.
+  const connection = await mysql.createConnection(process.env.DATABASE_URL);
+
+  try {
+    // Set audit session variables
+    await connection.execute("SET @audit_actor = ?", [ctx.user.id]);
+    await connection.execute("SET @audit_procedure = ?", [procedureName]);
+    await connection.execute("SET @audit_request_id = ?", [ctx.requestId]);
+    await connection.execute("SET @audit_ip = ?", [ctx.ipAddress]);
+    await connection.execute("SET @audit_user_agent = ?", [ctx.userAgent]);
+
+    // Begin transaction
+    await connection.beginTransaction();
+
+    const txDb = drizzle(connection as unknown as string, {
+      schema,
+      mode: "default",
+    });
+
+    let result: T;
+    try {
+      result = await fn(txDb);
+      await connection.commit();
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    }
+
+    // Warn if changedById would be null (defensive check)
+    if (!ctx.user.id) {
+      console.warn(
+        `[withAudit] Warning: audit row for procedure "${procedureName}" ` +
+          `has no changedById. Request: ${ctx.requestId}`
+      );
+    }
+
+    return result;
+  } finally {
+    await connection.end();
+  }
+}

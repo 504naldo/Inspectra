@@ -1,0 +1,52 @@
+{
+  "query": "SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('inspection_results', 'fire_alarm_inspection_results', 'deficiencies', 'repairs', 'job_assignments') ORDER BY TABLE_NAME, INDEX_NAME;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3sw5HSkWcib4XWH.5254dfa7b7bd --database exn2eFaTD5Fz53yXRQGbFV --execute SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('inspection_results', 'fire_alarm_inspection_results', 'deficiencies', 'repairs', 'job_assignments') ORDER BY TABLE_NAME, INDEX_NAME;",
+  "rows": [
+    {
+      "TABLE_NAME": "deficiencies",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "fire_alarm_inspection_results",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "inspection_results",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "job_assignments",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "job_assignments",
+      "INDEX_NAME": "job_assignments_jobId_userId_unique",
+      "COLUMN_NAME": "jobId",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "job_assignments",
+      "INDEX_NAME": "job_assignments_jobId_userId_unique",
+      "COLUMN_NAME": "userId",
+      "NON_UNIQUE": "0"
+    },
+    {
+      "TABLE_NAME": "repairs",
+      "INDEX_NAME": "PRIMARY",
+      "COLUMN_NAME": "id",
+      "NON_UNIQUE": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\tINDEX_NAME\tCOLUMN_NAME\tNON_UNIQUE\ndeficiencies\tPRIMARY\tid\t0\nfire_alarm_inspection_results\tPRIMARY\tid\t0\ninspection_results\tPRIMARY\tid\t0\njob_assignments\tPRIMARY\tid\t0\njob_assignments\tjob_assignments_jobId_userId_unique\tjobId\t0\njob_assignments\tjob_assignments_jobId_userId_unique\tuserId\t0\nrepairs\tPRIMARY\tid\t0\n",
+  "stderr": "",
+  "execution_time_ms": 429
+}

@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique, decimal } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique, decimal, index } from "drizzle-orm/mysql-core";
 
 // ============================================
 // CORE USER TABLE (Extended from template)
@@ -223,6 +223,12 @@ export const jobs = mysqlTable("jobs", {
   officeNotes: text("officeNotes"), // Editable by admin/office only
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  // --- Compliance Hardening: Finalization Lock ---
+  finalizedAt: timestamp("finalizedAt"),
+  finalizedById: int("finalizedById"),
+  finalizationHash: varchar("finalizationHash", { length: 64 }),
+  syncAssertedAt: timestamp("syncAssertedAt"),
+  syncAssertedById: int("syncAssertedById"),
 });
 
 export type Job = typeof jobs.$inferSelect;
@@ -262,7 +268,11 @@ export const inspectionResults = mysqlTable("inspection_results", {
   walkOrder: int("walkOrder"), // Order in which device was tested (auto-assigned on first test)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+  // --- Compliance Hardening: Technician Credential Snapshot ---
+  technicianCertificationSnapshot: json("technicianCertificationSnapshot"),
+}, (table) => ({
+  jobIdIdx: index("inspection_results_jobId_idx").on(table.jobId),
+}));
 
 export type InspectionResult = typeof inspectionResults.$inferSelect;
 export type InsertInspectionResult = typeof inspectionResults.$inferInsert;
@@ -289,12 +299,19 @@ export const deficiencies = mysqlTable("deficiencies", {
   // BUG-01 fix: estimatedCost was used throughout PDF generator but missing from schema
   estimatedCost: decimal("estimatedCost", { precision: 10, scale: 2 }),
   aiGenerated: boolean("aiGenerated").default(false),
+  // --- Compliance Hardening: AI Provenance ---
+  aiGeneratedAt: timestamp("aiGeneratedAt"),
+  aiModelId: varchar("aiModelId", { length: 64 }),
+  aiPromptHash: varchar("aiPromptHash", { length: 64 }),
+  aiContext: json("aiContext"),
   resolvedAt: timestamp("resolvedAt"),
   resolvedById: int("resolvedById"),
   resolutionNotes: text("resolutionNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  jobIdIdx: index("deficiencies_jobId_idx").on(table.jobId),
+}));
 
 export type Deficiency = typeof deficiencies.$inferSelect;
 export type InsertDeficiency = typeof deficiencies.$inferInsert;
@@ -314,7 +331,9 @@ export const repairs = mysqlTable("repairs", {
   aiRecommendations: json("aiRecommendations"), // Store AI-generated repair recommendations
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  deficiencyIdIdx: index("repairs_deficiencyId_idx").on(table.deficiencyId),
+}));
 
 export type Repair = typeof repairs.$inferSelect;
 export type InsertRepair = typeof repairs.$inferInsert;
@@ -557,6 +576,12 @@ export const fireAlarmChecklistTemplates = mysqlTable("fire_alarm_checklist_temp
   numericUnit: varchar("numericUnit", { length: 50 }), // e.g., "V", "A", "A•h"
   isRequired: boolean("isRequired").default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // --- Compliance Hardening: Standards Template Versioning ---
+  standardId: varchar("standardId", { length: 64 }).notNull().default("ulc_s536"),
+  standardVersion: varchar("standardVersion", { length: 32 }).notNull().default("2019"),
+  effectiveDate: date("effectiveDate").notNull(),
+  supersededAt: date("supersededAt"),
+  isActive: boolean("isActive").notNull().default(true),
 });
 
 export type FireAlarmChecklistTemplate = typeof fireAlarmChecklistTemplates.$inferSelect;
@@ -571,14 +596,22 @@ export const fireAlarmInspectionResults = mysqlTable("fire_alarm_inspection_resu
   fireAlarmSystemId: int("fireAlarmSystemId").notNull(),
   checklistItemId: int("checklistItemId").notNull(),
   result: mysqlEnum("result", ["pass", "fail", "na", "not_tested"]).default("not_tested"),
-  numericValue: varchar("numericValue", { length: 100 }), // For numeric inputs (voltage, current, etc.)
-  textValue: text("textValue"), // For text inputs (names, descriptions, etc.)
+  numericValue: decimal("numericValue", { precision: 10, scale: 3 }), // Changed from VARCHAR to DECIMAL
+  numericValueRaw: varchar("numericValueRaw", { length: 100 }), // Preserved original string before conversion
+  unit: varchar("unit", { length: 20 }), // Detected unit (V, A, Ω, etc.)
+  textValue: text("textValue"),                           // For text inputs (names, descriptions, etc.)
   notes: text("notes"),
-  testedById: int("testedById"), // user_id of technician
+  testedById: int("testedById"),                          // user_id of technician
   testedAt: timestamp("testedAt"),
+  syncedAt: timestamp("syncedAt"),                        // When synced from offline device
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+  // --- Compliance Hardening: Item Snapshot + Credential Snapshot ---
+  itemSnapshot: json("itemSnapshot"),
+  technicianCertificationSnapshot: json("technicianCertificationSnapshot"),
+}, (table) => ({
+  jobIdIdx: index("fire_alarm_inspection_results_jobId_idx").on(table.jobId),
+}));
 
 export type FireAlarmInspectionResult = typeof fireAlarmInspectionResults.$inferSelect;
 export type InsertFireAlarmInspectionResult = typeof fireAlarmInspectionResults.$inferInsert;
@@ -750,3 +783,42 @@ export const sprinklerDevices = mysqlTable("sprinkler_devices", {
 
 export type SprinklerDevice = typeof sprinklerDevices.$inferSelect;
 export type InsertSprinklerDevice = typeof sprinklerDevices.$inferInsert;
+
+// ============================================
+// AUDIT LOG (Compliance Hardening)
+// ============================================
+export const auditLog = mysqlTable("audit_log", {
+  id: int("id").autoincrement().primaryKey(),
+  tableName: varchar("tableName", { length: 64 }).notNull(),
+  recordId: int("recordId").notNull(),
+  action: mysqlEnum("action", ["insert", "update", "delete", "hash_mismatch_detected"]).notNull(),
+  changedById: int("changedById"),
+  changedAt: timestamp("changedAt").defaultNow().notNull(),
+  previousValues: json("previousValues"),
+  newValues: json("newValues"),
+  reason: text("reason"),
+  procedureName: varchar("procedureName", { length: 128 }),
+  requestId: varchar("requestId", { length: 64 }),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  userAgent: text("userAgent"),
+});
+
+export type AuditLog = typeof auditLog.$inferSelect;
+export type InsertAuditLog = typeof auditLog.$inferInsert;
+
+// ============================================
+// MIGRATION LOG (Backfill issue tracking)
+// ============================================
+export const migrationLog = mysqlTable("migration_log", {
+  id: int("id").autoincrement().primaryKey(),
+  migrationName: varchar("migrationName", { length: 128 }).notNull(),
+  tableName: varchar("tableName", { length: 64 }).notNull(),
+  rowId: int("rowId").notNull(),
+  jobId: int("jobId"),
+  originalValue: text("originalValue"),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type MigrationLog = typeof migrationLog.$inferSelect;
+export type InsertMigrationLog = typeof migrationLog.$inferInsert;
