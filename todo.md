@@ -119,6 +119,7 @@
 - [x] Associated user with company for data visibility
 
 ## Bug Fixes
+- [x] Add SMOKE_ALARM to Deficiency Editor system category dropdown
 - [x] Fix nested anchor tag error on /admin/jobs page
 - [x] Fix report summary display - unable to view entire summary
 - [x] Import data from "Individual device record" sheet in Excel file (134 devices: 76 smoke alarms, 10 emergency lights, 9 sprinkler devices, 35 fire alarm devices, 4 fire extinguishers)

@@ -286,6 +286,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
               <SelectContent>
                 <SelectItem value="auto">Auto-detect (recommended)</SelectItem>
                 <SelectItem value="FIRE_ALARM">Fire Alarm</SelectItem>
+                <SelectItem value="SMOKE_ALARM">Smoke Alarm</SelectItem>
                 <SelectItem value="FIRE_EXTINGUISHER">Fire Extinguisher</SelectItem>
                 <SelectItem value="EMERGENCY_LIGHTING">Emergency Lighting</SelectItem>
                 <SelectItem value="SPRINKLER">Sprinkler</SelectItem>
