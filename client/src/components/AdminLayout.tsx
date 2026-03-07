@@ -11,7 +11,8 @@ import {
   Building2,
   AlertTriangle,
   FileText,
-  TrendingUp
+  TrendingUp,
+  CalendarDays
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -27,6 +28,7 @@ const navItems = [
   { label: "Customers", href: "/admin/customers", icon: Building2 },
   { label: "Sites", href: "/admin/sites", icon: Building2 },
   { label: "Devices", href: "/admin/devices", icon: AlertTriangle },
+  { label: "Schedule", href: "/admin/schedule", icon: CalendarDays },
   { label: "Reports", href: "/admin/reports", icon: FileText },
   { label: "Users", href: "/admin/users", icon: Users, adminOnly: true },
 ];

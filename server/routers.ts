@@ -17,6 +17,7 @@ import { jobAssignmentRouter } from "./jobAssignmentRouter";
 import { userRouter as userManagementRouter } from "./userRouter";
 import { assetImportRouter } from "./routers/assetImportRouter";
 import { filesRouter } from "./routers/filesRouter";
+import { sendReportEmail } from "./emailService";
 import { safeToLower, safeIncludes, safeTrim } from "./safeStringHelpers";
 import { finalizeJob } from "./compliance/finalizeJob";
 import { withAudit, assertJobNotFinalized } from "./db";
@@ -205,6 +206,10 @@ const siteRouter = router({
     contactPhone: z.string().optional(),
     contactEmail: z.string().optional(),
     notes: z.string().optional(),
+    keyLocation: z.string().optional(),
+    keyNumber: z.string().optional(),
+    keySignOutDate: z.string().optional(),
+    keySignedOutBy: z.string().optional(),
   })).mutation(async ({ input }) => {
     const { id, ...data } = input;
     
@@ -683,13 +688,27 @@ const jobRouter = router({
       scheduledDate: input.scheduledDate,
       jobNumber,
     });
-
     await withAudit(ctx, 'job.clone', async () => {});
-
     return { newJobId: newJob.id, jobNumber };
   }),
-});
 
+  getScheduleSummary: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+    const jobs = await db.getJobsByCompany(input.companyId);
+    const now = new Date();
+    const overdue = jobs.filter((j: any) => {
+      if (!j.scheduledDate) return false;
+      if (['completed', 'finalized'].includes(j.status)) return false;
+      return new Date(j.scheduledDate) < now;
+    });
+    const upcoming = jobs.filter((j: any) => {
+      if (!j.scheduledDate) return false;
+      if (['completed', 'finalized'].includes(j.status)) return false;
+      const d = new Date(j.scheduledDate);
+      return d >= now;
+    });
+    return { overdue, upcoming, all: jobs };
+  }),
+});
 // Inspection Result router
 const inspectionResultRouter = router({
   listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
@@ -1441,6 +1460,15 @@ const reportRouter = router({
       status: 'generated',
     });
     
+    // Send notification email to reports@ewandf.ca
+    const emailSite = await db.getSiteById(job.siteId);
+    await sendReportEmail({
+      siteName: emailSite?.name ?? job.title,
+      jobNumber: job.jobNumber,
+      reportType: "compliance",
+      pdfUrl: url,
+    });
+
     return { 
       success: true, 
       reportId: report.id,
@@ -1780,6 +1808,15 @@ const reportRouter = router({
       fileUrl: url,
       status: 'generated',
     });
+
+    // Send notification email to reports@ewandf.ca
+    const annualSite = await db.getSiteById(job.siteId);
+    await sendReportEmail({
+      siteName: annualSite?.name ?? job.title,
+      jobNumber: job.jobNumber,
+      reportType: "annual",
+      pdfUrl: url,
+    });
     
     return { 
       success: true, 
@@ -1789,7 +1826,6 @@ const reportRouter = router({
     };
   }),
 });
-
 // Checklist router
 const checklistRouter = router({  
   saveResponse: technicianProcedure.input(z.object({

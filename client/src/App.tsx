@@ -36,6 +36,7 @@ import JobAssignments from "./pages/admin/JobAssignments";
 import AdminQACheck from "./pages/admin/QACheck";
 import SiteFiles from "./pages/admin/SiteFiles";
 import AssetImport from "./pages/admin/AssetImport";
+import AdminSchedule from "./pages/admin/Schedule";
 import CustomerPortal from "./pages/customer/Portal";
 import CustomerReports from "./pages/customer/Reports";
 import CustomerDeficiencies from "./pages/customer/Deficiencies";
@@ -264,6 +265,11 @@ function Router() {
       <Route path="/admin/sites/:siteId/import">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <AssetImport />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/schedule">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <AdminSchedule />
         </ProtectedRoute>
       </Route>
 

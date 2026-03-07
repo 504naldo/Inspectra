@@ -622,14 +622,32 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               Job Finalized — Record Sealed
             </Button>
           ) : job.status === 'pending' || job.status === 'scheduled' ? (
-            <Button 
-              className="w-full action-btn"
-              onClick={() => startJob.mutate({ id: jobId })}
-              disabled={startJob.isPending || !isOnline}
-            >
-              <Play className="h-5 w-5 mr-2" />
-              Start Inspection
-            </Button>
+            <div className="space-y-2">
+              {/* Site Notes Banner */}
+              {(site as any)?.notes && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3">
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide mb-1">Site Notes</p>
+                  <p className="text-sm text-amber-900 dark:text-amber-200">{(site as any).notes}</p>
+                </div>
+              )}
+              {/* Key Info Banner */}
+              {((site as any)?.keyNumber || (site as any)?.keyLocation) && (
+                <div className="rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/30 p-3">
+                  <p className="text-xs font-semibold text-yellow-800 dark:text-yellow-300 uppercase tracking-wide mb-1">Key Information</p>
+                  {(site as any).keyNumber && <p className="text-sm text-yellow-900 dark:text-yellow-200"><span className="font-medium">Key #:</span> {(site as any).keyNumber}</p>}
+                  {(site as any).keyLocation && <p className="text-sm text-yellow-900 dark:text-yellow-200"><span className="font-medium">Location:</span> {(site as any).keyLocation}</p>}
+                  {(site as any).keySignedOutBy && <p className="text-sm text-orange-700 font-medium">Currently signed out by: {(site as any).keySignedOutBy}</p>}
+                </div>
+              )}
+              <Button 
+                className="w-full action-btn"
+                onClick={() => startJob.mutate({ id: jobId })}
+                disabled={startJob.isPending || !isOnline}
+              >
+                <Play className="h-5 w-5 mr-2" />
+                {((site as any)?.notes || (site as any)?.keyNumber || (site as any)?.keyLocation) ? 'Acknowledged — Start Inspection' : 'Start Inspection'}
+              </Button>
+            </div>
           ) : job.status === 'in_progress' ? (
             <Button 
               className="w-full action-btn"

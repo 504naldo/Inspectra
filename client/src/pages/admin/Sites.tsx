@@ -17,7 +17,9 @@ import {
   FileImage,
   Upload,
   MoreHorizontal,
-  Flame
+  Flame,
+  Key,
+  KeyRound
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link } from "wouter";
@@ -40,6 +42,8 @@ export default function AdminSites() {
   
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editSite, setEditSite] = useState<any>(null);
   const [newSite, setNewSite] = useState({
     name: "",
     customerOrgId: "",
@@ -50,6 +54,8 @@ export default function AdminSites() {
     contactName: "",
     contactPhone: "",
     contactEmail: "",
+    keyLocation: "",
+    keyNumber: "",
   });
 
   const { data: sites, isLoading, refetch } = trpc.site.listByCompany.useQuery({ companyId });
@@ -69,10 +75,22 @@ export default function AdminSites() {
         contactName: "",
         contactPhone: "",
         contactEmail: "",
+        keyLocation: "",
+        keyNumber: "",
       });
       refetch();
     },
     onError: () => toast.error('Failed to create site')
+  });
+
+  const updateSite = trpc.site.update.useMutation({
+    onSuccess: () => {
+      toast.success('Site updated');
+      setIsEditOpen(false);
+      setEditSite(null);
+      refetch();
+    },
+    onError: () => toast.error('Failed to update site')
   });
 
   const filteredSites = sites?.filter((site: any) => {
@@ -101,6 +119,8 @@ export default function AdminSites() {
       contactName: newSite.contactName || undefined,
       contactPhone: newSite.contactPhone || undefined,
       contactEmail: newSite.contactEmail || undefined,
+      keyLocation: newSite.keyLocation || undefined,
+      keyNumber: newSite.keyNumber || undefined,
     });
   };
 
@@ -126,7 +146,7 @@ export default function AdminSites() {
                 Add Site
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add New Site</DialogTitle>
               </DialogHeader>
@@ -175,7 +195,7 @@ export default function AdminSites() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>State</Label>
+                    <Label>State/Province</Label>
                     <Input
                       value={newSite.state}
                       onChange={(e) => setNewSite({ ...newSite, state: e.target.value })}
@@ -216,6 +236,31 @@ export default function AdminSites() {
                       placeholder="contact@example.com"
                       type="email"
                     />
+                  </div>
+                </div>
+
+                {/* Key Tracking */}
+                <div className="border-t pt-4">
+                  <p className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1">
+                    <Key className="h-3 w-3" /> Key Tracking
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Key Location</Label>
+                      <Input
+                        value={newSite.keyLocation}
+                        onChange={(e) => setNewSite({ ...newSite, keyLocation: e.target.value })}
+                        placeholder="e.g. Lockbox at front entrance"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Key Number</Label>
+                      <Input
+                        value={newSite.keyNumber}
+                        onChange={(e) => setNewSite({ ...newSite, keyNumber: e.target.value })}
+                        placeholder="e.g. K-042"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -272,6 +317,16 @@ export default function AdminSites() {
                           {site.contactPhone}
                         </p>
                       )}
+                      {site.keyNumber && (
+                        <p className="text-sm flex items-center gap-1 mt-1">
+                          <Key className="h-3 w-3 text-yellow-600" />
+                          <span className="text-yellow-700 font-medium">Key {site.keyNumber}</span>
+                          {site.keyLocation && <span className="text-muted-foreground">— {site.keyLocation}</span>}
+                          {site.keySignedOutBy && (
+                            <span className="ml-1 text-orange-600 font-medium text-xs">(Out: {site.keySignedOutBy})</span>
+                          )}
+                        </p>
+                      )}
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -280,6 +335,10 @@ export default function AdminSites() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => { setEditSite({...site}); setIsEditOpen(true); }}>
+                          <KeyRound className="h-4 w-4 mr-2" />
+                          Edit Key Info
+                        </DropdownMenuItem>
                         <Link href={`/admin/sites/${site.id}/files`}>
                           <DropdownMenuItem>
                             <FileImage className="h-4 w-4 mr-2" />
@@ -307,6 +366,58 @@ export default function AdminSites() {
           </div>
         )}
       </div>
+
+      {/* Edit Key Info Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-4 w-4" />
+              Key Information — {editSite?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {editSite && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Key Location</Label>
+                <Input
+                  value={editSite.keyLocation ?? ""}
+                  onChange={(e) => setEditSite({ ...editSite, keyLocation: e.target.value })}
+                  placeholder="e.g. Lockbox at front entrance"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Key Number</Label>
+                <Input
+                  value={editSite.keyNumber ?? ""}
+                  onChange={(e) => setEditSite({ ...editSite, keyNumber: e.target.value })}
+                  placeholder="e.g. K-042"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Signed Out By <span className="text-muted-foreground text-xs">(leave blank to clear)</span></Label>
+                <Input
+                  value={editSite.keySignedOutBy ?? ""}
+                  onChange={(e) => setEditSite({ ...editSite, keySignedOutBy: e.target.value })}
+                  placeholder="Technician name"
+                />
+              </div>
+              <Button
+                className="w-full"
+                onClick={() => updateSite.mutate({
+                  id: editSite.id,
+                  keyLocation: editSite.keyLocation || undefined,
+                  keyNumber: editSite.keyNumber || undefined,
+                  keySignedOutBy: editSite.keySignedOutBy || undefined,
+                })}
+                disabled={updateSite.isPending}
+              >
+                {updateSite.isPending ? "Saving..." : "Save Key Info"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

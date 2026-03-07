@@ -146,6 +146,11 @@ export const sites = mysqlTable("sites", {
   contactPhone: varchar("contactPhone", { length: 50 }),
   notes: text("notes"),
   summary: json("summary").$type<SiteSummary>(),
+  // Key tracking (mirrors AppSheet portal KeyLocation / KeyNumber / KeySignOutDate)
+  keyLocation: text("keyLocation"),
+  keyNumber: varchar("keyNumber", { length: 50 }),
+  keySignOutDate: timestamp("keySignOutDate"),
+  keySignedOutBy: varchar("keySignedOutBy", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
