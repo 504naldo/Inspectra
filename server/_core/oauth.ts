@@ -4,30 +4,30 @@ import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
 import { ENV } from "./env";
-
+ 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
   return typeof value === "string" ? value : undefined;
 }
-
+ 
 /** Determine role and activation status from email using environment config */
 function resolveRoleFromEmail(email: string): { role: 'admin' | 'office' | 'technician' | 'customer'; isActive: number } {
   const normalized = email.toLowerCase();
-
+ 
   // Check admin list from ADMIN_EMAILS env var
   if (ENV.adminEmails.includes(normalized)) {
     return { role: 'admin', isActive: 1 };
   }
-
+ 
   // Check company domain from COMPANY_DOMAIN env var
   if (ENV.companyDomain && normalized.endsWith(`@${ENV.companyDomain}`)) {
     return { role: 'technician', isActive: 1 };
   }
-
+ 
   // External user — inactive by default, pending admin approval
   return { role: 'technician', isActive: 0 };
 }
-
+ 
 export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
     if (!ENV.isProduction) {
@@ -36,15 +36,15 @@ export function registerOAuthRoutes(app: Express) {
     }
     
     const code = getQueryParam(req, "code");
-    const state = getQueryParam(req, "state");
-
+    const state = getQueryParam(req, "state") || "";
+ 
     if (!ENV.isProduction) {
       console.log('[OAuth] Extracted code:', code ? 'present' : 'missing');
-      console.log('[OAuth] Extracted state:', state ? 'present' : 'missing');
+      console.log('[OAuth] Extracted state:', state ? 'present' : 'empty');
     }
-
-    if (!code || !state) {
-      console.error('[OAuth] Missing required parameters');
+ 
+    if (!code) {
+      console.error('[OAuth] Missing required code parameter');
       
       // Return user-friendly HTML error page
       res.status(400).send(`
@@ -73,7 +73,7 @@ export function registerOAuthRoutes(app: Express) {
               </ul>
               <a href="/" class="button">Return to Home & Try Again</a>
               <div class="details">
-                <strong>Technical details:</strong> OAuth callback received without required code and state parameters.
+                <strong>Technical details:</strong> OAuth callback received without required code parameter.
               </div>
             </div>
           </body>
@@ -81,16 +81,16 @@ export function registerOAuthRoutes(app: Express) {
       `);
       return;
     }
-
+ 
     try {
       const tokenResponse = await sdk.exchangeCodeForToken(code, state);
       const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-
+ 
       if (!userInfo.openId) {
         res.status(400).json({ error: "openId missing from user info" });
         return;
       }
-
+ 
       // Determine company assignment
       const allCompanies = await db.getAllCompanies();
       let companyId: number | undefined;
@@ -108,11 +108,11 @@ export function registerOAuthRoutes(app: Express) {
           companyId = allCompanies[0].id;
         }
       }
-
+ 
       // Determine role and activation from env-driven config
       const email = userInfo.email?.toLowerCase() || '';
       const { role, isActive } = resolveRoleFromEmail(email);
-
+ 
       await db.upsertUser({
         openId: userInfo.openId,
         name: userInfo.name || null,
@@ -123,19 +123,19 @@ export function registerOAuthRoutes(app: Express) {
         role,
         isActive,
       });
-
+ 
       if (!ENV.isProduction) {
         console.log('[OAuth] User upserted:', { email: userInfo.email, role, companyId, isActive });
       }
-
+ 
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
         expiresInMs: ONE_YEAR_MS,
       });
-
+ 
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-
+ 
       // Check if user is active
       const user = await db.getUserByOpenId(userInfo.openId);
       if (user && user.isActive === 0) {
@@ -163,19 +163,21 @@ export function registerOAuthRoutes(app: Express) {
         `);
         return;
       }
-
+ 
       // Decode state parameter to get the intended post-login route
-      let targetRoute = ''; // empty means use role-based redirect
-      try {
-        const decodedState = Buffer.from(state, 'base64').toString('utf-8');
-        // Validate to prevent open redirects: must be same-origin path starting with "/"
-        if (decodedState && decodedState.startsWith('/') && !decodedState.startsWith('//')) {
-          targetRoute = decodedState;
+      let targetRoute = '';
+      if (state) {
+        try {
+          const decodedState = Buffer.from(state, 'base64').toString('utf-8');
+          // Validate to prevent open redirects: must be same-origin path starting with "/"
+          if (decodedState && decodedState.startsWith('/') && !decodedState.startsWith('//')) {
+            targetRoute = decodedState;
+          }
+        } catch (error) {
+          console.warn('[OAuth] Failed to decode state, using role-based redirect:', error);
         }
-      } catch (error) {
-        console.warn('[OAuth] Failed to decode state, using role-based redirect:', error);
       }
-
+ 
       // If target route is empty or "/", redirect to role-based dashboard
       if (!targetRoute || targetRoute === '/') {
         if (user?.role === 'customer') {
@@ -188,7 +190,7 @@ export function registerOAuthRoutes(app: Express) {
           targetRoute = '/admin'; // admin role or fallback
         }
       }
-
+ 
       if (!ENV.isProduction) {
         console.log('[OAuth] Final redirect to:', targetRoute, { email: userInfo.email, role: user?.role });
       }
@@ -199,3 +201,4 @@ export function registerOAuthRoutes(app: Express) {
     }
   });
 }
+ 
