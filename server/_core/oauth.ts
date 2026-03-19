@@ -3,28 +3,48 @@ import type { Express, Request, Response } from "express";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
+import { ENV } from "./env";
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
   return typeof value === "string" ? value : undefined;
 }
 
+/** Determine role and activation status from email using environment config */
+function resolveRoleFromEmail(email: string): { role: 'admin' | 'office' | 'technician' | 'customer'; isActive: number } {
+  const normalized = email.toLowerCase();
+
+  // Check admin list from ADMIN_EMAILS env var
+  if (ENV.adminEmails.includes(normalized)) {
+    return { role: 'admin', isActive: 1 };
+  }
+
+  // Check company domain from COMPANY_DOMAIN env var
+  if (ENV.companyDomain && normalized.endsWith(`@${ENV.companyDomain}`)) {
+    return { role: 'technician', isActive: 1 };
+  }
+
+  // External user — inactive by default, pending admin approval
+  return { role: 'technician', isActive: 0 };
+}
+
 export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
-    console.log('[OAuth] Callback received');
-    console.log('[OAuth] Full URL:', req.originalUrl);
-    console.log('[OAuth] Query params:', JSON.stringify(req.query));
+    if (!ENV.isProduction) {
+      console.log('[OAuth] Callback received');
+      console.log('[OAuth] Full URL:', req.originalUrl);
+    }
     
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");
 
-    console.log('[OAuth] Extracted code:', code ? 'present' : 'missing');
-    console.log('[OAuth] Extracted state:', state ? 'present' : 'missing');
+    if (!ENV.isProduction) {
+      console.log('[OAuth] Extracted code:', code ? 'present' : 'missing');
+      console.log('[OAuth] Extracted state:', state ? 'present' : 'missing');
+    }
 
     if (!code || !state) {
       console.error('[OAuth] Missing required parameters');
-      console.error('[OAuth] This usually means the OAuth callback was accessed directly');
-      console.error('[OAuth] or the OAuth provider did not include the required parameters');
       
       // Return user-friendly HTML error page
       res.status(400).send(`
@@ -76,27 +96,22 @@ export function registerOAuthRoutes(app: Express) {
       let companyId: number | undefined;
       
       if (allCompanies.length === 1) {
-        // Single company - assign to it
         companyId = allCompanies[0].id;
       } else if (allCompanies.length > 1) {
-        // Multiple companies - for now, use first company
-        // TODO: Implement domain-based company matching
-        companyId = allCompanies[0].id;
+        // Multiple companies — match by email domain if company has emailDomain set
+        const email = userInfo.email?.toLowerCase() || '';
+        const emailDomain = email.split('@')[1];
+        if (emailDomain) {
+          const matched = allCompanies.find(c => c.emailDomain?.toLowerCase() === emailDomain);
+          companyId = matched?.id ?? allCompanies[0].id;
+        } else {
+          companyId = allCompanies[0].id;
+        }
       }
 
-      // Determine role and activation based on email
+      // Determine role and activation from env-driven config
       const email = userInfo.email?.toLowerCase() || '';
-      let role: 'admin' | 'office' | 'technician' | 'customer' = 'technician';
-      let isActive = 1; // Default to active for EWF emails
-
-      if (email === 'ranaldo@ewandf.ca') {
-        role = 'admin';
-        isActive = 1;
-      } else if (email.endsWith('@ewandf.ca')) {
-        // Other EWF emails: active technicians by default
-        role = 'technician';
-        isActive = 1;
-      }
+      const { role, isActive } = resolveRoleFromEmail(email);
 
       await db.upsertUser({
         openId: userInfo.openId,
@@ -109,12 +124,9 @@ export function registerOAuthRoutes(app: Express) {
         isActive,
       });
 
-      console.log('[OAuth] User upserted:', {
-        email: userInfo.email,
-        role,
-        companyId,
-        isActive,
-      });
+      if (!ENV.isProduction) {
+        console.log('[OAuth] User upserted:', { email: userInfo.email, role, companyId, isActive });
+      }
 
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
@@ -156,7 +168,6 @@ export function registerOAuthRoutes(app: Express) {
       let targetRoute = ''; // empty means use role-based redirect
       try {
         const decodedState = Buffer.from(state, 'base64').toString('utf-8');
-        console.log('[OAuth] Decoded state:', decodedState);
         // Validate to prevent open redirects: must be same-origin path starting with "/"
         if (decodedState && decodedState.startsWith('/') && !decodedState.startsWith('//')) {
           targetRoute = decodedState;
@@ -164,9 +175,6 @@ export function registerOAuthRoutes(app: Express) {
       } catch (error) {
         console.warn('[OAuth] Failed to decode state, using role-based redirect:', error);
       }
-
-      console.log('[OAuth] User role:', user?.role);
-      console.log('[OAuth] Target route before role check:', targetRoute);
 
       // If target route is empty or "/", redirect to role-based dashboard
       if (!targetRoute || targetRoute === '/') {
@@ -179,15 +187,11 @@ export function registerOAuthRoutes(app: Express) {
         } else {
           targetRoute = '/admin'; // admin role or fallback
         }
-        console.log('[OAuth] Role-based redirect determined:', targetRoute);
       }
 
-      console.log('[OAuth] Final redirect to:', targetRoute, {
-        email: userInfo.email,
-        role: user?.role,
-        companyId: user?.companyId,
-        isActive: user?.isActive,
-      });
+      if (!ENV.isProduction) {
+        console.log('[OAuth] Final redirect to:', targetRoute, { email: userInfo.email, role: user?.role });
+      }
       res.redirect(302, targetRoute);
     } catch (error) {
       console.error("[OAuth] Callback failed", error);

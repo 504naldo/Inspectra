@@ -65,7 +65,11 @@ const companyRouter = router({
     return db.getAllCompanies();
   }),
   
-  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    // Non-admin users can only view their own company
+    if (ctx.user.role !== 'admin' && ctx.user.companyId !== input.id) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot access other companies' });
+    }
     return db.getCompanyById(input.id);
   }),
   
@@ -146,8 +150,18 @@ const siteRouter = router({
     return db.getSitesByCustomerOrg(input.customerOrgId);
   }),
   
-  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    return db.getSiteById(input.id);
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const site = await db.getSiteById(input.id);
+    if (!site) return undefined;
+    // Scope: user must belong to the same company, or be customer of matching org
+    if (ctx.user.role === 'customer') {
+      if (ctx.user.customerOrgId !== site.customerOrgId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+      }
+    } else if (ctx.user.companyId !== site.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+    }
+    return site;
   }),
   
   create: officeProcedure.input(z.object({
@@ -503,18 +517,39 @@ const jobRouter = router({
     priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
     scheduledDate: z.date().optional(),
     notes: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    // Block updates to finalized jobs
+    const job = await db.getJobById(input.id);
+    if (job?.finalizedAt) {
+      throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
+    }
     const { id, ...data } = input;
     await db.updateJob(id, data);
     return { success: true };
   }),
   
   start: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    const job = await db.getJobById(input.id);
+    if (job?.finalizedAt) {
+      throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
+    }
     await db.updateJob(input.id, { status: 'in_progress', startedAt: new Date() });
     return { success: true };
   }),
   
   complete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    const job = await db.getJobById(input.id);
+    if (!job) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+    }
+    if (job.finalizedAt) {
+      throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
+    }
+    // Only allow completing in_progress jobs — full finalization (hash, sync assertion)
+    // must go through the job.finalize endpoint for compliance-grade sealing
+    if (job.status !== 'in_progress') {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only in-progress jobs can be completed' });
+    }
     await db.updateJob(input.id, { status: 'completed', completedAt: new Date() });
     return { success: true };
   }),
@@ -643,6 +678,10 @@ const jobRouter = router({
   unassignJob: officeProcedure.input(z.object({
     jobId: z.number()
   })).mutation(async ({ input }) => {
+    const job = await db.getJobById(input.jobId);
+    if (job?.finalizedAt) {
+      throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
+    }
     await db.updateJob(input.jobId, {
       leadTechnicianId: null,
       assignedAt: null,
@@ -816,9 +855,20 @@ const deficiencyRouter = router({
     return db.getDeficienciesByCustomerOrg(input.customerOrgId);
   }),
   
-  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
     const deficiency = await db.getDeficiencyById(input.id);
     if (!deficiency) return null;
+    // Scope: verify user has access via the parent job's company
+    const job = await db.getJobById(deficiency.jobId);
+    if (job) {
+      if (ctx.user.role === 'customer') {
+        if (ctx.user.customerOrgId !== job.customerOrgId) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+        }
+      } else if (ctx.user.companyId !== job.companyId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+      }
+    }
     const attachments = await db.getAttachmentsByEntity('deficiency', input.id);
     const repairs = await db.getRepairsByDeficiency(input.id);
     return { deficiency, attachments, repairs };
@@ -944,16 +994,38 @@ const attachmentRouter = router({
     return db.getAttachmentsBySite(input.siteId);
   }),
   
-  listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+  listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
+    const job = await db.getJobById(input.jobId);
+    if (job && ctx.user.role !== 'admin' && ctx.user.companyId !== job.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+    }
     return db.getAttachmentsByJob(input.jobId);
   }),
   
-  listByDevice: protectedProcedure.input(z.object({ deviceId: z.number() })).query(async ({ input }) => {
+  listByDevice: protectedProcedure.input(z.object({ deviceId: z.number() })).query(async ({ input, ctx }) => {
+    const device = await db.getDeviceById(input.deviceId);
+    if (device && ctx.user.role !== 'admin' && ctx.user.companyId !== device.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+    }
     return db.getAttachmentsByDevice(input.deviceId);
   }),
   
-  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    return db.getAttachmentById(input.id);
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const attachment = await db.getAttachmentById(input.id);
+    if (!attachment) return undefined;
+    // Scope: verify via parent job or site
+    if (attachment.jobId) {
+      const job = await db.getJobById(attachment.jobId);
+      if (job && ctx.user.role !== 'admin' && ctx.user.companyId !== job.companyId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+      }
+    } else if (attachment.siteId) {
+      const site = await db.getSiteById(attachment.siteId);
+      if (site && ctx.user.role !== 'admin' && ctx.user.companyId !== site.companyId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+      }
+    }
+    return attachment;
   }),
   
   upload: technicianProcedure.input(z.object({
@@ -1221,7 +1293,17 @@ const uploadQueueRouter = router({
 
 // Report router
 const reportRouter = router({
-  listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+  listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
+    const job = await db.getJobById(input.jobId);
+    if (job) {
+      if (ctx.user.role === 'customer') {
+        if (ctx.user.customerOrgId !== job.customerOrgId) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+        }
+      } else if (ctx.user.companyId !== job.companyId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+      }
+    }
     return db.getReportsByJob(input.jobId);
   }),
   
@@ -1232,8 +1314,21 @@ const reportRouter = router({
     return db.getReportsByCustomerOrg(input.customerOrgId);
   }),
   
-  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    return db.getReportById(input.id);
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const report = await db.getReportById(input.id);
+    if (!report) return undefined;
+    // Scope via parent job
+    const job = await db.getJobById(report.jobId);
+    if (job) {
+      if (ctx.user.role === 'customer') {
+        if (ctx.user.customerOrgId !== job.customerOrgId) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+        }
+      } else if (ctx.user.companyId !== job.companyId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+      }
+    }
+    return report;
   }),
   
   create: officeProcedure.input(z.object({

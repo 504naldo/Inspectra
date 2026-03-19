@@ -1,5 +1,7 @@
 import cors from "cors";
 import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -35,23 +37,53 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
+
+  // ── Security headers ──
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  }));
+
+  // ── Rate limiting ──
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 500,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later" },
+  });
+
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many authentication attempts, please try again later" },
+  });
+
+  const uploadLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 50,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many uploads, please try again later" },
+  });
   
   // OAuth callback must be registered BEFORE CORS middleware
-  // because it's a server-to-server redirect from Manus, not a browser request
   registerOAuthRoutes(app);
   
-  // Configure CORS for cookie authentication
-  // Allow credentials (cookies) to be sent cross-origin
+  // ── CORS ──
   app.use(cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, Postman, etc.)
+      // Allow requests with no origin (mobile apps, server-to-server, etc.)
       if (!origin) return callback(null, true);
       
-      // Allow all manus.space subdomains, manus VM domains, and localhost for development
       const allowedOrigins = [
-        /^https:\/\/[a-zA-Z0-9-]+\.manus\.space$/,
-        /^https:\/\/[0-9]+-[a-zA-Z0-9-]+\.manusvm\.computer$/,  // Old dev server URLs
-        /^https:\/\/[0-9]+-[a-zA-Z0-9-]+\.[a-z0-9]+\.manus\.computer$/,  // New dev server URLs
+        // Production
+        /^https:\/\/(app\.)?inspectrafire\.ca$/,
+        // Railway preview deploys
+        /^https:\/\/.*\.up\.railway\.app$/,
+        // Local development
         /^http:\/\/localhost:\d+$/,
         /^https:\/\/localhost:\d+$/,
       ];
@@ -64,7 +96,7 @@ async function startServer() {
         callback(new Error('Not allowed by CORS'));
       }
     },
-    credentials: true, // Allow cookies to be sent
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }));
@@ -72,8 +104,13 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // Apply rate limiters to sensitive routes
+  app.use("/api/oauth", authLimiter);
+  app.use("/api/upload", uploadLimiter);
+  app.use("/api/trpc", apiLimiter);
   
-  // Multipart file upload endpoint (must be before body parser middleware)
+  // Multipart file upload endpoint
   app.post("/api/upload", handleMultipartUpload);
   
   // tRPC API
@@ -95,7 +132,6 @@ async function startServer() {
   // Use PORT from environment (production) or find available port (development)
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : await findAvailablePort();
   
-  // Listen on 0.0.0.0 to accept connections from any interface (required for containers/production)
   server.listen(port, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${port}/`);
   });

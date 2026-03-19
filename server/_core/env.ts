@@ -7,4 +7,13 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Comma-separated list of emails that get auto-assigned admin role on login
+  // e.g. "ranaldo@ewandf.ca,admin2@ewandf.ca"
+  adminEmails: (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+  // Email domain for auto-activating company employees (e.g. "ewandf.ca")
+  // Users with this domain get auto-activated as technicians on first login
+  companyDomain: (process.env.COMPANY_DOMAIN ?? "").trim().toLowerCase(),
 };

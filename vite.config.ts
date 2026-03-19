@@ -1,25 +1,21 @@
-import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "path";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
-import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
 
 
 const plugins = [
   react(),
   tailwindcss(),
-  jsxLocPlugin(),
-  vitePluginManusRuntime(),
   VitePWA({
     registerType: "autoUpdate",
     includeAssets: ["icon-192.png", "icon-512.png", "icon-maskable-192.png", "icon-maskable-512.png"],
     manifest: {
-      name: "Fire Inspect Pro",
-      short_name: "Fire Inspect",
-      description: "Professional fire safety inspection and compliance management system",
+      name: "Inspectra",
+      short_name: "Inspectra",
+      description: "Professional fire safety inspection and compliance management",
       theme_color: "#ef4444",
       background_color: "#ffffff",
       display: "standalone",
@@ -123,11 +119,8 @@ export default defineConfig({
   server: {
     host: true,
     allowedHosts: [
-      ".manuspre.computer",
-      ".manus.computer",
-      ".manus-asia.computer",
-      ".manuscomputer.ai",
-      ".manusvm.computer",
+      ".inspectrafire.ca",
+      ".up.railway.app",
       "localhost",
       "127.0.0.1",
     ],

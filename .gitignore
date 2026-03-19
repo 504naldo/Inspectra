@@ -105,3 +105,27 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+
+# Dev/extraction scripts (Python)
+/*.py
+
+# Extracted data dumps
+/complete_devices.json
+/individual_devices.json
+/extracted_data.json
+/final_extracted_data.json
+/fire_alarm_complete.json
+/fire_alarm_data.json
+/fire_alarm_tests.json
+
+# Test PDF outputs
+/test-*.pdf
+/debug-*.pdf
+
+# Backup files
+*.backup
+*.backup-*
+
+# Excel data files
+/inspection_data.xlsm
+/sample_assets.xlsx

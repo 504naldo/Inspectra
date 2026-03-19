@@ -1,22 +1,31 @@
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
-import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
-import type {
-  ExchangeTokenRequest,
-  ExchangeTokenResponse,
-  GetUserInfoResponse,
-  GetUserInfoWithJwtRequest,
-  GetUserInfoWithJwtResponse,
-} from "./types/manusTypes";
-// Utility function
-const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === "string" && value.length > 0;
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/** Returned by exchangeCodeForToken */
+export type TokenResponse = {
+  accessToken: string;
+  idToken: string;
+  refreshToken?: string;
+};
+
+/** Returned by getUserInfo — matches the shape the rest of the app expects */
+export type UserInfoResponse = {
+  openId: string;       // Google's `sub` claim
+  name: string;
+  email: string | null;
+  loginMethod: string;  // Always "google" after migration
+  platform: string;     // Same as loginMethod
+};
 
 export type SessionPayload = {
   openId: string;
@@ -24,145 +33,145 @@ export type SessionPayload = {
   name: string;
 };
 
-const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
-const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
-const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
+// ============================================================================
+// Utility
+// ============================================================================
 
-class OAuthService {
-  constructor(private client: ReturnType<typeof axios.create>) {
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
-      );
-    }
-  }
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0;
 
-  private decodeState(state: string): string {
-    const redirectUri = atob(state);
-    return redirectUri;
-  }
+// ============================================================================
+// Google OAuth helpers
+// ============================================================================
 
-  async getTokenByCode(
-    code: string,
-    state: string
-  ): Promise<ExchangeTokenResponse> {
-    const payload: ExchangeTokenRequest = {
-      clientId: ENV.appId,
-      grantType: "authorization_code",
+/**
+ * Exchange the authorization code from Google's OAuth redirect for tokens.
+ *
+ * The `state` parameter is the base64-encoded return route (same as before).
+ * Google's token endpoint doesn't need it, but we accept it to keep the
+ * call-site in oauth.ts unchanged.
+ */
+async function googleExchangeCode(code: string): Promise<TokenResponse> {
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
       code,
-      redirectUri: this.decodeState(state),
-    };
-
-    const { data } = await this.client.post<ExchangeTokenResponse>(
-      EXCHANGE_TOKEN_PATH,
-      payload
-    );
-
-    return data;
-  }
-
-  async getUserInfoByToken(
-    token: ExchangeTokenResponse
-  ): Promise<GetUserInfoResponse> {
-    const { data } = await this.client.post<GetUserInfoResponse>(
-      GET_USER_INFO_PATH,
-      {
-        accessToken: token.accessToken,
-      }
-    );
-
-    return data;
-  }
-}
-
-const createOAuthHttpClient = (): AxiosInstance =>
-  axios.create({
-    baseURL: ENV.oAuthServerUrl,
-    timeout: AXIOS_TIMEOUT_MS,
+      client_id: ENV.googleClientId,
+      client_secret: ENV.googleClientSecret,
+      redirect_uri: `${ENV.appUrl}/api/oauth/callback`,
+      grant_type: "authorization_code",
+    }),
   });
 
-class SDKServer {
-  private readonly client: AxiosInstance;
-  private readonly oauthService: OAuthService;
-
-  constructor(client: AxiosInstance = createOAuthHttpClient()) {
-    this.client = client;
-    this.oauthService = new OAuthService(this.client);
-  }
-
-  private deriveLoginMethod(
-    platforms: unknown,
-    fallback: string | null | undefined
-  ): string | null {
-    if (fallback && fallback.length > 0) return fallback;
-    if (!Array.isArray(platforms) || platforms.length === 0) return null;
-    const set = new Set<string>(
-      platforms.filter((p): p is string => typeof p === "string")
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new Error(
+      `Google token exchange failed (${response.status}): ${errorBody}`
     );
-    if (set.has("REGISTERED_PLATFORM_EMAIL")) return "email";
-    if (set.has("REGISTERED_PLATFORM_GOOGLE")) return "google";
-    if (set.has("REGISTERED_PLATFORM_APPLE")) return "apple";
-    if (
-      set.has("REGISTERED_PLATFORM_MICROSOFT") ||
-      set.has("REGISTERED_PLATFORM_AZURE")
-    )
-      return "microsoft";
-    if (set.has("REGISTERED_PLATFORM_GITHUB")) return "github";
-    const first = Array.from(set)[0];
-    return first ? first.toLowerCase() : null;
   }
+
+  const data = (await response.json()) as {
+    access_token: string;
+    id_token: string;
+    refresh_token?: string;
+    expires_in: number;
+    token_type: string;
+  };
+
+  return {
+    accessToken: data.access_token,
+    idToken: data.id_token,
+    refreshToken: data.refresh_token,
+  };
+}
+
+/**
+ * Fetch user profile from Google using the access token.
+ * Returns the same shape the rest of the app expects.
+ */
+async function googleGetUserInfo(accessToken: string): Promise<UserInfoResponse> {
+  const response = await fetch(
+    "https://www.googleapis.com/oauth2/v3/userinfo",
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new Error(
+      `Google userinfo request failed (${response.status}): ${errorBody}`
+    );
+  }
+
+  const data = (await response.json()) as {
+    sub: string;       // Unique Google user ID
+    name?: string;
+    email?: string;
+    email_verified?: boolean;
+    picture?: string;
+  };
+
+  return {
+    openId: data.sub,                          // Maps to users.openId
+    name: data.name || "",
+    email: data.email || null,
+    loginMethod: "google",
+    platform: "google",
+  };
+}
+
+// ============================================================================
+// SDKServer — same public interface as the Manus version
+// ============================================================================
+
+class SDKServer {
+  // ── OAuth methods ──
 
   /**
-   * Exchange OAuth authorization code for access token
+   * Exchange OAuth authorization code for tokens.
    * @example
    * const tokenResponse = await sdk.exchangeCodeForToken(code, state);
    */
   async exchangeCodeForToken(
     code: string,
-    state: string
-  ): Promise<ExchangeTokenResponse> {
-    return this.oauthService.getTokenByCode(code, state);
+    _state: string // kept for call-site compatibility; not needed by Google
+  ): Promise<TokenResponse> {
+    return googleExchangeCode(code);
   }
 
   /**
-   * Get user information using access token
+   * Get user information using access token.
    * @example
    * const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
    */
-  async getUserInfo(accessToken: string): Promise<GetUserInfoResponse> {
-    const data = await this.oauthService.getUserInfoByToken({
-      accessToken,
-    } as ExchangeTokenResponse);
-    const loginMethod = this.deriveLoginMethod(
-      (data as any)?.platforms,
-      (data as any)?.platform ?? data.platform ?? null
-    );
-    return {
-      ...(data as any),
-      platform: loginMethod,
-      loginMethod,
-    } as GetUserInfoResponse;
+  async getUserInfo(accessToken: string): Promise<UserInfoResponse> {
+    return googleGetUserInfo(accessToken);
   }
+
+  // ── Session management (unchanged — fully self-contained) ──
 
   private parseCookies(cookieHeader: string | undefined) {
     if (!cookieHeader) {
       return new Map<string, string>();
     }
-
     const parsed = parseCookieHeader(cookieHeader);
     return new Map(Object.entries(parsed));
   }
 
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
+    if (!secret) {
+      throw new Error("JWT_SECRET is not configured");
+    }
     return new TextEncoder().encode(secret);
   }
 
   /**
-   * Create a session token for a Manus user openId
+   * Create a session token (JWT) for a user's openId.
    * @example
-   * const sessionToken = await sdk.createSessionToken(userInfo.openId);
+   * const sessionToken = await sdk.createSessionToken(userInfo.openId, { name: "..." });
    */
   async createSessionToken(
     openId: string,
@@ -171,7 +180,7 @@ class SDKServer {
     return this.signSession(
       {
         openId,
-        appId: ENV.appId,
+        appId: ENV.appId || "inspectra",
         name: options.name || "",
       },
       options
@@ -201,7 +210,6 @@ class SDKServer {
     cookieValue: string | undefined | null
   ): Promise<{ openId: string; appId: string; name: string } | null> {
     if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
       return null;
     }
 
@@ -214,7 +222,6 @@ class SDKServer {
 
       if (
         !isNonEmptyString(openId) ||
-        !isNonEmptyString(appId) ||
         !isNonEmptyString(name)
       ) {
         console.warn("[Auth] Session payload missing required fields");
@@ -223,7 +230,7 @@ class SDKServer {
 
       return {
         openId,
-        appId,
+        appId: isNonEmptyString(appId) ? appId : "inspectra",
         name,
       };
     } catch (error) {
@@ -232,32 +239,14 @@ class SDKServer {
     }
   }
 
-  async getUserInfoWithJwt(
-    jwtToken: string
-  ): Promise<GetUserInfoWithJwtResponse> {
-    const payload: GetUserInfoWithJwtRequest = {
-      jwtToken,
-      projectId: ENV.appId,
-    };
-
-    const { data } = await this.client.post<GetUserInfoWithJwtResponse>(
-      GET_USER_INFO_WITH_JWT_PATH,
-      payload
-    );
-
-    const loginMethod = this.deriveLoginMethod(
-      (data as any)?.platforms,
-      (data as any)?.platform ?? data.platform ?? null
-    );
-    return {
-      ...(data as any),
-      platform: loginMethod,
-      loginMethod,
-    } as GetUserInfoWithJwtResponse;
-  }
-
+  /**
+   * Authenticate an incoming Express request via session cookie.
+   * Returns the full User record from the database.
+   *
+   * This method is fully self-contained (JWT verification + DB lookup).
+   * It does NOT call any external OAuth provider.
+   */
   async authenticateRequest(req: Request): Promise<User> {
-    // Regular authentication flow
     const cookies = this.parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await this.verifySession(sessionCookie);
@@ -270,28 +259,13 @@ class SDKServer {
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
-    // If user not in DB, sync from OAuth server automatically
+    // If user not in DB, they need to go through the OAuth login flow.
+    // (Previously this would call Manus to sync — now we just reject.)
     if (!user) {
-      try {
-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
-      }
+      throw ForbiddenError("User not found — please log in again");
     }
 
-    if (!user) {
-      throw ForbiddenError("User not found");
-    }
-
+    // Update last sign-in timestamp
     await db.upsertUser({
       openId: user.openId,
       lastSignedIn: signedInAt,

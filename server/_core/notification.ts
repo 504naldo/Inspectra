@@ -1,3 +1,10 @@
+// Email notifications via Resend — replaces Manus notification proxy
+//
+// Env: RESEND_API_KEY, NOTIFICATION_EMAIL
+//
+// If RESEND_API_KEY is not set, notifications are silently skipped
+// (same graceful degradation as the Manus version).
+
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
 
@@ -12,16 +19,6 @@ const CONTENT_MAX_LENGTH = 20000;
 const trimValue = (value: string): string => value.trim();
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
-
-const buildEndpointUrl = (baseUrl: string): string => {
-  const normalizedBase = baseUrl.endsWith("/")
-    ? baseUrl
-    : `${baseUrl}/`;
-  return new URL(
-    "webdevtoken.v1.WebDevService/SendNotification",
-    normalizedBase
-  ).toString();
-};
 
 const validatePayload = (input: NotificationPayload): NotificationPayload => {
   if (!isNonEmptyString(input.title)) {
@@ -58,48 +55,52 @@ const validatePayload = (input: NotificationPayload): NotificationPayload => {
 };
 
 /**
- * Dispatches a project-owner notification through the Manus Notification Service.
- * Returns `true` if the request was accepted, `false` when the upstream service
- * cannot be reached (callers can fall back to email/slack). Validation errors
- * bubble up as TRPC errors so callers can fix the payload.
+ * Send an email notification to the configured recipient.
+ *
+ * Returns `true` if the email was accepted, `false` if the service is
+ * unavailable or not configured. Validation errors bubble up as TRPCErrors.
+ *
+ * Drop-in replacement for the Manus notifyOwner() — same signature, same behavior.
  */
 export async function notifyOwner(
   payload: NotificationPayload
 ): Promise<boolean> {
   const { title, content } = validatePayload(payload);
 
-  if (!ENV.forgeApiUrl) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Notification service URL is not configured.",
-    });
+  if (!ENV.resendApiKey) {
+    // Not configured — skip silently (same as Manus version when forge URL was missing)
+    if (!ENV.isProduction) {
+      console.log("[Notification] RESEND_API_KEY not set, skipping notification:", title);
+    }
+    return false;
   }
 
-  if (!ENV.forgeApiKey) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Notification service API key is not configured.",
-    });
+  const to = ENV.notificationEmail;
+  if (!to) {
+    console.warn("[Notification] NOTIFICATION_EMAIL not set, cannot send");
+    return false;
   }
-
-  const endpoint = buildEndpointUrl(ENV.forgeApiUrl);
 
   try {
-    const response = await fetch(endpoint, {
+    // Use Resend's REST API directly to avoid adding a heavy SDK
+    const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
-        accept: "application/json",
-        authorization: `Bearer ${ENV.forgeApiKey}`,
-        "content-type": "application/json",
-        "connect-protocol-version": "1",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ENV.resendApiKey}`,
       },
-      body: JSON.stringify({ title, content }),
+      body: JSON.stringify({
+        from: "Inspectra <noreply@inspectrafire.ca>",
+        to: [to],
+        subject: title,
+        text: content,
+      }),
     });
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
       console.warn(
-        `[Notification] Failed to notify owner (${response.status} ${response.statusText})${
+        `[Notification] Email send failed (${response.status} ${response.statusText})${
           detail ? `: ${detail}` : ""
         }`
       );
@@ -108,7 +109,7 @@ export async function notifyOwner(
 
     return true;
   } catch (error) {
-    console.warn("[Notification] Error calling notification service:", error);
+    console.warn("[Notification] Error sending email:", error);
     return false;
   }
 }

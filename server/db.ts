@@ -609,6 +609,74 @@ export async function getNextWalkOrder(jobId: number): Promise<number> {
   return results[0].walkOrder + 1;
 }
 
+/**
+ * Bulk upsert inspection results for a single job.
+ * Pre-fetches all existing results for the job in one query to avoid N+1.
+ */
+export async function bulkUpsertInspectionResults(
+  jobId: number,
+  deviceIds: number[],
+  shared: { result: 'pass' | 'fail' | 'na' | 'not_tested'; notes?: string; technicianId: number }
+): Promise<{ count: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (deviceIds.length === 0) return { count: 0 };
+
+  const now = new Date();
+
+  // 1. Fetch ALL existing results for this job's devices in one query
+  const existing = await db
+    .select()
+    .from(inspectionResults)
+    .where(
+      and(
+        eq(inspectionResults.jobId, jobId),
+        inArray(inspectionResults.deviceId, deviceIds)
+      )
+    );
+
+  const existingByDevice = new Map(existing.map((r) => [r.deviceId, r]));
+
+  // 2. Get current max walkOrder once (not per-device)
+  let nextWalkOrder = await getNextWalkOrder(jobId);
+
+  // 3. Separate into updates vs inserts
+  const toInsert: InsertInspectionResult[] = [];
+  const toUpdate: { id: number; data: Partial<InsertInspectionResult> }[] = [];
+
+  for (const deviceId of deviceIds) {
+    const row = existingByDevice.get(deviceId);
+    const common = {
+      jobId,
+      deviceId,
+      result: shared.result,
+      notes: shared.notes,
+      technicianId: shared.technicianId,
+      testedAt: now,
+      syncedAt: now,
+    };
+
+    if (row) {
+      // Preserve existing walkOrder
+      toUpdate.push({ id: row.id, data: { ...common, walkOrder: row.walkOrder ?? undefined } });
+    } else {
+      const walkOrder = shared.result !== 'not_tested' ? nextWalkOrder++ : undefined;
+      toInsert.push({ ...common, walkOrder });
+    }
+  }
+
+  // 4. Execute batched writes
+  for (const { id, data } of toUpdate) {
+    await db.update(inspectionResults).set(data).where(eq(inspectionResults.id, id));
+  }
+
+  if (toInsert.length > 0) {
+    await db.insert(inspectionResults).values(toInsert);
+  }
+
+  return { count: toUpdate.length + toInsert.length };
+}
+
 export async function upsertInspectionResult(data: InsertInspectionResult) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

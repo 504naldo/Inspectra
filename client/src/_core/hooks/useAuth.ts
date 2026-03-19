@@ -45,7 +45,7 @@ export function useAuth(options?: UseAuthOptions) {
       await utils.auth.me.invalidate();
       
       // Clear localStorage auth keys
-      localStorage.removeItem('manus-runtime-user-info');
+      localStorage.removeItem('inspectra-user-info');
       
       if (IS_DEV) {
         console.log('[AUTH] Logout complete - cleared session and localStorage');
@@ -68,9 +68,9 @@ export function useAuth(options?: UseAuthOptions) {
       status = 'unauthenticated';
     }
     
-    // Store user info in localStorage
+    // Store user info in localStorage (for debug / offline reference)
     localStorage.setItem(
-      "manus-runtime-user-info",
+      "inspectra-user-info",
       JSON.stringify(user)
     );
     
