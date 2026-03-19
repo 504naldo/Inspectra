@@ -1,9 +1,8 @@
 // Direct S3/R2 storage — replaces Manus forge storage proxy
 //
-// Supports:
-//   - AWS S3: set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET
-//   - Cloudflare R2: set S3_ENDPOINT, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET
-//     (R2 endpoint format: https://<account-id>.r2.cloudflarestorage.com)
+// Env vars (renamed to avoid Railway's AWS_ prefix interception):
+//   S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+//   Optional: S3_ENDPOINT (set for Cloudflare R2)
 
 import {
   S3Client,
@@ -19,12 +18,24 @@ let _s3: S3Client | null = null;
 
 function getS3(): S3Client {
   if (!_s3) {
-    const endpoint = process.env.S3_ENDPOINT; // Set for R2, leave empty for AWS S3
+    const endpoint = process.env.S3_ENDPOINT;
+    const region = process.env.S3_REGION || "us-east-1";
+    const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+
+    if (!accessKeyId || !secretAccessKey) {
+      throw new Error(
+        "S3 credentials missing: set S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY"
+      );
+    }
 
     _s3 = new S3Client({
-      region: process.env.AWS_REGION || "us-east-1",
+      region,
       ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
-      // AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are read from env automatically
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
     });
   }
   return _s3;
