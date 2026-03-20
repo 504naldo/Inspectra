@@ -1,14 +1,3 @@
--- ⚠️  PRODUCTION SAFETY NOTE:
--- This ALTER TABLE may lock the table for the duration on MySQL < 8.0.
--- For tables > 1M rows, use gh-ost or pt-online-schema-change.
--- Estimated lock time at 500 rows: < 1 second. Safe for dev.
--- Re-evaluate before running on production.
-
--- Migration: 0001_add_template_versioning
--- Purpose: Add standards versioning columns to fire_alarm_checklist_templates.
--- Columns are nullable initially; backfill occurs in 0010_backfill_template_versioning.sql.
--- NOT NULL enforcement is deferred until after backfill verification.
-
 ALTER TABLE `fire_alarm_checklist_templates`
   ADD COLUMN `standardId`       VARCHAR(64)  NULL AFTER `isRequired`,
   ADD COLUMN `standardVersion`  VARCHAR(32)  NULL AFTER `standardId`,
