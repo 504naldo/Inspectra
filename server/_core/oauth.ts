@@ -1,145 +1,203 @@
-import cors from "cors";
-import express from "express";
-import helmet from "helmet";
-import rateLimit from "express-rate-limit";
-import { createServer } from "http";
-import net from "net";
-import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
-import { appRouter } from "../routers";
-import { createContext } from "./context";
-import { handleMultipartUpload } from "./upload";
-import { serveStatic, setupVite } from "./vite";
-import { runMigrations } from "../runMigrations";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import type { Express, Request, Response } from "express";
+import * as db from "../db";
+import { getSessionCookieOptions } from "./cookies";
+import { sdk } from "./sdk";
+import { ENV } from "./env";
 
-function isPortAvailable(port: number): Promise<boolean> {
-  return new Promise(resolve => {
-    const server = net.createServer();
-    server.listen(port, () => {
-      server.close(() => resolve(true));
-    });
-    server.on("error", () => resolve(false));
-  });
+function getQueryParam(req: Request, key: string): string | undefined {
+  const value = req.query[key];
+  return typeof value === "string" ? value : undefined;
 }
 
-async function findAvailablePort(startPort: number = 3000): Promise<number> {
-  for (let port = startPort; port < startPort + 20; port++) {
-    if (await isPortAvailable(port)) {
-      return port;
+/** Determine role and activation status from email using environment config */
+function resolveRoleFromEmail(email: string): { role: 'admin' | 'office' | 'technician' | 'customer'; isActive: number } {
+  const normalized = email.toLowerCase();
+
+  // Check admin list from ADMIN_EMAILS env var
+  if (ENV.adminEmails.includes(normalized)) {
+    return { role: 'admin', isActive: 1 };
+  }
+
+  // Check company domain from COMPANY_DOMAIN env var
+  if (ENV.companyDomain && normalized.endsWith(`@${ENV.companyDomain}`)) {
+    return { role: 'technician', isActive: 1 };
+  }
+
+  // External user — inactive by default, pending admin approval
+  return { role: 'technician', isActive: 0 };
+}
+
+export function registerOAuthRoutes(app: Express) {
+  app.get("/api/oauth/callback", async (req: Request, res: Response) => {
+    if (!ENV.isProduction) {
+      console.log('[OAuth] Callback received');
+      console.log('[OAuth] Full URL:', req.originalUrl);
     }
-  }
-  throw new Error(`No available port found starting from ${startPort}`);
-}
+    
+    const code = getQueryParam(req, "code");
+    const state = getQueryParam(req, "state") || "";
 
-async function startServer() {
-  // Run pending database migrations before starting the server
-  await runMigrations();
+    if (!ENV.isProduction) {
+      console.log('[OAuth] Extracted code:', code ? 'present' : 'missing');
+      console.log('[OAuth] Extracted state:', state ? 'present' : 'empty');
+    }
 
-  const app = express();
-
-  // Railway/Fly/Render run behind a reverse proxy — trust the X-Forwarded-For header
-  // so rate limiting and secure cookies work correctly
-  app.set('trust proxy', 1);
-
-  const server = createServer(app);
-
-  // ── Security headers ──
-  app.use(helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false,
-  }));
-
-  // ── Rate limiting ──
-  const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 500,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: "Too many requests, please try again later" },
-  });
-
-  const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 20,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: "Too many authentication attempts, please try again later" },
-  });
-
-  const uploadLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 50,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: "Too many uploads, please try again later" },
-  });
-  
-  // OAuth callback must be registered BEFORE CORS middleware
-  registerOAuthRoutes(app);
-  
-  // ── CORS ──
-  app.use(cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, server-to-server, etc.)
-      if (!origin) return callback(null, true);
+    if (!code) {
+      console.error('[OAuth] Missing required code parameter');
       
-      const allowedOrigins = [
-        // Production
-        /^https:\/\/(app\.)?inspectrafire\.ca$/,
-        // Railway preview deploys
-        /^https:\/\/.*\.up\.railway\.app$/,
-        // Local development
-        /^http:\/\/localhost:\d+$/,
-        /^https:\/\/localhost:\d+$/,
-      ];
-      
-      const isAllowed = allowedOrigins.some(pattern => pattern.test(origin));
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        console.warn('[CORS] Origin not allowed:', origin);
-        callback(new Error('Not allowed by CORS'));
+      // Return user-friendly HTML error page
+      res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Login Error</title>
+            <style>
+              body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f5f5f5; }
+              .message { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 500px; }
+              h1 { color: #e53e3e; margin-top: 0; }
+              p { color: #666; line-height: 1.6; }
+              .button { display: inline-block; background: #3b82f6; color: white; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; margin-top: 1rem; }
+              .button:hover { background: #2563eb; }
+              .details { background: #f9f9f9; padding: 1rem; border-radius: 4px; margin-top: 1rem; font-size: 0.875rem; color: #666; }
+            </style>
+          </head>
+          <body>
+            <div class="message">
+              <h1>Login Failed</h1>
+              <p>The login process was interrupted. This can happen if:</p>
+              <ul>
+                <li>You accessed this page directly instead of clicking the login button</li>
+                <li>Your browser blocked the redirect</li>
+                <li>The OAuth session expired</li>
+              </ul>
+              <a href="/" class="button">Return to Home & Try Again</a>
+              <div class="details">
+                <strong>Technical details:</strong> OAuth callback received without required code parameter.
+              </div>
+            </div>
+          </body>
+        </html>
+      `);
+      return;
+    }
+
+    try {
+      const tokenResponse = await sdk.exchangeCodeForToken(code, state);
+      const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
+
+      if (!userInfo.openId) {
+        res.status(400).json({ error: "openId missing from user info" });
+        return;
       }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  }));
-  
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-  // Apply rate limiters to sensitive routes
-  app.use("/api/oauth", authLimiter);
-  app.use("/api/upload", uploadLimiter);
-  app.use("/api/trpc", apiLimiter);
-  
-  // Multipart file upload endpoint
-  app.post("/api/upload", handleMultipartUpload);
-  
-  // tRPC API
-  app.use(
-    "/api/trpc",
-    createExpressMiddleware({
-      router: appRouter,
-      createContext,
-    })
-  );
+      // Determine company assignment
+      const allCompanies = await db.getAllCompanies();
+      let companyId: number | undefined;
+      
+      if (allCompanies.length === 1) {
+        companyId = allCompanies[0].id;
+      } else if (allCompanies.length > 1) {
+        // Multiple companies — match by email domain if company has emailDomain set
+        const email = userInfo.email?.toLowerCase() || '';
+        const emailDomain = email.split('@')[1];
+        if (emailDomain) {
+          const matched = allCompanies.find(c => c.emailDomain?.toLowerCase() === emailDomain);
+          companyId = matched?.id ?? allCompanies[0].id;
+        } else {
+          companyId = allCompanies[0].id;
+        }
+      }
 
-  // Serve static files and setup Vite
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    await setupVite(app, server);
-  }
+      // Determine role and activation from env-driven config
+      const email = userInfo.email?.toLowerCase() || '';
+      const { role, isActive } = resolveRoleFromEmail(email);
 
-  // Use PORT from environment (production) or find available port (development)
-  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : await findAvailablePort();
-  
-  server.listen(port, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${port}/`);
+      await db.upsertUser({
+        openId: userInfo.openId,
+        name: userInfo.name || null,
+        email: userInfo.email ?? null,
+        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+        lastSignedIn: new Date(),
+        companyId,
+        role,
+        isActive,
+      });
+
+      if (!ENV.isProduction) {
+        console.log('[OAuth] User upserted:', { email: userInfo.email, role, companyId, isActive });
+      }
+
+      const sessionToken = await sdk.createSessionToken(userInfo.openId, {
+        name: userInfo.name || "",
+        expiresInMs: ONE_YEAR_MS,
+      });
+
+      const cookieOptions = getSessionCookieOptions(req);
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+
+      // Check if user is active
+      const user = await db.getUserByOpenId(userInfo.openId);
+      if (user && user.isActive === 0) {
+        // User exists but is not active - show pending approval message
+        res.status(403).send(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Account Pending Approval</title>
+              <style>
+                body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f5f5f5; }
+                .message { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 400px; text-align: center; }
+                h1 { color: #333; margin-top: 0; }
+                p { color: #666; line-height: 1.6; }
+              </style>
+            </head>
+            <body>
+              <div class="message">
+                <h1>Account Pending Approval</h1>
+                <p>Your account has been created but is awaiting admin approval. Please contact your administrator to activate your account.</p>
+                <p><strong>Email:</strong> ${user.email || 'Not provided'}</p>
+              </div>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      // Decode state parameter to get the intended post-login route
+      let targetRoute = '';
+      if (state) {
+        try {
+          const decodedState = Buffer.from(state, 'base64').toString('utf-8');
+          // Validate to prevent open redirects: must be same-origin path starting with "/"
+          if (decodedState && decodedState.startsWith('/') && !decodedState.startsWith('//')) {
+            targetRoute = decodedState;
+          }
+        } catch (error) {
+          console.warn('[OAuth] Failed to decode state, using role-based redirect:', error);
+        }
+      }
+
+      // If target route is empty or "/", redirect to role-based dashboard
+      if (!targetRoute || targetRoute === '/') {
+        if (user?.role === 'customer') {
+          targetRoute = '/customer';
+        } else if (user?.role === 'technician') {
+          targetRoute = '/tech/jobs';
+        } else if (user?.role === 'office') {
+          targetRoute = '/admin';
+        } else {
+          targetRoute = '/admin'; // admin role or fallback
+        }
+      }
+
+      if (!ENV.isProduction) {
+        console.log('[OAuth] Final redirect to:', targetRoute, { email: userInfo.email, role: user?.role });
+      }
+      res.redirect(302, targetRoute);
+    } catch (error) {
+      console.error("[OAuth] Callback failed", error);
+      res.status(500).json({ error: "OAuth callback failed" });
+    }
   });
 }
-
-startServer().catch(console.error);
