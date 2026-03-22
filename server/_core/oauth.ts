@@ -181,7 +181,7 @@ export function registerOAuthRoutes(app: Express) {
       // If target route is empty or "/", redirect to role-based dashboard
       if (!targetRoute || targetRoute === '/') {
         if (user?.role === 'customer') {
-          targetRoute = '/customer';
+          targetRoute = '/forbidden'; // customer portal not active
         } else if (user?.role === 'technician') {
           targetRoute = '/tech/jobs';
         } else if (user?.role === 'office') {

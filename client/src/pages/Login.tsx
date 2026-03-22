@@ -57,7 +57,7 @@ export default function Login() {
             </Button>
           </a>
           <p className="text-center text-sm text-muted-foreground">
-            Secure authentication powered by Manus
+            Secure authentication powered by Google
           </p>
         </CardContent>
       </Card>

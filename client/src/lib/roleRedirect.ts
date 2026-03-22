@@ -24,7 +24,7 @@ export function getRoleBasedPath(role?: string): string {
     case 'technician':
       return '/tech/jobs';
     case 'customer':
-      return '/customer';
+      return '/forbidden'; // customer portal not active
     default:
       // Fallback for unknown roles
       console.warn(`[roleRedirect] Unknown user role: ${role}, redirecting to home`);

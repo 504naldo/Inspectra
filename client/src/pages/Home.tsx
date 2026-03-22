@@ -4,10 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getLoginUrl } from "@/const";
 import { APP_NAME, APP_TAGLINE, APP_DESCRIPTION } from "../../../shared/constants";
 import { 
-  Shield, 
-  ClipboardCheck, 
-  Users, 
-  FileText, 
+  Shield,
+  ClipboardCheck,
+  FileText,
   Smartphone,
   Zap,
   CheckCircle2,
@@ -49,7 +48,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-4">
             {isAuthenticated ? (
-              <Link href={user?.role === 'customer' ? '/customer' : user?.role === 'technician' ? '/tech' : '/admin'}>
+              <Link href={user?.role === 'technician' ? '/tech' : '/admin'}>
                 <Button>Go to Dashboard</Button>
               </Link>
             ) : (
@@ -144,15 +143,6 @@ export default function Home() {
               </CardHeader>
             </Card>
 
-            <Card className="border-2 hover:border-primary/50 transition-colors">
-              <CardHeader>
-                <Users className="h-10 w-10 text-primary mb-2" />
-                <CardTitle>Customer Portal</CardTitle>
-                <CardDescription>
-                  Give customers access to view reports, track deficiencies, and approve work
-                </CardDescription>
-              </CardHeader>
-            </Card>
           </div>
         </div>
       </section>
@@ -163,7 +153,7 @@ export default function Home() {
           <h2 className="text-3xl font-bold text-center mb-12">
             Built for Every Role
           </h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -215,22 +205,6 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-primary" />
-                  Customers
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li>• View inspection reports</li>
-                  <li>• Track deficiencies</li>
-                  <li>• Approve completed work</li>
-                  <li>• Secure portal access</li>
-                </ul>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </section>
