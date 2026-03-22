@@ -27,6 +27,8 @@ import { useParams, Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { isSpreadsheetFile, getSpreadsheetErrorMessage, getSpreadsheetAcceptAttribute } from "@/_core/utils/fileTypes";
 import { autoMapColumns } from "@/_core/utils/autoMapping";
+import { DriveFilePicker } from "@/components/DriveFilePicker";
+import { HardDrive } from "lucide-react";
 
 type ImportStep = 'selectType' | 'upload' | 'mapping' | 'preview' | 'importing' | 'results';
 
@@ -110,6 +112,7 @@ export default function AssetImport() {
   } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showDrivePicker, setShowDrivePicker] = useState(false);
   
   // Queries
   const { data: site } = trpc.site.get.useQuery({ id: siteId }, { enabled: siteId > 0 });
@@ -435,6 +438,23 @@ export default function AssetImport() {
                   accept={getSpreadsheetAcceptAttribute()}
                   onChange={handleFileSelect}
                 />
+              </div>
+
+              {/* Drive import */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 border-t" />
+                <span className="text-sm text-muted-foreground">or</span>
+                <div className="flex-1 border-t" />
+              </div>
+              <div className="flex justify-center">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDrivePicker(true)}
+                  disabled={parseFileMutation.isPending}
+                >
+                  <HardDrive className="h-4 w-4 mr-2" />
+                  Import from Google Drive
+                </Button>
               </div>
               
               {parseFileMutation.isPending && (
@@ -887,6 +907,23 @@ export default function AssetImport() {
           </div>
         )}
       </div>
+      {/* Google Drive File Picker */}
+      <DriveFilePicker
+        open={showDrivePicker}
+        onClose={() => setShowDrivePicker(false)}
+        siteId={siteId}
+        companyId={companyId}
+        onFileSelected={(result) => {
+          setSelectedFile(new File([], result.fileName));
+          setFileData(result.fileData);
+          setParseError(null);
+          parseFileMutation.mutate({
+            fileName: result.fileName,
+            fileData: result.fileData,
+            importType,
+          });
+        }}
+      />
     </AdminLayout>
   );
 }
