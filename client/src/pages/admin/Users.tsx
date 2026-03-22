@@ -130,7 +130,6 @@ export default function AdminUsers() {
               <SelectItem value="admin">Admin</SelectItem>
               <SelectItem value="office">Office</SelectItem>
               <SelectItem value="technician">Technician</SelectItem>
-              <SelectItem value="customer">Customer</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -250,7 +249,6 @@ export default function AdminUsers() {
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="office">Office</SelectItem>
                     <SelectItem value="technician">Technician</SelectItem>
-                    <SelectItem value="customer">Customer</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

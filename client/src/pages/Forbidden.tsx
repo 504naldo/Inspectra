@@ -19,9 +19,8 @@ export default function Forbidden({ requiredRole, message }: ForbiddenProps) {
       setLocation('/admin');
     } else if (user?.role === 'technician') {
       setLocation('/tech/jobs');
-    } else if (user?.role === 'customer') {
-      setLocation('/customer');
     } else {
+      // customer role and unknown roles redirect to home (customer portal not active)
       setLocation('/');
     }
   };
