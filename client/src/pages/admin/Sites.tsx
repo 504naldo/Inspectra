@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { 
-  Search, 
+import {
+  Search,
   Plus,
   Building2,
   MapPin,
@@ -19,11 +19,13 @@ import {
   MoreHorizontal,
   Flame,
   Key,
-  KeyRound
+  KeyRound,
+  HardDrive
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { DriveImportPicker } from "@/components/DriveImportPicker";
 
 export default function AdminSites() {
   const { user } = useAuth();
@@ -43,6 +45,8 @@ export default function AdminSites() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [showDriveImport, setShowDriveImport] = useState(false);
+  const [, navigate] = useLocation();
   const [editSite, setEditSite] = useState<any>(null);
   const [newSite, setNewSite] = useState({
     name: "",
@@ -139,6 +143,11 @@ export default function AdminSites() {
             />
           </div>
           
+          <Button variant="outline" onClick={() => setShowDriveImport(true)}>
+            <HardDrive className="h-4 w-4 mr-2" />
+            Import from Drive
+          </Button>
+
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -418,6 +427,18 @@ export default function AdminSites() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Google Drive Import Picker */}
+      <DriveImportPicker
+        open={showDriveImport}
+        onOpenChange={setShowDriveImport}
+        companyId={companyId}
+        onImportComplete={(result) => {
+          toast.success(`Site "${result.siteName}" created from Drive`);
+          refetch();
+          navigate(`/admin/sites/${result.siteId}/import`);
+        }}
+      />
     </AdminLayout>
   );
 }

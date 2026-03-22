@@ -159,11 +159,20 @@ export const driveRouter = router({
         }[];
       };
 
+      const SPREADSHEET_MIMES = new Set([
+        "application/vnd.google-apps.spreadsheet",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "application/vnd.ms-excel.sheet.macroEnabled.12",
+        "text/csv",
+      ]);
+
       const items = data.files.map((f) => ({
         id: f.id,
         name: f.name,
         mimeType: f.mimeType,
         isFolder: f.mimeType === "application/vnd.google-apps.folder",
+        isSpreadsheet: SPREADSHEET_MIMES.has(f.mimeType),
         modifiedTime: f.modifiedTime,
         size: f.size,
       }));
@@ -311,6 +320,203 @@ export const driveRouter = router({
         fileKey,
         fileData,
         mimeType,
+      };
+    }),
+
+  /**
+   * Download a spreadsheet from Drive, parse site info, auto-create customer org + site,
+   * and return the data so the frontend can continue to the import wizard.
+   */
+  importFromDrive: adminOrOfficeProcedure
+    .input(
+      z.object({
+        fileId: z.string(),
+        fileName: z.string(),
+        mimeType: z.string(),
+        companyId: z.number(),
+        customerOrgId: z.number().optional(),
+        siteId: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const accessToken = await getValidGoogleToken(ctx.user.id);
+      if (!accessToken) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Google account not connected. Please log out and log back in.",
+        });
+      }
+
+      // 1. Download (or export) file from Drive
+      const isGoogleSheet =
+        input.mimeType === "application/vnd.google-apps.spreadsheet";
+      const downloadUrl = isGoogleSheet
+        ? `https://www.googleapis.com/drive/v3/files/${input.fileId}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+        : `https://www.googleapis.com/drive/v3/files/${input.fileId}?alt=media`;
+
+      const fileResponse = await fetch(downloadUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!fileResponse.ok) {
+        const errBody = await fileResponse.text().catch(() => "");
+        console.error("[Drive] importFromDrive download failed:", fileResponse.status, errBody);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to download file from Google Drive.",
+        });
+      }
+
+      const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
+
+      // 2. Parse the spreadsheet
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+      const sheetNames = workbook.SheetNames;
+
+      if (sheetNames.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Spreadsheet has no sheets.",
+        });
+      }
+
+      // 3. Try to extract site info from a dedicated site/summary sheet
+      const siteSheetName = sheetNames.find((n) => {
+        const l = n.toLowerCase();
+        return (
+          l.includes("site") ||
+          l.includes("summary") ||
+          l.includes("info") ||
+          l.includes("details")
+        );
+      });
+
+      const siteInfo: {
+        name?: string;
+        address?: string;
+        city?: string;
+        state?: string;
+        postalCode?: string;
+        contactName?: string;
+        contactPhone?: string;
+        contactEmail?: string;
+        customerOrgName?: string;
+      } = {};
+
+      if (siteSheetName) {
+        const siteSheet = workbook.Sheets[siteSheetName];
+        const siteRows = XLSX.utils.sheet_to_json(siteSheet, {
+          header: 1,
+          defval: "",
+        }) as any[][];
+
+        for (const row of siteRows) {
+          if (!row[0] || typeof row[0] !== "string") continue;
+          const label = row[0].toString().toLowerCase().trim();
+          const value = row[1]?.toString().trim() || "";
+
+          if (label.includes("site name") || label.includes("building name") || label === "name") siteInfo.name = value;
+          if (label.includes("address") || label.includes("street")) siteInfo.address = value;
+          if (label === "city" || label.includes("city")) siteInfo.city = value;
+          if (label.includes("province") || label.includes("state")) siteInfo.state = value;
+          if (label.includes("postal") || label.includes("zip")) siteInfo.postalCode = value;
+          if (label.includes("contact name") || label.includes("manager")) siteInfo.contactName = value;
+          if ((label.includes("contact") && label.includes("phone")) || label === "phone") siteInfo.contactPhone = value;
+          if ((label.includes("contact") && label.includes("email")) || label === "email") siteInfo.contactEmail = value;
+          if (label.includes("customer") || label.includes("client") || label.includes("organization")) siteInfo.customerOrgName = value;
+        }
+      }
+
+      // 4. Upsert customer org
+      let customerOrgId = input.customerOrgId;
+      if (!customerOrgId) {
+        const orgName =
+          siteInfo.customerOrgName ||
+          siteInfo.name ||
+          input.fileName.replace(/\.[^.]+$/, "");
+
+        const existingOrgs = await db.getCustomerOrgsByCompany(input.companyId);
+        const existing = existingOrgs.find(
+          (o: any) => o.name.toLowerCase() === orgName.toLowerCase()
+        );
+
+        if (existing) {
+          customerOrgId = existing.id;
+        } else {
+          const newOrg = await db.createCustomerOrg({
+            companyId: input.companyId,
+            name: orgName,
+            contactName: siteInfo.contactName || null,
+            contactEmail: siteInfo.contactEmail || null,
+            contactPhone: siteInfo.contactPhone || null,
+          });
+          customerOrgId = (newOrg as any).id;
+        }
+      }
+
+      // 5. Upsert site
+      let siteId = input.siteId;
+      if (!siteId) {
+        const siteName =
+          siteInfo.name || input.fileName.replace(/\.[^.]+$/, "");
+
+        const existingSites = await db.getSitesByCustomerOrg(customerOrgId!);
+        const existingSite = existingSites.find(
+          (s: any) => s.name.toLowerCase() === siteName.toLowerCase()
+        );
+
+        if (existingSite) {
+          siteId = existingSite.id;
+        } else {
+          const newSite = await db.createSite({
+            companyId: input.companyId,
+            customerOrgId: customerOrgId!,
+            name: siteName,
+            address: siteInfo.address,
+            city: siteInfo.city,
+            state: siteInfo.state,
+            postalCode: siteInfo.postalCode,
+            contactName: siteInfo.contactName,
+            contactPhone: siteInfo.contactPhone,
+          });
+          siteId = (newSite as any).id;
+        }
+      }
+
+      // 6. Store file in S3 as an audit attachment
+      const contentType = isGoogleSheet
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : input.mimeType;
+      const safeFileName = (
+        isGoogleSheet && !input.fileName.endsWith(".xlsx")
+          ? `${input.fileName}.xlsx`
+          : input.fileName
+      ).replace(/\s+/g, "_");
+      const fileKey = `drive-imports/${input.companyId}/${siteId}/${Date.now()}-${safeFileName}`;
+      const { url: fileUrl } = await storagePut(fileKey, fileBuffer, contentType);
+
+      await db.createAttachment({
+        entityType: "site",
+        entityId: siteId!,
+        uploadedById: ctx.user.id,
+        fileName: safeFileName,
+        fileKey,
+        fileUrl,
+        mimeType: contentType,
+        fileSize: fileBuffer.length,
+        siteId: siteId!,
+      });
+
+      return {
+        success: true,
+        customerOrgId: customerOrgId!,
+        siteId: siteId!,
+        siteName: siteInfo.name || input.fileName.replace(/\.[^.]+$/, ""),
+        sheetNames,
+        siteInfo,
+        fileBuffer: fileBuffer.toString("base64"),
+        message: `Site "${siteInfo.name || input.fileName}" ready. ${sheetNames.length} sheet(s) found.`,
       };
     }),
 });
