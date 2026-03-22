@@ -39,8 +39,8 @@ export function getRoleBasedPath(role?: string): string {
  * @returns The path to redirect to
  */
 export function getPostLoginPath(role?: string, returnTo?: string): string {
-  // If returnTo is provided and not the login or home page, use it
-  if (returnTo && returnTo !== '/' && returnTo !== '/login') {
+  // If returnTo is provided and not the login, home, or customer portal path, use it
+  if (returnTo && returnTo !== '/' && returnTo !== '/login' && !returnTo.startsWith('/customer')) {
     return returnTo;
   }
   

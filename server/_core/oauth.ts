@@ -190,6 +190,11 @@ export function registerOAuthRoutes(app: Express) {
         }
       }
 
+      // Customer portal not active — block any /customer/* routes from state param
+      if (targetRoute.startsWith('/customer')) {
+        targetRoute = '/forbidden';
+      }
+
       // If target route is empty or "/", redirect to role-based dashboard
       if (!targetRoute || targetRoute === '/') {
         if (user?.role === 'customer') {
