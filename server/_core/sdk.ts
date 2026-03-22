@@ -59,7 +59,7 @@ async function googleExchangeCode(code: string): Promise<TokenResponse> {
       code,
       client_id: ENV.googleClientId,
       client_secret: ENV.googleClientSecret,
-      redirect_uri: `${ENV.appUrl}/api/oauth/callback`,
+      redirect_uri: (() => { const uri = `${ENV.appUrl}/api/oauth/callback`; console.log("[OAuth Debug] redirect_uri:", uri); return uri; })(),
       grant_type: "authorization_code",
     }),
   });
