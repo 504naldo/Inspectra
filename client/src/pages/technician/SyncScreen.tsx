@@ -107,7 +107,7 @@ export default function SyncScreen() {
 
       <main className="container py-6 space-y-6">
         {/* Connection Status */}
-        <Card className={isOnline ? 'border-[var(--success)]/50 bg-[var(--success)]/5' : 'border-amber-500/50 bg-amber-50'}>
+        <Card className={isOnline ? 'border-[var(--success)]/50 bg-[var(--success)]/5' : 'border-[var(--warning)]/50 bg-[var(--warning)]/5'}>
           <CardContent className="flex items-center gap-4 p-4">
             {isOnline ? (
               <>

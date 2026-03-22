@@ -476,7 +476,7 @@ EWF Fire & Security`
                             variant="outline"
                             size="sm"
                             onClick={handleOpenEmailDialog}
-                            className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                            className="border-accent/30 text-accent hover:bg-accent/10"
                           >
                             <Mail className="h-4 w-4 mr-1" />
                             Email Report
