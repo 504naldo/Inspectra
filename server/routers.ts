@@ -18,6 +18,7 @@ import { userRouter as userManagementRouter } from "./userRouter";
 import { assetImportRouter } from "./routers/assetImportRouter";
 import { filesRouter } from "./routers/filesRouter";
 import { gmailRouter } from "./routers/gmailRouter";
+import { calendarRouter } from "./routers/calendarRouter";
 import { sendReportEmail } from "./emailService";
 import { safeToLower, safeIncludes, safeTrim } from "./safeStringHelpers";
 import { finalizeJob } from "./compliance/finalizeJob";
@@ -503,9 +504,65 @@ const jobRouter = router({
     jobType: z.enum(['annual', 'semi_annual', 'quarterly', 'monthly', 'service_call', 'repair']).optional(),
     priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
     scheduledDate: z.date().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
-    return db.createJob({ ...input, jobNumber });
+    const newJob = await db.createJob({ ...input, jobNumber });
+
+    // Auto-create Google Calendar event if job has a scheduled date (best-effort)
+    if (input.scheduledDate && ctx.user) {
+      try {
+        const { getValidGoogleToken } = await import("./_core/googleAuth");
+        const accessToken = await getValidGoogleToken(ctx.user.id);
+        if (accessToken) {
+          const startDate = new Date(input.scheduledDate);
+          if (startDate.getHours() === 0 && startDate.getMinutes() === 0) {
+            startDate.setHours(8, 0, 0, 0);
+          }
+          const endDate = new Date(startDate.getTime() + 4 * 60 * 60 * 1000);
+          const eventBody = {
+            summary: `🔥 Inspection: ${input.title}`,
+            start: {
+              dateTime: startDate.toISOString(),
+              timeZone: "America/Toronto",
+            },
+            end: {
+              dateTime: endDate.toISOString(),
+              timeZone: "America/Toronto",
+            },
+            reminders: {
+              useDefault: false,
+              overrides: [
+                { method: "popup", minutes: 60 },
+                { method: "popup", minutes: 1440 },
+              ],
+            },
+            colorId: "11",
+          };
+          const response = await fetch(
+            "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(eventBody),
+            }
+          );
+          if (response.ok) {
+            const event = (await response.json()) as { id: string };
+            await db.updateJob(newJob.id, { googleCalendarEventId: event.id });
+          } else {
+            console.warn("[Calendar] Auto-create event failed:", response.status);
+          }
+        }
+      } catch (error) {
+        // Calendar event creation is best-effort — don't fail the job creation
+        console.warn("[Calendar] Auto-create event error:", error);
+      }
+    }
+
+    return newJob;
   }),
   
   update: officeProcedure.input(z.object({
@@ -3089,5 +3146,6 @@ export const appRouter = router({
   files: filesRouter,
   compliance: complianceRouter,
   gmail: gmailRouter,
+  calendar: calendarRouter,
 });
 export type AppRouter = typeof appRouter;

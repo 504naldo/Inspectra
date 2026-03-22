@@ -9,11 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import FinalizeJobDialog from "@/components/FinalizeJobDialog";
-import { 
-  ArrowLeft, 
-  Upload, 
-  FileText, 
-  FileSpreadsheet, 
+import {
+  ArrowLeft,
+  Upload,
+  FileText,
+  FileSpreadsheet,
   Image as ImageIcon,
   Download,
   Eye,
@@ -25,7 +25,10 @@ import {
   ShieldAlert,
   ShieldX,
   FileDown,
-  RefreshCw
+  RefreshCw,
+  Calendar,
+  CalendarCheck,
+  CalendarX
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -89,6 +92,35 @@ export default function AdminJobDetails() {
     },
     onError: (err) => {
       toast.error(`Failed to create re-inspect job: ${err.message}`);
+    },
+  });
+
+  const createCalendarEventMutation = trpc.calendar.createEvent.useMutation({
+    onSuccess: () => {
+      toast.success("Calendar event created");
+      utils.job.get.invalidate({ id: parseInt(jobId!) });
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const updateCalendarEventMutation = trpc.calendar.updateEvent.useMutation({
+    onSuccess: () => {
+      toast.success("Calendar event updated");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const deleteCalendarEventMutation = trpc.calendar.deleteEvent.useMutation({
+    onSuccess: () => {
+      toast.success("Calendar event removed");
+      utils.job.get.invalidate({ id: parseInt(jobId!) });
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -316,6 +348,55 @@ export default function AdminJobDetails() {
           </div>
           <div className="flex items-center gap-2">
             <Badge>{job.status}</Badge>
+            {/* Calendar sync controls */}
+            {(user?.role === "admin" || user?.role === "office") && (
+              job.googleCalendarEventId ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 border-[var(--success)]/30 text-[var(--success)] hover:bg-[var(--success)]/5"
+                    onClick={() => updateCalendarEventMutation.mutate({ jobId: parseInt(jobId!) })}
+                    disabled={updateCalendarEventMutation.isPending}
+                  >
+                    {updateCalendarEventMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CalendarCheck className="h-4 w-4" />
+                    )}
+                    Synced
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-2 text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                    onClick={() => deleteCalendarEventMutation.mutate({ jobId: parseInt(jobId!) })}
+                    disabled={deleteCalendarEventMutation.isPending}
+                  >
+                    {deleteCalendarEventMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CalendarX className="h-4 w-4" />
+                    )}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => createCalendarEventMutation.mutate({ jobId: parseInt(jobId!) })}
+                  disabled={createCalendarEventMutation.isPending}
+                >
+                  {createCalendarEventMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Calendar className="h-4 w-4" />
+                  )}
+                  Add to Calendar
+                </Button>
+              )
+            )}
             {user?.role === "admin" && job.finalizedAt && (
               <Button
                 variant="outline"

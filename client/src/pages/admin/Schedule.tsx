@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock } from "lucide-react";
+import { AlertTriangle, CalendarDays, CalendarCheck, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { Link } from "wouter";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -150,7 +150,15 @@ export default function AdminSchedule() {
             <div className="space-y-3">
               {selectedJobs.map((job: any) => (
                 <div key={job.id} className="border rounded p-3 space-y-1">
-                  <p className="font-medium text-sm">{job.title}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium text-sm truncate">{job.title}</p>
+                    {job.googleCalendarEventId && (
+                      <CalendarCheck
+                        className="h-3.5 w-3.5 shrink-0 text-[var(--success)]"
+                        title="Synced to Google Calendar"
+                      />
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-xs capitalize">{job.status?.replace("_"," ")}</Badge>
                     {job.jobType && <span className="text-xs text-gray-500">{job.jobType}</span>}
