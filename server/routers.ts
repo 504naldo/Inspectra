@@ -17,6 +17,7 @@ import { jobAssignmentRouter } from "./jobAssignmentRouter";
 import { userRouter as userManagementRouter } from "./userRouter";
 import { assetImportRouter } from "./routers/assetImportRouter";
 import { filesRouter } from "./routers/filesRouter";
+import { gmailRouter } from "./routers/gmailRouter";
 import { sendReportEmail } from "./emailService";
 import { safeToLower, safeIncludes, safeTrim } from "./safeStringHelpers";
 import { finalizeJob } from "./compliance/finalizeJob";
@@ -3087,5 +3088,6 @@ export const appRouter = router({
    assetImport: assetImportRouter,
   files: filesRouter,
   compliance: complianceRouter,
+  gmail: gmailRouter,
 });
 export type AppRouter = typeof appRouter;

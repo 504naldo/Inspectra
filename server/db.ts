@@ -149,6 +149,18 @@ export async function updateUserRole(userId: number, role: "admin" | "office" | 
   await db.update(users).set({ role, companyId, customerOrgId }).where(eq(users.id, userId));
 }
 
+export async function updateUserByOpenId(openId: string, data: Partial<InsertUser>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set(data).where(eq(users.openId, openId));
+}
+
+export async function updateUser(userId: number, data: Partial<InsertUser>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set(data).where(eq(users.id, userId));
+}
+
 // ============================================
 // COMPANY QUERIES
 // ============================================

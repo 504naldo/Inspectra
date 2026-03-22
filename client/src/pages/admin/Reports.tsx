@@ -9,8 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { 
-  FileText, 
+import {
+  FileText,
   Plus,
   Download,
   Sparkles,
@@ -19,7 +19,9 @@ import {
   CheckCircle2,
   Clock,
   FileDown,
-  ExternalLink
+  ExternalLink,
+  Mail,
+  AlertCircle
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -27,24 +29,34 @@ import { toast } from "sonner";
 export default function AdminReports() {
   const { user } = useAuth();
   const companyId = user?.companyId || 1;
-  
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [reportTitle, setReportTitle] = useState("");
   const [executiveSummary, setExecutiveSummary] = useState("");
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState<string | null>(null);
   const [generatedReportNumber, setGeneratedReportNumber] = useState<string | null>(null);
+  const [generatedReportId, setGeneratedReportId] = useState<number | null>(null);
   const [reportType, setReportType] = useState<'deficiency' | 'compliance'>('deficiency');
   const [allowMissingLocations, setAllowMissingLocations] = useState(false);
+
+  // Email dialog state
+  const [isEmailOpen, setIsEmailOpen] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
 
   const { data: jobs, refetch: refetchJobs } = trpc.job.listByCompany.useQuery({
     companyId,
     status: 'completed'
   });
 
+  // Gmail connection check
+  const { data: gmailConnection } = trpc.gmail.checkConnection.useQuery();
+
   const generateSummary = trpc.ai.generateReportSummary.useMutation({
     onSuccess: (data) => {
-      const summaryText = data.executiveSummary.join('\n\n') + 
+      const summaryText = data.executiveSummary.join('\n\n') +
         '\n\nSystem Status: ' + data.systemStatus +
         '\n\nPriority Items:\n' + data.priorityItems.map((p: string) => '• ' + p).join('\n') +
         '\n\nNext Steps:\n' + data.nextSteps.map((s: string) => '• ' + s).join('\n');
@@ -64,6 +76,7 @@ export default function AdminReports() {
     onSuccess: (data) => {
       setGeneratedPdfUrl(data.fileUrl);
       setGeneratedReportNumber(data.reportNumber);
+      setGeneratedReportId(data.reportId);
       toast.success('Deficiency report generated successfully!');
       refetchJobs();
     },
@@ -78,6 +91,7 @@ export default function AdminReports() {
     onSuccess: (data) => {
       setGeneratedPdfUrl(data.fileUrl);
       setGeneratedReportNumber(data.reportNumber);
+      setGeneratedReportId(data.reportId);
       toast.success('Annual inspection report generated successfully!');
       refetchJobs();
     },
@@ -99,12 +113,24 @@ export default function AdminReports() {
     }
   });
 
+  const sendReport = trpc.gmail.sendReport.useMutation({
+    onSuccess: () => {
+      toast.success('Report emailed successfully!');
+      setIsEmailOpen(false);
+      setEmailTo("");
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to send email');
+    }
+  });
+
   const resetForm = () => {
     setSelectedJobId("");
     setReportTitle("");
     setExecutiveSummary("");
     setGeneratedPdfUrl(null);
     setGeneratedReportNumber(null);
+    setGeneratedReportId(null);
   };
 
   const handleGenerateSummary = () => {
@@ -120,7 +146,7 @@ export default function AdminReports() {
       toast.error('Please select a job first');
       return;
     }
-    
+
     // Phase 2: Use explicit endpoints
     if (reportType === 'compliance') {
       generateAnnualReport.mutate({
@@ -158,6 +184,53 @@ export default function AdminReports() {
       link.click();
       document.body.removeChild(link);
     }
+  };
+
+  const handleOpenEmailDialog = () => {
+    // Pre-fill the email dialog from available data
+    const selectedJob = jobs?.find((j: any) => j.id.toString() === selectedJobId);
+    const siteName = selectedJob?.title || "Inspection";
+    const jobNumber = selectedJob?.jobNumber || "";
+    const reportNumber = generatedReportNumber || "";
+    const inspectionDate = selectedJob?.completedAt
+      ? new Date(selectedJob.completedAt).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })
+      : new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
+
+    setEmailSubject(`Inspection Report - ${siteName} - ${reportNumber}`);
+    setEmailBody(
+`Dear Property Manager,
+
+Please find attached the inspection report for ${siteName}.
+
+Job Number: ${jobNumber}
+Report Number: ${reportNumber}
+Inspection Date: ${inspectionDate}
+
+If you have any questions regarding this report, please don't hesitate to contact us.
+
+Best regards,
+${user?.name || "Inspectra Team"}
+EWF Fire & Security`
+    );
+    setIsEmailOpen(true);
+  };
+
+  const handleSendEmail = () => {
+    if (!emailTo || !emailSubject || !emailBody) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    if (!generatedReportId || !selectedJobId) {
+      toast.error('No report selected');
+      return;
+    }
+    sendReport.mutate({
+      jobId: parseInt(selectedJobId),
+      reportId: generatedReportId,
+      recipientEmail: emailTo,
+      subject: emailSubject,
+      body: emailBody,
+    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -222,10 +295,10 @@ export default function AdminReports() {
                 <div className="space-y-3 border rounded-lg p-4 bg-muted/30">
                   <Label className="text-base font-medium">Report Type</Label>
                   <div className="space-y-2">
-                    <div 
+                    <div
                       className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                        reportType === 'deficiency' 
-                          ? 'border-primary bg-primary/5' 
+                        reportType === 'deficiency'
+                          ? 'border-primary bg-primary/5'
                           : 'border-border hover:bg-muted/50'
                       }`}
                       onClick={() => setReportType('deficiency')}
@@ -245,11 +318,11 @@ export default function AdminReports() {
                         </p>
                       </div>
                     </div>
-                    
-                    <div 
+
+                    <div
                       className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                        reportType === 'compliance' 
-                          ? 'border-primary bg-primary/5' 
+                        reportType === 'compliance'
+                          ? 'border-primary bg-primary/5'
                           : 'border-border hover:bg-muted/50'
                       }`}
                       onClick={() => setReportType('compliance')}
@@ -288,7 +361,7 @@ export default function AdminReports() {
                           Allow missing locations (Test Mode)
                         </Label>
                         <p className="text-sm text-[var(--warning)] mt-1">
-                          Admin override: Generate report even if deficiencies are missing location information. 
+                          Admin override: Generate report even if deficiencies are missing location information.
                           Report will include warnings and a "Missing Locations" appendix.
                         </p>
                       </div>
@@ -332,7 +405,7 @@ export default function AdminReports() {
                         Generate {reportType === 'compliance' ? 'Compliance' : 'Deficiency'} Report
                       </h4>
                       <p className="text-sm text-muted-foreground">
-                        {reportType === 'compliance' 
+                        {reportType === 'compliance'
                           ? 'CAN/ULC-S536 inspection form with checklists and device records'
                           : 'Professional report with pricing and repair estimates'
                         }
@@ -367,7 +440,7 @@ export default function AdminReports() {
                       <p className="text-sm text-[var(--success)] mb-3">
                         Report Number: {generatedReportNumber}
                       </p>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <Button
                           variant="outline"
                           size="sm"
@@ -386,15 +459,43 @@ export default function AdminReports() {
                           <ExternalLink className="h-4 w-4 mr-1" />
                           Open in New Tab
                         </Button>
+                        {/* Email Report button */}
+                        {gmailConnection?.connected === false ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled
+                            title="Log out and log back in to connect your Gmail account"
+                            className="opacity-60"
+                          >
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            Gmail Not Connected
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleOpenEmailDialog}
+                            className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                          >
+                            <Mail className="h-4 w-4 mr-1" />
+                            Email Report
+                          </Button>
+                        )}
                       </div>
+                      {gmailConnection?.connected === false && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          To enable email sending, log out and log back in to connect your Gmail account.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
 
                 <div className="border-t pt-4">
-                  <Button 
+                  <Button
                     variant="outline"
-                    className="w-full" 
+                    className="w-full"
                     onClick={handleCreateReport}
                     disabled={createReport.isPending}
                   >
@@ -420,8 +521,8 @@ export default function AdminReports() {
             ) : (
               <div className="space-y-3">
                 {jobs.map((job: any) => (
-                  <div 
-                    key={job.id} 
+                  <div
+                    key={job.id}
                     className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50"
                   >
                     <div>
@@ -489,6 +590,69 @@ export default function AdminReports() {
                 }
               }}>
                 Go to Job Details
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Report Dialog */}
+      <Dialog open={isEmailOpen} onOpenChange={setIsEmailOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Email Report to Client</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="email-to">Recipient Email *</Label>
+              <Input
+                id="email-to"
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="client@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-subject">Subject *</Label>
+              <Input
+                id="email-subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-body">Message *</Label>
+              <Textarea
+                id="email-body"
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                className="min-h-[220px] resize-y font-mono text-sm"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The report PDF ({generatedReportNumber}) will be attached automatically.
+              This email is sent from your Gmail account.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setIsEmailOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSendEmail}
+                disabled={sendReport.isPending || !emailTo}
+              >
+                {sendReport.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4 mr-2" />
+                    Send Email
+                  </>
+                )}
               </Button>
             </div>
           </div>

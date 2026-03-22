@@ -17,10 +17,10 @@ export const getLoginUrl = (returnTo?: string) => {
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', 'openid email profile');
+  url.searchParams.set('scope', 'openid email profile https://www.googleapis.com/auth/gmail.compose');
   url.searchParams.set('state', state);
   url.searchParams.set('access_type', 'offline');
-  url.searchParams.set('prompt', 'select_account');
+  url.searchParams.set('prompt', 'consent');
 
   return url.toString();
 };
