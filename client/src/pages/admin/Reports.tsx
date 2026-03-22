@@ -21,7 +21,8 @@ import {
   FileDown,
   ExternalLink,
   Mail,
-  AlertCircle
+  AlertCircle,
+  HardDrive
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -37,6 +38,8 @@ export default function AdminReports() {
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState<string | null>(null);
   const [generatedReportNumber, setGeneratedReportNumber] = useState<string | null>(null);
   const [generatedReportId, setGeneratedReportId] = useState<number | null>(null);
+  const [generatedDriveUrl, setGeneratedDriveUrl] = useState<string | null>(null);
+  const [driveSavedJobIds, setDriveSavedJobIds] = useState<Set<number>>(new Set());
   const [reportType, setReportType] = useState<'deficiency' | 'compliance'>('deficiency');
   const [allowMissingLocations, setAllowMissingLocations] = useState(false);
 
@@ -53,6 +56,9 @@ export default function AdminReports() {
 
   // Gmail connection check
   const { data: gmailConnection } = trpc.gmail.checkConnection.useQuery();
+
+  // Drive connection check
+  const { data: driveConnection } = trpc.drive.checkConnection.useQuery();
 
   const generateSummary = trpc.ai.generateReportSummary.useMutation({
     onSuccess: (data) => {
@@ -77,6 +83,11 @@ export default function AdminReports() {
       setGeneratedPdfUrl(data.fileUrl);
       setGeneratedReportNumber(data.reportNumber);
       setGeneratedReportId(data.reportId);
+      const dUrl = (data as any).driveUrl ?? null;
+      setGeneratedDriveUrl(dUrl);
+      if (dUrl && selectedJobId) {
+        setDriveSavedJobIds(prev => new Set(prev).add(parseInt(selectedJobId)));
+      }
       toast.success('Deficiency report generated successfully!');
       refetchJobs();
     },
@@ -92,6 +103,11 @@ export default function AdminReports() {
       setGeneratedPdfUrl(data.fileUrl);
       setGeneratedReportNumber(data.reportNumber);
       setGeneratedReportId(data.reportId);
+      const dUrl = (data as any).driveUrl ?? null;
+      setGeneratedDriveUrl(dUrl);
+      if (dUrl && selectedJobId) {
+        setDriveSavedJobIds(prev => new Set(prev).add(parseInt(selectedJobId)));
+      }
       toast.success('Annual inspection report generated successfully!');
       refetchJobs();
     },
@@ -124,6 +140,23 @@ export default function AdminReports() {
     }
   });
 
+  const saveReportToDrive = trpc.drive.saveReport.useMutation({
+    onSuccess: (data) => {
+      setGeneratedDriveUrl(data.driveUrl);
+      if (selectedJobId) {
+        setDriveSavedJobIds(prev => new Set(prev).add(parseInt(selectedJobId)));
+      }
+      if (data.alreadySaved) {
+        toast.success('Already saved to Drive');
+      } else {
+        toast.success('Saved to Google Drive!');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to save to Drive');
+    }
+  });
+
   const resetForm = () => {
     setSelectedJobId("");
     setReportTitle("");
@@ -131,6 +164,7 @@ export default function AdminReports() {
     setGeneratedPdfUrl(null);
     setGeneratedReportNumber(null);
     setGeneratedReportId(null);
+    setGeneratedDriveUrl(null);
   };
 
   const handleGenerateSummary = () => {
@@ -482,6 +516,50 @@ EWF Fire & Security`
                             Email Report
                           </Button>
                         )}
+                        {/* Drive button */}
+                        {generatedDriveUrl ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(generatedDriveUrl, '_blank')}
+                            className="border-[var(--success)]/30 text-[var(--success)] hover:bg-[var(--success)]/10"
+                          >
+                            <HardDrive className="h-4 w-4 mr-1" />
+                            View in Drive
+                          </Button>
+                        ) : driveConnection?.connected === false ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled
+                            title="Log out and log back in to connect your Google Drive"
+                            className="opacity-60"
+                          >
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            Drive Not Connected
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={saveReportToDrive.isPending || !generatedReportId}
+                            onClick={() => {
+                              if (generatedReportId && selectedJobId) {
+                                saveReportToDrive.mutate({
+                                  reportId: generatedReportId,
+                                  jobId: parseInt(selectedJobId),
+                                });
+                              }
+                            }}
+                          >
+                            {saveReportToDrive.isPending ? (
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            ) : (
+                              <HardDrive className="h-4 w-4 mr-1" />
+                            )}
+                            Save to Drive
+                          </Button>
+                        )}
                       </div>
                       {gmailConnection?.connected === false && (
                         <p className="text-xs text-muted-foreground mt-2">
@@ -529,6 +607,12 @@ EWF Fire & Security`
                       <div className="flex items-center gap-2 mb-1">
                         <FileText className="h-4 w-4 text-muted-foreground" />
                         <span className="font-medium">{job.title}</span>
+                        {driveSavedJobIds.has(job.id) && (
+                          <HardDrive
+                            className="h-3.5 w-3.5 text-[var(--success)]"
+                            title="Report saved to Google Drive"
+                          />
+                        )}
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {job.jobNumber} • Completed {job.completedAt ? new Date(job.completedAt).toLocaleDateString() : 'N/A'}

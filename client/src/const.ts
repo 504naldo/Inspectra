@@ -17,7 +17,7 @@ export const getLoginUrl = (returnTo?: string) => {
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', 'openid email profile https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/calendar.events');
+  url.searchParams.set('scope', 'openid email profile https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.file');
   url.searchParams.set('state', state);
   url.searchParams.set('access_type', 'offline');
   url.searchParams.set('prompt', 'consent');

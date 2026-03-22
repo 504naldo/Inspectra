@@ -19,6 +19,7 @@ import { assetImportRouter } from "./routers/assetImportRouter";
 import { filesRouter } from "./routers/filesRouter";
 import { gmailRouter } from "./routers/gmailRouter";
 import { calendarRouter } from "./routers/calendarRouter";
+import { driveRouter } from "./routers/driveRouter";
 import { sendReportEmail } from "./emailService";
 import { safeToLower, safeIncludes, safeTrim } from "./safeStringHelpers";
 import { finalizeJob } from "./compliance/finalizeJob";
@@ -1622,14 +1623,35 @@ const reportRouter = router({
       pdfUrl: url,
     });
 
-    return { 
-      success: true, 
+    // Auto-save to Google Drive (best-effort — don't fail report generation)
+    let driveUrl: string | null = null;
+    try {
+      const { uploadReportToDrive } = await import("./_core/driveUpload");
+      const driveFileName = `${new Date().toISOString().split("T")[0]} Deficiency Report - ${reportNumber}.pdf`;
+      const driveResult = await uploadReportToDrive({
+        userId: ctx.user.id,
+        pdfBuffer,
+        fileName: driveFileName,
+        customerOrgName: customerOrg?.name || "Unknown Customer",
+        siteName: site.name,
+      });
+      if (driveResult) {
+        await db.updateReport(report.id, { googleDriveUrl: driveResult.webViewLink });
+        driveUrl = driveResult.webViewLink;
+      }
+    } catch (driveError) {
+      console.warn("[Drive] Auto-save failed (non-blocking):", driveError);
+    }
+
+    return {
+      success: true,
       reportId: report.id,
       fileUrl: url,
       reportNumber,
+      driveUrl,
     };
   }),
-  
+
   generateCompliancePDF: officeProcedure.input(z.object({
     jobId: z.number(),
   })).mutation(async ({ input, ctx }) => {
@@ -1970,12 +1992,33 @@ const reportRouter = router({
       reportType: "annual",
       pdfUrl: url,
     });
-    
-    return { 
-      success: true, 
+
+    // Auto-save to Google Drive (best-effort — don't fail report generation)
+    let driveUrl: string | null = null;
+    try {
+      const { uploadReportToDrive } = await import("./_core/driveUpload");
+      const driveFileName = `${new Date().toISOString().split("T")[0]} Annual Report - ${reportNumber}.pdf`;
+      const driveResult = await uploadReportToDrive({
+        userId: ctx.user.id,
+        pdfBuffer,
+        fileName: driveFileName,
+        customerOrgName: customerOrg?.name || "Unknown Customer",
+        siteName: site.name,
+      });
+      if (driveResult) {
+        await db.updateReport(report.id, { googleDriveUrl: driveResult.webViewLink });
+        driveUrl = driveResult.webViewLink;
+      }
+    } catch (driveError) {
+      console.warn("[Drive] Auto-save failed (non-blocking):", driveError);
+    }
+
+    return {
+      success: true,
       reportId: report.id,
       fileUrl: url,
       reportNumber,
+      driveUrl,
     };
   }),
 });
@@ -3147,5 +3190,6 @@ export const appRouter = router({
   compliance: complianceRouter,
   gmail: gmailRouter,
   calendar: calendarRouter,
+  drive: driveRouter,
 });
 export type AppRouter = typeof appRouter;
