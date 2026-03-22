@@ -9,8 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { 
-  FileText, 
+import {
+  FileText,
   Plus,
   Download,
   Sparkles,
@@ -19,7 +19,9 @@ import {
   CheckCircle2,
   Clock,
   FileDown,
-  ExternalLink
+  ExternalLink,
+  Mail,
+  AlertCircle
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -34,13 +36,23 @@ export default function AdminReports() {
   const [executiveSummary, setExecutiveSummary] = useState("");
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState<string | null>(null);
   const [generatedReportNumber, setGeneratedReportNumber] = useState<string | null>(null);
+  const [generatedReportId, setGeneratedReportId] = useState<number | null>(null);
   const [reportType, setReportType] = useState<'deficiency' | 'compliance'>('deficiency');
   const [allowMissingLocations, setAllowMissingLocations] = useState(false);
+
+  // Email dialog state
+  const [isEmailOpen, setIsEmailOpen] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
 
   const { data: jobs, refetch: refetchJobs } = trpc.job.listByCompany.useQuery({
     companyId,
     status: 'completed'
   });
+
+  // Gmail connection check
+  const { data: gmailConnection } = trpc.gmail.checkConnection.useQuery();
 
   const generateSummary = trpc.ai.generateReportSummary.useMutation({
     onSuccess: (data) => {
@@ -64,6 +76,7 @@ export default function AdminReports() {
     onSuccess: (data) => {
       setGeneratedPdfUrl(data.fileUrl);
       setGeneratedReportNumber(data.reportNumber);
+      setGeneratedReportId(data.reportId);
       toast.success('Deficiency report generated successfully!');
       refetchJobs();
     },
@@ -78,6 +91,7 @@ export default function AdminReports() {
     onSuccess: (data) => {
       setGeneratedPdfUrl(data.fileUrl);
       setGeneratedReportNumber(data.reportNumber);
+      setGeneratedReportId(data.reportId);
       toast.success('Annual inspection report generated successfully!');
       refetchJobs();
     },
@@ -99,12 +113,24 @@ export default function AdminReports() {
     }
   });
 
+  const sendReport = trpc.gmail.sendReport.useMutation({
+    onSuccess: () => {
+      toast.success('Report emailed successfully!');
+      setIsEmailOpen(false);
+      setEmailTo("");
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to send email');
+    }
+  });
+
   const resetForm = () => {
     setSelectedJobId("");
     setReportTitle("");
     setExecutiveSummary("");
     setGeneratedPdfUrl(null);
     setGeneratedReportNumber(null);
+    setGeneratedReportId(null);
   };
 
   const handleGenerateSummary = () => {
@@ -158,6 +184,53 @@ export default function AdminReports() {
       link.click();
       document.body.removeChild(link);
     }
+  };
+
+  const handleOpenEmailDialog = () => {
+    // Pre-fill the email dialog from available data
+    const selectedJob = jobs?.find((j: any) => j.id.toString() === selectedJobId);
+    const siteName = selectedJob?.title || "Inspection";
+    const jobNumber = selectedJob?.jobNumber || "";
+    const reportNumber = generatedReportNumber || "";
+    const inspectionDate = selectedJob?.completedAt
+      ? new Date(selectedJob.completedAt).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })
+      : new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
+
+    setEmailSubject(`Inspection Report - ${siteName} - ${reportNumber}`);
+    setEmailBody(
+`Dear Property Manager,
+
+Please find attached the inspection report for ${siteName}.
+
+Job Number: ${jobNumber}
+Report Number: ${reportNumber}
+Inspection Date: ${inspectionDate}
+
+If you have any questions regarding this report, please don't hesitate to contact us.
+
+Best regards,
+${user?.name || "Inspectra Team"}
+EWF Fire & Security`
+    );
+    setIsEmailOpen(true);
+  };
+
+  const handleSendEmail = () => {
+    if (!emailTo || !emailSubject || !emailBody) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    if (!generatedReportId || !selectedJobId) {
+      toast.error('No report selected');
+      return;
+    }
+    sendReport.mutate({
+      jobId: parseInt(selectedJobId),
+      reportId: generatedReportId,
+      recipientEmail: emailTo,
+      subject: emailSubject,
+      body: emailBody,
+    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -386,7 +459,35 @@ export default function AdminReports() {
                           <ExternalLink className="h-4 w-4 mr-1" />
                           Open in New Tab
                         </Button>
+                        {/* Email Report button */}
+                        {gmailConnection?.connected === false ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled
+                            title="Log out and log back in to connect your Gmail account"
+                            className="opacity-60"
+                          >
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            Gmail Not Connected
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleOpenEmailDialog}
+                            className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                          >
+                            <Mail className="h-4 w-4 mr-1" />
+                            Email Report
+                          </Button>
+                        )}
                       </div>
+                      {gmailConnection?.connected === false && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          To enable email sending, log out and log back in to connect your Gmail account.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -489,6 +590,69 @@ export default function AdminReports() {
                 }
               }}>
                 Go to Job Details
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Report Dialog */}
+      <Dialog open={isEmailOpen} onOpenChange={setIsEmailOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Email Report to Client</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="email-to">Recipient Email *</Label>
+              <Input
+                id="email-to"
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="client@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-subject">Subject *</Label>
+              <Input
+                id="email-subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-body">Message *</Label>
+              <Textarea
+                id="email-body"
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                className="min-h-[220px] resize-y font-mono text-sm"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The report PDF ({generatedReportNumber}) will be attached automatically.
+              This email is sent from your Gmail account.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setIsEmailOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSendEmail}
+                disabled={sendReport.isPending || !emailTo}
+              >
+                {sendReport.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4 mr-2" />
+                    Send Email
+                  </>
+                )}
               </Button>
             </div>
           </div>
