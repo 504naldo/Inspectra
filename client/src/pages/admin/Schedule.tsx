@@ -11,9 +11,9 @@ const MONTHS = ["January","February","March","April","May","June","July","August
 const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 function statusColor(status: string) {
-  if (status === "completed" || status === "finalized") return "bg-green-500";
-  if (status === "in_progress") return "bg-blue-500";
-  if (status === "scheduled") return "bg-yellow-500";
+  if (status === "completed" || status === "finalized") return "bg-[var(--success)]";
+  if (status === "in_progress") return "bg-accent";
+  if (status === "scheduled") return "bg-[var(--warning)]";
   return "bg-gray-400";
 }
 
@@ -50,14 +50,14 @@ export default function AdminSchedule() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-3 mb-2">
-        <CalendarDays className="h-6 w-6 text-red-600" />
+        <CalendarDays className="h-6 w-6 text-destructive" />
         <h1 className="text-2xl font-bold">Inspection Schedule</h1>
       </div>
 
       {((data as any)?.overdue?.length ?? 0) > 0 && (
-        <Card className="border-red-300 bg-red-50">
+        <Card className="border-destructive/30 bg-destructive/5">
           <CardHeader className="pb-2">
-            <CardTitle className="text-red-700 flex items-center gap-2 text-base">
+            <CardTitle className="text-destructive flex items-center gap-2 text-base">
               <AlertTriangle className="h-4 w-4" />
               {(data as any).overdue.length} Overdue Inspection{(data as any).overdue.length !== 1 ? "s" : ""}
             </CardTitle>
@@ -73,7 +73,7 @@ export default function AdminSchedule() {
                     </p>
                   </div>
                   <Link href={`/admin/jobs/${job.id}`}>
-                    <Button size="sm" variant="outline" className="text-red-600 border-red-300">View</Button>
+                    <Button size="sm" variant="outline" className="text-destructive border-destructive/30">View</Button>
                   </Link>
                 </div>
               ))}
@@ -113,9 +113,9 @@ export default function AdminSchedule() {
                     <button
                       key={day}
                       onClick={() => setSelectedDay(day)}
-                      className={`rounded p-1 min-h-[48px] text-left transition-colors ${isSelected ? "bg-red-100 border border-red-400" : "hover:bg-gray-50"}`}
+                      className={`rounded p-1 min-h-[48px] text-left transition-colors ${isSelected ? "bg-destructive/10 border border-destructive/40" : "hover:bg-gray-50"}`}
                     >
-                      <span className={`text-xs block mb-1 ${isToday ? "text-red-600 font-bold" : "text-gray-700"}`}>{day}</span>
+                      <span className={`text-xs block mb-1 ${isToday ? "text-destructive font-bold" : "text-gray-700"}`}>{day}</span>
                       <div className="flex flex-wrap gap-0.5">
                         {dayJobs.slice(0, 3).map((j: any) => (
                           <span key={j.id} className={`w-2 h-2 rounded-full ${statusColor(j.status)}`} title={j.title} />
@@ -128,7 +128,7 @@ export default function AdminSchedule() {
               </div>
             )}
             <div className="flex gap-4 mt-4 text-xs text-gray-500">
-              {[["bg-yellow-500","Scheduled"],["bg-blue-500","In Progress"],["bg-green-500","Complete"],["bg-gray-400","Draft"]].map(([c,l]) => (
+              {[["bg-[var(--warning)]","Scheduled"],["bg-accent","In Progress"],["bg-[var(--success)]","Complete"],["bg-gray-400","Draft"]].map(([c,l]) => (
                 <span key={l} className="flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${c}`}/>{l}</span>
               ))}
             </div>

@@ -199,8 +199,8 @@ export default function SiteFiles() {
   
   const getFileIcon = (mimeType: string | null | undefined) => {
     if (!mimeType) return <File className="h-8 w-8 text-muted-foreground" />;
-    if (mimeType.startsWith('image/')) return <FileImage className="h-8 w-8 text-blue-500" />;
-    if (mimeType.includes('pdf')) return <FileText className="h-8 w-8 text-red-500" />;
+    if (mimeType.startsWith('image/')) return <FileImage className="h-8 w-8 text-accent" />;
+    if (mimeType.includes('pdf')) return <FileText className="h-8 w-8 text-destructive" />;
     return <File className="h-8 w-8 text-muted-foreground" />;
   };
   

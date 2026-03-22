@@ -108,7 +108,7 @@ export default function TechnicianDashboard() {
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <CheckCircle2 className="h-8 w-8 mx-auto text-green-600 mb-2" />
+              <CheckCircle2 className="h-8 w-8 mx-auto text-[var(--success)] mb-2" />
               <p className="text-2xl font-bold">{completedToday.length}</p>
               <p className="text-xs text-muted-foreground">Today</p>
             </CardContent>

@@ -119,16 +119,16 @@ export default function QACheck({ jobId }: QACheckProps) {
               <p className="text-sm text-muted-foreground">Total Devices</p>
             </CardContent>
           </Card>
-          <Card className="border-green-200 bg-green-50">
+          <Card className="border-[var(--success)]/20 bg-[var(--success)]/5">
             <CardContent className="pt-6 text-center">
-              <p className="text-3xl font-bold text-green-700">{stats?.pass || 0}</p>
-              <p className="text-sm text-green-600">Passed</p>
+              <p className="text-3xl font-bold text-[var(--success)]">{stats?.pass || 0}</p>
+              <p className="text-sm text-[var(--success)]">Passed</p>
             </CardContent>
           </Card>
-          <Card className="border-red-200 bg-red-50">
+          <Card className="border-destructive/20 bg-destructive/5">
             <CardContent className="pt-6 text-center">
-              <p className="text-3xl font-bold text-red-700">{stats?.fail || 0}</p>
-              <p className="text-sm text-red-600">Failed</p>
+              <p className="text-3xl font-bold text-destructive">{stats?.fail || 0}</p>
+              <p className="text-sm text-destructive">Failed</p>
             </CardContent>
           </Card>
           <Card className="border-amber-200 bg-amber-50">
@@ -172,12 +172,12 @@ export default function QACheck({ jobId }: QACheckProps) {
               <div className="space-y-4 mt-4">
                 {/* Overall Assessment */}
                 <div className={`p-4 rounded-lg ${
-                  aiQaCheck.data.passedQA ? 'bg-green-50 border border-green-200' :
+                  aiQaCheck.data.passedQA ? 'bg-[var(--success)]/5 border border-[var(--success)]/20' :
                   'bg-amber-50 border border-amber-200'
                 }`}>
                   <div className="flex items-center gap-2 mb-2">
                     {aiQaCheck.data.passedQA ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <CheckCircle2 className="h-5 w-5 text-[var(--success)]" />
                     ) : (
                       <AlertTriangle className="h-5 w-5 text-amber-600" />
                     )}
@@ -262,7 +262,7 @@ export default function QACheck({ jobId }: QACheckProps) {
             
             <div className="flex gap-3">
               <Button 
-                className="flex-1 bg-green-600 hover:bg-green-700"
+                className="flex-1 bg-[var(--success)] hover:bg-[var(--success)]/90"
                 onClick={handleApprove}
                 disabled={updateJob.isPending}
               >

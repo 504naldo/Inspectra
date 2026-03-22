@@ -88,9 +88,9 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
     if (!testResult) return null;
     
     const badges = {
-      pass: { label: "PASS", icon: CheckCircle2, color: "text-green-600 bg-green-50 dark:bg-green-950/20" },
-      fail: { label: "FAIL", icon: XCircle, color: "text-red-600 bg-red-50 dark:bg-red-950/20" },
-      no_access: { label: "NO ACCESS", icon: Ban, color: "text-orange-600 bg-orange-50 dark:bg-orange-950/20" },
+      pass: { label: "PASS", icon: CheckCircle2, color: "text-[var(--success)] bg-[var(--success)]/10" },
+      fail: { label: "FAIL", icon: XCircle, color: "text-destructive bg-destructive/10" },
+      no_access: { label: "NO ACCESS", icon: Ban, color: "text-[var(--warning)] bg-[var(--warning)]/10" },
       na: { label: "N/A", icon: Minus, color: "text-gray-600 bg-gray-50 dark:bg-gray-950/20" },
     };
 
@@ -116,8 +116,8 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
     if (!expiryInfo || expiryInfo.status === 'ok') return null;
     
     const badges = {
-      expired: { color: "text-red-600 bg-red-50 dark:bg-red-950/20 border-red-200", label: "Expired" },
-      expiring_soon: { color: "text-orange-600 bg-orange-50 dark:bg-orange-950/20 border-orange-200", label: "Expiring Soon" },
+      expired: { color: "text-destructive bg-destructive/10 border-destructive/20", label: "Expired" },
+      expiring_soon: { color: "text-[var(--warning)] bg-[var(--warning)]/10 border-[var(--warning)]/20", label: "Expiring Soon" },
       unknown: { color: "text-gray-600 bg-gray-50 dark:bg-gray-950/20 border-gray-200", label: "Install Date Required" },
     };
 
@@ -266,15 +266,15 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
                 <div className="text-xs text-muted-foreground">Total</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-blue-600">{testedCount}</div>
+                <div className="text-2xl font-bold text-accent">{testedCount}</div>
                 <div className="text-xs text-muted-foreground">Tested</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-green-600">{passedCount}</div>
+                <div className="text-2xl font-bold text-[var(--success)]">{passedCount}</div>
                 <div className="text-xs text-muted-foreground">Passed</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-red-600">{failedCount}</div>
+                <div className="text-2xl font-bold text-destructive">{failedCount}</div>
                 <div className="text-xs text-muted-foreground">Failed</div>
               </div>
             </div>
@@ -295,7 +295,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
               <Button
                 size="sm"
                 variant={expiryFilter === 'expired' ? 'default' : 'outline'}
-                className={expiryFilter === 'expired' ? '' : 'text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20'}
+                className={expiryFilter === 'expired' ? '' : 'text-destructive hover:bg-destructive/5'}
                 onClick={() => setExpiryFilter('expired')}
               >
                 Expired ({expiredCount})
@@ -305,7 +305,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
               <Button
                 size="sm"
                 variant={expiryFilter === 'expiring_soon' ? 'default' : 'outline'}
-                className={expiryFilter === 'expiring_soon' ? '' : 'text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/20'}
+                className={expiryFilter === 'expiring_soon' ? '' : 'text-[var(--warning)] hover:bg-[var(--warning)]/5'}
                 onClick={() => setExpiryFilter('expiring_soon')}
               >
                 Expiring Soon ({expiringSoonCount})
@@ -368,7 +368,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-green-600 hover:bg-green-50 dark:hover:bg-green-950/20"
+                      className="text-[var(--success)] hover:bg-[var(--success)]/5"
                       onClick={() => handleRecordTest(alarm.id, "pass")}
                       disabled={recordTest.isPending}
                     >
@@ -378,7 +378,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                      className="text-destructive hover:bg-destructive/5"
                       onClick={() => handleRecordTest(alarm.id, "fail")}
                       disabled={recordTest.isPending}
                     >
@@ -388,7 +388,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/20"
+                      className="text-[var(--warning)] hover:bg-[var(--warning)]/5"
                       onClick={() => handleRecordTest(alarm.id, "no_access")}
                       disabled={recordTest.isPending}
                     >

@@ -165,7 +165,7 @@ export default function AdminReports() {
       case 'approved':
         return <span className="status-pass flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Approved</span>;
       case 'sent':
-        return <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">Sent</span>;
+        return <span className="bg-accent/10 text-accent px-2 py-0.5 rounded text-xs">Sent</span>;
       case 'generated':
         return <span className="status-pending flex items-center gap-1"><Clock className="h-3 w-3" /> Generated</span>;
       default:
@@ -274,7 +274,7 @@ export default function AdminReports() {
 
                 {/* Admin Override Toggle - Only for Deficiency Reports and Admin Users */}
                 {reportType === 'deficiency' && user?.role === 'admin' && (
-                  <div className="border rounded-lg p-4 bg-yellow-50 dark:bg-yellow-950/20 space-y-2">
+                  <div className="border rounded-lg p-4 bg-[var(--warning)]/5 space-y-2">
                     <div className="flex items-start gap-3">
                       <input
                         type="checkbox"
@@ -284,10 +284,10 @@ export default function AdminReports() {
                         className="mt-1"
                       />
                       <div className="flex-1">
-                        <Label htmlFor="allowMissingLocations" className="font-medium text-yellow-800 dark:text-yellow-200 cursor-pointer">
+                        <Label htmlFor="allowMissingLocations" className="font-medium text-[var(--warning)] cursor-pointer">
                           Allow missing locations (Test Mode)
                         </Label>
-                        <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                        <p className="text-sm text-[var(--warning)] mt-1">
                           Admin override: Generate report even if deficiencies are missing location information. 
                           Report will include warnings and a "Missing Locations" appendix.
                         </p>
@@ -359,12 +359,12 @@ export default function AdminReports() {
 
                   {/* PDF Generated Success */}
                   {generatedPdfUrl && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <div className="flex items-center gap-2 text-green-700 mb-2">
+                    <div className="bg-[var(--success)]/5 border border-[var(--success)]/20 rounded-lg p-4">
+                      <div className="flex items-center gap-2 text-[var(--success)] mb-2">
                         <CheckCircle2 className="h-5 w-5" />
                         <span className="font-medium">PDF Generated Successfully!</span>
                       </div>
-                      <p className="text-sm text-green-600 mb-3">
+                      <p className="text-sm text-[var(--success)] mb-3">
                         Report Number: {generatedReportNumber}
                       </p>
                       <div className="flex gap-2">
@@ -372,7 +372,7 @@ export default function AdminReports() {
                           variant="outline"
                           size="sm"
                           onClick={handleDownloadPDF}
-                          className="border-green-300 text-green-700 hover:bg-green-100"
+                          className="border-[var(--success)]/30 text-[var(--success)] hover:bg-[var(--success)]/10"
                         >
                           <Download className="h-4 w-4 mr-1" />
                           Download PDF
@@ -381,7 +381,7 @@ export default function AdminReports() {
                           variant="ghost"
                           size="sm"
                           onClick={() => window.open(generatedPdfUrl, '_blank')}
-                          className="text-green-700 hover:bg-green-100"
+                          className="text-[var(--success)] hover:bg-[var(--success)]/10"
                         >
                           <ExternalLink className="h-4 w-4 mr-1" />
                           Open in New Tab

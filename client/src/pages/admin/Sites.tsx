@@ -319,11 +319,11 @@ export default function AdminSites() {
                       )}
                       {site.keyNumber && (
                         <p className="text-sm flex items-center gap-1 mt-1">
-                          <Key className="h-3 w-3 text-yellow-600" />
-                          <span className="text-yellow-700 font-medium">Key {site.keyNumber}</span>
+                          <Key className="h-3 w-3 text-[var(--warning)]" />
+                          <span className="text-[var(--warning)] font-medium">Key {site.keyNumber}</span>
                           {site.keyLocation && <span className="text-muted-foreground">— {site.keyLocation}</span>}
                           {site.keySignedOutBy && (
-                            <span className="ml-1 text-orange-600 font-medium text-xs">(Out: {site.keySignedOutBy})</span>
+                            <span className="ml-1 text-[var(--warning)] font-medium text-xs">(Out: {site.keySignedOutBy})</span>
                           )}
                         </p>
                       )}
