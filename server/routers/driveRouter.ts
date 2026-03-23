@@ -113,11 +113,41 @@ export const driveRouter = router({
   }),
 
   /**
+   * List Shared Drives the user has access to.
+   */
+  listSharedDrives: adminOrOfficeProcedure.query(async ({ ctx }) => {
+    const accessToken = await getValidGoogleToken(ctx.user.id);
+    if (!accessToken) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Google account not connected. Please log out and log back in.",
+      });
+    }
+
+    const url = new URL(`${DRIVE_API}/drives`);
+    url.searchParams.set("pageSize", "50");
+    url.searchParams.set("fields", "drives(id,name)");
+
+    const response = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      // Non-fatal — just return empty list if shared drives aren't accessible
+      return { drives: [] as { id: string; name: string }[] };
+    }
+
+    const data = (await response.json()) as { drives: { id: string; name: string }[] };
+    return { drives: data.drives ?? [] };
+  }),
+
+  /**
    * List the contents of a Drive folder (folders + spreadsheet files only).
    * If folderId is omitted, lists the Drive root.
+   * Pass sharedWithMe=true to list files shared with the user instead.
    */
   listFolder: adminOrOfficeProcedure
-    .input(z.object({ folderId: z.string().optional() }))
+    .input(z.object({ folderId: z.string().optional(), sharedWithMe: z.boolean().optional() }))
     .query(async ({ input, ctx }) => {
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
@@ -127,14 +157,23 @@ export const driveRouter = router({
         });
       }
 
-      const parent = input.folderId ? `'${input.folderId}'` : "'root'";
-      const q = `${parent} in parents and trashed=false and (mimeType='application/vnd.google-apps.folder' or mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel' or name contains '.xlsm' or name contains '.csv')`;
+      const mimeFilter = `(mimeType='application/vnd.google-apps.folder' or mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel' or name contains '.xlsm' or name contains '.csv')`;
+
+      let q: string;
+      if (input.sharedWithMe) {
+        q = `sharedWithMe=true and trashed=false and ${mimeFilter}`;
+      } else {
+        const parent = input.folderId ? `'${input.folderId}'` : "'root'";
+        q = `${parent} in parents and trashed=false and ${mimeFilter}`;
+      }
 
       const url = new URL(`${DRIVE_API}/files`);
       url.searchParams.set("q", q);
-      url.searchParams.set("fields", "files(id,name,mimeType,modifiedTime,size)");
+      url.searchParams.set("fields", "files(id,name,mimeType,modifiedTime,size,driveId)");
       url.searchParams.set("orderBy", "folder,name");
-      url.searchParams.set("pageSize", "100");
+      url.searchParams.set("pageSize", "200");
+      url.searchParams.set("includeItemsFromAllDrives", "true");
+      url.searchParams.set("supportsAllDrives", "true");
 
       const response = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${accessToken}` },
