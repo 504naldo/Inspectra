@@ -16,6 +16,7 @@ export type TokenResponse = {
   accessToken: string;
   idToken: string;
   refreshToken?: string;
+  expiresIn?: number;
 };
 
 /** Returned by getUserInfo — matches the shape the rest of the app expects */
@@ -83,6 +84,7 @@ async function googleExchangeCode(code: string): Promise<TokenResponse> {
     accessToken: data.access_token,
     idToken: data.id_token,
     refreshToken: data.refresh_token,
+    expiresIn: data.expires_in,
   };
 }
 

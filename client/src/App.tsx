@@ -37,9 +37,10 @@ import AdminQACheck from "./pages/admin/QACheck";
 import SiteFiles from "./pages/admin/SiteFiles";
 import AssetImport from "./pages/admin/AssetImport";
 import AdminSchedule from "./pages/admin/Schedule";
-import CustomerPortal from "./pages/customer/Portal";
-import CustomerReports from "./pages/customer/Reports";
-import CustomerDeficiencies from "./pages/customer/Deficiencies";
+// Customer portal imports disabled — customer world not active in this release
+// import CustomerPortal from "./pages/customer/Portal";
+// import CustomerReports from "./pages/customer/Reports";
+// import CustomerDeficiencies from "./pages/customer/Deficiencies";
 
 // Protected route wrapper
 function ProtectedRoute({ 
@@ -273,21 +274,15 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      {/* Customer routes */}
+      {/* Customer routes — disabled, customer portal not active in this release */}
       <Route path="/customer">
-        <ProtectedRoute allowedRoles={['customer']}>
-          <CustomerPortal />
-        </ProtectedRoute>
+        <Redirect to="/forbidden" />
       </Route>
       <Route path="/customer/reports">
-        <ProtectedRoute allowedRoles={['customer']}>
-          <CustomerReports />
-        </ProtectedRoute>
+        <Redirect to="/forbidden" />
       </Route>
       <Route path="/customer/deficiencies">
-        <ProtectedRoute allowedRoles={['customer']}>
-          <CustomerDeficiencies />
-        </ProtectedRoute>
+        <Redirect to="/forbidden" />
       </Route>
 
       {/* 403 Forbidden */}

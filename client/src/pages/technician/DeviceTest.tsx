@@ -224,14 +224,14 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
           <h2 className="font-semibold">Test Result</h2>
           <div className="grid grid-cols-3 gap-3">
             <Button
-              className={`action-btn ${result === 'pass' ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+              className={`action-btn ${result === 'pass' ? 'bg-[var(--success)] hover:bg-[var(--success)]/90 text-white' : 'bg-[var(--success)]/10 text-[var(--success)] hover:bg-[var(--success)]/20'}`}
               onClick={() => setResult('pass')}
             >
               <Check className="h-6 w-6 mr-2" />
               PASS
             </Button>
             <Button
-              className={`action-btn ${result === 'fail' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+              className={`action-btn ${result === 'fail' ? 'bg-destructive hover:bg-destructive/90 text-white' : 'bg-destructive/10 text-destructive hover:bg-destructive/20'}`}
               onClick={() => setResult('fail')}
             >
               <X className="h-6 w-6 mr-2" />

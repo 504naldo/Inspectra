@@ -27,6 +27,8 @@ import { useParams, Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { isSpreadsheetFile, getSpreadsheetErrorMessage, getSpreadsheetAcceptAttribute } from "@/_core/utils/fileTypes";
 import { autoMapColumns } from "@/_core/utils/autoMapping";
+import { DriveFilePicker } from "@/components/DriveFilePicker";
+import { HardDrive } from "lucide-react";
 
 type ImportStep = 'selectType' | 'upload' | 'mapping' | 'preview' | 'importing' | 'results';
 
@@ -110,6 +112,7 @@ export default function AssetImport() {
   } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showDrivePicker, setShowDrivePicker] = useState(false);
   
   // Queries
   const { data: site } = trpc.site.get.useQuery({ id: siteId }, { enabled: siteId > 0 });
@@ -291,7 +294,7 @@ export default function AssetImport() {
                     flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium
                     ${step === s ? 'bg-primary text-primary-foreground' : 
                       ['upload', 'mapping', 'preview', 'importing', 'results'].indexOf(step) > i 
-                        ? 'bg-green-500 text-white' 
+                        ? 'bg-[var(--success)] text-white'
                         : 'bg-muted text-muted-foreground'}
                   `}>
                     {['upload', 'mapping', 'preview', 'importing', 'results'].indexOf(step) > i ? (
@@ -435,6 +438,23 @@ export default function AssetImport() {
                   accept={getSpreadsheetAcceptAttribute()}
                   onChange={handleFileSelect}
                 />
+              </div>
+
+              {/* Drive import */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 border-t" />
+                <span className="text-sm text-muted-foreground">or</span>
+                <div className="flex-1 border-t" />
+              </div>
+              <div className="flex justify-center">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDrivePicker(true)}
+                  disabled={parseFileMutation.isPending}
+                >
+                  <HardDrive className="h-4 w-4 mr-2" />
+                  Import from Google Drive
+                </Button>
               </div>
               
               {parseFileMutation.isPending && (
@@ -592,7 +612,7 @@ export default function AssetImport() {
                       </SelectContent>
                     </Select>
                     {parsedData.suggestedSheetName && selectedSheet === parsedData.suggestedSheetName && (
-                      <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
+                      <p className="text-sm text-[var(--success)] mt-2 flex items-center gap-1">
                         <Check className="h-4 w-4" />
                         Recommended sheet for {importType}
                       </p>
@@ -732,19 +752,19 @@ export default function AssetImport() {
               </Card>
               <Card>
                 <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-green-500">{validationSummary.validCount}</div>
+                  <div className="text-2xl font-bold text-[var(--success)]">{validationSummary.validCount}</div>
                   <p className="text-sm text-muted-foreground">Valid</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-yellow-500">{validationSummary.duplicateCount}</div>
+                  <div className="text-2xl font-bold text-[var(--warning)]">{validationSummary.duplicateCount}</div>
                   <p className="text-sm text-muted-foreground">Duplicates</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-red-500">{validationSummary.errorCount}</div>
+                  <div className="text-2xl font-bold text-destructive">{validationSummary.errorCount}</div>
                   <p className="text-sm text-muted-foreground">Errors</p>
                 </CardContent>
               </Card>
@@ -776,7 +796,7 @@ export default function AssetImport() {
                           <td className="p-2">{result.rowNumber}</td>
                           <td className="p-2">
                             {result.status === 'valid' && (
-                              <Badge variant="default" className="bg-green-500">Valid</Badge>
+                              <Badge variant="default" className="bg-[var(--success)]">Valid</Badge>
                             )}
                             {result.status === 'duplicate' && (
                               <Badge variant="secondary">Duplicate</Badge>
@@ -811,7 +831,7 @@ export default function AssetImport() {
               <div className="flex gap-2">
                 {validationSummary.errorCount > 0 && (
                   <p className="text-sm text-muted-foreground self-center mr-4">
-                    <AlertCircle className="h-4 w-4 inline mr-1 text-yellow-500" />
+                    <AlertCircle className="h-4 w-4 inline mr-1 text-[var(--warning)]" />
                     Rows with errors will be skipped
                   </p>
                 )}
@@ -842,8 +862,8 @@ export default function AssetImport() {
             {/* Results Summary */}
             <Card>
               <CardContent className="py-8 text-center">
-                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-                  <Check className="h-8 w-8 text-green-500" />
+                <div className="w-16 h-16 rounded-full bg-[var(--success)]/10 flex items-center justify-center mx-auto mb-4">
+                  <Check className="h-8 w-8 text-[var(--success)]" />
                 </div>
                 <h3 className="text-xl font-bold mb-2">Import Complete!</h3>
                 <p className="text-muted-foreground mb-6">
@@ -856,15 +876,15 @@ export default function AssetImport() {
                     <p className="text-sm text-muted-foreground">Total Rows</p>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-green-500">{importResults.successCount}</div>
+                    <div className="text-2xl font-bold text-[var(--success)]">{importResults.successCount}</div>
                     <p className="text-sm text-muted-foreground">Imported</p>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-yellow-500">{importResults.skippedCount}</div>
+                    <div className="text-2xl font-bold text-[var(--warning)]">{importResults.skippedCount}</div>
                     <p className="text-sm text-muted-foreground">Skipped</p>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-red-500">{importResults.errorCount}</div>
+                    <div className="text-2xl font-bold text-destructive">{importResults.errorCount}</div>
                     <p className="text-sm text-muted-foreground">Errors</p>
                   </div>
                 </div>
@@ -887,6 +907,23 @@ export default function AssetImport() {
           </div>
         )}
       </div>
+      {/* Google Drive File Picker */}
+      <DriveFilePicker
+        open={showDrivePicker}
+        onClose={() => setShowDrivePicker(false)}
+        siteId={siteId}
+        companyId={companyId}
+        onFileSelected={(result) => {
+          setSelectedFile(new File([], result.fileName));
+          setFileData(result.fileData);
+          setParseError(null);
+          parseFileMutation.mutate({
+            fileName: result.fileName,
+            fileData: result.fileData,
+            importType,
+          });
+        }}
+      />
     </AdminLayout>
   );
 }

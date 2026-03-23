@@ -16,7 +16,7 @@ const plugins = [
       name: "Inspectra",
       short_name: "Inspectra",
       description: "Professional fire safety inspection and compliance management",
-      theme_color: "#ef4444",
+      theme_color: "#16324F",
       background_color: "#ffffff",
       display: "standalone",
       orientation: "portrait-primary",

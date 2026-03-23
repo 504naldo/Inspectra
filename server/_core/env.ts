@@ -7,6 +7,9 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  appUrl: (process.env.APP_URL ?? "").replace(/\/$/, ""),
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
   // Comma-separated list of emails that get auto-assigned admin role on login
   // e.g. "ranaldo@ewandf.ca,admin2@ewandf.ca"
   adminEmails: (process.env.ADMIN_EMAILS ?? "")
@@ -16,4 +19,9 @@ export const ENV = {
   // Email domain for auto-activating company employees (e.g. "ewandf.ca")
   // Users with this domain get auto-activated as technicians on first login
   companyDomain: (process.env.COMPANY_DOMAIN ?? "").trim().toLowerCase(),
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  s3Bucket: process.env.S3_BUCKET ?? "",
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
+  notificationEmail: process.env.NOTIFICATION_EMAIL ?? "",
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
 };

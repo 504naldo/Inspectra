@@ -49,9 +49,9 @@ export const adminOrOfficeProcedure = t.procedure.use(
     const { ctx, next } = opts;
 
     if (!ctx.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'office')) {
-      throw new TRPCError({ 
-        code: "FORBIDDEN", 
-        message: "Admin or office role required" 
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Admin or office role required"
       });
     }
 
@@ -61,5 +61,35 @@ export const adminOrOfficeProcedure = t.procedure.use(
         user: ctx.user,
       },
     });
+  }),
+);
+
+export const officeProcedure = t.procedure.use(
+  t.middleware(async opts => {
+    const { ctx, next } = opts;
+    if (!ctx.user || !['admin', 'office'].includes(ctx.user.role)) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Office or Admin access required" });
+    }
+    return next({ ctx: { ...ctx, user: ctx.user } });
+  }),
+);
+
+export const technicianProcedure = t.procedure.use(
+  t.middleware(async opts => {
+    const { ctx, next } = opts;
+    if (!ctx.user || !['admin', 'office', 'technician'].includes(ctx.user.role)) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Technician access required" });
+    }
+    return next({ ctx: { ...ctx, user: ctx.user } });
+  }),
+);
+
+export const customerProcedure = t.procedure.use(
+  t.middleware(async opts => {
+    const { ctx, next } = opts;
+    if (!ctx.user || ctx.user.role !== 'customer') {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Customer access required" });
+    }
+    return next({ ctx: { ...ctx, user: ctx.user } });
   }),
 );

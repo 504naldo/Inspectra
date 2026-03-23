@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Users, CheckSquare } from 'lucide-react';
+import { Loader2, Users, CheckSquare, Calendar } from 'lucide-react';
 
 export default function JobAssignments() {
   // Using sonner toast for notifications
@@ -19,6 +19,7 @@ export default function JobAssignments() {
   const { data: technicians, isLoading: techniciansLoading } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
   const assignJobMutation = trpc.jobAssignment.setJobAssignments.useMutation();
   const bulkAssignMutation = trpc.jobAssignment.bulkAssignJobs.useMutation();
+  const createCalendarEventMutation = trpc.calendar.createEvent.useMutation();
 
   const handleAssignJob = async (jobId: number, technicianId: string | null) => {
     try {
@@ -30,6 +31,27 @@ export default function JobAssignments() {
       });
       toast.success('Technician assignment updated successfully');
       refetchJobs();
+
+      // After assigning a technician, prompt to add to calendar if job has a date but no event
+      const job = jobs?.find((j: any) => j.id === jobId);
+      if (job?.scheduledDate && !job?.googleCalendarEventId && technicianId !== 'unassigned') {
+        toast('Add to Google Calendar?', {
+          action: {
+            label: 'Add',
+            onClick: () => {
+              createCalendarEventMutation.mutate(
+                { jobId },
+                {
+                  onSuccess: () => toast.success('Calendar event created'),
+                  onError: (err) => toast.error(err.message),
+                }
+              );
+            },
+          },
+          icon: <Calendar className="h-4 w-4" />,
+          duration: 8000,
+        });
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to assign job');
     }

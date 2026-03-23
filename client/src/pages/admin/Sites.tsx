@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { 
-  Search, 
+import {
+  Search,
   Plus,
   Building2,
   MapPin,
@@ -19,11 +20,18 @@ import {
   MoreHorizontal,
   Flame,
   Key,
-  KeyRound
+  KeyRound,
+  HardDrive,
+  FileText,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+  Cpu,
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { DriveImportPicker } from "@/components/DriveImportPicker";
 
 export default function AdminSites() {
   const { user } = useAuth();
@@ -43,6 +51,12 @@ export default function AdminSites() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [showDriveImport, setShowDriveImport] = useState(false);
+  const [showPdfImport, setShowPdfImport] = useState(false);
+  const [pdfImportPreview, setPdfImportPreview] = useState<any | null>(null);
+  const [isPdfExtracting, setIsPdfExtracting] = useState(false);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [, navigate] = useLocation();
   const [editSite, setEditSite] = useState<any>(null);
   const [newSite, setNewSite] = useState({
     name: "",
@@ -93,6 +107,41 @@ export default function AdminSites() {
     onError: () => toast.error('Failed to update site')
   });
 
+  const pdfUploadMutation = trpc.drive.importPdfFromUpload.useMutation({
+    onSuccess: (data) => {
+      setIsPdfExtracting(false);
+      setPdfImportPreview(data);
+    },
+    onError: (err) => {
+      setIsPdfExtracting(false);
+      toast.error(err.message || "Failed to extract data from PDF");
+    },
+  });
+
+  const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      setIsPdfExtracting(true);
+      setPdfImportPreview(null);
+      pdfUploadMutation.mutate({ fileName: file.name, fileData: base64, companyId });
+    };
+    reader.readAsDataURL(file);
+    // reset so same file can be re-selected
+    e.target.value = "";
+  };
+
+  const handleConfirmPdfImport = () => {
+    if (!pdfImportPreview) return;
+    toast.success(`Site "${pdfImportPreview.siteName}" created from PDF`);
+    refetch();
+    setShowPdfImport(false);
+    setPdfImportPreview(null);
+    navigate(`/admin/sites/${pdfImportPreview.siteId}/import`);
+  };
+
   const filteredSites = sites?.filter((site: any) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
@@ -139,6 +188,16 @@ export default function AdminSites() {
             />
           </div>
           
+          <Button variant="outline" onClick={() => setShowDriveImport(true)}>
+            <HardDrive className="h-4 w-4 mr-2" />
+            Import from Drive
+          </Button>
+
+          <Button variant="outline" onClick={() => setShowPdfImport(true)}>
+            <FileText className="h-4 w-4 mr-2" />
+            Import from PDF
+          </Button>
+
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -319,11 +378,11 @@ export default function AdminSites() {
                       )}
                       {site.keyNumber && (
                         <p className="text-sm flex items-center gap-1 mt-1">
-                          <Key className="h-3 w-3 text-yellow-600" />
-                          <span className="text-yellow-700 font-medium">Key {site.keyNumber}</span>
+                          <Key className="h-3 w-3 text-[var(--warning)]" />
+                          <span className="text-[var(--warning)] font-medium">Key {site.keyNumber}</span>
                           {site.keyLocation && <span className="text-muted-foreground">— {site.keyLocation}</span>}
                           {site.keySignedOutBy && (
-                            <span className="ml-1 text-orange-600 font-medium text-xs">(Out: {site.keySignedOutBy})</span>
+                            <span className="ml-1 text-[var(--warning)] font-medium text-xs">(Out: {site.keySignedOutBy})</span>
                           )}
                         </p>
                       )}
@@ -414,6 +473,141 @@ export default function AdminSites() {
               >
                 {updateSite.isPending ? "Saving..." : "Save Key Info"}
               </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Google Drive Import Picker */}
+      <DriveImportPicker
+        open={showDriveImport}
+        onOpenChange={setShowDriveImport}
+        companyId={companyId}
+        onImportComplete={(result) => {
+          toast.success(`Site "${result.siteName}" created from Drive`);
+          refetch();
+          navigate(`/admin/sites/${result.siteId}/import`);
+        }}
+      />
+
+      {/* PDF Import Dialog */}
+      <Dialog open={showPdfImport} onOpenChange={(o) => { if (!o) { setShowPdfImport(false); setPdfImportPreview(null); setIsPdfExtracting(false); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              Import from PDF Report
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Hidden file input */}
+          <input
+            ref={pdfInputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            className="hidden"
+            onChange={handlePdfFileChange}
+          />
+
+          {!isPdfExtracting && !pdfImportPreview && (
+            <div className="flex flex-col items-center gap-4 py-6">
+              <div className="p-4 rounded-full bg-muted">
+                <FileText className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <div className="text-center">
+                <p className="font-medium">Upload a fire inspection report PDF</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  AI will extract site info and device lists automatically.
+                </p>
+              </div>
+              <Button onClick={() => pdfInputRef.current?.click()}>
+                <Upload className="h-4 w-4 mr-2" />
+                Choose PDF File
+              </Button>
+            </div>
+          )}
+
+          {isPdfExtracting && (
+            <div className="flex flex-col items-center gap-3 py-8 text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="font-medium text-sm">AI is extracting site data…</p>
+              <p className="text-xs text-muted-foreground">This takes 5–15 seconds.</p>
+            </div>
+          )}
+
+          {pdfImportPreview && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="font-medium text-sm flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  Extraction complete
+                </p>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded border ${
+                  pdfImportPreview.summary.confidence === "high"
+                    ? "text-green-600 bg-green-50 border-green-200"
+                    : pdfImportPreview.summary.confidence === "medium"
+                    ? "text-yellow-600 bg-yellow-50 border-yellow-200"
+                    : "text-red-600 bg-red-50 border-red-200"
+                }`}>
+                  {pdfImportPreview.summary.confidence} confidence
+                </span>
+              </div>
+
+              {/* Site info */}
+              <div className="rounded-lg border p-3 space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <Building2 className="h-3 w-3" /> Site
+                </p>
+                <p className="font-semibold">{pdfImportPreview.siteInfo.name || pdfImportPreview.siteName}</p>
+                {(pdfImportPreview.siteInfo.address || pdfImportPreview.siteInfo.city) && (
+                  <p className="text-sm text-muted-foreground">
+                    {[pdfImportPreview.siteInfo.address, pdfImportPreview.siteInfo.city, pdfImportPreview.siteInfo.state].filter(Boolean).join(", ")}
+                  </p>
+                )}
+                {pdfImportPreview.siteInfo.contactName && (
+                  <p className="text-sm text-muted-foreground">
+                    Contact: {pdfImportPreview.siteInfo.contactName}
+                    {pdfImportPreview.siteInfo.contactPhone && ` · ${pdfImportPreview.siteInfo.contactPhone}`}
+                  </p>
+                )}
+              </div>
+
+              {/* Device summary */}
+              <div className="rounded-lg border p-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <Cpu className="h-3 w-3" /> Devices found: {pdfImportPreview.summary.totalDevices}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(pdfImportPreview.summary.categories as Record<string,number>)
+                    .filter(([, c]) => c > 0)
+                    .map(([cat, count]) => (
+                      <Badge key={cat} variant="secondary" className="text-xs">
+                        {cat.replace(/_/g, " ")}: {String(count)}
+                      </Badge>
+                    ))}
+                </div>
+              </div>
+
+              {pdfImportPreview.summary.warnings?.length > 0 && (
+                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 space-y-1">
+                  <p className="text-xs font-medium text-yellow-700 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" /> Warnings
+                  </p>
+                  {pdfImportPreview.summary.warnings.map((w: string, i: number) => (
+                    <p key={i} className="text-xs text-yellow-600">{w}</p>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <Button className="flex-1" onClick={handleConfirmPdfImport}>
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Confirm Import
+                </Button>
+                <Button variant="outline" onClick={() => { setPdfImportPreview(null); pdfInputRef.current?.click(); }}>
+                  Try Different File
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

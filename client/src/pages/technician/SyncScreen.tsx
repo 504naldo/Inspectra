@@ -107,14 +107,14 @@ export default function SyncScreen() {
 
       <main className="container py-6 space-y-6">
         {/* Connection Status */}
-        <Card className={isOnline ? 'border-green-500/50 bg-green-50' : 'border-amber-500/50 bg-amber-50'}>
+        <Card className={isOnline ? 'border-[var(--success)]/50 bg-[var(--success)]/5' : 'border-[var(--warning)]/50 bg-[var(--warning)]/5'}>
           <CardContent className="flex items-center gap-4 p-4">
             {isOnline ? (
               <>
-                <Wifi className="h-8 w-8 text-green-600" />
+                <Wifi className="h-8 w-8 text-[var(--success)]" />
                 <div>
-                  <p className="font-semibold text-green-800">Connected</p>
-                  <p className="text-sm text-green-700">Ready to sync data</p>
+                  <p className="font-semibold text-[var(--success)]">Connected</p>
+                  <p className="text-sm text-[var(--success)]">Ready to sync data</p>
                 </div>
               </>
             ) : (
@@ -140,7 +140,7 @@ export default function SyncScreen() {
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <CheckCircle2 className="h-8 w-8 mx-auto text-green-500 mb-2" />
+              <CheckCircle2 className="h-8 w-8 mx-auto text-[var(--success)] mb-2" />
               <p className="text-2xl font-bold">{syncedResults.length}</p>
               <p className="text-sm text-muted-foreground">Synced</p>
             </CardContent>

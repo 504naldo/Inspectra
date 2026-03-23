@@ -124,6 +124,18 @@ export function registerOAuthRoutes(app: Express) {
         isActive,
       });
 
+      // Save Google tokens for Workspace integrations (Gmail, Calendar, Drive)
+      if (tokenResponse.accessToken) {
+        const tokenExpiry = tokenResponse.expiresIn
+          ? new Date(Date.now() + tokenResponse.expiresIn * 1000)
+          : null;
+        await db.updateUserByOpenId(userInfo.openId, {
+          googleAccessToken: tokenResponse.accessToken,
+          googleRefreshToken: tokenResponse.refreshToken || undefined,
+          googleTokenExpiry: tokenExpiry,
+        });
+      }
+
       if (!ENV.isProduction) {
         console.log('[OAuth] User upserted:', { email: userInfo.email, role, companyId, isActive });
       }
@@ -178,10 +190,15 @@ export function registerOAuthRoutes(app: Express) {
         }
       }
 
+      // Customer portal not active — block any /customer/* routes from state param
+      if (targetRoute.startsWith('/customer')) {
+        targetRoute = '/forbidden';
+      }
+
       // If target route is empty or "/", redirect to role-based dashboard
       if (!targetRoute || targetRoute === '/') {
         if (user?.role === 'customer') {
-          targetRoute = '/customer';
+          targetRoute = '/forbidden'; // customer portal not active
         } else if (user?.role === 'technician') {
           targetRoute = '/tech/jobs';
         } else if (user?.role === 'office') {

@@ -349,7 +349,7 @@ export default function FireAlarmInspection() {
           <Button
             size="sm"
             variant={currentResult.result === "pass" ? "default" : "outline"}
-            className={currentResult.result === "pass" ? "bg-green-600 hover:bg-green-700" : ""}
+            className={currentResult.result === "pass" ? "bg-[var(--success)] hover:bg-[var(--success)]/90" : ""}
             onClick={() => handleResultChange(item.id, "pass")}
           >
             <Check className="h-4 w-4 mr-1" />
@@ -358,7 +358,7 @@ export default function FireAlarmInspection() {
           <Button
             size="sm"
             variant={currentResult.result === "fail" ? "default" : "outline"}
-            className={currentResult.result === "fail" ? "bg-red-600 hover:bg-red-700" : ""}
+            className={currentResult.result === "fail" ? "bg-destructive hover:bg-destructive/90" : ""}
             onClick={() => handleResultChange(item.id, "fail")}
           >
             <X className="h-4 w-4 mr-1" />
@@ -447,12 +447,12 @@ export default function FireAlarmInspection() {
               {/* Online/Offline indicator */}
               <div className="flex items-center gap-2">
                 {isOnline ? (
-                  <div className="flex items-center gap-2 text-sm text-green-600">
+                  <div className="flex items-center gap-2 text-sm text-[var(--success)]">
                     <Wifi className="h-4 w-4" />
                     <span>Online</span>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 text-sm text-orange-600">
+                  <div className="flex items-center gap-2 text-sm text-[var(--warning)]">
                     <WifiOff className="h-4 w-4" />
                     <span>Offline</span>
                   </div>
@@ -461,8 +461,8 @@ export default function FireAlarmInspection() {
               
               {/* Pending sync count */}
               {pendingCount > 0 && (
-                <div className="flex items-center gap-2 text-sm text-orange-600">
-                  <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+                <div className="flex items-center gap-2 text-sm text-[var(--warning)]">
+                  <Badge variant="secondary" className="bg-[var(--warning)]/10 text-[var(--warning)]">
                     {pendingCount} pending
                   </Badge>
                 </div>
@@ -477,13 +477,13 @@ export default function FireAlarmInspection() {
                   </div>
                 )}
                 {autoSaveStatus === 'saved' && (
-                  <div className="flex items-center gap-2 text-sm text-green-600">
+                  <div className="flex items-center gap-2 text-sm text-[var(--success)]">
                     <Cloud className="h-4 w-4" />
                     <span>Saved</span>
                   </div>
                 )}
                 {autoSaveStatus === 'error' && (
-                  <div className="flex items-center gap-2 text-sm text-red-600">
+                  <div className="flex items-center gap-2 text-sm text-destructive">
                     <CloudOff className="h-4 w-4" />
                     <span>Save failed</span>
                   </div>

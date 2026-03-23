@@ -21,6 +21,10 @@ export const users = mysqlTable("users", {
   certNumber: varchar("certNumber", { length: 64 }),       // e.g. "CFAA-12345"
   certificationLevel: varchar("certificationLevel", { length: 128 }), // e.g. "Level II Fire Alarm Technician"
   certExpiry: date("certExpiry"),                          // Certification expiry date
+  // Google Workspace tokens (stored after OAuth login)
+  googleAccessToken: text("googleAccessToken"),
+  googleRefreshToken: text("googleRefreshToken"),
+  googleTokenExpiry: timestamp("googleTokenExpiry"),
 });
 
 export type User = typeof users.$inferSelect;
@@ -238,6 +242,8 @@ export const jobs = mysqlTable("jobs", {
   finalizationHash: varchar("finalizationHash", { length: 64 }),
   syncAssertedAt: timestamp("syncAssertedAt"),
   syncAssertedById: int("syncAssertedById"),
+  // Google Calendar integration
+  googleCalendarEventId: varchar("googleCalendarEventId", { length: 255 }),
 });
 
 export type Job = typeof jobs.$inferSelect;
@@ -504,6 +510,8 @@ export const reports = mysqlTable("reports", {
   status: mysqlEnum("status", ["draft", "generated", "sent", "approved"]).default("draft").notNull(),
   approvedAt: timestamp("approvedAt"),
   approvedById: int("approvedById"),
+  // Google Drive integration
+  googleDriveUrl: text("googleDriveUrl"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

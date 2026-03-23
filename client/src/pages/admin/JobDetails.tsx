@@ -9,11 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import FinalizeJobDialog from "@/components/FinalizeJobDialog";
-import { 
-  ArrowLeft, 
-  Upload, 
-  FileText, 
-  FileSpreadsheet, 
+import {
+  ArrowLeft,
+  Upload,
+  FileText,
+  FileSpreadsheet,
   Image as ImageIcon,
   Download,
   Eye,
@@ -25,7 +25,10 @@ import {
   ShieldAlert,
   ShieldX,
   FileDown,
-  RefreshCw
+  RefreshCw,
+  Calendar,
+  CalendarCheck,
+  CalendarX
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -89,6 +92,35 @@ export default function AdminJobDetails() {
     },
     onError: (err) => {
       toast.error(`Failed to create re-inspect job: ${err.message}`);
+    },
+  });
+
+  const createCalendarEventMutation = trpc.calendar.createEvent.useMutation({
+    onSuccess: () => {
+      toast.success("Calendar event created");
+      utils.job.get.invalidate({ id: parseInt(jobId!) });
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const updateCalendarEventMutation = trpc.calendar.updateEvent.useMutation({
+    onSuccess: () => {
+      toast.success("Calendar event updated");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const deleteCalendarEventMutation = trpc.calendar.deleteEvent.useMutation({
+    onSuccess: () => {
+      toast.success("Calendar event removed");
+      utils.job.get.invalidate({ id: parseInt(jobId!) });
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -223,10 +255,10 @@ export default function AdminJobDetails() {
   const getFileIcon = (mimeType: string | null) => {
     if (!mimeType) return <FileText className="h-5 w-5" />;
     if (mimeType.includes("spreadsheet") || mimeType.includes("excel") || mimeType.includes("macroEnabled")) {
-      return <FileSpreadsheet className="h-5 w-5 text-green-600" />;
+      return <FileSpreadsheet className="h-5 w-5 text-[var(--success)]" />;
     }
     if (mimeType.includes("image")) {
-      return <ImageIcon className="h-5 w-5 text-blue-600" />;
+      return <ImageIcon className="h-5 w-5 text-accent" />;
     }
     return <FileText className="h-5 w-5" />;
   };
@@ -258,7 +290,7 @@ export default function AdminJobDetails() {
   const getImportStatusBadge = (status: string) => {
     switch (status) {
       case "imported":
-        return <Badge variant="default" className="bg-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />Imported</Badge>;
+        return <Badge variant="default" className="bg-[var(--success)]"><CheckCircle2 className="h-3 w-3 mr-1" />Imported</Badge>;
       case "previewed":
         return <Badge variant="secondary"><Eye className="h-3 w-3 mr-1" />Previewed</Badge>;
       case "failed":
@@ -316,11 +348,60 @@ export default function AdminJobDetails() {
           </div>
           <div className="flex items-center gap-2">
             <Badge>{job.status}</Badge>
+            {/* Calendar sync controls */}
+            {(user?.role === "admin" || user?.role === "office") && (
+              job.googleCalendarEventId ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 border-[var(--success)]/30 text-[var(--success)] hover:bg-[var(--success)]/5"
+                    onClick={() => updateCalendarEventMutation.mutate({ jobId: parseInt(jobId!) })}
+                    disabled={updateCalendarEventMutation.isPending}
+                  >
+                    {updateCalendarEventMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CalendarCheck className="h-4 w-4" />
+                    )}
+                    Synced
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-2 text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                    onClick={() => deleteCalendarEventMutation.mutate({ jobId: parseInt(jobId!) })}
+                    disabled={deleteCalendarEventMutation.isPending}
+                  >
+                    {deleteCalendarEventMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CalendarX className="h-4 w-4" />
+                    )}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => createCalendarEventMutation.mutate({ jobId: parseInt(jobId!) })}
+                  disabled={createCalendarEventMutation.isPending}
+                >
+                  {createCalendarEventMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Calendar className="h-4 w-4" />
+                  )}
+                  Add to Calendar
+                </Button>
+              )
+            )}
             {user?.role === "admin" && job.finalizedAt && (
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                className="gap-2 border-accent/30 text-accent hover:bg-accent/5"
                 onClick={handleVerifyHash}
               >
                 <ShieldCheck className="h-4 w-4" />
@@ -331,7 +412,7 @@ export default function AdminJobDetails() {
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+                className="gap-2 border-[var(--warning)]/30 text-[var(--warning)] hover:bg-[var(--warning)]/5"
                 onClick={() => setReInspectDialogOpen(true)}
               >
                 <RefreshCw className="h-4 w-4" />
@@ -368,14 +449,14 @@ export default function AdminJobDetails() {
 
           <TabsContent value="details" className="space-y-4">
             {job.finalizedAt && (
-              <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4">
-                <ShieldCheck className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+              <div className="flex items-start gap-3 rounded-lg border border-[var(--success)]/20 bg-[var(--success)]/5 p-4">
+                <ShieldCheck className="h-5 w-5 text-[var(--success)] mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm font-semibold text-green-800">Record Sealed — Immutable</p>
-                  <p className="text-xs text-green-700 mt-0.5">
+                  <p className="text-sm font-semibold text-[var(--success)]">Record Sealed — Immutable</p>
+                  <p className="text-xs text-[var(--success)] mt-0.5">
                     Finalized on {new Date(job.finalizedAt).toLocaleString()}. No further edits are permitted.
                     {job.finalizationHash && (
-                      <span className="block mt-1 font-mono text-[10px] break-all text-green-600">
+                      <span className="block mt-1 font-mono text-[10px] break-all text-[var(--success)]">
                         SHA-256: {job.finalizationHash}
                       </span>
                     )}
@@ -486,10 +567,10 @@ export default function AdminJobDetails() {
                                   </td>
                                   <td className="px-4 py-3">
                                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                      def.severity === 'critical' ? 'bg-red-100 text-red-700' :
-                                      def.severity === 'major' ? 'bg-orange-100 text-orange-700' :
-                                      def.severity === 'minor' ? 'bg-yellow-100 text-yellow-700' :
-                                      'bg-blue-100 text-blue-700'
+                                      def.severity === 'critical' ? 'severity-critical' :
+                                      def.severity === 'major' ? 'severity-major' :
+                                      def.severity === 'minor' ? 'severity-minor' :
+                                      'severity-observation'
                                     }`}>{def.severity}</span>
                                   </td>
                                   <td className="px-4 py-3 text-muted-foreground text-xs">
@@ -497,10 +578,10 @@ export default function AdminJobDetails() {
                                   </td>
                                   <td className="px-4 py-3">
                                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                      def.status === 'open' ? 'bg-red-100 text-red-700' :
-                                      def.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
-                                      def.status === 'resolved' || def.status === 'closed' ? 'bg-green-100 text-green-700' :
-                                      'bg-gray-100 text-gray-700'
+                                      def.status === 'open' ? 'status-fail' :
+                                      def.status === 'in_progress' ? 'bg-accent/10 text-accent' :
+                                      def.status === 'resolved' || def.status === 'closed' ? 'status-pass' :
+                                      'status-na'
                                     }`}>{def.status?.replace(/_/g, ' ')}</span>
                                   </td>
                                   <td className="px-4 py-3 text-right font-mono">
@@ -706,32 +787,32 @@ export default function AdminJobDetails() {
                 <span>Verifying record integrity...</span>
               </div>
             ) : verifyResult.error ? (
-              <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
-                <ShieldX className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+              <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                <ShieldX className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-red-800">Verification Error</p>
-                  <p className="text-sm text-red-700 mt-1">{verifyResult.error}</p>
+                  <p className="font-semibold text-destructive">Verification Error</p>
+                  <p className="text-sm text-destructive mt-1">{verifyResult.error}</p>
                 </div>
               </div>
             ) : verifyResult.hashMatch ? (
-              <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4">
-                <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+              <div className="flex items-start gap-3 rounded-lg border border-[var(--success)]/20 bg-[var(--success)]/5 p-4">
+                <CheckCircle2 className="h-5 w-5 text-[var(--success)] mt-0.5 shrink-0" />
                 <div>
-                  <p className="font-semibold text-green-800">Integrity Confirmed</p>
-                  <p className="text-sm text-green-700 mt-1">{verifyResult.message}</p>
-                  <p className="text-xs text-green-600 mt-2 font-mono break-all">{verifyResult.storedHash}</p>
+                  <p className="font-semibold text-[var(--success)]">Integrity Confirmed</p>
+                  <p className="text-sm text-[var(--success)] mt-1">{verifyResult.message}</p>
+                  <p className="text-xs text-[var(--success)] mt-2 font-mono break-all">{verifyResult.storedHash}</p>
                   {verifyResult.finalizedAt && (
-                    <p className="text-xs text-green-600 mt-1">Sealed: {new Date(verifyResult.finalizedAt).toLocaleString()}</p>
+                    <p className="text-xs text-[var(--success)] mt-1">Sealed: {new Date(verifyResult.finalizedAt).toLocaleString()}</p>
                   )}
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
-                  <ShieldAlert className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+                <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                  <ShieldAlert className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
                   <div>
-                    <p className="font-semibold text-red-800">Hash Mismatch — Record May Be Tampered</p>
-                    <p className="text-sm text-red-700 mt-1">{verifyResult.message}</p>
+                    <p className="font-semibold text-destructive">Hash Mismatch — Record May Be Tampered</p>
+                    <p className="text-sm text-destructive mt-1">{verifyResult.message}</p>
                   </div>
                 </div>
                 <div className="rounded-lg border p-3 space-y-2 text-xs font-mono">
@@ -741,7 +822,7 @@ export default function AdminJobDetails() {
                   </div>
                   <div>
                     <p className="text-muted-foreground font-sans font-medium">Recomputed hash:</p>
-                    <p className="break-all text-red-600">{verifyResult.recomputedHash}</p>
+                    <p className="break-all text-destructive">{verifyResult.recomputedHash}</p>
                   </div>
                 </div>
               </div>
@@ -755,7 +836,7 @@ export default function AdminJobDetails() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <RefreshCw className="h-5 w-5 text-orange-600" />
+              <RefreshCw className="h-5 w-5 text-[var(--warning)]" />
               Create Re-inspect Job
             </DialogTitle>
             <DialogDescription>
@@ -783,7 +864,7 @@ export default function AdminJobDetails() {
               Cancel
             </Button>
             <Button
-              className="bg-orange-600 hover:bg-orange-700 text-white"
+              className="bg-[var(--warning)] hover:bg-[var(--warning)]/90 text-white"
               onClick={() => cloneMutation.mutate({ jobId: parseInt(jobId!) })}
               disabled={cloneMutation.isPending}
             >

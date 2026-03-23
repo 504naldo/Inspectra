@@ -9,14 +9,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { 
-  Upload, 
-  FileImage, 
-  FileText, 
-  File, 
-  Trash2, 
-  Tag, 
-  Link2, 
+import {
+  Upload,
+  FileImage,
+  FileText,
+  File,
+  Trash2,
+  Tag,
+  Link2,
   Download,
   X,
   Plus,
@@ -26,8 +26,10 @@ import {
   List,
   Eye,
   Loader2,
-  ArrowLeft
+  ArrowLeft,
+  HardDrive
 } from "lucide-react";
+import { DriveFilePicker } from "@/components/DriveFilePicker";
 import { useState, useRef, useCallback } from "react";
 import { useParams, Link } from "wouter";
 import { toast } from "sonner";
@@ -42,6 +44,7 @@ export default function SiteFiles() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedFiles, setSelectedFiles] = useState<number[]>([]);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [showDrivePicker, setShowDrivePicker] = useState(false);
   const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [selectedFileForEdit, setSelectedFileForEdit] = useState<number | null>(null);
@@ -199,8 +202,8 @@ export default function SiteFiles() {
   
   const getFileIcon = (mimeType: string | null | undefined) => {
     if (!mimeType) return <File className="h-8 w-8 text-muted-foreground" />;
-    if (mimeType.startsWith('image/')) return <FileImage className="h-8 w-8 text-blue-500" />;
-    if (mimeType.includes('pdf')) return <FileText className="h-8 w-8 text-red-500" />;
+    if (mimeType.startsWith('image/')) return <FileImage className="h-8 w-8 text-accent" />;
+    if (mimeType.includes('pdf')) return <FileText className="h-8 w-8 text-destructive" />;
     return <File className="h-8 w-8 text-muted-foreground" />;
   };
   
@@ -240,6 +243,10 @@ export default function SiteFiles() {
             <h1 className="text-2xl font-bold">Site Files</h1>
             <p className="text-muted-foreground">{site?.name || 'Loading...'}</p>
           </div>
+          <Button variant="outline" onClick={() => setShowDrivePicker(true)}>
+            <HardDrive className="h-4 w-4 mr-2" />
+            Import from Drive
+          </Button>
           <Button onClick={() => setIsUploadOpen(true)}>
             <Upload className="h-4 w-4 mr-2" />
             Upload Files
@@ -638,6 +645,19 @@ export default function SiteFiles() {
             />
           </DialogContent>
         </Dialog>
+
+        {/* Google Drive File Picker */}
+        <DriveFilePicker
+          open={showDrivePicker}
+          onClose={() => setShowDrivePicker(false)}
+          siteId={siteId}
+          companyId={companyId}
+          onFileSelected={async () => {
+            // Attachment was created server-side; just refresh the file list
+            await refetchFiles();
+            toast.success("File imported from Google Drive");
+          }}
+        />
       </div>
     </AdminLayout>
   );
