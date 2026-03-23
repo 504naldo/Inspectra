@@ -17,6 +17,7 @@ import {
   AlertCircle,
   HardDrive,
   CheckCircle2,
+  BookmarkCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -85,28 +86,16 @@ export function DriveImportPicker({
     }
   }, [open]);
 
-  // Auto-find EWF Accounts folder when dialog opens
-  const findFolderQuery = trpc.drive.findFolder.useQuery(
+  // Look up EWF Accounts passively for the shortcut button only
+  const ewfQuery = trpc.drive.findFolder.useQuery(
     { name: "EWF Accounts" },
-    { enabled: open && currentFolderId === undefined, retry: false }
+    { enabled: open, retry: false, staleTime: Infinity }
   );
 
-  // Navigate into EWF Accounts when found
-  useEffect(() => {
-    if (
-      findFolderQuery.data?.folders.length &&
-      currentFolderId === undefined
-    ) {
-      const folder = findFolderQuery.data.folders[0];
-      setCurrentFolderId(folder.id);
-      setBreadcrumbs([{ id: folder.id, name: folder.name }]);
-    }
-  }, [findFolderQuery.data, currentFolderId]);
-
-  // List current folder
+  // List current folder (always enabled when open — starts at root)
   const listQuery = trpc.drive.listFolder.useQuery(
     { folderId: currentFolderId },
-    { enabled: open && currentFolderId !== undefined, retry: false }
+    { enabled: open, retry: false }
   );
 
   const importMutation = trpc.drive.importFromDrive.useMutation({
@@ -134,10 +123,20 @@ export function DriveImportPicker({
   };
 
   const handleBack = () => {
-    if (breadcrumbs.length <= 1) return;
+    if (breadcrumbs.length === 0) return;
     const newCrumbs = breadcrumbs.slice(0, -1);
     setBreadcrumbs(newCrumbs);
-    setCurrentFolderId(newCrumbs[newCrumbs.length - 1].id);
+    setCurrentFolderId(
+      newCrumbs.length > 0 ? newCrumbs[newCrumbs.length - 1].id : undefined
+    );
+    setSelectedFile(null);
+  };
+
+  const handleGoToEwf = () => {
+    const folder = ewfQuery.data?.folders[0];
+    if (!folder) return;
+    setCurrentFolderId(folder.id);
+    setBreadcrumbs([{ id: folder.id, name: folder.name }]);
     setSelectedFile(null);
   };
 
@@ -160,9 +159,9 @@ export function DriveImportPicker({
     });
   };
 
-  const isLoading =
-    (findFolderQuery.isLoading && currentFolderId === undefined) ||
-    listQuery.isLoading;
+  const isLoading = listQuery.isLoading;
+  const ewfFolder = ewfQuery.data?.folders[0];
+  const atRoot = breadcrumbs.length === 0;
 
   const items = listQuery.data?.items ?? [];
   const folders = items.filter((i) => i.isFolder);
@@ -178,49 +177,63 @@ export function DriveImportPicker({
           </DialogTitle>
 
           {/* Breadcrumb */}
-          {breadcrumbs.length > 0 && (
-            <nav className="flex items-center flex-wrap gap-1 mt-2 text-sm">
-              <button
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => {
-                  setCurrentFolderId(undefined);
-                  setBreadcrumbs([]);
-                  setSelectedFile(null);
-                }}
-              >
-                Drive
-              </button>
-              {breadcrumbs.map((crumb, i) => (
-                <span key={crumb.id ?? i} className="flex items-center gap-1">
-                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                  <button
-                    className={`transition-colors ${
-                      i === breadcrumbs.length - 1
-                        ? "font-medium text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    onClick={() => handleBreadcrumbClick(i)}
-                    disabled={i === breadcrumbs.length - 1}
-                  >
-                    {crumb.name}
-                  </button>
-                </span>
-              ))}
-            </nav>
-          )}
+          <nav className="flex items-center flex-wrap gap-1 mt-2 text-sm">
+            <button
+              className={`transition-colors ${atRoot ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => {
+                setCurrentFolderId(undefined);
+                setBreadcrumbs([]);
+                setSelectedFile(null);
+              }}
+              disabled={atRoot}
+            >
+              Drive
+            </button>
+            {breadcrumbs.map((crumb, i) => (
+              <span key={crumb.id ?? i} className="flex items-center gap-1">
+                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                <button
+                  className={`transition-colors ${
+                    i === breadcrumbs.length - 1
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => handleBreadcrumbClick(i)}
+                  disabled={i === breadcrumbs.length - 1}
+                >
+                  {crumb.name}
+                </button>
+              </span>
+            ))}
+          </nav>
         </DialogHeader>
 
         {/* Toolbar */}
-        <div className="flex items-center gap-2 px-6 py-3 border-b bg-muted/30 shrink-0">
+        <div className="flex items-center gap-2 px-6 py-2.5 border-b bg-muted/30 shrink-0">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleBack}
-            disabled={breadcrumbs.length <= 1 || isLoading || isImporting}
+            disabled={atRoot || isLoading || isImporting}
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back
           </Button>
+
+          {/* EWF Accounts shortcut */}
+          {ewfFolder && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5 border-dashed"
+              onClick={handleGoToEwf}
+              disabled={currentFolderId === ewfFolder.id || isLoading || isImporting}
+            >
+              <BookmarkCheck className="h-3.5 w-3.5 text-primary" />
+              {ewfFolder.name}
+            </Button>
+          )}
+
           <span className="text-xs text-muted-foreground ml-auto">
             {spreadsheets.length > 0
               ? `${spreadsheets.length} spreadsheet${spreadsheets.length !== 1 ? "s" : ""} found`
@@ -238,7 +251,7 @@ export function DriveImportPicker({
             </div>
           )}
 
-          {!isLoading && findFolderQuery.isError && (
+          {!isLoading && listQuery.isError && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
               <AlertCircle className="h-8 w-8 text-destructive" />
               <p className="text-sm text-muted-foreground">
@@ -248,32 +261,14 @@ export function DriveImportPicker({
             </div>
           )}
 
-          {!isLoading &&
-            !findFolderQuery.isError &&
-            currentFolderId === undefined &&
-            (findFolderQuery.data?.folders.length ?? 0) === 0 && (
-              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-                <Folder className="h-8 w-8 text-muted-foreground" />
-                <p className="font-medium">
-                  &ldquo;EWF Accounts&rdquo; folder not found
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Make sure the folder exists in your Google Drive and you have
-                  access to it.
-                </p>
-              </div>
-            )}
-
-          {!isLoading &&
-            items.length === 0 &&
-            currentFolderId !== undefined && (
-              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-                <Folder className="h-8 w-8 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  This folder is empty or contains no spreadsheet files.
-                </p>
-              </div>
-            )}
+          {!isLoading && !listQuery.isError && items.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+              <Folder className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                This folder is empty or contains no spreadsheet files.
+              </p>
+            </div>
+          )}
 
           {/* Folders */}
           {folders.map((item) => (
