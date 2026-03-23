@@ -99,7 +99,35 @@ const importRouter = router({
         requestedSheet: input.sheetName
       });
     
-    const sheetName = input.sheetName || suggestedSheetName || workbook.SheetNames[0];
+    const preferredSiteSheets = ['Summary Sheet', 'Work Site Info', 'Inspection Summary'];
+    const preferredSiteSheetMatch = input.importType === 'site'
+      ? workbook.SheetNames.find((name) =>
+          preferredSiteSheets.some((preferred) => safeToLower(name) === safeToLower(preferred))
+        )
+      : undefined;
+
+    const sheetName =
+      input.sheetName ||
+      preferredSiteSheetMatch ||
+      suggestedSheetName ||
+      workbook.SheetNames[0];
+
+    const sheetSelectionReason = input.sheetName
+      ? 'requested_sheet'
+      : preferredSiteSheetMatch
+      ? 'preferred_site_sheet'
+      : suggestedSheetName
+      ? 'smart_suggestion'
+      : 'first_sheet_fallback';
+
+    console.log('[parseFile] Sheet selection:', {
+      importType: input.importType,
+      chosenSheet: sheetName,
+      reason: sheetSelectionReason,
+      preferredSiteSheets: input.importType === 'site' ? preferredSiteSheets : undefined,
+      preferredSiteSheetMatch,
+      suggestedSheetName
+    });
     
     // Validate sheet exists
     if (!workbook.Sheets[sheetName]) {
@@ -137,6 +165,19 @@ const importRouter = router({
     const { autoMapColumns, getMappingStats } = await import('../autoMapper');
     const autoMapping = autoMapColumns(headers, input.importType);
     const mappingStats = getMappingStats(autoMapping, input.importType);
+
+    if (input.importType === 'site' && mappingStats.mapped === 0) {
+      console.warn('[parseFile] Site parse failed: no mapped headers', {
+        chosenSheet: sheetName,
+        reason: sheetSelectionReason,
+        mappingStats,
+        availableSheets: workbook.SheetNames
+      });
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `PARSE_FAILED: No site fields were mapped from sheet "${sheetName}". Select a site info sheet (preferred: Summary Sheet, Work Site Info, Inspection Summary).`,
+      });
+    }
     
     // For smoke alarms, extract first 3 suite numbers for verification
     let sampleSuiteNumbers: any[] = [];
@@ -149,6 +190,7 @@ const importRouter = router({
     
       console.log('[parseFile] Parse successful:', {
         sheetName,
+        sheetSelectionReason,
         headerCount: headers.length,
         totalRows,
         mappingStats,
