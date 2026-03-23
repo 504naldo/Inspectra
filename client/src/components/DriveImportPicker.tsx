@@ -255,6 +255,7 @@ export function DriveImportPicker({
           {!isLoading && listQuery.isError && (() => {
             const isAuthError =
               (listQuery.error as any)?.data?.code === "PRECONDITION_FAILED";
+            const errorMsg = (listQuery.error as any)?.message || "";
             return (
               <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
                 <AlertCircle className="h-8 w-8 text-destructive" />
@@ -262,11 +263,6 @@ export function DriveImportPicker({
                   <>
                     <p className="font-medium text-sm">
                       Google Drive not connected
-                    </p>
-                    <p className="text-sm text-muted-foreground max-w-xs">
-                      Your account needs to be reconnected to Google Drive.
-                      Click below to sign in again — you'll be brought right
-                      back.
                     </p>
                     <Button
                       size="sm"
@@ -278,11 +274,16 @@ export function DriveImportPicker({
                     >
                       Reconnect Google Drive
                     </Button>
+                    {errorMsg && (
+                      <p className="text-xs text-muted-foreground max-w-sm font-mono bg-muted px-2 py-1 rounded">
+                        {errorMsg}
+                      </p>
+                    )}
                   </>
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     Could not load Drive files.{" "}
-                    {(listQuery.error as any)?.message || "Please try again."}
+                    {errorMsg || "Please try again."}
                   </p>
                 )}
               </div>

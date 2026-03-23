@@ -142,17 +142,21 @@ export const driveRouter = router({
 
       if (!response.ok) {
         const body = await response.text().catch(() => "");
+        let googleMessage = "";
+        try {
+          const parsed = JSON.parse(body);
+          googleMessage = parsed?.error?.message || parsed?.error_description || "";
+        } catch {}
         console.error("[Drive] listFolder failed:", response.status, body);
         if (response.status === 401 || response.status === 403) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message:
-              "Google Drive access denied. Please reconnect your Google account to grant Drive permissions.",
+            message: googleMessage || "Google Drive access denied (403). The Drive API may not be enabled in Google Cloud Console, or Drive access is restricted by your organization.",
           });
         }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to list Drive folder: ${response.status}`,
+          message: googleMessage || `Failed to list Drive folder: ${response.status}`,
         });
       }
 
