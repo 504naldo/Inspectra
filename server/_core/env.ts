@@ -19,4 +19,5 @@ export const ENV = {
   // Email domain for auto-activating company employees (e.g. "ewandf.ca")
   // Users with this domain get auto-activated as technicians on first login
   companyDomain: (process.env.COMPANY_DOMAIN ?? "").trim().toLowerCase(),
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
 };
