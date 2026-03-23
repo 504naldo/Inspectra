@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { getLoginUrl } from "@/const";
 import {
   Dialog,
   DialogContent,
@@ -251,15 +252,42 @@ export function DriveImportPicker({
             </div>
           )}
 
-          {!isLoading && listQuery.isError && (
-            <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-              <AlertCircle className="h-8 w-8 text-destructive" />
-              <p className="text-sm text-muted-foreground">
-                Could not connect to Google Drive. Please log out and log back
-                in to grant Drive access.
-              </p>
-            </div>
-          )}
+          {!isLoading && listQuery.isError && (() => {
+            const isAuthError =
+              (listQuery.error as any)?.data?.code === "PRECONDITION_FAILED";
+            return (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                <AlertCircle className="h-8 w-8 text-destructive" />
+                {isAuthError ? (
+                  <>
+                    <p className="font-medium text-sm">
+                      Google Drive not connected
+                    </p>
+                    <p className="text-sm text-muted-foreground max-w-xs">
+                      Your account needs to be reconnected to Google Drive.
+                      Click below to sign in again — you'll be brought right
+                      back.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        window.location.href = getLoginUrl(
+                          window.location.pathname
+                        );
+                      }}
+                    >
+                      Reconnect Google Drive
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Could not load Drive files.{" "}
+                    {(listQuery.error as any)?.message || "Please try again."}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           {!isLoading && !listQuery.isError && items.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
