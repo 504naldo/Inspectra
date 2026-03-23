@@ -20,4 +20,8 @@ export const ENV = {
   // Users with this domain get auto-activated as technicians on first login
   companyDomain: (process.env.COMPANY_DOMAIN ?? "").trim().toLowerCase(),
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  s3Bucket: process.env.S3_BUCKET ?? "",
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
+  notificationEmail: process.env.NOTIFICATION_EMAIL ?? "",
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
 };
