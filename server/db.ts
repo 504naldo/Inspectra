@@ -84,25 +84,24 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.companyId = user.companyId;
     }
     
-    // Handle role assignment
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
+    // Handle role assignment.
+    // The owner always stays admin (even if manually demoted).
+    // For all other users, only set the role on initial insert — never overwrite
+    // on subsequent logins so that admin-assigned roles are preserved.
+    if (user.openId === ENV.ownerOpenId) {
       values.role = 'admin';
       updateSet.role = 'admin';
     } else if (!existing) {
-      // New user: default to technician role
-      values.role = 'technician';
+      // New user: assign the role from the caller (OAuth-computed or explicit)
+      values.role = user.role ?? 'technician';
     }
+    // Existing users: role is intentionally omitted from updateSet
     
-    // Handle isActive - respect explicit value from OAuth callback
-    if (user.isActive !== undefined) {
-      values.isActive = user.isActive;
-      updateSet.isActive = user.isActive;
-    } else if (!existing) {
-      // New users: default to active (OAuth callback will set to 0 if needed)
-      values.isActive = 1;
+    // Handle isActive — only set on initial insert.
+    // Preserves activation state managed by admins; prevents login from
+    // re-locking a user an admin has already activated.
+    if (!existing) {
+      values.isActive = user.isActive ?? 1;
     }
 
     if (!values.lastSignedIn) {
