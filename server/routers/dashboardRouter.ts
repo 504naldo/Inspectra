@@ -11,7 +11,7 @@ const userRouter = router({
   
   listTechnicians: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
     const users = await db.getAllUsers(input.companyId);
-    return users.filter((u: any) => u.role === 'technician' && u.isActive === 1);
+    return users.filter((u: any) => ['technician', 'admin', 'office'].includes(u.role) && u.isActive === 1);
   }),
   
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {

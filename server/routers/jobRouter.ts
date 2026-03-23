@@ -201,7 +201,7 @@ const jobRouter = router({
   })).mutation(async ({ input, ctx }) => {
     // Verify technician exists and is active
     const technician = await db.getUserById(input.technicianId);
-    if (!technician || technician.role !== 'technician' || !technician.isActive) {
+    if (!technician || !['technician', 'admin', 'office'].includes(technician.role) || !technician.isActive) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid technician' });
     }
     
@@ -228,7 +228,7 @@ const jobRouter = router({
     
     // Verify technician exists and is active
     const technician = await db.getUserById(input.technicianId);
-    if (!technician || technician.role !== 'technician' || !technician.isActive) {
+    if (!technician || !['technician', 'admin', 'office'].includes(technician.role) || !technician.isActive) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid technician' });
     }
     
@@ -257,7 +257,7 @@ const jobRouter = router({
   })).mutation(async ({ input, ctx }) => {
     // Verify lead technician
     const leadTech = await db.getUserById(input.leadTechnicianId);
-    if (!leadTech || leadTech.role !== 'technician' || !leadTech.isActive) {
+    if (!leadTech || !['technician', 'admin', 'office'].includes(leadTech.role) || !leadTech.isActive) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid lead technician' });
     }
     
@@ -267,7 +267,7 @@ const jobRouter = router({
     // Verify all additional technicians
     for (const techId of additionalIds) {
       const tech = await db.getUserById(techId);
-      if (!tech || tech.role !== 'technician' || !tech.isActive) {
+      if (!tech || !['technician', 'admin', 'office'].includes(tech.role) || !tech.isActive) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid technician: ${techId}` });
       }
     }
