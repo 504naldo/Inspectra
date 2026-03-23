@@ -1,6 +1,9 @@
+import { createRequire } from "module";
 import { invokeLLM } from "./llm";
 import * as db from "../db";
 import { storagePut } from "../storage";
+
+const require = createRequire(import.meta.url);
 
 // -------------------------------------------------------
 // Device categories matching the DB enum exactly
@@ -47,7 +50,8 @@ export interface ExtractedSiteData {
  * Extract text from a PDF buffer using pdf-parse.
  */
 export async function extractPdfText(pdfBuffer: Buffer): Promise<string> {
-  const pdfParse = (await import("pdf-parse")).default;
+  // pdf-parse is CJS; use createRequire to avoid ESM interop issues
+  const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
   const data = await pdfParse(pdfBuffer);
   return data.text;
 }
