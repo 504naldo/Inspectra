@@ -157,7 +157,7 @@ export const driveRouter = router({
         });
       }
 
-      const mimeFilter = `(mimeType='application/vnd.google-apps.folder' or mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel' or name contains '.xlsm' or name contains '.csv')`;
+      const mimeFilter = `(mimeType='application/vnd.google-apps.folder' or mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel' or mimeType='application/pdf' or name contains '.xlsm' or name contains '.csv')`;
 
       let q: string;
       if (input.sharedWithMe) {
@@ -568,5 +568,94 @@ export const driveRouter = router({
         fileBuffer: fileBuffer.toString("base64"),
         message: `Site "${siteInfo.name || input.fileName}" ready. ${sheetNames.length} sheet(s) found.`,
       };
+    }),
+
+  /**
+   * Import a PDF inspection report from Google Drive.
+   * Downloads the file, extracts text, runs AI extraction, and creates site + devices.
+   */
+  importPdfFromDrive: adminOrOfficeProcedure
+    .input(
+      z.object({
+        fileId: z.string(),
+        fileName: z.string(),
+        companyId: z.number(),
+        customerOrgId: z.number().optional(),
+        siteId: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const accessToken = await getValidGoogleToken(ctx.user.id);
+      if (!accessToken) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Google account not connected. Please log out and log back in.",
+        });
+      }
+
+      const downloadUrl = `${DRIVE_API}/files/${input.fileId}?alt=media&supportsAllDrives=true`;
+      const fileResponse = await fetch(downloadUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!fileResponse.ok) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to download PDF from Google Drive.",
+        });
+      }
+
+      const pdfBuffer = Buffer.from(await fileResponse.arrayBuffer());
+      const { importPdfData } = await import("../_core/pdfImport");
+
+      try {
+        return await importPdfData({
+          pdfBuffer,
+          fileName: input.fileName,
+          companyId: input.companyId,
+          userId: ctx.user.id,
+          customerOrgId: input.customerOrgId,
+          siteId: input.siteId,
+        });
+      } catch (err: any) {
+        throw new TRPCError({
+          code: err.message?.includes("extract text") ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
+          message: err.message || "Failed to import PDF.",
+        });
+      }
+    }),
+
+  /**
+   * Import a PDF inspection report from a direct file upload (base64).
+   * Same logic as importPdfFromDrive but accepts base64-encoded file data.
+   */
+  importPdfFromUpload: adminOrOfficeProcedure
+    .input(
+      z.object({
+        fileName: z.string(),
+        fileData: z.string(), // base64
+        companyId: z.number(),
+        customerOrgId: z.number().optional(),
+        siteId: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const pdfBuffer = Buffer.from(input.fileData, "base64");
+      const { importPdfData } = await import("../_core/pdfImport");
+
+      try {
+        return await importPdfData({
+          pdfBuffer,
+          fileName: input.fileName,
+          companyId: input.companyId,
+          userId: ctx.user.id,
+          customerOrgId: input.customerOrgId,
+          siteId: input.siteId,
+        });
+      } catch (err: any) {
+        throw new TRPCError({
+          code: err.message?.includes("extract text") ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
+          message: err.message || "Failed to import PDF.",
+        });
+      }
     }),
 });
