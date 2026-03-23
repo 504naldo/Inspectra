@@ -37,6 +37,17 @@ export function SiteDetails({ summary, siteName, siteAddress, siteCity }: SiteDe
   }
 
   const { client, building, address, billing, contacts, monitoring, notes } = summary;
+  const normalizedNotes = (() => {
+    const raw = notes as unknown;
+    if (typeof raw === "string") return raw;
+    if (raw && typeof raw === "object" && "date" in raw) {
+      const dateValue = (raw as { date?: unknown }).date;
+      return typeof dateValue === "string" || typeof dateValue === "number"
+        ? String(dateValue)
+        : null;
+    }
+    return null;
+  })();
   const primaryContact = contacts?.[0];
 
   return (
@@ -151,10 +162,10 @@ export function SiteDetails({ summary, siteName, siteAddress, siteCity }: SiteDe
         )}
 
         {/* Notes */}
-        {notes && (
+        {normalizedNotes && (
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Notes</p>
-            <p className="text-muted-foreground whitespace-pre-wrap">{notes}</p>
+            <p className="text-muted-foreground whitespace-pre-wrap">{normalizedNotes}</p>
           </div>
         )}
       </CardContent>

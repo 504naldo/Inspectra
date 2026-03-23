@@ -130,6 +130,17 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   const { job, site, devices, inspectionResults, deficiencies, stats } = jobData;
   const isFinalized = !!(job as any).finalizedAt;
+  const siteNotes = (() => {
+    const raw = (site as any)?.notes as unknown;
+    if (typeof raw === "string") return raw;
+    if (raw && typeof raw === "object" && "date" in raw) {
+      const dateValue = (raw as { date?: unknown }).date;
+      return typeof dateValue === "string" || typeof dateValue === "number"
+        ? String(dateValue)
+        : null;
+    }
+    return null;
+  })();
   
   const testedCount = inspectionResults?.length || 0;
   const totalDevices = devices?.length || 0;
@@ -315,11 +326,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <div className="flex items-center justify-between mt-3 text-sm">
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-full bg-green-500" />
+                  <span className="w-3 h-3 rounded-full bg-[var(--success)]" />
                   {stats?.pass || 0} Pass
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-full bg-red-500" />
+                  <span className="w-3 h-3 rounded-full bg-destructive" />
                   {stats?.fail || 0} Fail
                 </span>
                 <span className="flex items-center gap-1">
@@ -342,12 +353,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             deficiencyCount={smokeStats.deficiencies}
             route={`/tech/jobs/${jobId}/smoke-alarms`}
             resumeRoute={getProgress()?.route.includes('smoke-alarm') ? getProgress()?.route : undefined}
-            gradientFrom="from-red-50"
-            gradientTo="to-orange-50 dark:from-red-950/20 dark:to-orange-950/20"
-            borderColor="border-red-200 dark:border-red-800"
-            textColor="text-red-900 dark:text-red-100"
-            buttonColor="bg-red-600"
-            buttonHoverColor="hover:bg-red-700"
+            gradientFrom="from-destructive/5"
+            gradientTo="to-destructive/10"
+            borderColor="border-destructive/20"
+            textColor="text-foreground"
+            buttonColor="bg-destructive"
+            buttonHoverColor="hover:bg-destructive/90"
             devices={sortedSmokeAlarms}
             isExpanded={expandedCard === 'smoke'}
             onToggle={() => setExpandedCard(expandedCard === 'smoke' ? null : 'smoke')}
@@ -367,12 +378,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             deficiencyCount={fireAlarmStats.deficiencies}
             route={`/tech/jobs/${jobId}?category=firealarm`}
             resumeRoute={getProgress()?.route.includes('fire-alarm') && !getProgress()?.route.includes('smoke') ? getProgress()?.route : undefined}
-            gradientFrom="from-orange-50"
-            gradientTo="to-yellow-50 dark:from-orange-950/20 dark:to-yellow-950/20"
-            borderColor="border-orange-200 dark:border-orange-800"
-            textColor="text-orange-900 dark:text-orange-100"
-            buttonColor="bg-orange-600"
-            buttonHoverColor="hover:bg-orange-700"
+            gradientFrom="from-[var(--warning)]/5"
+            gradientTo="to-[var(--warning)]/10"
+            borderColor="border-[var(--warning)]/20"
+            textColor="text-foreground"
+            buttonColor="bg-[var(--warning)]"
+            buttonHoverColor="hover:bg-[var(--warning)]/90"
             devices={sortedFireAlarmDevices}
             isExpanded={expandedCard === 'firealarm'}
             onToggle={() => setExpandedCard(expandedCard === 'firealarm' ? null : 'firealarm')}
@@ -392,12 +403,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             deficiencyCount={extinguisherStats.deficiencies}
             route={`/tech/jobs/${jobId}?category=extinguisher`}
             resumeRoute={getProgress()?.route.includes('extinguisher') ? getProgress()?.route : undefined}
-            gradientFrom="from-rose-50"
-            gradientTo="to-pink-50 dark:from-rose-950/20 dark:to-pink-950/20"
-            borderColor="border-rose-200 dark:border-rose-800"
-            textColor="text-rose-900 dark:text-rose-100"
-            buttonColor="bg-rose-600"
-            buttonHoverColor="hover:bg-rose-700"
+            gradientFrom="from-destructive/5"
+            gradientTo="to-destructive/10"
+            borderColor="border-destructive/20"
+            textColor="text-foreground"
+            buttonColor="bg-destructive"
+            buttonHoverColor="hover:bg-destructive/90"
             devices={sortedExtinguishers}
             isExpanded={expandedCard === 'extinguisher'}
             onToggle={() => setExpandedCard(expandedCard === 'extinguisher' ? null : 'extinguisher')}
@@ -406,15 +417,15 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedExtinguishers.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
           />
         ) : (
-          <Card className="bg-gradient-to-r from-rose-50 to-pink-50 dark:from-rose-950/20 dark:to-pink-950/20 border-rose-200 dark:border-rose-800">
+          <Card className="bg-destructive/5 border-destructive/20">
             <CardHeader>
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg">
-                  <FireExtinguisher className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+                <div className="p-2 bg-destructive/10 rounded-lg">
+                  <FireExtinguisher className="h-5 w-5 text-destructive" />
                 </div>
                 <div>
-                  <CardTitle className="text-rose-900 dark:text-rose-100">Fire Extinguishers</CardTitle>
-                  <p className="text-sm text-rose-700 dark:text-rose-300">Portable fire extinguishing equipment</p>
+                  <CardTitle>Fire Extinguishers</CardTitle>
+                  <p className="text-sm text-muted-foreground">Portable fire extinguishing equipment</p>
                 </div>
               </div>
             </CardHeader>
@@ -444,12 +455,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             deficiencyCount={emergencyLightStats.deficiencies}
             route={`/tech/jobs/${jobId}?category=emergency`}
             resumeRoute={getProgress()?.route.includes('emergency') || getProgress()?.route.includes('exit') ? getProgress()?.route : undefined}
-            gradientFrom="from-yellow-50"
-            gradientTo="to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20"
-            borderColor="border-yellow-200 dark:border-yellow-800"
-            textColor="text-yellow-900 dark:text-yellow-100"
-            buttonColor="bg-yellow-600"
-            buttonHoverColor="hover:bg-yellow-700"
+            gradientFrom="from-[var(--warning)]/5"
+            gradientTo="to-[var(--warning)]/10"
+            borderColor="border-[var(--warning)]/20"
+            textColor="text-foreground"
+            buttonColor="bg-[var(--warning)]"
+            buttonHoverColor="hover:bg-[var(--warning)]/90"
             devices={sortedEmergencyLights}
             jobId={jobId}
             onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedEmergencyLights.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
@@ -458,15 +469,15 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=emergency`}
           />
         ) : (
-          <Card className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20 border-yellow-200 dark:border-yellow-800">
+          <Card className="bg-[var(--warning)]/5 border-[var(--warning)]/20">
             <CardHeader>
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                  <Lightbulb className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                <div className="p-2 bg-[var(--warning)]/10 rounded-lg">
+                  <Lightbulb className="h-5 w-5 text-[var(--warning)]" />
                 </div>
                 <div>
-                  <CardTitle className="text-yellow-900 dark:text-yellow-100">Emergency Lights</CardTitle>
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300">Emergency and exit lighting</p>
+                  <CardTitle>Emergency Lights</CardTitle>
+                  <p className="text-sm text-muted-foreground">Emergency and exit lighting</p>
                 </div>
               </div>
             </CardHeader>
@@ -512,21 +523,21 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
         </Card>
 
         {/* Sprinkler ITM Inspection */}
-        <Card className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border-blue-200 dark:border-blue-800">
+        <Card className="bg-accent/5 border-accent/20">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex-1">
-                <h3 className="font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                <h3 className="font-semibold flex items-center gap-2">
                   <Droplets className="h-5 w-5" />
                   Sprinkler ITM Inspection
                 </h3>
-                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   NFPA 25 / Vancouver Fire By-law Compliance
                 </p>
               </div>
-              <Button 
-                variant="default" 
-                className="bg-blue-600 hover:bg-blue-700"
+              <Button
+                variant="default"
+                className="bg-accent hover:bg-accent/90"
                 onClick={() => setLocation(`/tech/jobs/${jobId}/sprinkler-itm`, { replace: true })}
               >
                 Start
@@ -537,20 +548,20 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
         </Card>
         
         {/* CAN/ULC-S536 Checklist */}
-        <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
+        <Card className="bg-accent/5 border-accent/20">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                <h3 className="font-semibold flex items-center gap-2">
                   <CheckCircle2 className="h-5 w-5" />
                   CAN/ULC-S536 Checklist
                 </h3>
-                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   Complete inspection checklist for compliance report
                 </p>
               </div>
               <Link href={`/tech/jobs/${jobId}/checklist`}>
-                <Button variant="default" className="bg-blue-600 hover:bg-blue-700">
+                <Button variant="default" className="bg-accent hover:bg-accent/90">
                   Open
                   <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
@@ -624,19 +635,19 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           ) : job.status === 'pending' || job.status === 'scheduled' ? (
             <div className="space-y-2">
               {/* Site Notes Banner */}
-              {(site as any)?.notes && (
+              {siteNotes && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3">
                   <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide mb-1">Site Notes</p>
-                  <p className="text-sm text-amber-900 dark:text-amber-200">{(site as any).notes}</p>
+                  <p className="text-sm text-amber-900 dark:text-amber-200">{siteNotes}</p>
                 </div>
               )}
               {/* Key Info Banner */}
               {((site as any)?.keyNumber || (site as any)?.keyLocation) && (
-                <div className="rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/30 p-3">
-                  <p className="text-xs font-semibold text-yellow-800 dark:text-yellow-300 uppercase tracking-wide mb-1">Key Information</p>
-                  {(site as any).keyNumber && <p className="text-sm text-yellow-900 dark:text-yellow-200"><span className="font-medium">Key #:</span> {(site as any).keyNumber}</p>}
-                  {(site as any).keyLocation && <p className="text-sm text-yellow-900 dark:text-yellow-200"><span className="font-medium">Location:</span> {(site as any).keyLocation}</p>}
-                  {(site as any).keySignedOutBy && <p className="text-sm text-orange-700 font-medium">Currently signed out by: {(site as any).keySignedOutBy}</p>}
+                <div className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning)]/5 p-3">
+                  <p className="text-xs font-semibold text-[var(--warning)] uppercase tracking-wide mb-1">Key Information</p>
+                  {(site as any).keyNumber && <p className="text-sm text-foreground"><span className="font-medium">Key #:</span> {(site as any).keyNumber}</p>}
+                  {(site as any).keyLocation && <p className="text-sm text-foreground"><span className="font-medium">Location:</span> {(site as any).keyLocation}</p>}
+                  {(site as any).keySignedOutBy && <p className="text-sm text-[var(--warning)] font-medium">Currently signed out by: {(site as any).keySignedOutBy}</p>}
                 </div>
               )}
               <Button 
@@ -645,7 +656,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 disabled={startJob.isPending || !isOnline}
               >
                 <Play className="h-5 w-5 mr-2" />
-                {((site as any)?.notes || (site as any)?.keyNumber || (site as any)?.keyLocation) ? 'Acknowledged — Start Inspection' : 'Start Inspection'}
+                {(((site as any)?.notes) || (site as any)?.keyNumber || (site as any)?.keyLocation) ? 'Acknowledged — Start Inspection' : 'Start Inspection'}
               </Button>
             </div>
           ) : job.status === 'in_progress' ? (
