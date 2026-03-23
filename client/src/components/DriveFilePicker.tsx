@@ -17,6 +17,7 @@ import {
   ChevronRight,
   AlertCircle,
   HardDrive,
+  BookmarkCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -78,44 +79,34 @@ export function DriveFilePicker({
   companyId,
   onFileSelected,
 }: DriveFilePickerProps) {
-  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(
-    undefined
-  );
+  // undefined = Drive root
+  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // Find "EWF Accounts" folder on open
-  const findFolderQuery = trpc.drive.findFolder.useQuery(
-    { name: "EWF Accounts" },
-    {
-      enabled: open && currentFolderId === undefined,
-      retry: false,
+  // Reset to root whenever the dialog opens
+  useEffect(() => {
+    if (open) {
+      setCurrentFolderId(undefined);
+      setBreadcrumbs([]);
+      setDownloadingId(null);
     }
+  }, [open]);
+
+  // Look up the EWF Accounts shortcut (passive — just for the bookmark button)
+  const ewfQuery = trpc.drive.findFolder.useQuery(
+    { name: "EWF Accounts" },
+    { enabled: open, retry: false, staleTime: Infinity }
   );
 
-  // Auto-navigate into EWF Accounts when found
-  useEffect(() => {
-    if (
-      findFolderQuery.data?.folders.length &&
-      currentFolderId === undefined
-    ) {
-      const folder = findFolderQuery.data.folders[0];
-      setCurrentFolderId(folder.id);
-      setBreadcrumbs([{ id: folder.id, name: folder.name }]);
-    }
-  }, [findFolderQuery.data, currentFolderId]);
-
-  // List the current folder
+  // List the current folder (always enabled when open)
   const listQuery = trpc.drive.listFolder.useQuery(
     { folderId: currentFolderId },
-    {
-      enabled: open && currentFolderId !== undefined,
-      retry: false,
-    }
+    { enabled: open, retry: false }
   );
 
   const downloadMutation = trpc.drive.downloadFile.useMutation({
-    onSuccess: (data, variables) => {
+    onSuccess: (data) => {
       setDownloadingId(null);
       onFileSelected({
         fileName: data.fileName,
@@ -139,10 +130,12 @@ export function DriveFilePicker({
   };
 
   const handleBack = () => {
-    if (breadcrumbs.length <= 1) return;
+    if (breadcrumbs.length === 0) return;
     const newCrumbs = breadcrumbs.slice(0, -1);
     setBreadcrumbs(newCrumbs);
-    setCurrentFolderId(newCrumbs[newCrumbs.length - 1].id);
+    setCurrentFolderId(
+      newCrumbs.length > 0 ? newCrumbs[newCrumbs.length - 1].id : undefined
+    );
   };
 
   const handleBreadcrumbClick = (index: number) => {
@@ -151,29 +144,34 @@ export function DriveFilePicker({
     setCurrentFolderId(newCrumbs[newCrumbs.length - 1].id);
   };
 
+  const handleGoToRoot = () => {
+    setCurrentFolderId(undefined);
+    setBreadcrumbs([]);
+  };
+
+  const handleGoToEwf = () => {
+    const folder = ewfQuery.data?.folders[0];
+    if (!folder) return;
+    setCurrentFolderId(folder.id);
+    setBreadcrumbs([{ id: folder.id, name: folder.name }]);
+  };
+
   const handleSelectFile = (item: DriveItem) => {
     setDownloadingId(item.id);
-    downloadMutation.mutate({
-      fileId: item.id,
-      siteId,
-      companyId,
-    });
+    downloadMutation.mutate({ fileId: item.id, siteId, companyId });
   };
 
   const handleOpenChange = (isOpen: boolean) => {
-    if (!isOpen) {
-      onClose();
-    }
+    if (!isOpen) onClose();
   };
 
-  const isLoading =
-    (findFolderQuery.isLoading && currentFolderId === undefined) ||
-    listQuery.isLoading;
-
+  const isLoading = listQuery.isLoading;
   const items = listQuery.data?.items ?? [];
   const folders = items.filter((i) => i.isFolder);
   const spreadsheets = items.filter((i) => isSpreadsheet(i));
   const otherFiles = items.filter((i) => !i.isFolder && !isSpreadsheet(i));
+  const ewfFolder = ewfQuery.data?.folders[0];
+  const atRoot = breadcrumbs.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -185,49 +183,56 @@ export function DriveFilePicker({
           </DialogTitle>
 
           {/* Breadcrumb */}
-          {breadcrumbs.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap mt-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-1 text-muted-foreground"
-                onClick={() => {
-                  setCurrentFolderId(undefined);
-                  setBreadcrumbs([]);
-                }}
-              >
-                Drive
-              </Button>
-              {breadcrumbs.map((crumb, i) => (
-                <span key={crumb.id ?? i} className="flex items-center gap-1">
-                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`h-6 px-1 ${i === breadcrumbs.length - 1 ? "font-medium" : "text-muted-foreground"}`}
-                    onClick={() => handleBreadcrumbClick(i)}
-                    disabled={i === breadcrumbs.length - 1}
-                  >
-                    {crumb.name}
-                  </Button>
-                </span>
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-1 flex-wrap mt-2 text-sm">
+            <button
+              className={`px-1 transition-colors ${atRoot ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={handleGoToRoot}
+              disabled={atRoot}
+            >
+              Drive
+            </button>
+            {breadcrumbs.map((crumb, i) => (
+              <span key={crumb.id ?? i} className="flex items-center gap-1">
+                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                <button
+                  className={`px-1 transition-colors ${i === breadcrumbs.length - 1 ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => handleBreadcrumbClick(i)}
+                  disabled={i === breadcrumbs.length - 1}
+                >
+                  {crumb.name}
+                </button>
+              </span>
+            ))}
+          </div>
         </DialogHeader>
 
         {/* Toolbar */}
-        <div className="flex items-center gap-2 px-6 py-3 border-b bg-muted/30">
+        <div className="flex items-center gap-2 px-6 py-2.5 border-b bg-muted/30">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleBack}
-            disabled={breadcrumbs.length <= 1 || isLoading}
+            disabled={atRoot || isLoading}
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back
           </Button>
-          <span className="text-sm text-muted-foreground ml-auto">
+
+          {/* EWF Accounts shortcut */}
+          {ewfFolder && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5 border-dashed"
+              onClick={handleGoToEwf}
+              disabled={currentFolderId === ewfFolder.id || isLoading}
+            >
+              <BookmarkCheck className="h-3.5 w-3.5 text-primary" />
+              {ewfFolder.name}
+            </Button>
+          )}
+
+          <span className="text-xs text-muted-foreground ml-auto">
             Select a spreadsheet to import
           </span>
         </div>
@@ -242,33 +247,16 @@ export function DriveFilePicker({
             </div>
           )}
 
-          {!isLoading && findFolderQuery.isError && (
+          {!isLoading && listQuery.isError && (
             <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
               <AlertCircle className="h-8 w-8 text-destructive" />
               <p className="text-sm text-muted-foreground">
-                Could not connect to Google Drive. Please log out and log back
-                in.
+                Could not connect to Google Drive. Please log out and log back in.
               </p>
             </div>
           )}
 
-          {!isLoading &&
-            !findFolderQuery.isError &&
-            currentFolderId === undefined &&
-            (findFolderQuery.data?.folders.length ?? 0) === 0 && (
-              <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
-                <Folder className="h-8 w-8 text-muted-foreground" />
-                <p className="font-medium">
-                  &quot;EWF Accounts&quot; folder not found
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Make sure the folder exists in your Google Drive and you have
-                  access.
-                </p>
-              </div>
-            )}
-
-          {!isLoading && items.length === 0 && currentFolderId !== undefined && (
+          {!isLoading && !listQuery.isError && items.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
               <Folder className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
@@ -292,10 +280,12 @@ export function DriveFilePicker({
             </button>
           ))}
 
-          {/* Spreadsheets */}
+          {/* Divider */}
           {spreadsheets.length > 0 && folders.length > 0 && (
             <div className="border-t my-2" />
           )}
+
+          {/* Spreadsheets */}
           {spreadsheets.map((item) => (
             <button
               key={item.id}
@@ -317,9 +307,7 @@ export function DriveFilePicker({
                 </p>
               </div>
               {downloadingId === item.id ? (
-                <span className="text-xs text-green-600 shrink-0">
-                  Downloading…
-                </span>
+                <span className="text-xs text-green-600 shrink-0">Downloading…</span>
               ) : (
                 <span className="text-xs text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100">
                   Select
@@ -328,7 +316,7 @@ export function DriveFilePicker({
             </button>
           ))}
 
-          {/* Other non-spreadsheet files — shown greyed out */}
+          {/* Other non-spreadsheet files — greyed out */}
           {otherFiles.length > 0 && (
             <>
               {(folders.length > 0 || spreadsheets.length > 0) && (
