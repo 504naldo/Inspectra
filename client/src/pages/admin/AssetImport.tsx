@@ -641,11 +641,13 @@ export default function AssetImport() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">-- Not mapped --</SelectItem>
-                        {parsedData.headers.map((header) => (
-                          <SelectItem key={header} value={header}>
-                            {header}
-                          </SelectItem>
-                        ))}
+                        {parsedData.headers
+                          .filter((header) => header.trim().length > 0)
+                          .map((header, index) => (
+                            <SelectItem key={`${header}-${index}`} value={header}>
+                              {header}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
