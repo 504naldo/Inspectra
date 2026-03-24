@@ -603,12 +603,14 @@ export default function AssetImport() {
                         <SelectValue placeholder="Select worksheet..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {parsedData.sheetNames.map((sheet) => (
-                          <SelectItem key={sheet} value={sheet}>
-                            {sheet}
-                            {sheet === parsedData.suggestedSheetName && " (recommended)"}
-                          </SelectItem>
-                        ))}
+                        {parsedData.sheetNames
+                          .filter((sheet) => sheet.trim().length > 0)
+                          .map((sheet, index) => (
+                            <SelectItem key={`${sheet}-${index}`} value={sheet}>
+                              {sheet}
+                              {sheet === parsedData.suggestedSheetName && " (recommended)"}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                     {parsedData.suggestedSheetName && selectedSheet === parsedData.suggestedSheetName && (
