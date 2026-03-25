@@ -73,15 +73,58 @@ const deviceRouter = router({
     model: z.string().optional(),
     serialNumber: z.string().optional(),
     location: z.string().optional(),
+    label: z.string().optional(),
+    floor: z.string().optional(),
+    circuitAddress: z.string().optional(),
+    zone: z.string().optional(),
     barcode: z.string().optional(),
     notes: z.string().optional(),
     isActive: z.boolean().optional(),
+    // Extinguisher fields
+    mfgDate: z.string().optional(),
+    lastHST: z.string().optional(),
+    last6yr: z.string().optional(),
+    // Emergency light fields
+    ladderHeight: z.string().optional(),
+    supplyVoltage: z.string().optional(),
+    modelWattage: z.string().optional(),
+    batteryYear: z.string().optional(),
+    batterySize: z.string().optional(),
+    batteryCount: z.number().optional(),
+    lampCount: z.number().optional(),
   })).mutation(async ({ input }) => {
     const { id, ...data } = input;
     await db.updateDevice(id, data);
     return { success: true };
   }),
   
+  // Technicians can update inspection-time fields during a job
+  technicianUpdate: technicianProcedure.input(z.object({
+    id: z.number(),
+    label: z.string().optional(),
+    floor: z.string().optional(),
+    circuitAddress: z.string().optional(),
+    zone: z.string().optional(),
+    location: z.string().optional(),
+    notes: z.string().optional(),
+    // Extinguisher fields
+    mfgDate: z.string().optional(),
+    lastHST: z.string().optional(),
+    last6yr: z.string().optional(),
+    // Emergency light fields
+    ladderHeight: z.string().optional(),
+    supplyVoltage: z.string().optional(),
+    modelWattage: z.string().optional(),
+    batteryYear: z.string().optional(),
+    batterySize: z.string().optional(),
+    batteryCount: z.number().optional(),
+    lampCount: z.number().optional(),
+  })).mutation(async ({ input }) => {
+    const { id, ...data } = input;
+    await db.updateDevice(id, data);
+    return { success: true };
+  }),
+
   getCount: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
     return db.getDeviceCountBySite(input.siteId);
   }),

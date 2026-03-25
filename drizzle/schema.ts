@@ -195,6 +195,10 @@ export const devices = mysqlTable("devices", {
   installDate: timestamp("installDate"),
   lastInspectionDate: timestamp("lastInspectionDate"),
   location: varchar("location", { length: 255 }), // Specific location description
+  label: varchar("label", { length: 50 }), // Device label / tag ID (for fire alarm devices)
+  floor: varchar("floor", { length: 50 }), // Floor number or name
+  circuitAddress: varchar("circuitAddress", { length: 50 }), // Circuit/loop address (fire alarm devices)
+  zone: varchar("zone", { length: 50 }), // Zone designation
   barcode: varchar("barcode", { length: 100 }),
   externalRef: varchar("externalRef", { length: 255 }), // Stable import key (tag number, identifier, or hash)
   notes: text("notes"),
@@ -202,6 +206,18 @@ export const devices = mysqlTable("devices", {
   suiteNumber: varchar("suiteNumber", { length: 50 }), // Required for SMOKE_ALARM category
   powerType: mysqlEnum("powerType", ["hardwired", "battery", "sealed", "unknown"]), // Power source type
   testResult: mysqlEnum("testResult", ["pass", "fail", "no_access", "na"]), // Test result
+  // Fire extinguisher maintenance dates
+  mfgDate: varchar("mfgDate", { length: 20 }), // Manufacture date
+  lastHST: varchar("lastHST", { length: 20 }), // Last hydrostatic test date
+  last6yr: varchar("last6yr", { length: 20 }), // Last 6-year maintenance date
+  // Emergency light specification fields
+  ladderHeight: varchar("ladderHeight", { length: 20 }),
+  supplyVoltage: varchar("supplyVoltage", { length: 20 }),
+  modelWattage: varchar("modelWattage", { length: 20 }),
+  batteryYear: varchar("batteryYear", { length: 20 }),
+  batterySize: varchar("batterySize", { length: 50 }),
+  batteryCount: int("batteryCount"),
+  lampCount: int("lampCount"),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
