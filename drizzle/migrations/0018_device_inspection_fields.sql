@@ -1,0 +1,19 @@
+-- Add inspection-specific fields to devices table
+ALTER TABLE `devices` ADD COLUMN `label` VARCHAR(255) NULL;
+ALTER TABLE `devices` ADD COLUMN `floor` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `address` VARCHAR(100) NULL;
+ALTER TABLE `devices` ADD COLUMN `zone` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `suiteNumber` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `powerType` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `ladderHeight` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `supplyVoltage` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `modelWattage` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `batteryYear` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `batterySize` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `batteryCount` INT NULL;
+ALTER TABLE `devices` ADD COLUMN `lampCount` INT NULL;
+ALTER TABLE `devices` ADD COLUMN `mfgDate` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `lastHST` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `last6YR` VARCHAR(50) NULL;
+ALTER TABLE `devices` ADD COLUMN `circuitNumber` VARCHAR(100) NULL;
+ALTER TABLE `devices` ADD COLUMN `fireZone` VARCHAR(50) NULL;
