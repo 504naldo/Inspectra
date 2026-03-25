@@ -167,47 +167,50 @@ export const driveRouter = router({
         q = `${parent} in parents and trashed=false and ${mimeFilter}`;
       }
 
-      const url = new URL(`${DRIVE_API}/files`);
-      url.searchParams.set("q", q);
-      url.searchParams.set("fields", "files(id,name,mimeType,modifiedTime,size,driveId)");
-      url.searchParams.set("orderBy", "folder,name");
-      url.searchParams.set("pageSize", "200");
-      url.searchParams.set("includeItemsFromAllDrives", "true");
-      url.searchParams.set("supportsAllDrives", "true");
+      const baseUrl = new URL(`${DRIVE_API}/files`);
+      baseUrl.searchParams.set("q", q);
+      baseUrl.searchParams.set("fields", "nextPageToken,files(id,name,mimeType,modifiedTime,size,driveId)");
+      baseUrl.searchParams.set("orderBy", "folder,name");
+      baseUrl.searchParams.set("pageSize", "1000");
+      baseUrl.searchParams.set("includeItemsFromAllDrives", "true");
+      baseUrl.searchParams.set("supportsAllDrives", "true");
 
-      const response = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      type DriveFile = { id: string; name: string; mimeType: string; modifiedTime: string; size?: string };
+      const allFiles: DriveFile[] = [];
+      let pageToken: string | null = null;
 
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        let googleMessage = "";
-        try {
-          const parsed = JSON.parse(body);
-          googleMessage = parsed?.error?.message || parsed?.error_description || "";
-        } catch {}
-        console.error("[Drive] listFolder failed:", response.status, body);
-        if (response.status === 401 || response.status === 403) {
+      do {
+        const url = new URL(baseUrl.toString());
+        if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+        const response = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (!response.ok) {
+          const body = await response.text().catch(() => "");
+          let googleMessage = "";
+          try {
+            const parsed = JSON.parse(body);
+            googleMessage = parsed?.error?.message || parsed?.error_description || "";
+          } catch {}
+          console.error("[Drive] listFolder failed:", response.status, body);
+          if (response.status === 401 || response.status === 403) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: googleMessage || "Google Drive access denied (403). The Drive API may not be enabled in Google Cloud Console, or Drive access is restricted by your organization.",
+            });
+          }
           throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: googleMessage || "Google Drive access denied (403). The Drive API may not be enabled in Google Cloud Console, or Drive access is restricted by your organization.",
+            code: "INTERNAL_SERVER_ERROR",
+            message: googleMessage || `Failed to list Drive folder: ${response.status}`,
           });
         }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: googleMessage || `Failed to list Drive folder: ${response.status}`,
-        });
-      }
 
-      const data = (await response.json()) as {
-        files: {
-          id: string;
-          name: string;
-          mimeType: string;
-          modifiedTime: string;
-          size?: string;
-        }[];
-      };
+        const data = (await response.json()) as { files: DriveFile[]; nextPageToken?: string };
+        allFiles.push(...(data.files ?? []));
+        pageToken = data.nextPageToken ?? null;
+      } while (pageToken);
 
       const SPREADSHEET_MIMES = new Set([
         "application/vnd.google-apps.spreadsheet",
@@ -217,7 +220,7 @@ export const driveRouter = router({
         "text/csv",
       ]);
 
-      const items = data.files.map((f) => ({
+      const items = allFiles.map((f) => ({
         id: f.id,
         name: f.name,
         mimeType: f.mimeType,
@@ -246,27 +249,35 @@ export const driveRouter = router({
 
       const q = `name='${input.name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
 
-      const url = new URL(`${DRIVE_API}/files`);
-      url.searchParams.set("q", q);
-      url.searchParams.set("fields", "files(id,name)");
-      url.searchParams.set("pageSize", "10");
-      url.searchParams.set("includeItemsFromAllDrives", "true");
-      url.searchParams.set("supportsAllDrives", "true");
-      url.searchParams.set("corpora", "allDrives");
+      const baseUrl = new URL(`${DRIVE_API}/files`);
+      baseUrl.searchParams.set("q", q);
+      baseUrl.searchParams.set("fields", "nextPageToken,files(id,name)");
+      baseUrl.searchParams.set("pageSize", "1000");
+      baseUrl.searchParams.set("includeItemsFromAllDrives", "true");
+      baseUrl.searchParams.set("supportsAllDrives", "true");
+      baseUrl.searchParams.set("corpora", "allDrives");
 
-      const response = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const allFolders: { id: string; name: string }[] = [];
+      let pageToken: string | null = null;
 
-      if (!response.ok) {
-        return { folders: [] };
-      }
+      do {
+        const url = new URL(baseUrl.toString());
+        if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-      const data = (await response.json()) as {
-        files: { id: string; name: string }[];
-      };
+        const response = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
 
-      return { folders: data.files };
+        if (!response.ok) {
+          return { folders: [] };
+        }
+
+        const data = (await response.json()) as { files: { id: string; name: string }[]; nextPageToken?: string };
+        allFolders.push(...(data.files ?? []));
+        pageToken = data.nextPageToken ?? null;
+      } while (pageToken);
+
+      return { folders: allFolders };
     }),
 
   /**
