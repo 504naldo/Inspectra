@@ -9,16 +9,22 @@ import { useInspectionProgress } from "@/hooks/useInspectionProgress";
 import { ExpandableCategoryCard } from "@/components/ExpandableCategoryCard";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { SiteDetails } from "@/components/SiteDetails";
+import { InspectionHeader } from "@/components/inspection/InspectionHeader";
+import { IndividualDeviceGrid } from "@/components/inspection/IndividualDeviceGrid";
+import { ExtinguisherGrid } from "@/components/inspection/ExtinguisherGrid";
+import { EmergencyLightGrid } from "@/components/inspection/EmergencyLightGrid";
+import { FireAlarmChecklist } from "@/components/inspection/FireAlarmChecklist";
 import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
 import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending } from "@shared/deviceHelpers";
-import { 
-  ArrowLeft, 
-  MapPin, 
+import {
+  ArrowLeft,
+  MapPin,
   Phone,
   Play,
   CheckCircle2,
   AlertTriangle,
   ChevronRight,
+  ChevronDown,
   Building2,
   Wifi,
   WifiOff,
@@ -41,7 +47,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const [activeTab, setActiveTab] = useState("devices");
   const { getProgress, isProgressRecent } = useInspectionProgress(jobId);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
-  
+  const [openGridSection, setOpenGridSection] = useState<string | null>(null);
+
+  const toggleGridSection = (section: string) => {
+    setOpenGridSection((prev) => (prev === section ? null : section));
+  };
+
   // Get category filter from URL search params
   const searchParams = new URLSearchParams(window.location.search);
   const categoryFilter = searchParams.get('category');
@@ -331,7 +342,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </CardContent>
         </Card>
 
-        {/* Category Cards */}
+        {/* Inspection Header */}
+        <InspectionHeader
+          jobNumber={job.jobNumber}
+          siteName={site?.name || ''}
+          scheduledDate={(job as any).scheduledDate}
+        />
+
+        {/* Smoke Alarms — existing ExpandableCategoryCard (navigation to device test screen) */}
         {smokeStats.total > 0 && (
           <ExpandableCategoryCard
             title="Smoke Alarms"
@@ -357,161 +375,205 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           />
         )}
 
-        {fireAlarmStats.total > 0 && (
-          <ExpandableCategoryCard
-            title="Fire Alarm Devices"
-            description="Pull stations, heat detectors, horns, strobes"
-            icon={<AlertTriangle className="h-5 w-5" />}
-            testedCount={fireAlarmStats.tested}
-            totalCount={fireAlarmStats.total}
-            deficiencyCount={fireAlarmStats.deficiencies}
-            route={`/tech/jobs/${jobId}?category=firealarm`}
-            resumeRoute={getProgress()?.route.includes('fire-alarm') && !getProgress()?.route.includes('smoke') ? getProgress()?.route : undefined}
-            gradientFrom="from-[var(--warning)]/5"
-            gradientTo="to-[var(--warning)]/10"
-            borderColor="border-[var(--warning)]/20"
-            textColor="text-foreground"
-            buttonColor="bg-[var(--warning)]"
-            buttonHoverColor="hover:bg-[var(--warning)]/90"
-            devices={sortedFireAlarmDevices}
-            isExpanded={expandedCard === 'firealarm'}
-            onToggle={() => setExpandedCard(expandedCard === 'firealarm' ? null : 'firealarm')}
-            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=firealarm`}
-            jobId={jobId}
-            onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedFireAlarmDevices.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
-          />
-        )}
+        {/* Fire Alarm Devices — inline spreadsheet grid */}
+        <Card className="border-[var(--warning)]/20">
+          <CardHeader
+            className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+            onClick={() => toggleGridSection('firealarm')}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-[var(--warning)]/10 rounded-lg">
+                  <AlertTriangle className="h-5 w-5 text-[var(--warning)]" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Fire Alarm Devices</CardTitle>
+                  <p className="text-sm text-muted-foreground">Pull stations, heat detectors, horns, strobes</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">
+                  {fireAlarmStats.tested}/{fireAlarmStats.total}
+                </span>
+                {openGridSection === 'firealarm' ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          {openGridSection === 'firealarm' && (
+            <CardContent className="p-3 pt-0">
+              {fireAlarmStats.total > 0 ? (
+                <IndividualDeviceGrid
+                  jobId={jobId}
+                  devices={sortedFireAlarmDevices}
+                  isFinalized={isFinalized}
+                  onResultChange={() => refetch()}
+                />
+              ) : (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  No fire alarm devices loaded for this site.
+                  <Button variant="link" size="sm" onClick={() => importAssets.mutate({ jobId })} disabled={importAssets.isPending}>
+                    Import Assets
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
 
-        {extinguisherStats.total > 0 ? (
-          <ExpandableCategoryCard
-            title="Fire Extinguishers"
-            description="Portable fire extinguishing equipment"
-            icon={<FireExtinguisher className="h-5 w-5" />}
-            testedCount={extinguisherStats.tested}
-            totalCount={extinguisherStats.total}
-            deficiencyCount={extinguisherStats.deficiencies}
-            route={`/tech/jobs/${jobId}?category=extinguisher`}
-            resumeRoute={getProgress()?.route.includes('extinguisher') ? getProgress()?.route : undefined}
-            gradientFrom="from-destructive/5"
-            gradientTo="to-destructive/10"
-            borderColor="border-destructive/20"
-            textColor="text-foreground"
-            buttonColor="bg-destructive"
-            buttonHoverColor="hover:bg-destructive/90"
-            devices={sortedExtinguishers}
-            isExpanded={expandedCard === 'extinguisher'}
-            onToggle={() => setExpandedCard(expandedCard === 'extinguisher' ? null : 'extinguisher')}
-            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=extinguisher`}
-            jobId={jobId}
-            onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedExtinguishers.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
-          />
-        ) : (
-          <Card className="bg-destructive/5 border-destructive/20">
-            <CardHeader>
+        {/* Fire Extinguishers — inline spreadsheet grid */}
+        <Card className="border-destructive/20">
+          <CardHeader
+            className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+            onClick={() => toggleGridSection('extinguisher')}
+          >
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-destructive/10 rounded-lg">
                   <FireExtinguisher className="h-5 w-5 text-destructive" />
                 </div>
                 <div>
-                  <CardTitle>Fire Extinguishers</CardTitle>
+                  <CardTitle className="text-base">Fire Extinguishers</CardTitle>
                   <p className="text-sm text-muted-foreground">Portable fire extinguishing equipment</p>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
-                <p className="text-muted-foreground mb-4">No Fire Extinguishers loaded for this site</p>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => importAssets.mutate({ jobId })}
-                  disabled={importAssets.isPending}
-                >
-                  {importAssets.isPending ? 'Importing...' : 'Import Assets'}
-                </Button>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">
+                  {extinguisherStats.tested}/{extinguisherStats.total}
+                </span>
+                {openGridSection === 'extinguisher' ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
               </div>
+            </div>
+          </CardHeader>
+          {openGridSection === 'extinguisher' && (
+            <CardContent className="p-3 pt-0">
+              {extinguisherStats.total > 0 ? (
+                <ExtinguisherGrid
+                  jobId={jobId}
+                  devices={sortedExtinguishers}
+                  isFinalized={isFinalized}
+                  onResultChange={() => refetch()}
+                />
+              ) : (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  No fire extinguishers loaded for this site.
+                  <Button variant="link" size="sm" onClick={() => importAssets.mutate({ jobId })} disabled={importAssets.isPending}>
+                    Import Assets
+                  </Button>
+                </div>
+              )}
             </CardContent>
-          </Card>
-        )}
+          )}
+        </Card>
 
-        {emergencyLightStats.total > 0 ? (
-          <ExpandableCategoryCard
-            title="Emergency Lights"
-            description="Emergency and exit lighting"
-            icon={<Lightbulb className="h-5 w-5" />}
-            testedCount={emergencyLightStats.tested}
-            totalCount={emergencyLightStats.total}
-            deficiencyCount={emergencyLightStats.deficiencies}
-            route={`/tech/jobs/${jobId}?category=emergency`}
-            resumeRoute={getProgress()?.route.includes('emergency') || getProgress()?.route.includes('exit') ? getProgress()?.route : undefined}
-            gradientFrom="from-[var(--warning)]/5"
-            gradientTo="to-[var(--warning)]/10"
-            borderColor="border-[var(--warning)]/20"
-            textColor="text-foreground"
-            buttonColor="bg-[var(--warning)]"
-            buttonHoverColor="hover:bg-[var(--warning)]/90"
-            devices={sortedEmergencyLights}
-            jobId={jobId}
-            onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedEmergencyLights.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
-            isExpanded={expandedCard === 'emergency'}
-            onToggle={() => setExpandedCard(expandedCard === 'emergency' ? null : 'emergency')}
-            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=emergency`}
-          />
-        ) : (
-          <Card className="bg-[var(--warning)]/5 border-[var(--warning)]/20">
-            <CardHeader>
+        {/* Emergency Lights — inline spreadsheet grid */}
+        <Card className="border-[var(--warning)]/20">
+          <CardHeader
+            className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+            onClick={() => toggleGridSection('emergency')}
+          >
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-[var(--warning)]/10 rounded-lg">
                   <Lightbulb className="h-5 w-5 text-[var(--warning)]" />
                 </div>
                 <div>
-                  <CardTitle>Emergency Lights</CardTitle>
+                  <CardTitle className="text-base">Emergency Lights</CardTitle>
                   <p className="text-sm text-muted-foreground">Emergency and exit lighting</p>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
-                <p className="text-muted-foreground mb-4">No Emergency Lights loaded for this site</p>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => importAssets.mutate({ jobId })}
-                  disabled={importAssets.isPending}
-                >
-                  {importAssets.isPending ? 'Importing...' : 'Import Assets'}
-                </Button>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">
+                  {emergencyLightStats.tested}/{emergencyLightStats.total}
+                </span>
+                {openGridSection === 'emergency' ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
               </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Fire Alarm System Inspection */}
-        <Card className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/20 dark:to-indigo-950/20 border-purple-200 dark:border-purple-800">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <h3 className="font-semibold text-purple-900 dark:text-purple-100 flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5" />
-                  Fire Alarm System Inspection
-                </h3>
-                <p className="text-sm text-purple-700 dark:text-purple-300 mt-1">
-                  CAN/ULC-S536 Annual Test & Inspection
-                </p>
-              </div>
-              <Button 
-                variant="default" 
-                className="bg-purple-600 hover:bg-purple-700"
-                onClick={() => setLocation(`/tech/jobs/${jobId}/fire-alarm`, { replace: true })}
-              >
-                Start
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
             </div>
-          </CardContent>
+          </CardHeader>
+          {openGridSection === 'emergency' && (
+            <CardContent className="p-3 pt-0">
+              {emergencyLightStats.total > 0 ? (
+                <EmergencyLightGrid
+                  jobId={jobId}
+                  devices={sortedEmergencyLights}
+                  isFinalized={isFinalized}
+                  onResultChange={() => refetch()}
+                />
+              ) : (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  No emergency lights loaded for this site.
+                  <Button variant="link" size="sm" onClick={() => importAssets.mutate({ jobId })} disabled={importAssets.isPending}>
+                    Import Assets
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          )}
         </Card>
 
-        {/* Sprinkler ITM Inspection */}
+        {/* CAN/ULC-S536 Fire Alarm System Checklist — inline collapsible */}
+        <Card className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/20 dark:to-indigo-950/20 border-purple-200 dark:border-purple-800">
+          <CardHeader
+            className="p-4 cursor-pointer hover:bg-purple-100/50 dark:hover:bg-purple-900/20 transition-colors"
+            onClick={() => toggleGridSection('checklist')}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                  <CheckCircle2 className="h-5 w-5 text-purple-700 dark:text-purple-300" />
+                </div>
+                <div>
+                  <CardTitle className="text-base text-purple-900 dark:text-purple-100">
+                    Fire Alarm System Checklist
+                  </CardTitle>
+                  <p className="text-sm text-purple-700 dark:text-purple-300 mt-0.5">
+                    CAN/ULC-S536 Annual Test & Inspection
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-purple-700 dark:text-purple-300 h-7 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLocation(`/tech/jobs/${jobId}/fire-alarm`);
+                  }}
+                >
+                  Full view
+                </Button>
+                {openGridSection === 'checklist' ? (
+                  <ChevronDown className="h-4 w-4 text-purple-600" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-purple-600" />
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          {openGridSection === 'checklist' && (
+            <CardContent className="p-4 pt-0">
+              <FireAlarmChecklist
+                jobId={jobId}
+                siteId={site.id}
+                isFinalized={isFinalized}
+              />
+            </CardContent>
+          )}
+        </Card>
+
+        {/* Sprinkler ITM Inspection — navigate to dedicated page */}
         <Card className="bg-accent/5 border-accent/20">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -527,34 +589,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               <Button
                 variant="default"
                 className="bg-accent hover:bg-accent/90"
-                onClick={() => setLocation(`/tech/jobs/${jobId}/sprinkler-itm`, { replace: true })}
+                onClick={() => setLocation(`/tech/jobs/${jobId}/sprinkler-itm`)}
               >
                 Start
                 <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
-            </div>
-          </CardContent>
-        </Card>
-        
-        {/* CAN/ULC-S536 Checklist */}
-        <Card className="bg-accent/5 border-accent/20">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5" />
-                  CAN/ULC-S536 Checklist
-                </h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Complete inspection checklist for compliance report
-                </p>
-              </div>
-              <Link href={`/tech/jobs/${jobId}/checklist`}>
-                <Button variant="default" className="bg-accent hover:bg-accent/90">
-                  Open
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </Link>
             </div>
           </CardContent>
         </Card>
