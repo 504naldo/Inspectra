@@ -246,14 +246,14 @@ export const jobAssignmentRouter = router({
         });
       }
 
-      // Validate all technicians exist and are active
+      // Validate all assigned users exist and are active (admin, office, or technician)
       if (input.technicianIds.length > 0) {
         const validTechs = await db
           .select({ id: users.id })
           .from(users)
           .where(and(
             inArray(users.id, input.technicianIds),
-            eq(users.role, "technician"),
+            inArray(users.role, ['technician', 'admin', 'office']),
             eq(users.isActive, 1)
           ));
 
@@ -312,14 +312,14 @@ export const jobAssignmentRouter = router({
         });
       }
 
-      // Validate technicians
+      // Validate assigned users exist and are active (admin, office, or technician)
       if (input.technicianIds.length > 0) {
         const validTechs = await db
           .select({ id: users.id })
           .from(users)
           .where(and(
             inArray(users.id, input.technicianIds),
-            eq(users.role, "technician"),
+            inArray(users.role, ['technician', 'admin', 'office']),
             eq(users.isActive, 1)
           ));
 
