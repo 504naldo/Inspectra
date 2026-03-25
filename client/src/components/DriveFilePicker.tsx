@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Building2,
   Cpu,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,6 +39,7 @@ interface DriveItem {
 interface BreadcrumbEntry {
   id: string | undefined;
   name: string;
+  sharedWithMe?: boolean;
 }
 
 export interface DriveFileResult {
@@ -130,6 +132,7 @@ export function DriveFilePicker({
 }: DriveFilePickerProps) {
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([]);
+  const [isSharedWithMe, setIsSharedWithMe] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [pdfPreview, setPdfPreview] = useState<PdfImportResult | null>(null);
   const [extractingId, setExtractingId] = useState<string | null>(null);
@@ -138,6 +141,7 @@ export function DriveFilePicker({
     if (open) {
       setCurrentFolderId(undefined);
       setBreadcrumbs([]);
+      setIsSharedWithMe(false);
       setDownloadingId(null);
       setPdfPreview(null);
       setExtractingId(null);
@@ -150,7 +154,9 @@ export function DriveFilePicker({
   );
 
   const listQuery = trpc.drive.listFolder.useQuery(
-    { folderId: currentFolderId },
+    isSharedWithMe && !currentFolderId
+      ? { sharedWithMe: true }
+      : { folderId: currentFolderId },
     { enabled: open, retry: false }
   );
 
@@ -193,18 +199,34 @@ export function DriveFilePicker({
     if (breadcrumbs.length === 0) return;
     const newCrumbs = breadcrumbs.slice(0, -1);
     setBreadcrumbs(newCrumbs);
-    setCurrentFolderId(newCrumbs.length > 0 ? newCrumbs[newCrumbs.length - 1].id : undefined);
+    if (newCrumbs.length > 0) {
+      const last = newCrumbs[newCrumbs.length - 1];
+      setCurrentFolderId(last.id);
+      setIsSharedWithMe(!!last.sharedWithMe);
+    } else {
+      setCurrentFolderId(undefined);
+      setIsSharedWithMe(false);
+    }
   };
 
   const handleBreadcrumbClick = (index: number) => {
     const newCrumbs = breadcrumbs.slice(0, index + 1);
     setBreadcrumbs(newCrumbs);
-    setCurrentFolderId(newCrumbs[newCrumbs.length - 1].id);
+    const last = newCrumbs[newCrumbs.length - 1];
+    setCurrentFolderId(last.id);
+    setIsSharedWithMe(!!last.sharedWithMe);
   };
 
   const handleGoToRoot = () => {
     setCurrentFolderId(undefined);
     setBreadcrumbs([]);
+    setIsSharedWithMe(false);
+  };
+
+  const handleGoToSharedWithMe = () => {
+    setCurrentFolderId(undefined);
+    setIsSharedWithMe(true);
+    setBreadcrumbs([{ id: undefined, name: "Shared with me", sharedWithMe: true }]);
   };
 
   const handleGoToEwf = () => {
@@ -292,6 +314,17 @@ export function DriveFilePicker({
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1.5 border-dashed"
+            onClick={handleGoToSharedWithMe}
+            disabled={(isSharedWithMe && !currentFolderId) || isLoading}
+          >
+            <Users className="h-3.5 w-3.5 text-blue-500" />
+            Shared with me
           </Button>
 
           {ewfFolder && (

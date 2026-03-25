@@ -250,6 +250,9 @@ export const driveRouter = router({
       url.searchParams.set("q", q);
       url.searchParams.set("fields", "files(id,name)");
       url.searchParams.set("pageSize", "10");
+      url.searchParams.set("includeItemsFromAllDrives", "true");
+      url.searchParams.set("supportsAllDrives", "true");
+      url.searchParams.set("corpora", "allDrives");
 
       const response = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -289,7 +292,7 @@ export const driveRouter = router({
 
       // 1. Fetch file metadata
       const metaResponse = await fetch(
-        `${DRIVE_API}/files/${input.fileId}?fields=id,name,mimeType,size`,
+        `${DRIVE_API}/files/${input.fileId}?fields=id,name,mimeType,size&supportsAllDrives=true`,
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       if (!metaResponse.ok) {
@@ -314,14 +317,14 @@ export const driveRouter = router({
         const exportMime =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
         downloadResponse = await fetch(
-          `${DRIVE_API}/files/${input.fileId}/export?mimeType=${encodeURIComponent(exportMime)}`,
+          `${DRIVE_API}/files/${input.fileId}/export?mimeType=${encodeURIComponent(exportMime)}&supportsAllDrives=true`,
           { headers: { Authorization: `Bearer ${accessToken}` } }
         );
         fileName = meta.name.endsWith(".xlsx") ? meta.name : `${meta.name}.xlsx`;
         mimeType = exportMime;
       } else {
         downloadResponse = await fetch(
-          `${DRIVE_API}/files/${input.fileId}?alt=media`,
+          `${DRIVE_API}/files/${input.fileId}?alt=media&supportsAllDrives=true`,
           { headers: { Authorization: `Bearer ${accessToken}` } }
         );
         fileName = meta.name;
@@ -401,8 +404,8 @@ export const driveRouter = router({
       const isGoogleSheet =
         input.mimeType === "application/vnd.google-apps.spreadsheet";
       const downloadUrl = isGoogleSheet
-        ? `https://www.googleapis.com/drive/v3/files/${input.fileId}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-        : `https://www.googleapis.com/drive/v3/files/${input.fileId}?alt=media`;
+        ? `https://www.googleapis.com/drive/v3/files/${input.fileId}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet&supportsAllDrives=true`
+        : `https://www.googleapis.com/drive/v3/files/${input.fileId}?alt=media&supportsAllDrives=true`;
 
       const fileResponse = await fetch(downloadUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -593,7 +596,7 @@ export const driveRouter = router({
         });
       }
 
-      const downloadUrl = `${DRIVE_API}/files/${input.fileId}?alt=media&supportsAllDrives=true`;
+      const downloadUrl = `${DRIVE_API}/files/${input.fileId}?alt=media&supportsAllDrives=true&includeItemsFromAllDrives=true`;
       const fileResponse = await fetch(downloadUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
