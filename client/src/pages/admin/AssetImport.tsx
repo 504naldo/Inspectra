@@ -273,7 +273,7 @@ export default function AssetImport() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
-          <Link href={`/admin/sites/${siteId}/devices`}>
+          <Link href={`/admin/devices`}>
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -901,7 +901,7 @@ export default function AssetImport() {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Import More
               </Button>
-              <Link href={`/admin/sites/${siteId}/devices`}>
+              <Link href={`/admin/devices`}>
                 <Button>
                   View Devices
                   <ArrowRight className="h-4 w-4 ml-2" />
