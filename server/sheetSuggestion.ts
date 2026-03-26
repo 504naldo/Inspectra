@@ -58,27 +58,43 @@ export function scoreSheet(
  * Get bonus points based on sheet name relevance to import type
  */
 function getSheetNameBonus(sheetNameLower: string, importType: ImportType): number {
+  // High-priority exact/contains matches — these are the canonical sheet names
+  // for each import type and should always win over header-score noise.
+  const priorityNames: Record<ImportType, string[]> = {
+    site: [],
+    fireAlarmDevices: ['individual device record', 'individual devices'],
+    fireExtinguishers: ['fire extinguishers', 'extinguishers'],
+    emergencyLights: ['emergency lighting', 'emergency lights'],
+    sprinklerDevices: ['sprinkler devices'],
+    smokeAlarms: ['smoke alarms', 'smoke alarm'],
+  };
+
+  for (const name of priorityNames[importType]) {
+    if (sheetNameLower.includes(name)) {
+      return 100; // High-priority match — always beats header-score noise
+    }
+  }
+
+  // General bonus keywords (lower weight)
   const bonusKeywords: Record<ImportType, string[]> = {
     site: ['site', 'building', 'property', 'info', 'information'],
     fireAlarmDevices: [
       'fire alarm',
       'alarm',
-      'smoke',
       'heat',
       'detector',
       'device',
-      'individual device',
       'device record',
       'fire alarm device',
     ],
-    fireExtinguishers: ['extinguisher', 'fire extinguisher', 'extinguishers'],
+    fireExtinguishers: ['extinguisher', 'fire extinguisher'],
     emergencyLights: ['emergency', 'emergency light', 'exit', 'exit sign', 'lighting'],
     sprinklerDevices: ['sprinkler', 'sprinklers', 'fire sprinkler', 'suppression'],
-    smokeAlarms: ['smoke alarm', 'smoke alarms', 'smoke detector', 'suite', 'unit', 'apartment'],
+    smokeAlarms: ['smoke detector', 'suite', 'unit', 'apartment'],
   };
 
   const keywords = bonusKeywords[importType];
-  
+
   for (const keyword of keywords) {
     if (sheetNameLower.includes(keyword)) {
       // Higher bonus for more specific matches
@@ -110,6 +126,8 @@ function getExclusionPenalty(sheetNameLower: string): number {
     'instructions',
     'parts',
     'all parts',
+    'backflow',
+    'backflows',
   ];
 
   for (const keyword of exclusionKeywords) {
