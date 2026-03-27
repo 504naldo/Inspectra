@@ -12,6 +12,67 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Split SQL text into individual statements, respecting single-quoted string
+ * literals so that semicolons inside strings are not treated as terminators.
+ * Also strips line comments (-- ...).
+ */
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = "";
+  let inString = false;
+  let i = 0;
+
+  while (i < sql.length) {
+    const ch = sql[i];
+
+    if (inString) {
+      current += ch;
+      if (ch === "'") {
+        if (i + 1 < sql.length && sql[i + 1] === "'") {
+          // Escaped single quote inside string — consume both characters
+          i++;
+          current += sql[i];
+        } else {
+          inString = false;
+        }
+      }
+      i++;
+      continue;
+    }
+
+    // Not inside a string literal
+    if (ch === "'") {
+      inString = true;
+      current += ch;
+      i++;
+      continue;
+    }
+
+    if (ch === "-" && i + 1 < sql.length && sql[i + 1] === "-") {
+      // Line comment — skip to end of line
+      while (i < sql.length && sql[i] !== "\n") i++;
+      continue;
+    }
+
+    if (ch === ";") {
+      const stmt = current.trim();
+      if (stmt.length > 0) statements.push(stmt);
+      current = "";
+      i++;
+      continue;
+    }
+
+    current += ch;
+    i++;
+  }
+
+  const remaining = current.trim();
+  if (remaining.length > 0) statements.push(remaining);
+
+  return statements.filter((s) => s.length > 0 && !s.startsWith("--"));
+}
+
 export async function runMigrations(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -57,11 +118,10 @@ export async function runMigrations(): Promise<void> {
       const filePath = path.join(migrationsDir, file);
       const sql = fs.readFileSync(filePath, "utf-8");
 
-      // Split on semicolons and execute each statement
-      const statements = sql
-        .split(";")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0 && !s.startsWith("--"));
+      // Split on semicolons using a quote-aware parser so that semicolons
+      // inside SQL string literals (e.g. 'specification; or documentation.')
+      // are not treated as statement terminators.
+      const statements = splitSqlStatements(sql);
 
       console.log(`[Migrations] Applying: ${file}`);
       for (const stmt of statements) {
