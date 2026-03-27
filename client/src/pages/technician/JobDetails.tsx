@@ -174,10 +174,10 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     ...d,
     result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
   }));
-  const sortedFireAlarmDevices = sortByWalkOrderThenLocation(fireAlarmDevices).map((d: any) => ({
-    ...d,
-    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
-  }));
+  const sortedFireAlarmDevices = sortByWalkOrderThenLocation(fireAlarmDevices).map((d: any) => {
+    const ir = inspectionResults?.find((r: any) => r.deviceId === d.id);
+    return { ...d, result: ir?.result, inspectionNotes: ir?.notes ?? null };
+  });
   const sortedExtinguishers = sortByWalkOrderThenLocation(extinguishers).map((d: any) => ({
     ...d,
     result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
