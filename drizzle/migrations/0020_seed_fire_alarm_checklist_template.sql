@@ -2,12 +2,12 @@
 -- Migration: 0020_seed_fire_alarm_checklist_template.sql
 -- 128 items across 11 sections
 
--- Step 1: Add extended columns (idempotent via IF NOT EXISTS - MySQL 8.0+)
-ALTER TABLE `fire_alarm_checklist_templates`
-  ADD COLUMN IF NOT EXISTS `hasSubItems` TINYINT(1) NOT NULL DEFAULT 0 AFTER `isRequired`,
-  ADD COLUMN IF NOT EXISTS `subItems` JSON NULL AFTER `hasSubItems`,
-  ADD COLUMN IF NOT EXISTS `notApplicableNote` VARCHAR(500) NULL AFTER `subItems`,
-  ADD COLUMN IF NOT EXISTS `headerFields` JSON NULL AFTER `notApplicableNote`;
+-- Step 1: Add extended columns (one ALTER per column so each is skipped independently
+--         by the migration runner's ER_DUP_FIELDNAME handler if already present)
+ALTER TABLE `fire_alarm_checklist_templates` ADD COLUMN `hasSubItems` TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE `fire_alarm_checklist_templates` ADD COLUMN `subItems` JSON NULL;
+ALTER TABLE `fire_alarm_checklist_templates` ADD COLUMN `notApplicableNote` VARCHAR(500) NULL;
+ALTER TABLE `fire_alarm_checklist_templates` ADD COLUMN `headerFields` JSON NULL;
 
 -- Step 2: Clear existing template data (disable FK checks to handle any existing references)
 SET FOREIGN_KEY_CHECKS = 0;
