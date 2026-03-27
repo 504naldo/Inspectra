@@ -607,6 +607,11 @@ export const fireAlarmChecklistTemplates = mysqlTable("fire_alarm_checklist_temp
   numericLabel: varchar("numericLabel", { length: 100 }), // e.g., "Voltage:", "Current:", "Date:"
   numericUnit: varchar("numericUnit", { length: 50 }), // e.g., "V", "A", "A•h"
   isRequired: boolean("isRequired").default(true),
+  // --- CAN/ULC-S536 extended fields ---
+  hasSubItems: boolean("hasSubItems").notNull().default(false),
+  subItems: json("subItems").$type<string[]>(),
+  notApplicableNote: varchar("notApplicableNote", { length: 500 }),
+  headerFields: json("headerFields").$type<string[]>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   // --- Compliance Hardening: Standards Template Versioning ---
   standardId: varchar("standardId", { length: 64 }).notNull().default("ulc_s536"),

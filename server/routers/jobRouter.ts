@@ -4,6 +4,7 @@ import { router, protectedProcedure, officeProcedure, technicianProcedure } from
 import * as db from "../db";
 import { withAudit } from "../db";
 import { JOB_FINALIZED_IMMUTABLE } from "../../shared/_core/errors";
+import { populateJobFireAlarmChecklist } from "../fireAlarmRouter";
 
 // Job router
 const jobRouter = router({
@@ -124,9 +125,16 @@ const jobRouter = router({
       }
     }
 
+    // Auto-populate fire alarm checklist for the new job (best-effort)
+    try {
+      await populateJobFireAlarmChecklist(newJob.id, input.siteId);
+    } catch (err) {
+      console.warn("[FireAlarmChecklist] Auto-populate failed for job", newJob.id, err);
+    }
+
     return newJob;
   }),
-  
+
   update: officeProcedure.input(z.object({
     id: z.number(),
     title: z.string().optional(),
@@ -348,6 +356,14 @@ const jobRouter = router({
       jobNumber,
     });
     await withAudit(ctx, 'job.clone', async () => {});
+
+    // Auto-populate fire alarm checklist for cloned job (best-effort)
+    try {
+      await populateJobFireAlarmChecklist(newJob.id, newJob.siteId);
+    } catch (err) {
+      console.warn("[FireAlarmChecklist] Auto-populate failed for cloned job", newJob.id, err);
+    }
+
     return { newJobId: newJob.id, jobNumber };
   }),
 
