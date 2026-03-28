@@ -854,3 +854,78 @@ export const migrationLog = mysqlTable("migration_log", {
 
 export type MigrationLog = typeof migrationLog.$inferSelect;
 export type InsertMigrationLog = typeof migrationLog.$inferInsert;
+
+// ============================================
+// FIRE ALARM FORM HEADER (per-job cover page data)
+// ============================================
+export const fireAlarmFormHeader = mysqlTable("fire_alarm_form_header", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull().unique(),
+  // Inspection details
+  inspectionDate: date("inspectionDate"),
+  // System info
+  systemManufacturer: varchar("systemManufacturer", { length: 255 }),
+  systemModel: varchar("systemModel", { length: 255 }),
+  systemSerialNo: varchar("systemSerialNo", { length: 100 }),
+  systemInstallYear: varchar("systemInstallYear", { length: 10 }),
+  operationType: varchar("operationType", { length: 100 }),
+  // FSRC
+  connectedToFSRC: boolean("connectedToFSRC").default(false),
+  fsrcName: varchar("fsrcName", { length: 255 }),
+  fsrcPhone: varchar("fsrcPhone", { length: 50 }),
+  fsrcAccountNo: varchar("fsrcAccountNo", { length: 100 }),
+  // Technician info
+  techName: varchar("techName", { length: 255 }),
+  techCertNo: varchar("techCertNo", { length: 100 }),
+  techCertLevel: varchar("techCertLevel", { length: 255 }),
+  techCompany: varchar("techCompany", { length: 255 }),
+  // Recommendations & notes
+  recommendations: text("recommendations"),
+  // Per-section header field values stored as JSON: { sectionOrder: { fieldLabel: value } }
+  sectionHeaderValues: json("sectionHeaderValues").$type<Record<string, Record<string, string>>>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FireAlarmFormHeader = typeof fireAlarmFormHeader.$inferSelect;
+export type InsertFireAlarmFormHeader = typeof fireAlarmFormHeader.$inferInsert;
+
+// ============================================
+// FIRE ALARM ATTENDANCE LOG (per-job technician attendance)
+// ============================================
+export const fireAlarmAttendanceLog = mysqlTable("fire_alarm_attendance_log", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  rowOrder: int("rowOrder").notNull().default(0),
+  techName: varchar("techName", { length: 255 }),
+  certNo: varchar("certNo", { length: 100 }),
+  attendanceDate: date("attendanceDate"),
+  timeIn: varchar("timeIn", { length: 20 }),
+  timeOut: varchar("timeOut", { length: 20 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FireAlarmAttendanceLog = typeof fireAlarmAttendanceLog.$inferSelect;
+export type InsertFireAlarmAttendanceLog = typeof fireAlarmAttendanceLog.$inferInsert;
+
+// ============================================
+// FIRE ALARM ANCILLARY CIRCUITS (Section 12)
+// ============================================
+export const fireAlarmAncillaryCircuits = mysqlTable("fire_alarm_ancillary_circuits", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  rowOrder: int("rowOrder").notNull().default(0),
+  circuitDescription: varchar("circuitDescription", { length: 500 }),
+  circuitType: varchar("circuitType", { length: 100 }),
+  poweredBy: varchar("poweredBy", { length: 255 }),
+  operationConfirmed: mysqlEnum("operationConfirmed", ["yes", "no", "na"]).default("na"),
+  confirmationMethod: varchar("confirmationMethod", { length: 255 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FireAlarmAncillaryCircuit = typeof fireAlarmAncillaryCircuits.$inferSelect;
+export type InsertFireAlarmAncillaryCircuit = typeof fireAlarmAncillaryCircuits.$inferInsert;

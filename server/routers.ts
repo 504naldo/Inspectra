@@ -27,6 +27,7 @@ import { filesRouter } from "./routers/filesRouter";
 import { gmailRouter } from "./routers/gmailRouter";
 import { calendarRouter } from "./routers/calendarRouter";
 import { driveRouter } from "./routers/driveRouter";
+import { fireAlarmFormRouter } from "./routers/fireAlarmFormRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -71,6 +72,7 @@ export const appRouter = router({
   uploadQueue: uploadQueueRouter,
   import: importRouter,
   fireAlarm: fireAlarmRouter,
+  fireAlarmForm: fireAlarmFormRouter,
   sprinkler: sprinklerRouter,
   jobAssignment: jobAssignmentRouter,
   assetImport: assetImportRouter,
