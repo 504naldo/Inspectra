@@ -37,7 +37,7 @@ interface Deficiency {
   correctiveAction?: string | null;
   deviceType?: string;
   location?: string;
-  estimatedCost?: string | null; // MySQL decimal returns string from Drizzle, convert to number when using
+  estimatedCost?: string | null; // MySQL decimal returns string from Drizzle
   systemCategory?: 'FIRE_ALARM' | 'SMOKE_ALARM' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHTING' | 'SPRINKLER' | null;
 }
 
@@ -79,10 +79,17 @@ interface ReportData {
   deviceSummaries: DeviceSummary[];
   deficiencies: Deficiency[];
   inspectionResults: InspectionResult[];
-  missingLocationDeficiencies?: Array<{ id: number; description: string; severity: string }>; // For admin override mode
+  missingLocationDeficiencies?: Array<{ id: number; description: string; severity: string }>;
 }
 
-// Helper functions now imported from pdfSharedStyles.ts
+// ─── Colours ────────────────────────────────────────────────────────────────
+const navyBlue   = '#003366';
+const white      = '#FFFFFF';
+const black      = '#000000';
+const grayText   = '#4a5568';
+const lightGray  = '#e5e7eb';
+const dangerColor = '#dc2626';
+const warningColor = '#f59e0b';
 
 /**
  * Draws the repeating page header for FirePro content pages.
@@ -91,79 +98,252 @@ interface ReportData {
 function drawFireProPageHeader(doc: any, data: ReportData): number {
   const margin = 50;
   const pageWidth = 612;
-  const contentWidth = pageWidth - 2 * margin; // 512
+  const contentWidth = pageWidth - 2 * margin;
 
-  // Logo (100 px tall)
   drawLogo(doc, margin, margin, 100);
 
-  // Site info bar – a slim row to the right of the logo
-  // Logo right edge ≈ margin + 100 = 150; bar starts at 260 to leave breathing room
   const barX = 260;
-  const barWidth = pageWidth - barX - margin; // ≈ 302
+  const barWidth = pageWidth - barX - margin;
   const barY = margin;
 
-  // Site name
-  doc.fontSize(8)
-     .font('Helvetica-Bold')
-     .fillColor('#000000')
+  doc.fontSize(8).font('Helvetica-Bold').fillColor(black)
      .text(data.siteName, barX, barY, { width: barWidth });
 
-  // Street address (14 px below site name)
-  doc.fontSize(7)
-     .font('Helvetica')
+  doc.fontSize(7).font('Helvetica')
      .text(data.siteAddress, barX, barY + 14, { width: barWidth });
 
-  // City / province / postal (14 px below address)
-  const cityLine = [data.siteCity, data.siteState, data.customerPostalCode]
-    .filter(Boolean).join(', ');
-  doc.text(cityLine, barX, barY + 28, { width: barWidth });
+  // City / province / postal — avoid duplicating province if already in city string
+  const cityParts: string[] = [];
+  if (data.siteCity) cityParts.push(data.siteCity);
+  if (data.siteState && !data.siteCity?.includes(data.siteState)) cityParts.push(data.siteState);
+  doc.text(cityParts.filter(Boolean).join(', '), barX, barY + 28, { width: barWidth });
 
-  // Job number + date (right-aligned, 18 px below city line)
-  doc.fontSize(7)
-     .font('Helvetica-Bold')
+  doc.fontSize(7).font('Helvetica-Bold')
      .text(`Job #: ${data.jobNumber}`, barX, barY + 46, { width: barWidth, align: 'right' });
   doc.font('Helvetica')
      .text(data.inspectionDate.toLocaleDateString(), barX, barY + 58, { width: barWidth, align: 'right' });
 
-  // Thin separator line below the header area
   const separatorY = margin + 116;
-  doc.moveTo(margin, separatorY)
-     .lineTo(margin + contentWidth, separatorY)
-     .lineWidth(0.5)
-     .stroke('#cccccc');
+  doc.moveTo(margin, separatorY).lineTo(margin + contentWidth, separatorY)
+     .lineWidth(0.5).stroke('#cccccc');
 
-  return separatorY + 8; // content starts 8 px below separator
+  return separatorY + 8;
+}
+
+/**
+ * Draw a professional EWF After Service Letter.
+ * hasDeficiencies drives two variants: completion (0 defs) vs deficiency (>0 defs).
+ */
+function drawAfterServiceLetter(
+  doc: any,
+  data: ReportData,
+  hasDeficiencies: boolean
+): void {
+  const margin = 50;
+  const contentWidth = 512;
+  const dateStr = data.inspectionDate.toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  let y = drawFireProPageHeader(doc, data);
+
+  // ── Date line ────────────────────────────────────────────────────────────
+  doc.fontSize(10).font('Helvetica').fillColor(black)
+     .text(dateStr, margin, y);
+  y += 22;
+
+  // ── Recipient block ──────────────────────────────────────────────────────
+  if (data.siteName) {
+    doc.text(data.siteName.toUpperCase(), margin, y);
+    y += 14;
+  }
+  if (data.customerName) {
+    doc.text(data.customerName.toUpperCase(), margin, y);
+    y += 14;
+  }
+  if (data.customerAddress) {
+    doc.text(data.customerAddress, margin, y);
+    y += 14;
+  }
+  if (data.customerCity) {
+    // Build city line, deduplicating province
+    const parts: string[] = [data.customerCity];
+    if (data.customerState && !data.customerCity.includes(data.customerState)) {
+      parts.push(data.customerState);
+    }
+    if (data.customerPostalCode) parts.push(data.customerPostalCode);
+    doc.text(parts.join(', '), margin, y);
+    y += 14;
+  }
+  if (data.attentionTo) {
+    y += 4;
+    doc.font('Helvetica-Bold').text(`ATTENTION: ${data.attentionTo.toUpperCase()}`, margin, y);
+    doc.font('Helvetica');
+    y += 14;
+  }
+  if (data.attentionEmail) {
+    doc.text(`EMAIL: ${data.attentionEmail}`, margin, y);
+    y += 14;
+  }
+
+  // ── RE line ──────────────────────────────────────────────────────────────
+  y += 10;
+  const reSubject = hasDeficiencies
+    ? `Fire Protection Inspection — Deficiencies Identified`
+    : `Fire Protection Inspection — No Deficiencies Found`;
+
+  doc.fontSize(10).font('Helvetica-Bold').fillColor(navyBlue)
+     .text(`RE: ${reSubject}`, margin, y, { width: contentWidth });
+  y += 14;
+  doc.text(`${data.siteName} — ${data.siteAddress}`, margin, y, { width: contentWidth });
+  y += 14;
+
+  const jobLine = `Job #${data.jobNumber}  |  Service Date: ${dateStr}`;
+  doc.text(jobLine, margin, y, { width: contentWidth });
+  y += 18;
+
+  // Thin rule below RE block
+  doc.moveTo(margin, y).lineTo(margin + contentWidth, y)
+     .lineWidth(0.5).stroke('#cccccc');
+  y += 14;
+
+  // ── Salutation ───────────────────────────────────────────────────────────
+  const salutation = data.attentionTo ? `Dear ${data.attentionTo},` : 'Dear Property Manager,';
+  doc.fontSize(10).font('Helvetica').fillColor(black)
+     .text(salutation, margin, y, { width: contentWidth });
+  y += 18;
+
+  // ── Opening paragraph ────────────────────────────────────────────────────
+  const techPhrase = data.technicianName
+    ? `, ${data.technicianName},`
+    : '';
+  const openingPara =
+    `On ${dateStr}, our certified technician${techPhrase} conducted the annual fire protection ` +
+    `inspection at ${data.siteName}, located at ${data.siteAddress}, in accordance with the applicable ` +
+    `standards including CAN/ULC S536:2019 and the BC Fire Code.`;
+  doc.text(openingPara, margin, y, { width: contentWidth, lineGap: 3 });
+  y = doc.y + 12;
+
+  // ── Status paragraph ─────────────────────────────────────────────────────
+  if (!hasDeficiencies) {
+    const noPara =
+      `We are pleased to report that all systems and devices inspected were found to be in satisfactory ` +
+      `working order. No deficiencies were identified at the time of service. All required documentation ` +
+      `has been completed and is available upon request.`;
+    doc.text(noPara, margin, y, { width: contentWidth, lineGap: 3 });
+    y = doc.y + 12;
+  } else {
+    const defCount = data.deficiencies.length;
+    const defWord = defCount === 1 ? 'deficiency was' : 'deficiencies were';
+    const defPara =
+      `During our inspection, ${defCount} ${defWord} identified that require your attention. ` +
+      `The full details, including corrective action recommendations and associated costs, are outlined ` +
+      `in the enclosed Deficiency Report.`;
+    doc.text(defPara, margin, y, { width: contentWidth, lineGap: 3 });
+    y = doc.y + 12;
+
+    // Severity summary
+    const critCount = data.deficiencies.filter(d => d.severity === 'critical').length;
+    const majCount  = data.deficiencies.filter(d => d.severity === 'major').length;
+    const minCount  = data.deficiencies.filter(d => d.severity === 'minor').length;
+
+    if (critCount + majCount + minCount > 0) {
+      doc.text('Deficiency breakdown:', margin, y, { width: contentWidth });
+      y = doc.y + 4;
+      const sevRows = [
+        { label: 'Critical', count: critCount, color: '#dc2626' },
+        { label: 'Major',    count: majCount,  color: '#ea580c' },
+        { label: 'Minor',    count: minCount,  color: '#ca8a04' },
+      ].filter(r => r.count > 0);
+
+      sevRows.forEach(row => {
+        doc.fontSize(10).font('Helvetica').fillColor(row.color)
+           .text(`  •  ${row.label}: ${row.count}`, margin, y, { width: contentWidth });
+        y = doc.y + 2;
+      });
+      doc.fillColor(black);
+      y += 10;
+    }
+  }
+
+  // ── Systems inspected ────────────────────────────────────────────────────
+  if (data.deviceSummaries.length > 0) {
+    doc.fontSize(10).font('Helvetica').fillColor(black)
+       .text('Systems and devices inspected during this service visit included:', margin, y, { width: contentWidth });
+    y = doc.y + 6;
+
+    data.deviceSummaries.forEach(ds => {
+      const passRate = ds.total > 0 ? `${ds.passed} of ${ds.total} pass` : `${ds.total} inspected`;
+      doc.text(`  •  ${ds.deviceType}: ${passRate}`, margin, y, { width: contentWidth });
+      y = doc.y + 2;
+    });
+    y += 12;
+  }
+
+  // ── Call to action (deficiency variant) ──────────────────────────────────
+  if (hasDeficiencies) {
+    const ctaPara =
+      `To authorize the corrective work, please sign and return the enclosed approval form. ` +
+      `All quoted prices are valid for 30 days from the date of this letter. ` +
+      `Please note that prompt attention to the identified deficiencies is important to maintain ` +
+      `the safety and compliance of the fire protection systems at your property.`;
+    doc.text(ctaPara, margin, y, { width: contentWidth, lineGap: 3 });
+    y = doc.y + 12;
+  }
+
+  // ── Closing ───────────────────────────────────────────────────────────────
+  doc.text(
+    'If you have any questions or require additional information, please do not hesitate to contact us.',
+    margin, y, { width: contentWidth, lineGap: 3 }
+  );
+  y = doc.y + 16;
+
+  doc.text('Regards,', margin, y);
+  y = doc.y + 14;
+
+  doc.font('Helvetica-Bold').text(data.companyName, margin, y);
+  y = doc.y + 20;
+
+  doc.font('Helvetica-Oblique').fillColor(grayText);
+  if (data.technicianName) {
+    doc.text(data.technicianName, margin, y);
+    y = doc.y + 12;
+  }
+  if (data.technicianTitle) {
+    doc.text(data.technicianTitle, margin, y);
+    y = doc.y + 12;
+  }
+  if (data.companyPhone) {
+    doc.fillColor(black).font('Helvetica').text(data.companyPhone, margin, y);
+    y = doc.y + 12;
+  }
+  if (data.technicianEmail || data.companyEmail) {
+    doc.fillColor('#0000EE')
+       .text(data.technicianEmail || data.companyEmail || '', margin, y);
+  }
 }
 
 export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ 
+      const doc = new PDFDocument({
         size: 'LETTER',
         margins: { top: 50, bottom: 70, left: 50, right: 50 },
-        bufferPages: true
+        bufferPages: true,
       });
-      
+
       const chunks: Buffer[] = [];
       doc.on('data', (chunk) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      // Colors matching Inspectra style
-      const navyBlue = '#003366'; // Dark navy blue for title block
-      const white = '#FFFFFF';
-      const black = '#000000';
-      const grayText = '#4a5568';
-      const lightGray = '#e5e7eb';
-      const dangerColor = '#dc2626';
-      const warningColor = '#f59e0b';
+      const hasDeficiencies = data.deficiencies.length > 0;
 
-      // ============================================
-      // PAGE 1: COVER PAGE
-      // ============================================
-      
+      // ══════════════════════════════════════════════════════════════════════
+      // PAGE 1 — COVER
+      // ══════════════════════════════════════════════════════════════════════
       drawEnhancedCoverPage(doc, {
-        reportTitle: 'Deficiency Report',
+        reportTitle: hasDeficiencies ? 'Deficiency Report' : 'Inspection Summary Report',
         propertyName: data.siteName,
         propertyAddress: data.siteAddress,
         propertyCity: data.siteCity,
@@ -174,522 +354,304 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
         companyEmail: data.companyEmail || 'info@ewf.ca',
       });
 
-      // ============================================
-      // PAGE 2: EXECUTIVE SUMMARY
-      // ============================================
-      
-      doc.addPage();
-      
-      // Logo + site info header
-      const execSummaryStartY = drawFireProPageHeader(doc, data);
-      
-      // Draw executive summary with deficiency counts
-      drawDeficiencySummaryPage(doc, data.deficiencies, execSummaryStartY);
-      
-      // ============================================
-      // PAGE 3: LETTER-STYLE SUMMARY
-      // ============================================
-      
-      doc.addPage();
-      
-      // Logo + site info header
-      let pageYPos = drawFireProPageHeader(doc, data);
-      
-      // Warning banner if missing locations (admin override mode)
-      if (data.missingLocationDeficiencies && data.missingLocationDeficiencies.length > 0) {
-        const warningHeight = 40;
-        doc.rect(50, pageYPos, 512, warningHeight)
-           .fillAndStroke(warningColor, warningColor);
-        
-        doc.fontSize(10)
-           .fillColor(white)
-           .font('Helvetica-Bold')
-           .text('⚠ WARNING: TEST MODE REPORT', 60, pageYPos + 8);
-        
-        doc.fontSize(9)
-           .font('Helvetica')
-           .text(`${data.missingLocationDeficiencies.length} deficiency/deficiencies missing location information. See appendix for details.`, 60, pageYPos + 24, { width: 492, lineGap: 3 });
-        
-        pageYPos += warningHeight + 10;
-      }
-      
-      // Date
-      doc.fontSize(10)
-         .fillColor(black)
-         .font('Helvetica')
-         .text(data.inspectionDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 50, pageYPos);
-      
-      // Recipient block
-      let yPos = pageYPos + 20;
-      doc.text(data.siteName.toUpperCase(), 50, yPos);
-      yPos += 12;
-      
-      if (data.customerName) {
-        doc.text(data.customerName.toUpperCase(), 50, yPos);
-        yPos += 12;
-      }
-      
-      if (data.customerAddress) {
-        doc.text(data.customerAddress, 50, yPos);
-        yPos += 12;
-      }
-      
-      if (data.customerCity) {
-        doc.text(`${data.customerCity}, ${data.customerState || ''} ${data.customerPostalCode || ''}`.trim(), 50, yPos);
-        yPos += 12;
-      }
-      
-      if (data.attentionTo) {
-        yPos += 5;
-        doc.text(`ATTENTION: ${data.attentionTo.toUpperCase()}`, 50, yPos);
-        yPos += 12;
-      }
-      
-      if (data.attentionEmail) {
-        doc.text(`EMAIL ADDRESS: ${data.attentionEmail}`, 50, yPos);
-        yPos += 12;
-      }
-      
-      // RE line
-      yPos += 15;
-      doc.font('Helvetica-Bold')
-         .text(`RE: The Fire Protection System at ${data.siteAddress}`, 50, yPos, { width: 512, lineGap: 4 });
-      
-      // Service details
-      yPos += 25;
-      doc.font('Helvetica');
-      doc.text('Service Date:', 50, yPos, { continued: true, width: 200 });
-      doc.text(`${data.inspectionDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, { continued: false });
-      
-      doc.text('Job #:', 350, yPos, { continued: true, width: 100 });
-      doc.text(data.jobNumber, { continued: false });
-      
-      // Inspection summary
-      yPos += 25;
-      doc.font('Helvetica-Bold')
-         .text('ANNUAL INSPECTION OF THE FIRE ALARM SYSTEM: ', 50, yPos, { continued: true });
-      doc.font('Helvetica')
-         .text('Completed the inspection of the Fire Alarm System (per CAN/ULC S536), which included:', { continued: false, width: 512 });
-      
-      // Bulleted list
-      yPos += 30;
-      const inspectionItems = [
-        'Testing of the dry/wet sprinkler system as per NFPA 25.',
-        'Attempted to access and test all in-suite devices.',
-        'Testing of the emergency lighting systems as per BC Fire Code Section 6.',
-        'Inspected, dated, and tagged all fire extinguishers as per NFPA 10.',
-        'Bell test.',
-        'Tested smoke alarms as per CAN/ULC S552.'
-      ];
-      
-      inspectionItems.forEach(item => {
-        doc.text(`- ${item}`, 60, yPos, { width: 502, lineGap: 3 });
-        yPos += 15;
-      });
-      
-      yPos += 5;
-      doc.text('Please review the attached deficiency page for the full details and costs for the required repair(s).', 50, yPos, { width: 512, lineGap: 4 });
-      
-      // Backflow note (if applicable)
-      yPos += 25;
-      doc.text('BACKFLOW PREVENTER(S): Completed testing of the back flow preventer(s) located at the above-mentioned property. We are pleased to report that no deficiencies were found at the time of service, and all documentation will be sent to the City as required.', 50, yPos, { width: 512 });
-      
-      // Signature block
-      yPos += 40;
-      doc.text('Regards,', 50, yPos);
-      yPos += 12;
-      doc.font('Helvetica-Bold').text(data.companyName, 50, yPos);
-      yPos += 20;
-      
-      doc.font('Helvetica-Oblique');
-      doc.text(data.technicianName || 'Fire Alarm Estimator', 50, yPos);
-      yPos += 12;
-      doc.text(data.technicianTitle || 'Fire Alarm Estimator', 50, yPos);
-      yPos += 12;
-      doc.text(data.companyPhone || '604-299-1030', 50, yPos);
-      yPos += 12;
-      doc.fillColor('#0000EE')
-         .text(data.technicianEmail || data.companyEmail || 'info@firepro.ca', 50, yPos);
+      // ══════════════════════════════════════════════════════════════════════
+      // DEFICIENCY PACKAGE (>0 deficiencies)
+      // ══════════════════════════════════════════════════════════════════════
+      if (hasDeficiencies) {
 
-      // ============================================
-      // DEFICIENCIES-ONLY SECTION
-      // ============================================
-      // Device inventory tables removed - deficiency report shows only deficiencies
-
-      // ============================================
-      // DEFICIENCIES TABLE
-      // ============================================
-      
-      let defY = 110; // Declare outside if block for use in appendix
-      
-      if (data.deficiencies.length > 0) {
+        // ── PAGE 2: Executive Summary ───────────────────────────────────────
         doc.addPage();
-        defY = drawFireProPageHeader(doc, data);
-        
-        // Group deficiencies by system type
+        const execStartY = drawFireProPageHeader(doc, data);
+        drawDeficiencySummaryPage(doc, data.deficiencies, execStartY);
+
+        // ── PAGE 3: After Service Deficiency Letter ─────────────────────────
+        doc.addPage();
+        drawAfterServiceLetter(doc, data, true);
+
+        // ── Warning banner (admin override / test mode) ─────────────────────
+        if (data.missingLocationDeficiencies && data.missingLocationDeficiencies.length > 0) {
+          doc.addPage();
+          let warnY = drawFireProPageHeader(doc, data);
+          const warnH = 40;
+          doc.rect(50, warnY, 512, warnH).fillAndStroke(warningColor, warningColor);
+          doc.fontSize(10).fillColor(white).font('Helvetica-Bold')
+             .text('⚠ WARNING: TEST MODE REPORT', 60, warnY + 8);
+          doc.fontSize(9).font('Helvetica')
+             .text(
+               `${data.missingLocationDeficiencies.length} deficiency/deficiencies missing location information. See appendix for details.`,
+               60, warnY + 24, { width: 492, lineGap: 3 }
+             );
+          warnY += warnH + 10;
+        }
+
+        // ── PAGE 4+: Deficiency tables ──────────────────────────────────────
+        doc.addPage();
+        let defY = drawFireProPageHeader(doc, data);
+
         const deficienciesBySystem: Record<string, Array<typeof data.deficiencies[0]>> = {
-          'Fire Alarm Deficiencies': [],
-          'Smoke Alarm Deficiencies': [],
+          'Fire Alarm Deficiencies':        [],
+          'Smoke Alarm Deficiencies':       [],
           'Fire Extinguisher Deficiencies': [],
-          'Emergency Lighting Deficiencies': [],
-          'Sprinkler Deficiencies': []
+          'Emergency Lighting Deficiencies':[],
+          'Sprinkler Deficiencies':         [],
         };
 
-        // Categorize each deficiency using systemCategory field (with fallback to device type)
         data.deficiencies.forEach((def) => {
-          let systemCategory = 'Fire Alarm Deficiencies'; // default
-          
-          // Use explicit systemCategory if available
+          let cat = 'Fire Alarm Deficiencies';
           if (def.systemCategory) {
-            const categoryMap: Record<string, string> = {
-              'FIRE_ALARM': 'Fire Alarm Deficiencies',
-              'SMOKE_ALARM': 'Smoke Alarm Deficiencies',
-              'FIRE_EXTINGUISHER': 'Fire Extinguisher Deficiencies',
-              'EMERGENCY_LIGHTING': 'Emergency Lighting Deficiencies',
-              'SPRINKLER': 'Sprinkler Deficiencies'
+            const map: Record<string, string> = {
+              FIRE_ALARM:         'Fire Alarm Deficiencies',
+              SMOKE_ALARM:        'Smoke Alarm Deficiencies',
+              FIRE_EXTINGUISHER:  'Fire Extinguisher Deficiencies',
+              EMERGENCY_LIGHTING: 'Emergency Lighting Deficiencies',
+              SPRINKLER:          'Sprinkler Deficiencies',
             };
-            systemCategory = categoryMap[def.systemCategory] || 'Fire Alarm Deficiencies';
+            cat = map[def.systemCategory] || cat;
           } else {
-            // Fallback to device type detection for backward compatibility
-            const deviceType = def.deviceType || '';
-            const typeLower = deviceType.toLowerCase();
-            
-            if (typeLower.includes('smoke alarm')) {
-              systemCategory = 'Smoke Alarm Deficiencies';
-            } else if (typeLower.includes('extinguisher')) {
-              systemCategory = 'Fire Extinguisher Deficiencies';
-            } else if (typeLower.includes('emergency') || typeLower.includes('light')) {
-              systemCategory = 'Emergency Lighting Deficiencies';
-            } else if (typeLower.includes('sprinkler') || typeLower.includes('fdc') || typeLower.includes('standpipe')) {
-              systemCategory = 'Sprinkler Deficiencies';
-            }
+            const t = (def.deviceType || '').toLowerCase();
+            if (t.includes('smoke alarm'))  cat = 'Smoke Alarm Deficiencies';
+            else if (t.includes('extinguisher')) cat = 'Fire Extinguisher Deficiencies';
+            else if (t.includes('emergency') || t.includes('light')) cat = 'Emergency Lighting Deficiencies';
+            else if (t.includes('sprinkler') || t.includes('fdc') || t.includes('standpipe')) cat = 'Sprinkler Deficiencies';
           }
-
-          deficienciesBySystem[systemCategory].push(def);
+          deficienciesBySystem[cat].push(def);
         });
 
-        // Calculate totals
-        const subtotal = data.deficiencies.reduce((sum, def) => sum + (typeof def.estimatedCost === 'string' ? parseFloat(def.estimatedCost) : (def.estimatedCost || 0)), 0);
-        const taxRate = 0.12; // 12% tax (GST + PST)
-        const taxAmount = subtotal * taxRate;
+        const subtotal = data.deficiencies.reduce(
+          (sum, def) => sum + (typeof def.estimatedCost === 'string' ? parseFloat(def.estimatedCost) : (def.estimatedCost || 0)),
+          0
+        );
+        const taxRate    = 0.12;
+        const taxAmount  = subtotal * taxRate;
         const grandTotal = subtotal + taxAmount;
 
-        // Render deficiencies grouped by system
         const defColWidths = [40, 280, 100, 92];
         const defTableWidth = defColWidths.reduce((a, b) => a + b, 0);
-        
-        for (const [systemName, systemDeficiencies] of Object.entries(deficienciesBySystem)) {
-          if (systemDeficiencies.length === 0) continue;
 
-          // Check if we need a new page
-          if (defY > 700) {
+        const drawDefTableHeader = (yPos: number): number => {
+          doc.rect(50, yPos, defTableWidth, 20).fill(black);
+          doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
+          let dx = 55;
+          doc.text('Item #', dx, yPos + 6);
+          dx += defColWidths[0];
+          doc.text('Description', dx, yPos + 6);
+          dx += defColWidths[1];
+          doc.text('Device', dx, yPos + 6);
+          dx += defColWidths[2];
+          doc.text('Total Labour & Material', dx, yPos + 6, { width: defColWidths[3] - 10 });
+          return yPos + 20;
+        };
+
+        for (const [systemName, sysDefs] of Object.entries(deficienciesBySystem)) {
+          if (sysDefs.length === 0) continue;
+
+          if (defY > 680) {
             doc.addPage();
             defY = drawFireProPageHeader(doc, data);
           }
 
-          // System category header
-          doc.fontSize(14)
-             .fillColor(navyBlue)
-             .font('Helvetica-Bold')
+          doc.fontSize(14).fillColor(navyBlue).font('Helvetica-Bold')
              .text(systemName, 50, defY);
-          
           defY += 25;
 
-          // Table header
-          doc.rect(50, defY, defTableWidth, 20).fill(black);
-          doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
-          
-          let dx = 55;
-          doc.text('Item #', dx, defY + 6);
-          dx += defColWidths[0];
-          doc.text('Description', dx, defY + 6);
-          dx += defColWidths[1];
-          doc.text('Device', dx, defY + 6);
-          dx += defColWidths[2];
-          doc.text('Total Labour & Material', dx, defY + 6, { width: defColWidths[3] - 10 });
-          
-          defY += 20;
+          defY = drawDefTableHeader(defY);
 
-          // Render each deficiency in this system
           doc.font('Helvetica').fontSize(8);
-          
-          systemDeficiencies.forEach((def, i) => {
+
+          sysDefs.forEach((def) => {
             if (defY > 680) {
               doc.addPage();
               defY = drawFireProPageHeader(doc, data);
-              
-              // Redraw table header on new page
-              doc.rect(50, defY, defTableWidth, 20).fill(black);
-              doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
-              
-              dx = 55;
-              doc.text('Item #', dx, defY + 6);
-              dx += defColWidths[0];
-              doc.text('Description', dx, defY + 6);
-              dx += defColWidths[1];
-              doc.text('Device', dx, defY + 6);
-              dx += defColWidths[2];
-              doc.text('Total Labour & Material', dx, defY + 6, { width: defColWidths[3] - 10 });
-              
-              defY += 20;
+              defY = drawDefTableHeader(defY);
             }
 
-            const rowHeight = 40;
-            doc.rect(50, defY, defTableWidth, rowHeight).stroke(lightGray);
-            
+            const rowH = 40;
+            doc.rect(50, defY, defTableWidth, rowH).stroke(lightGray);
             doc.fillColor(black).font('Helvetica').fontSize(8);
-            dx = 55;
-            
-            // Item number
+            let dx = 55;
+
             doc.text(def.id.toString(), dx, defY + 5, { width: defColWidths[0] - 10, align: 'center' });
             dx += defColWidths[0];
-            
-            // Description with location
+
             let descText = def.description || def.title;
-            if (def.location) {
-              descText = `Location: ${def.location}. ${descText}`;
-            } else {
-              // Show TBD for missing locations in override mode
-              descText = `Location: TBD (Required). ${descText}`;
-            }
+            descText = def.location
+              ? `Location: ${def.location}. ${descText}`
+              : `Location: TBD. ${descText}`;
             doc.text(descText, dx, defY + 5, { width: defColWidths[1] - 10, lineGap: 2 });
             dx += defColWidths[1];
-            
-            // Device type
+
             doc.text(def.deviceType || '-', dx, defY + 5, { width: defColWidths[2] - 10, lineGap: 2 });
             dx += defColWidths[2];
-            
-            // Cost
-            const cost = typeof def.estimatedCost === 'string' ? parseFloat(def.estimatedCost) : (def.estimatedCost || 0);
+
+            const cost = typeof def.estimatedCost === 'string'
+              ? parseFloat(def.estimatedCost)
+              : (def.estimatedCost || 0);
             doc.text(`$${cost.toFixed(2)}`, dx, defY + 5, { width: defColWidths[3] - 10, align: 'right' });
-            
-            defY += rowHeight;
+
+            defY += rowH;
           });
 
-          defY += 15; // Space between system categories
+          defY += 15;
         }
 
-        // Pricing totals section - only add page if insufficient space (need ~100px for totals)
+        // ── Pricing totals ──────────────────────────────────────────────────
         if (defY > 650) {
           doc.addPage();
           defY = drawFireProPageHeader(doc, data);
         }
+        defY += 10;
 
-        defY += 10; // Reduced spacing before totals
+        const tX  = 380;
+        const tLW = 100;
+        const tVW = 70;
 
-        const totalsX = 380;
-        const totalsLabelWidth = 100;
-        const totalsValueWidth = 70;
-
-        doc.fontSize(10)
-           .fillColor(black)
-           .font('Helvetica-Bold');
-
-        // Subtotal
-        doc.text('Subtotal:', totalsX, defY, { width: totalsLabelWidth, align: 'right' })
-           .text(`$${subtotal.toFixed(2)}`, totalsX + totalsLabelWidth + 10, defY, { width: totalsValueWidth, align: 'right' });
-
+        doc.fontSize(10).fillColor(black).font('Helvetica-Bold');
+        doc.text('Subtotal:', tX, defY, { width: tLW, align: 'right' })
+           .text(`$${subtotal.toFixed(2)}`, tX + tLW + 10, defY, { width: tVW, align: 'right' });
         defY += 20;
 
-        // Tax
-        doc.text(`Tax (${(taxRate * 100).toFixed(0)}%):`, totalsX, defY, { width: totalsLabelWidth, align: 'right' })
-           .text(`$${taxAmount.toFixed(2)}`, totalsX + totalsLabelWidth + 10, defY, { width: totalsValueWidth, align: 'right' });
-
+        doc.text(`Tax (${(taxRate * 100).toFixed(0)}%):`, tX, defY, { width: tLW, align: 'right' })
+           .text(`$${taxAmount.toFixed(2)}`, tX + tLW + 10, defY, { width: tVW, align: 'right' });
         defY += 20;
 
-        // Grand Total with line separator
-        doc.moveTo(totalsX, defY - 5)
-           .lineTo(totalsX + totalsLabelWidth + totalsValueWidth + 10, defY - 5)
-           .stroke(black);
-
+        doc.moveTo(tX, defY - 5).lineTo(tX + tLW + tVW + 10, defY - 5).stroke(black);
         defY += 5;
 
         doc.fontSize(12)
-           .text('Total:', totalsX, defY, { width: totalsLabelWidth, align: 'right' })
-           .text(`$${grandTotal.toFixed(2)}`, totalsX + totalsLabelWidth + 10, defY, { width: totalsValueWidth, align: 'right' });
-
+           .text('Total:', tX, defY, { width: tLW, align: 'right' })
+           .text(`$${grandTotal.toFixed(2)}`, tX + tLW + 10, defY, { width: tVW, align: 'right' });
         defY += 30;
-        
-        // ============================================
-        // TERMS & CONDITIONS
-        // ============================================
-        
-        doc.fontSize(8)
-           .fillColor(grayText)
-           .font('Helvetica-Oblique');
-        
+
+        // ── Terms & Conditions ──────────────────────────────────────────────
         const terms = [
-          `The proposed quote is valid for 30 days from the date of receipt of the report. Please be aware that, upon approval of the quoted materials, any cancellation will incur a 25% restocking fee.`,
-          `Any proposal Scope of Work is based on the information provided in the initial quote, and will not change separately on a time-and-material basis. Work orders may be issued for these additional costed once the bill is processed. Costs for engineering, permits, fees, drawings, aerial lift equipment, sub-trades, equipment or tool rentals, third-party verification, accommodations, meal allowances, and subcontractors will incur extra charges. Drywall repairs, fire-stopping, fire watch, pipe insulation, and painting are not included in the quote. There will be no attempts to access units for sprinkler head replacements.`,
-          `GST and PST taxes will be applied to materials only, while GST tax will be applied to labor. Taxes are not included in the quoted price.`,
-          `All quoted prices are based on work completed within regular business hours (8:00 AM to 4:30 PM). An environmental disposal fee of $7.00 per battery will be charged for each battery removed from the site. Travel time is included in the quoted costs if the majority of the repairs are approved simultaneously.`,
-          `Please note that the prices are based on a single trip. Additional trips required to complete repairs due to access issues may incur extra charges. However, no additional travel charges will apply for trips needed due to stocking issues.`,
-          `A vehicle service charge of $88.00 will be applied.`
+          `The proposed quote is valid for 30 days from the date of receipt of this report. Please be aware that, upon approval of the quoted materials, any cancellation will incur a 25% restocking fee.`,
+          `Any proposal Scope of Work is based on the information provided in the initial quote. Work orders may be issued for additional costs once the bill is processed. Costs for engineering, permits, fees, drawings, aerial lift equipment, sub-trades, equipment or tool rentals, third-party verification, accommodations, meal allowances, and subcontractors will incur extra charges. Drywall repairs, fire-stopping, fire watch, pipe insulation, and painting are not included. There will be no attempts to access units for sprinkler head replacements.`,
+          `GST and PST taxes will be applied to materials only, while GST will be applied to labour. Taxes are not included in the quoted price.`,
+          `All quoted prices are based on work completed within regular business hours (8:00 AM – 4:30 PM). An environmental disposal fee of $7.00 per battery will be charged for each battery removed from the site. Travel time is included in the quoted costs if the majority of the repairs are approved simultaneously.`,
+          `Please note that prices are based on a single trip. Additional trips required to complete repairs due to access issues may incur extra charges. No additional travel charges will apply for trips needed due to stocking issues.`,
+          `A vehicle service charge of $88.00 will be applied.`,
         ];
-        
+
+        doc.fontSize(8).fillColor(grayText).font('Helvetica-Oblique');
         terms.forEach(term => {
-          // Measure how tall this paragraph will be before drawing it
-          // PDFKit renders ~10 px per line at fontSize 8; use 680 as safe threshold
           if (defY > 660) {
             doc.addPage();
             defY = drawFireProPageHeader(doc, data);
           }
-          
-          // lineGap: 3 keeps lines readable; paragraphGap is handled by defY increment
           doc.text(term, 50, defY, { width: 512, align: 'justify', lineGap: 3 });
-          // Move down by the actual rendered height + 10 px inter-paragraph gap
           defY = doc.y + 10;
         });
-      }
 
-      // ============================================
-      // ASTTBC SIGNATURE TABLE
-      // ============================================
-
-      if (data.technicianName) {
-        // Ensure enough space for the signature table (~200 px for one technician)
-        if (defY > 560) {
-          doc.addPage();
-          defY = drawFireProPageHeader(doc, data);
-        } else {
-          defY += 20;
-        }
-
-        const estimatedPageCount = doc.bufferedPageRange().count;
-        defY = drawSignatureTable(
-          doc,
-          defY,
-          estimatedPageCount,
-          data.technicianName,
-          data.technicianCertNumber || '',
-          data.inspectionDate,
-          data.companyName,
-          undefined,
-          undefined,
-          50,
-          512
-        );
-      }
-
-      // ============================================
-      // MISSING LOCATIONS APPENDIX (if applicable)
-      // ============================================
-      
-      if (data.missingLocationDeficiencies && data.missingLocationDeficiencies.length > 0) {
-        // Only add new page if insufficient space for appendix header
-        if (defY > 650) {
-          doc.addPage();
-          defY = drawFireProPageHeader(doc, data);
-        } else {
-          defY += 30; // Add spacing if continuing on same page
-        }
-        
-        let appendixY = defY;
-        
-        // Appendix title
-        doc.fontSize(16)
-           .fillColor(dangerColor)
-           .font('Helvetica-Bold')
-           .text('APPENDIX: Missing Location Information', 50, appendixY);
-        
-        appendixY += 30;
-        
-        doc.fontSize(10)
-           .fillColor(black)
-           .font('Helvetica')
-           .text('The following deficiencies are missing location information and must be updated before final report submission:', 50, appendixY, { width: 512, lineGap: 4 });
-        
-        appendixY += 30;
-        
-        // Table header
-        const appendixColWidths = [50, 350, 112];
-        const appendixTableWidth = appendixColWidths.reduce((a, b) => a + b, 0);
-        
-        doc.rect(50, appendixY, appendixTableWidth, 20).fill(dangerColor);
-        doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
-        
-        let ax = 55;
-        doc.text('ID', ax, appendixY + 6);
-        ax += appendixColWidths[0];
-        doc.text('Description', ax, appendixY + 6);
-        ax += appendixColWidths[1];
-        doc.text('Severity', ax, appendixY + 6);
-        
-        appendixY += 20;
-        
-        // Table rows
-        doc.font('Helvetica').fontSize(8);
-        
-        data.missingLocationDeficiencies.forEach((def) => {
-          if (appendixY > 680) {
+        // ── ASTTBC Signature Table ──────────────────────────────────────────
+        if (data.technicianName) {
+          if (defY > 560) {
             doc.addPage();
-            appendixY = drawFireProPageHeader(doc, data);
-            
-            // Redraw header
-            doc.rect(50, appendixY, appendixTableWidth, 20).fill(dangerColor);
-            doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
-            
-            ax = 55;
-            doc.text('ID', ax, appendixY + 6);
-            ax += appendixColWidths[0];
-            doc.text('Description', ax, appendixY + 6);
-            ax += appendixColWidths[1];
-            doc.text('Severity', ax, appendixY + 6);
-            
-            appendixY += 20;
+            defY = drawFireProPageHeader(doc, data);
+          } else {
+            defY += 20;
           }
-          
-          const rowHeight = 30;
-          doc.rect(50, appendixY, appendixTableWidth, rowHeight).stroke(lightGray);
-          
-          doc.fillColor(black).font('Helvetica').fontSize(8);
-          ax = 55;
-          
-          // ID
-          doc.text(def.id.toString(), ax, appendixY + 5, { width: appendixColWidths[0] - 10, lineGap: 2 });
-          ax += appendixColWidths[0];
-          
-          // Description
-          doc.text(def.description, ax, appendixY + 5, { width: appendixColWidths[1] - 10, lineGap: 2 });
-          ax += appendixColWidths[1];
-          
-          // Severity
-          doc.text(def.severity.toUpperCase(), ax, appendixY + 5, { width: appendixColWidths[2] - 10, lineGap: 2 });
-          
-          appendixY += rowHeight;
-        });
+
+          const pageCount = doc.bufferedPageRange().count;
+          defY = drawSignatureTable(
+            doc, defY, pageCount,
+            data.technicianName,
+            data.technicianCertNumber || '',
+            data.inspectionDate,
+            data.companyName,
+            undefined, undefined,
+            50, 512
+          );
+        }
+
+        // ── Missing Locations Appendix ──────────────────────────────────────
+        if (data.missingLocationDeficiencies && data.missingLocationDeficiencies.length > 0) {
+          if (defY > 650) {
+            doc.addPage();
+            defY = drawFireProPageHeader(doc, data);
+          } else {
+            defY += 30;
+          }
+
+          doc.fontSize(16).fillColor(dangerColor).font('Helvetica-Bold')
+             .text('APPENDIX: Missing Location Information', 50, defY);
+          defY += 30;
+
+          doc.fontSize(10).fillColor(black).font('Helvetica')
+             .text(
+               'The following deficiencies are missing location information and must be updated before final report submission:',
+               50, defY, { width: 512, lineGap: 4 }
+             );
+          defY += 30;
+
+          const appColWidths = [50, 350, 112];
+          const appTableWidth = appColWidths.reduce((a, b) => a + b, 0);
+
+          const drawAppHeader = (yPos: number): number => {
+            doc.rect(50, yPos, appTableWidth, 20).fill(dangerColor);
+            doc.fillColor(white).fontSize(9).font('Helvetica-Bold');
+            let ax = 55;
+            doc.text('ID', ax, yPos + 6);
+            ax += appColWidths[0];
+            doc.text('Description', ax, yPos + 6);
+            ax += appColWidths[1];
+            doc.text('Severity', ax, yPos + 6);
+            return yPos + 20;
+          };
+
+          defY = drawAppHeader(defY);
+
+          doc.font('Helvetica').fontSize(8);
+          data.missingLocationDeficiencies.forEach((def) => {
+            if (defY > 680) {
+              doc.addPage();
+              defY = drawFireProPageHeader(doc, data);
+              defY = drawAppHeader(defY);
+            }
+            const rowH = 30;
+            doc.rect(50, defY, appTableWidth, rowH).stroke(lightGray);
+            doc.fillColor(black).font('Helvetica').fontSize(8);
+            let ax = 55;
+            doc.text(def.id.toString(), ax, defY + 5, { width: appColWidths[0] - 10, lineGap: 2 });
+            ax += appColWidths[0];
+            doc.text(def.description, ax, defY + 5, { width: appColWidths[1] - 10, lineGap: 2 });
+            ax += appColWidths[1];
+            doc.text(def.severity.toUpperCase(), ax, defY + 5, { width: appColWidths[2] - 10, lineGap: 2 });
+            defY += rowH;
+          });
+        }
+
+      } else {
+        // ══════════════════════════════════════════════════════════════════
+        // NO-DEFICIENCY PACKAGE (0 deficiencies)
+        // ══════════════════════════════════════════════════════════════════
+
+        // ── PAGE 2: After Service Completion Letter ─────────────────────
+        doc.addPage();
+        drawAfterServiceLetter(doc, data, false);
       }
 
-      // ============================================
-      // FOOTER ON ALL PAGES
-      // ============================================
-      
-      // Add footers to all pages
+      // ══════════════════════════════════════════════════════════════════════
+      // FOOTERS ON ALL PAGES
+      // ══════════════════════════════════════════════════════════════════════
       const pages = doc.bufferedPageRange();
       const totalPages = pages.count;
       for (let i = 0; i < totalPages; i++) {
         doc.switchToPage(i);
-        
-        // Simple footer at bottom
+
         const footerY = 770;
-        doc.fontSize(8)
-           .fillColor('#6b7280')
-           .font('Helvetica');
-        
-        // Company name on left
+        doc.fontSize(8).fillColor('#6b7280').font('Helvetica');
+
         doc.text(data.companyName, 50, footerY, { lineBreak: false });
-        
-        // Page number in center
+
         const pageText = `Page ${i + 1} of ${totalPages}`;
         const pageTextWidth = doc.widthOfString(pageText);
         doc.text(pageText, (612 - pageTextWidth) / 2, footerY, { lineBreak: false });
-        
-        // Job ID on right
+
         const jobText = `JOB-${data.jobNumber}`;
         const jobTextWidth = doc.widthOfString(jobText);
         doc.text(jobText, 612 - 50 - jobTextWidth, footerY, { lineBreak: false });
       }
-      
+
       doc.end();
     } catch (error) {
       reject(error);
