@@ -338,20 +338,6 @@ const reportRouter = router({
     // Get technician details
     const technician = await db.getUserById(job.assignedTechnicianId || ctx.user.id);
     
-    // Fetch saved checklist responses
-    const savedResponses = await db.getChecklistResponsesByJob(input.jobId);
-    
-    // Audit checklist completeness
-    const { auditChecklistCompleteness, formatMissingItemsMessage } = await import('../checklistValidation');
-    const auditResult = auditChecklistCompleteness(savedResponses);
-    
-    if (!auditResult.isComplete) {
-      throw new TRPCError({
-        code: 'PRECONDITION_FAILED',
-        message: `Checklist incomplete (${auditResult.completionPercentage}% complete). ${formatMissingItemsMessage(auditResult.missingItems)}`,
-      });
-    }
-    
     // Validate device locations before generating Annual report
     const { validateAnnualReportLocations } = await import('../locationValidation');
     const locationValidation = validateAnnualReportLocations({
