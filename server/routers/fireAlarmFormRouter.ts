@@ -43,7 +43,7 @@ export const fireAlarmFormRouter = router({
         techCertLevel: z.string().optional(),
         techCompany: z.string().optional(),
         recommendations: z.string().optional(),
-        sectionHeaderValues: z.record(z.record(z.string())).optional(),
+        sectionHeaderValues: z.record(z.string(), z.record(z.string(), z.string())).optional(),
       })
     )
     .mutation(async ({ input }) => {

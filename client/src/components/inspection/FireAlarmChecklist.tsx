@@ -313,7 +313,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
     if (!sections.has(key)) sections.set(key, { meta: row, items: [] });
     sections.get(key)!.items.push(row);
   });
-  const sortedSections = [...sections.values()].sort((a, b) => a.meta.sectionOrder - b.meta.sectionOrder);
+  const sortedSections = Array.from(sections.values()).sort((a, b) => a.meta.sectionOrder - b.meta.sectionOrder);
 
   // Split: sections 1-11 vs section 13+
   const checklistSections = sortedSections.filter((s) => s.meta.sectionOrder <= 11);
