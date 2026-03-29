@@ -64,20 +64,11 @@ const fireAlarmDevicesSchema: ImportSchema = {
  * Fire Extinguishers import schema
  */
 const fireExtinguishersSchema: ImportSchema = {
-  requiredFields: ['deviceType'],
-  optionalFields: ['location', 'floor', 'serialNumber', 'barcode', 'notes', 'manufacturer', 'model', 'quantity'],
+  requiredFields: [],
+  optionalFields: ['deviceType', 'location', 'floor', 'serialNumber', 'barcode', 'notes', 'manufacturer', 'model', 'quantity', 'mfgDate', 'lastHST', 'last6yr'],
   category: 'FIRE_EXTINGUISHER',
-  validateRow: (row) => {
-    const errors: string[] = [];
-    
-    if (!row.deviceType || String(row.deviceType).trim() === '') {
-      errors.push('Device type is required (e.g., ABC, CO2, K)');
-    }
-    
-    return {
-      valid: errors.length === 0,
-      errors,
-    };
+  validateRow: (_row) => {
+    return { valid: true, errors: [] };
   },
 };
 
@@ -85,20 +76,11 @@ const fireExtinguishersSchema: ImportSchema = {
  * Emergency Lights import schema
  */
 const emergencyLightsSchema: ImportSchema = {
-  requiredFields: ['deviceType'],
-  optionalFields: ['location', 'floor', 'barcode', 'notes', 'manufacturer', 'model'],
+  requiredFields: [],
+  optionalFields: ['deviceType', 'location', 'floor', 'barcode', 'notes', 'manufacturer', 'model', 'ladderHeight', 'supplyVoltage', 'modelWattage', 'batteryYear', 'batterySize', 'batteryCount', 'lampCount'],
   category: 'EMERGENCY_LIGHT',
-  validateRow: (row) => {
-    const errors: string[] = [];
-    
-    if (!row.deviceType || String(row.deviceType).trim() === '') {
-      errors.push('Device type is required (e.g., battery unit, exit sign, combo)');
-    }
-    
-    return {
-      valid: errors.length === 0,
-      errors,
-    };
+  validateRow: (_row) => {
+    return { valid: true, errors: [] };
   },
 };
 

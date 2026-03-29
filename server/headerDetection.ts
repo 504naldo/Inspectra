@@ -127,9 +127,35 @@ function getKeywordsForImportType(importType: string): string[] {
         'type',
       ];
     
-    case 'fireAlarmDevices':
-    case 'fireExtinguishers':
     case 'emergencyLights':
+      return [
+        'unit',
+        'location',
+        'ladder',
+        'supply',
+        'voltage',
+        'wattage',
+        'battery',
+        'lamp',
+        'passed',
+        'comments',
+        'type',
+      ];
+
+    case 'fireExtinguishers':
+      return [
+        'location',
+        'serial',
+        'type',
+        'size',
+        'mfg',
+        'hst',
+        'comments',
+        'passed',
+        'manufacturer',
+      ];
+
+    case 'fireAlarmDevices':
     case 'sprinklerDevices':
       return [
         'device',

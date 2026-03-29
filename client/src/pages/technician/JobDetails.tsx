@@ -5,8 +5,6 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
-import { useInspectionProgress } from "@/hooks/useInspectionProgress";
-import { ExpandableCategoryCard } from "@/components/ExpandableCategoryCard";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { SiteDetails } from "@/components/SiteDetails";
 import { InspectionHeader } from "@/components/inspection/InspectionHeader";
@@ -14,6 +12,7 @@ import { IndividualDeviceGrid } from "@/components/inspection/IndividualDeviceGr
 import { ExtinguisherGrid } from "@/components/inspection/ExtinguisherGrid";
 import { EmergencyLightGrid } from "@/components/inspection/EmergencyLightGrid";
 import { FireAlarmChecklist } from "@/components/inspection/FireAlarmChecklist";
+import { SmokeAlarmGrid } from "@/components/inspection/SmokeAlarmGrid";
 import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
 import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending } from "@shared/deviceHelpers";
 import {
@@ -45,8 +44,6 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const [location, setLocation] = useLocation();
   const { isOnline, getCachedJobData } = useOfflineStorage();
   const [activeTab, setActiveTab] = useState("devices");
-  const { getProgress, isProgressRecent } = useInspectionProgress(jobId);
-  const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [openGridSection, setOpenGridSection] = useState<string | null>(null);
 
   const toggleGridSection = (section: string) => {
@@ -88,14 +85,6 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     onError: () => toast.error('Failed to complete job')
   });
   
-  const bulkMarkPass = trpc.inspectionResult.bulkMarkPass.useMutation({
-    onSuccess: (result) => {
-      toast.success(`Marked ${result.count} devices as PASS`);
-      refetch();
-    },
-    onError: () => toast.error('Failed to mark devices as pass')
-  });
-
   const importAssets = trpc.assetImport.importAssetsFromExcel.useMutation({
     onSuccess: (result) => {
       toast.success(result.message);
@@ -185,10 +174,10 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     ...d,
     result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
   }));
-  const sortedFireAlarmDevices = sortByWalkOrderThenLocation(fireAlarmDevices).map((d: any) => ({
-    ...d,
-    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
-  }));
+  const sortedFireAlarmDevices = sortByWalkOrderThenLocation(fireAlarmDevices).map((d: any) => {
+    const ir = inspectionResults?.find((r: any) => r.deviceId === d.id);
+    return { ...d, result: ir?.result, inspectionNotes: ir?.notes ?? null };
+  });
   const sortedExtinguishers = sortByWalkOrderThenLocation(extinguishers).map((d: any) => ({
     ...d,
     result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
@@ -360,31 +349,54 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           scheduledDate={(job as any).scheduledDate}
         />
 
-        {/* Smoke Alarms — existing ExpandableCategoryCard (navigation to device test screen) */}
-        {smokeStats.total > 0 && (
-          <ExpandableCategoryCard
-            title="Smoke Alarms"
-            description="Smoke detection devices"
-            icon={<Flame className="h-5 w-5" />}
-            testedCount={smokeStats.tested}
-            totalCount={smokeStats.total}
-            deficiencyCount={smokeStats.deficiencies}
-            route={`/tech/jobs/${jobId}/smoke-alarms`}
-            resumeRoute={getProgress()?.route.includes('smoke-alarm') ? getProgress()?.route : undefined}
-            gradientFrom="from-destructive/5"
-            gradientTo="to-destructive/10"
-            borderColor="border-destructive/20"
-            textColor="text-foreground"
-            buttonColor="bg-destructive"
-            buttonHoverColor="hover:bg-destructive/90"
-            devices={sortedSmokeAlarms}
-            isExpanded={expandedCard === 'smoke'}
-            onToggle={() => setExpandedCard(expandedCard === 'smoke' ? null : 'smoke')}
-            getDeviceRoute={(deviceId) => `/tech/jobs/${jobId}/device/${deviceId}?category=smoke`}
-            jobId={jobId}
-            onBulkMarkPass={() => bulkMarkPass.mutate({ jobId, deviceIds: sortedSmokeAlarms.filter(d => !d.result || d.result === 'not_tested').map(d => d.id) })}
-          />
-        )}
+        {/* Smoke Alarms — inline spreadsheet grid (CAN/ULC-S552) */}
+        <Card className="border-destructive/20">
+          <CardHeader
+            className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+            onClick={() => toggleGridSection('smokealarm')}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-destructive/10 rounded-lg">
+                  <Flame className="h-5 w-5 text-destructive" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Smoke Alarms</CardTitle>
+                  <p className="text-sm text-muted-foreground">CAN/ULC-S552 Inspection &amp; Testing</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">
+                  {smokeStats.tested}/{smokeStats.total}
+                </span>
+                {openGridSection === 'smokealarm' ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          {openGridSection === 'smokealarm' && (
+            <CardContent className="p-3 pt-0">
+              {smokeStats.total > 0 ? (
+                <SmokeAlarmGrid
+                  jobId={jobId}
+                  devices={sortedSmokeAlarms}
+                  isFinalized={isFinalized}
+                  onResultChange={() => refetch()}
+                />
+              ) : (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  No smoke alarms loaded for this site.
+                  <Button variant="link" size="sm" onClick={() => importAssets.mutate({ jobId })} disabled={importAssets.isPending}>
+                    Import Assets
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
 
         {/* Fire Alarm Devices — inline spreadsheet grid */}
         <Card className="border-[var(--warning)]/20">

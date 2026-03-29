@@ -225,6 +225,7 @@ export const fireAlarmRouter = router({
             result: input.result,
             notes: input.notes || null,
             numericValue: input.numericValue || null,
+            numericValueRaw: input.numericValue || null,
             textValue: input.textValue || null,
             testedById: ctx.user.id,
             testedAt: new Date(),
@@ -241,12 +242,13 @@ export const fireAlarmRouter = router({
           result: input.result,
           notes: input.notes || null,
           numericValue: input.numericValue || null,
+          numericValueRaw: input.numericValue || null,
           textValue: input.textValue || null,
           testedById: ctx.user.id,
           testedAt: new Date(),
         });
 
-        return { success: true, id: Number((result as any).insertId) };
+        return { success: true, id: Number((result as any)[0].insertId) };
       }
     }),
 
@@ -283,7 +285,7 @@ export const fireAlarmRouter = router({
         return { success: true, id: existing[0].id };
       } else {
         const result = await database.insert(fireAlarmSystems).values(input);
-        return { success: true, id: Number((result as any).insertId) };
+        return { success: true, id: Number((result as any)[0].insertId) };
       }
     }),
 });

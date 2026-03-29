@@ -490,12 +490,22 @@ const importRouter = router({
             // create_new falls through to create
           }
           
+          // Auto-fill deviceType for types that don't have a Type column in the workbook
+          const autoDeviceType: Record<string, string> = {
+            emergencyLights:  'Emergency Light',
+            fireExtinguishers: 'Fire Extinguisher',
+          };
+          const resolvedDeviceType =
+            rowData.deviceType?.trim() ||
+            autoDeviceType[input.importType] ||
+            'Unknown';
+
           // Create new device with category
           const deviceData: any = {
             companyId: ctx.user.companyId!,
             siteId: input.siteId,
             category: schema.category || 'FIRE_ALARM_DEVICE',
-            deviceType: rowData.deviceType || 'Unknown',
+            deviceType: resolvedDeviceType,
             manufacturer: rowData.manufacturer,
             model: rowData.model,
             serialNumber: rowData.serialNumber,
@@ -503,12 +513,29 @@ const importRouter = router({
             barcode: rowData.barcode,
             notes: rowData.notes,
           };
-          
+
+          // Add emergency light specific fields
+          if (input.importType === 'emergencyLights') {
+            deviceData.ladderHeight  = rowData.ladderHeight  || undefined;
+            deviceData.supplyVoltage = rowData.supplyVoltage || undefined;
+            deviceData.modelWattage  = rowData.modelWattage  || undefined;
+            deviceData.batteryYear   = rowData.batteryYear   || undefined;
+            deviceData.batterySize   = rowData.batterySize   || undefined;
+            deviceData.batteryCount  = rowData.batteryCount  ? Number(rowData.batteryCount) || undefined : undefined;
+            deviceData.lampCount     = rowData.lampCount     ? Number(rowData.lampCount)    || undefined : undefined;
+          }
+
+          // Add extinguisher specific fields
+          if (input.importType === 'fireExtinguishers') {
+            deviceData.mfgDate  = rowData.mfgDate  || undefined;
+            deviceData.lastHST  = rowData.lastHST  || undefined;
+            deviceData.last6yr  = rowData.last6yr  || undefined;
+          }
+
           // Add smoke alarm specific fields
           if (input.importType === 'smokeAlarms') {
             const { normalizePowerType } = await import('../powerTypeNormalization');
             deviceData.suiteNumber = rowData.suiteNumber;
-            // Normalize power type (already normalized in validation, but ensure it's correct)
             deviceData.powerType = rowData.powerType ? normalizePowerType(rowData.powerType) : 'unknown';
             deviceData.installDate = rowData.installDate ? new Date(rowData.installDate) : null;
             deviceData.deviceType = 'Smoke Alarm';
