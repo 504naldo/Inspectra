@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, CheckCheck } from "lucide-react";
 import { useIsMobile } from "@/hooks/useMobile";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -335,6 +335,19 @@ export function IndividualDeviceGrid({
     [jobId, upsertResult, onResultChange]
   );
 
+  const handleAllPass = useCallback(() => {
+    if (isFinalized) return;
+    const allPass: CheckData = { a: true, b: true, c: true, d: true, e: true, f: "", g: true, remarks: "" };
+    const updates: Record<number, CheckData> = {};
+    devices.forEach((device) => { updates[device.id] = allPass; });
+    setLocalChecks((prev) => ({ ...prev, ...updates }));
+    devices.forEach((device) => {
+      upsertResult.mutate({ jobId, deviceId: device.id, result: "pass", notes: serializeChecks(allPass) });
+      onResultChange?.(device.id, "pass");
+    });
+    toast.success(`Marked ${devices.length} device${devices.length !== 1 ? "s" : ""} as all pass`);
+  }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
+
   if (devices.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground text-sm">No devices in this category</div>
@@ -345,6 +358,14 @@ export function IndividualDeviceGrid({
     return (
       <div>
         <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
+        {!isFinalized && (
+          <button
+            onClick={handleAllPass}
+            className="mb-2 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+          >
+            <CheckCheck className="h-3.5 w-3.5" /> All Pass
+          </button>
+        )}
         {devices.map((device, idx) => {
           const checks = getChecks(device);
           return (
@@ -369,7 +390,17 @@ export function IndividualDeviceGrid({
   // ── Desktop table ─────────────────────────────────────────────────────────
   return (
     <div>
-      <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
+      <div className="flex items-center justify-between mb-1">
+        <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
+        {!isFinalized && (
+          <button
+            onClick={handleAllPass}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+          >
+            <CheckCheck className="h-3.5 w-3.5" /> All Pass
+          </button>
+        )}
+      </div>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-xs border-collapse">
           <thead>
