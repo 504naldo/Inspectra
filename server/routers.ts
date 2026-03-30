@@ -28,6 +28,7 @@ import { gmailRouter } from "./routers/gmailRouter";
 import { calendarRouter } from "./routers/calendarRouter";
 import { driveRouter } from "./routers/driveRouter";
 import { fireAlarmFormRouter } from "./routers/fireAlarmFormRouter";
+import { customerRecordsRouter } from "./routers/customerRecordsRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -81,6 +82,7 @@ export const appRouter = router({
   gmail: gmailRouter,
   calendar: calendarRouter,
   drive: driveRouter,
+  customerRecords: customerRecordsRouter,
 });
 
 export type AppRouter = typeof appRouter;
