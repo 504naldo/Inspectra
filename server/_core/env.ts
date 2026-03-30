@@ -25,13 +25,23 @@ export const ENV = {
   notificationEmail: process.env.NOTIFICATION_EMAIL ?? "",
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
 
-  // ── Customer Records shared drive ──────────────────────────────────────────
-  // Set CUSTOMER_SHARE_ROOT to the local path where the network share is mounted.
-  // On Windows on-premises: \\SERVER\CustomerRecords
-  // On Linux/Railway: /mnt/customer-records  (mount the CIFS share first)
-  // Leave empty to disable the Customer Records feature gracefully.
+  // ── Customer Records (legacy SMB share — superseded by Google Drive) ────────
   customerShareRoot:     process.env.CUSTOMER_SHARE_ROOT ?? "",
   customerShareUsername: process.env.CUSTOMER_SHARE_USERNAME ?? "",
   customerSharePassword: process.env.CUSTOMER_SHARE_PASSWORD ?? "",
   customerShareDomain:   process.env.CUSTOMER_SHARE_DOMAIN ?? "",
+
+  // ── Customer Records — Google Drive ────────────────────────────────────────
+  // GOOGLE_DRIVE_CUSTOMER_ROOT_ID: Drive folder ID that is the root for all
+  //   customer records.  All searches and browsing are scoped to this folder.
+  //   Required to enable the Customer Records feature.
+  //
+  // GOOGLE_DRIVE_SHARED_DRIVE_ID: Set this if the root folder lives inside a
+  //   Shared Drive (a.k.a. Team Drive).  Leave empty for My Drive.
+  //
+  // GOOGLE_DRIVE_USE_SHARED_DRIVE: Set to "true" when using a Shared Drive.
+  //   Adds the required supportsAllDrives / includeItemsFromAllDrives params.
+  googleDriveCustomerRootId:  process.env.GOOGLE_DRIVE_CUSTOMER_ROOT_ID ?? "",
+  googleDriveSharedDriveId:   process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID ?? "",
+  googleDriveUseSharedDrive:  process.env.GOOGLE_DRIVE_USE_SHARED_DRIVE === "true",
 };

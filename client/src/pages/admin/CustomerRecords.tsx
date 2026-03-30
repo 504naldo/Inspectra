@@ -16,6 +16,7 @@ import {
   FileSpreadsheet,
   File,
   Download,
+  ExternalLink,
   ChevronRight,
   ChevronLeft,
   Building2,
@@ -24,23 +25,26 @@ import {
   AlertTriangle,
   WifiOff,
   Loader2,
+  LogIn,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface FileEntry {
+interface DriveEntry {
+  id: string;
   name: string;
-  type: "file" | "directory";
-  relativePath: string;
-  size?: number;
-  modifiedAt?: string;
-  extension?: string;
+  mimeType: string;
+  isFolder: boolean;
+  modifiedTime?: string;
+  size?: string;
+  webViewLink?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatBytes(bytes?: number): string {
-  if (!bytes) return "";
+function formatBytes(sizeStr?: string): string {
+  const bytes = sizeStr ? parseInt(sizeStr, 10) : NaN;
+  if (!bytes || isNaN(bytes)) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -51,14 +55,41 @@ function formatDate(iso?: string): string {
   return new Date(iso).toLocaleDateString("en-CA");
 }
 
-function fileIcon(entry: FileEntry) {
-  if (entry.type === "directory") return <Folder className="h-4 w-4 text-amber-500" />;
-  const ext = entry.extension ?? "";
-  if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext))
-    return <FileImage className="h-4 w-4 text-blue-500" />;
-  if (["xls", "xlsx", "csv"].includes(ext))
+function mimeToExt(mimeType: string): string {
+  const map: Record<string, string> = {
+    "application/vnd.google-apps.folder": "",
+    "application/vnd.google-apps.spreadsheet": "GSHEET",
+    "application/vnd.google-apps.document": "GDOC",
+    "application/vnd.google-apps.presentation": "GSLIDES",
+    "application/pdf": "PDF",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "XLSX",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PPTX",
+    "application/vnd.ms-excel": "XLS",
+    "text/csv": "CSV",
+    "image/jpeg": "JPG",
+    "image/png": "PNG",
+  };
+  return map[mimeType] ?? mimeType.split("/").pop()?.toUpperCase() ?? "";
+}
+
+function fileIcon(entry: DriveEntry) {
+  if (entry.isFolder) return <Folder className="h-4 w-4 text-amber-500" />;
+  const m = entry.mimeType;
+  if (m.startsWith("image/")) return <FileImage className="h-4 w-4 text-blue-500" />;
+  if (
+    m.includes("spreadsheet") ||
+    m.includes("excel") ||
+    m.includes("csv") ||
+    m === "application/vnd.google-apps.spreadsheet"
+  )
     return <FileSpreadsheet className="h-4 w-4 text-green-600" />;
-  if (["doc", "docx", "pdf", "txt"].includes(ext))
+  if (
+    m.includes("pdf") ||
+    m.includes("word") ||
+    m.includes("document") ||
+    m === "application/vnd.google-apps.document"
+  )
     return <FileText className="h-4 w-4 text-primary" />;
   return <File className="h-4 w-4 text-muted-foreground" />;
 }
@@ -68,17 +99,17 @@ function fileIcon(entry: FileEntry) {
 export default function CustomerRecords() {
   const { user } = useAuth();
 
-  // Search panel state
-  const [searchQuery, setSearchQuery]     = useState("");
+  // Search panel
+  const [searchQuery, setSearchQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
 
-  // Folder browser state
-  const [currentPath, setCurrentPath]     = useState(""); // relative to share root
-  const [breadcrumbs, setBreadcrumbs]     = useState<{ name: string; path: string }[]>([]);
-  const [fileFilter, setFileFilter]       = useState("");
+  // Folder browser — Drive uses IDs, not paths
+  const [currentFolderId, setCurrentFolderId] = useState("");
+  const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
+  const [fileFilter, setFileFilter] = useState("");
 
-  // Download in-progress tracking
-  const [downloading, setDownloading]     = useState<string | null>(null);
+  // Download tracking
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   if (!user?.companyId) {
     return (
@@ -92,10 +123,11 @@ export default function CustomerRecords() {
 
   // ── tRPC queries ─────────────────────────────────────────────────────────
 
-  const { data: status } = trpc.customerRecords.status.useQuery(undefined, {
-    retry: false,
-    staleTime: 30_000,
-  });
+  const { data: status, isLoading: isStatusLoading } =
+    trpc.customerRecords.status.useQuery(undefined, {
+      retry: false,
+      staleTime: 30_000,
+    });
 
   const {
     data: searchResults,
@@ -106,32 +138,32 @@ export default function CustomerRecords() {
     { enabled: submittedQuery.length >= 1, retry: false }
   );
 
-  const {
-    data: rootFolders,
-    isLoading: isLoadingRoot,
-  } = trpc.customerRecords.listRoot.useQuery(undefined, {
-    enabled: !submittedQuery && status?.reachable === true,
-    retry: false,
-  });
+  const { data: rootData, isLoading: isLoadingRoot } =
+    trpc.customerRecords.listRoot.useQuery(undefined, {
+      enabled: !submittedQuery && status?.configured === true && status?.connected === true,
+      retry: false,
+    });
 
   const {
-    data: folderContents,
+    data: folderData,
     isLoading: isLoadingFolder,
     error: folderError,
   } = trpc.customerRecords.listFolder.useQuery(
-    { folderPath: currentPath },
-    { enabled: currentPath !== "" && status?.reachable === true, retry: false }
+    { folderId: currentFolderId },
+    {
+      enabled: currentFolderId !== "" && status?.connected === true,
+      retry: false,
+    }
   );
 
   const downloadMutation = trpc.customerRecords.downloadFile.useMutation({
     onSuccess(result) {
-      // Convert base64 → Blob → trigger browser download
-      const bytes  = Uint8Array.from(atob(result.data), c => c.charCodeAt(0));
-      const blob   = new Blob([bytes], { type: result.mimeType });
-      const url    = URL.createObjectURL(blob);
-      const a      = document.createElement("a");
-      a.href       = url;
-      a.download   = result.fileName;
+      const bytes = Uint8Array.from(atob(result.data), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: result.mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = result.fileName;
       a.click();
       URL.revokeObjectURL(url);
       setDownloading(null);
@@ -147,74 +179,119 @@ export default function CustomerRecords() {
 
   const handleSearch = useCallback(() => {
     setSubmittedQuery(searchQuery.trim());
-    // Reset browser to root when a new search is performed
-    setCurrentPath("");
+    setCurrentFolderId("");
     setBreadcrumbs([]);
   }, [searchQuery]);
 
-  const navigateInto = useCallback((entry: FileEntry) => {
-    if (entry.type !== "directory") return;
-    setBreadcrumbs(prev => [...prev, { name: entry.name, path: entry.relativePath }]);
-    setCurrentPath(entry.relativePath);
+  const navigateInto = useCallback((entry: DriveEntry) => {
+    if (!entry.isFolder) return;
+    setBreadcrumbs((prev) => [...prev, { id: entry.id, name: entry.name }]);
+    setCurrentFolderId(entry.id);
     setFileFilter("");
   }, []);
 
-  const navigateTo = useCallback((crumb: { name: string; path: string } | null) => {
-    if (!crumb) {
-      setCurrentPath("");
-      setBreadcrumbs([]);
-    } else {
-      const idx = breadcrumbs.findIndex(c => c.path === crumb.path);
-      setBreadcrumbs(prev => prev.slice(0, idx + 1));
-      setCurrentPath(crumb.path);
-    }
-    setFileFilter("");
-  }, [breadcrumbs]);
+  const navigateTo = useCallback(
+    (crumb: { id: string; name: string } | null) => {
+      if (!crumb) {
+        setCurrentFolderId("");
+        setBreadcrumbs([]);
+      } else {
+        const idx = breadcrumbs.findIndex((c) => c.id === crumb.id);
+        setBreadcrumbs((prev) => prev.slice(0, idx + 1));
+        setCurrentFolderId(crumb.id);
+      }
+      setFileFilter("");
+    },
+    [breadcrumbs]
+  );
 
-  const openFolder = useCallback((folderName: string) => {
-    setCurrentPath(folderName);
-    setBreadcrumbs([{ name: folderName, path: folderName }]);
+  const openFolder = useCallback((folderId: string, folderName: string) => {
+    setCurrentFolderId(folderId);
+    setBreadcrumbs([{ id: folderId, name: folderName }]);
     setFileFilter("");
     setSubmittedQuery("");
     setSearchQuery("");
   }, []);
 
-  const handleDownload = useCallback((entry: FileEntry) => {
-    setDownloading(entry.relativePath);
-    downloadMutation.mutate({ filePath: entry.relativePath });
-  }, [downloadMutation]);
+  const handleDownload = useCallback(
+    (entry: DriveEntry) => {
+      setDownloading(entry.id);
+      downloadMutation.mutate({ fileId: entry.id });
+    },
+    [downloadMutation]
+  );
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
-  const displayedEntries: FileEntry[] = (() => {
-    const raw = currentPath
-      ? (folderContents?.entries ?? [])
-      : [];
+  const displayedEntries: DriveEntry[] = (() => {
+    const raw = currentFolderId ? (folderData?.entries ?? []) : [];
     if (!fileFilter) return raw;
     const q = fileFilter.toLowerCase();
-    return raw.filter(e => e.name.toLowerCase().includes(q));
+    return raw.filter((e) => e.name.toLowerCase().includes(q));
   })();
 
-  // ── Share unavailable banner ──────────────────────────────────────────────
+  // ── Not yet loaded ────────────────────────────────────────────────────────
 
-  if (status && !status.reachable) {
+  if (isStatusLoading) {
     return (
       <AdminLayout title="Customer Records">
-        <Card className="border-destructive/40 bg-destructive/5">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  // ── Drive not configured ──────────────────────────────────────────────────
+
+  if (status && !status.configured) {
+    return (
+      <AdminLayout title="Customer Records">
+        <Card className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20">
           <CardContent className="py-10 flex flex-col items-center gap-4 text-center">
-            <WifiOff className="h-12 w-12 text-destructive" />
+            <WifiOff className="h-12 w-12 text-amber-500" />
             <div>
-              <p className="font-semibold text-lg">Network Share Unavailable</p>
+              <p className="font-semibold text-lg">Google Drive Not Configured</p>
               <p className="text-muted-foreground mt-1 max-w-md">
-                {status.error ?? "The customer records share cannot be reached from this server."}
+                {status.error ??
+                  "Set GOOGLE_DRIVE_CUSTOMER_ROOT_ID on the server to enable this feature."}
               </p>
-              {!status.configured && (
-                <p className="text-sm text-muted-foreground mt-3">
-                  Set the <code className="bg-muted px-1 rounded">CUSTOMER_SHARE_ROOT</code> environment
-                  variable and mount the network share to enable this feature.
-                </p>
-              )}
+              <p className="text-sm text-muted-foreground mt-3 max-w-md">
+                Ask your administrator to set{" "}
+                <code className="bg-muted px-1 rounded">GOOGLE_DRIVE_CUSTOMER_ROOT_ID</code> to
+                the ID of the root customer-records folder in Google Drive.
+              </p>
             </div>
+          </CardContent>
+        </Card>
+      </AdminLayout>
+    );
+  }
+
+  // ── Google account not connected ──────────────────────────────────────────
+
+  if (status && status.configured && !status.connected) {
+    return (
+      <AdminLayout title="Customer Records">
+        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/20">
+          <CardContent className="py-10 flex flex-col items-center gap-4 text-center">
+            <LogIn className="h-12 w-12 text-blue-500" />
+            <div>
+              <p className="font-semibold text-lg">Google Account Not Connected</p>
+              <p className="text-muted-foreground mt-1 max-w-md">
+                Your account is not linked to Google. Log out and log back in using{" "}
+                <strong>Sign in with Google</strong> to access customer records.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => {
+                window.location.href = "/";
+              }}
+            >
+              <LogIn className="h-4 w-4 mr-2" />
+              Go to login
+            </Button>
           </CardContent>
         </Card>
       </AdminLayout>
@@ -239,8 +316,8 @@ export default function CustomerRecords() {
                   placeholder="Customer, building, address, job #..."
                   value={searchQuery}
                   className="pl-9"
-                  onChange={e => setSearchQuery(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleSearch()}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 />
               </div>
               <Button
@@ -249,7 +326,7 @@ export default function CustomerRecords() {
                 onClick={handleSearch}
                 disabled={!searchQuery.trim()}
               >
-                {(isSearching || isRefetching) ? (
+                {isSearching || isRefetching ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <Search className="h-4 w-4 mr-2" />
@@ -263,19 +340,20 @@ export default function CustomerRecords() {
           {submittedQuery && searchResults && (
             <Card>
               <CardHeader className="pb-2 pt-3">
-                <CardTitle className="text-sm font-medium">Results for "{submittedQuery}"</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Results for "{submittedQuery}"
+                </CardTitle>
               </CardHeader>
               <CardContent className="pb-3 space-y-3">
 
+                {/* DB: Customers */}
                 {searchResults.customers.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Customers</p>
-                    {searchResults.customers.map(c => (
-                      <button
-                        key={c.id}
-                        className="w-full text-left p-2 rounded hover:bg-muted flex items-start gap-2"
-                        onClick={() => openFolder(c.name)}
-                      >
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      Customers
+                    </p>
+                    {searchResults.customers.map((c) => (
+                      <div key={c.id} className="p-2 rounded flex items-start gap-2 bg-muted/30">
                         <Building2 className="h-4 w-4 mt-0.5 text-primary shrink-0" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{c.name}</p>
@@ -283,20 +361,19 @@ export default function CustomerRecords() {
                             <p className="text-xs text-muted-foreground truncate">{c.contactName}</p>
                           )}
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 )}
 
+                {/* DB: Sites */}
                 {searchResults.sites.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Sites</p>
-                    {searchResults.sites.map(s => (
-                      <button
-                        key={s.id}
-                        className="w-full text-left p-2 rounded hover:bg-muted flex items-start gap-2"
-                        onClick={() => openFolder(s.name)}
-                      >
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      Sites
+                    </p>
+                    {searchResults.sites.map((s) => (
+                      <div key={s.id} className="p-2 rounded flex items-start gap-2 bg-muted/30">
                         <MapPin className="h-4 w-4 mt-0.5 text-amber-500 shrink-0" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{s.name}</p>
@@ -304,57 +381,74 @@ export default function CustomerRecords() {
                             <p className="text-xs text-muted-foreground truncate">{s.address}</p>
                           )}
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 )}
 
+                {/* DB: Jobs */}
                 {searchResults.jobs.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Jobs</p>
-                    {searchResults.jobs.map(j => (
-                      <button
-                        key={j.id}
-                        className="w-full text-left p-2 rounded hover:bg-muted flex items-start gap-2"
-                        onClick={() => openFolder(j.jobNumber)}
-                      >
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      Jobs
+                    </p>
+                    {searchResults.jobs.map((j) => (
+                      <div key={j.id} className="p-2 rounded flex items-start gap-2 bg-muted/30">
                         <ClipboardList className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{j.title}</p>
                           <p className="text-xs text-muted-foreground">{j.jobNumber}</p>
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Drive: matching folders/files */}
+                {searchResults.driveEntries.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      Drive Files
+                    </p>
+                    {searchResults.driveEntries.map((e) => (
+                      <button
+                        key={e.id}
+                        className="w-full text-left p-2 rounded hover:bg-muted flex items-center gap-2"
+                        onClick={() =>
+                          e.isFolder
+                            ? openFolder(e.id, e.name)
+                            : e.webViewLink
+                            ? window.open(e.webViewLink, "_blank", "noopener,noreferrer")
+                            : undefined
+                        }
+                      >
+                        {fileIcon(e)}
+                        <span className="text-sm truncate flex-1">{e.name}</span>
+                        {!e.isFolder && <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />}
                       </button>
                     ))}
                   </div>
                 )}
 
-                {searchResults.shareFolders.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Share Folders</p>
-                    {searchResults.shareFolders.map(f => (
-                      <button
-                        key={f}
-                        className="w-full text-left p-2 rounded hover:bg-muted flex items-center gap-2"
-                        onClick={() => openFolder(f)}
-                      >
-                        <Folder className="h-4 w-4 text-amber-500 shrink-0" />
-                        <span className="text-sm truncate">{f}</span>
-                      </button>
-                    ))}
-                  </div>
+                {searchResults.driveError && (
+                  <p className="text-xs text-destructive">
+                    Drive search error: {searchResults.driveError}
+                  </p>
                 )}
 
                 {searchResults.customers.length === 0 &&
                   searchResults.sites.length === 0 &&
                   searchResults.jobs.length === 0 &&
-                  searchResults.shareFolders.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-2">No results found.</p>
-                )}
+                  searchResults.driveEntries.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-2">
+                      No results found.
+                    </p>
+                  )}
               </CardContent>
             </Card>
           )}
 
-          {/* Root folder shortcuts (shown when not searching) */}
+          {/* Root folder list (when not searching) */}
           {!submittedQuery && (
             <Card>
               <CardHeader className="pb-2 pt-3">
@@ -365,22 +459,28 @@ export default function CustomerRecords() {
                   <div className="flex justify-center py-4">
                     <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                   </div>
-                ) : rootFolders?.error ? (
-                  <p className="text-sm text-destructive">{rootFolders.error}</p>
-                ) : (rootFolders?.folders?.length ?? 0) === 0 ? (
+                ) : rootData?.error ? (
+                  <p className="text-sm text-destructive">{rootData.error}</p>
+                ) : (rootData?.entries?.length ?? 0) === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    No folders found at share root.
+                    No folders found in the configured Drive root.
                   </p>
                 ) : (
                   <div className="space-y-0.5 max-h-[50vh] overflow-y-auto">
-                    {rootFolders!.folders.map(f => (
+                    {rootData!.entries.map((e) => (
                       <button
-                        key={f}
+                        key={e.id}
                         className="w-full text-left px-2 py-1.5 rounded text-sm hover:bg-muted flex items-center gap-2"
-                        onClick={() => openFolder(f)}
+                        onClick={() =>
+                          e.isFolder
+                            ? openFolder(e.id, e.name)
+                            : e.webViewLink
+                            ? window.open(e.webViewLink, "_blank", "noopener,noreferrer")
+                            : undefined
+                        }
                       >
-                        <Folder className="h-4 w-4 text-amber-500 shrink-0" />
-                        <span className="truncate">{f}</span>
+                        {fileIcon(e)}
+                        <span className="truncate">{e.name}</span>
                       </button>
                     ))}
                   </div>
@@ -401,10 +501,10 @@ export default function CustomerRecords() {
                   className="text-primary hover:underline font-medium"
                   onClick={() => navigateTo(null)}
                 >
-                  Share Root
+                  Drive Root
                 </button>
                 {breadcrumbs.map((crumb, i) => (
-                  <span key={crumb.path} className="flex items-center gap-1">
+                  <span key={crumb.id} className="flex items-center gap-1">
                     <ChevronRight className="h-3 w-3 text-muted-foreground" />
                     {i === breadcrumbs.length - 1 ? (
                       <span className="font-medium truncate max-w-[200px]">{crumb.name}</span>
@@ -420,26 +520,32 @@ export default function CustomerRecords() {
                 ))}
               </div>
 
-              {/* Actions */}
+              {/* Actions row */}
               <div className="flex items-center gap-2">
                 {breadcrumbs.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => navigateTo(breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length - 2] : null)}
+                    onClick={() =>
+                      navigateTo(
+                        breadcrumbs.length > 1
+                          ? breadcrumbs[breadcrumbs.length - 2]
+                          : null
+                      )
+                    }
                   >
                     <ChevronLeft className="h-4 w-4 mr-1" />
                     Back
                   </Button>
                 )}
-                {currentPath && (
+                {currentFolderId && (
                   <div className="relative flex-1 max-w-xs">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
                       placeholder="Filter files..."
                       value={fileFilter}
                       className="pl-8 h-8 text-sm"
-                      onChange={e => setFileFilter(e.target.value)}
+                      onChange={(e) => setFileFilter(e.target.value)}
                     />
                   </div>
                 )}
@@ -449,7 +555,7 @@ export default function CustomerRecords() {
             <CardContent className="p-0">
 
               {/* No folder selected */}
-              {!currentPath && (
+              {!currentFolderId && (
                 <div className="flex flex-col items-center justify-center py-20 text-center px-8">
                   <FolderOpen className="h-16 w-16 text-muted-foreground/40 mb-4" />
                   <p className="font-medium text-lg text-muted-foreground">No folder selected</p>
@@ -460,14 +566,14 @@ export default function CustomerRecords() {
               )}
 
               {/* Loading */}
-              {currentPath && isLoadingFolder && (
+              {currentFolderId && isLoadingFolder && (
                 <div className="flex items-center justify-center py-20">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               )}
 
-              {/* Error */}
-              {currentPath && folderError && (
+              {/* tRPC error */}
+              {currentFolderId && folderError && (
                 <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
                   <AlertTriangle className="h-10 w-10 text-destructive mb-3" />
                   <p className="font-medium">Could not load folder</p>
@@ -475,95 +581,124 @@ export default function CustomerRecords() {
                 </div>
               )}
 
-              {/* Share-level error (directory missing, etc.) */}
-              {currentPath && folderContents?.error && (
+              {/* Drive-level error (permissions, etc.) */}
+              {currentFolderId && folderData?.error && (
                 <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
                   <AlertTriangle className="h-10 w-10 text-amber-500 mb-3" />
-                  <p className="font-medium">Share access problem</p>
-                  <p className="text-sm text-muted-foreground mt-1">{folderContents.error}</p>
+                  <p className="font-medium">Google Drive error</p>
+                  <p className="text-sm text-muted-foreground mt-1">{folderData.error}</p>
                 </div>
               )}
 
               {/* Empty folder */}
-              {currentPath && !isLoadingFolder && !folderError && !folderContents?.error &&
+              {currentFolderId &&
+                !isLoadingFolder &&
+                !folderError &&
+                !folderData?.error &&
                 displayedEntries.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <Folder className="h-10 w-10 text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground">
-                    {fileFilter ? "No files match your filter." : "This folder is empty."}
-                  </p>
-                </div>
-              )}
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <Folder className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                    <p className="text-muted-foreground">
+                      {fileFilter ? "No files match your filter." : "This folder is empty."}
+                    </p>
+                  </div>
+                )}
 
               {/* File list */}
-              {currentPath && displayedEntries.length > 0 && (
+              {currentFolderId && displayedEntries.length > 0 && (
                 <div className="divide-y">
-                  {displayedEntries.map(entry => (
-                    <div
-                      key={entry.relativePath}
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/50 group"
-                    >
-                      {/* Icon */}
-                      <span className="shrink-0">{fileIcon(entry)}</span>
+                  {displayedEntries.map((entry) => {
+                    const ext = mimeToExt(entry.mimeType);
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/50 group"
+                      >
+                        {/* Icon */}
+                        <span className="shrink-0">{fileIcon(entry)}</span>
 
-                      {/* Name + metadata */}
-                      <div className="flex-1 min-w-0">
-                        {entry.type === "directory" ? (
-                          <button
-                            className="text-sm font-medium hover:text-primary truncate block text-left w-full"
-                            onClick={() => navigateInto(entry)}
-                          >
-                            {entry.name}
-                          </button>
-                        ) : (
-                          <span className="text-sm truncate block">{entry.name}</span>
-                        )}
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {entry.extension && (
-                            <Badge variant="outline" className="text-[10px] py-0 px-1 h-4">
-                              {entry.extension.toUpperCase()}
-                            </Badge>
+                        {/* Name + metadata */}
+                        <div className="flex-1 min-w-0">
+                          {entry.isFolder ? (
+                            <button
+                              className="text-sm font-medium hover:text-primary truncate block text-left w-full"
+                              onClick={() => navigateInto(entry)}
+                            >
+                              {entry.name}
+                            </button>
+                          ) : (
+                            <span className="text-sm truncate block">{entry.name}</span>
                           )}
-                          {entry.size != null && (
-                            <span className="text-xs text-muted-foreground">{formatBytes(entry.size)}</span>
-                          )}
-                          {entry.modifiedAt && (
-                            <span className="text-xs text-muted-foreground">{formatDate(entry.modifiedAt)}</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {ext && (
+                              <Badge variant="outline" className="text-[10px] py-0 px-1 h-4">
+                                {ext}
+                              </Badge>
+                            )}
+                            {entry.size && (
+                              <span className="text-xs text-muted-foreground">
+                                {formatBytes(entry.size)}
+                              </span>
+                            )}
+                            {entry.modifiedTime && (
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(entry.modifiedTime)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                          {entry.isFolder ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2"
+                              onClick={() => navigateInto(entry)}
+                            >
+                              <FolderOpen className="h-3.5 w-3.5 mr-1" />
+                              Open
+                            </Button>
+                          ) : (
+                            <>
+                              {entry.webViewLink && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2"
+                                  asChild
+                                >
+                                  <a
+                                    href={entry.webViewLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                                    View
+                                  </a>
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2"
+                                disabled={downloading === entry.id}
+                                onClick={() => handleDownload(entry)}
+                              >
+                                {downloading === entry.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                                ) : (
+                                  <Download className="h-3.5 w-3.5 mr-1" />
+                                )}
+                                Download
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>
-
-                      {/* Actions */}
-                      <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        {entry.type === "directory" ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2"
-                            onClick={() => navigateInto(entry)}
-                          >
-                            <FolderOpen className="h-3.5 w-3.5 mr-1" />
-                            Open
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2"
-                            disabled={downloading === entry.relativePath}
-                            onClick={() => handleDownload(entry)}
-                          >
-                            {downloading === entry.relativePath ? (
-                              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                            ) : (
-                              <Download className="h-3.5 w-3.5 mr-1" />
-                            )}
-                            Download
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
