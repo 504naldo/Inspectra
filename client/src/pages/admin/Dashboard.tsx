@@ -1,35 +1,34 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import AdminLayout from "@/components/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { 
-  ClipboardList, 
-  Users, 
-  Building2, 
+import {
+  ClipboardList,
+  Building2,
   AlertTriangle,
   FileText,
   TrendingUp,
-  ChevronRight,
   Plus,
-  Shield,
-  LogOut
 } from "lucide-react";
 import { Link } from "wouter";
 
 export default function AdminDashboard() {
   const { user } = useAuth();
-  
+
   if (!user || !user.companyId) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">Loading session...</p>
-      </div>
+      <AdminLayout title="Dashboard">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p className="text-muted-foreground">Loading session...</p>
+        </div>
+      </AdminLayout>
     );
   }
-  
+
   const companyId = user.companyId;
-  
-  const { data: stats, isLoading } = trpc.dashboard.getStats.useQuery(
+
+  const { data: stats } = trpc.dashboard.getStats.useQuery(
     { companyId },
     { enabled: !!companyId }
   );
@@ -39,56 +38,8 @@ export default function AdminDashboard() {
     { enabled: !!companyId }
   );
 
-  const { logout } = useAuth();
-
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = '/';
-  };
-
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-card border-b">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Shield className="h-7 w-7 text-primary" />
-            <span className="font-bold text-lg">Inspectra</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <nav className="hidden md:flex items-center gap-1">
-              <Link href="/admin">
-                <Button variant="ghost" size="sm">Dashboard</Button>
-              </Link>
-              <Link href="/admin/jobs">
-                <Button variant="ghost" size="sm">Jobs</Button>
-              </Link>
-              <Link href="/admin/customers">
-                <Button variant="ghost" size="sm">Customers</Button>
-              </Link>
-              <Link href="/admin/sites">
-                <Button variant="ghost" size="sm">Sites</Button>
-              </Link>
-              <Link href="/admin/devices">
-                <Button variant="ghost" size="sm">Devices</Button>
-              </Link>
-              <Link href="/admin/reports">
-                <Button variant="ghost" size="sm">Reports</Button>
-              </Link>
-              {user?.role === 'admin' && (
-                <Link href="/admin/users">
-                  <Button variant="ghost" size="sm">Users</Button>
-                </Link>
-              )}
-            </nav>
-            <Button variant="ghost" size="icon" onClick={handleLogout}>
-              <LogOut className="h-5 w-5" />
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <main className="container py-6">
+    <AdminLayout>
       <div className="space-y-6">
         {/* Welcome */}
         <div>
@@ -213,7 +164,6 @@ export default function AdminDashboard() {
           </Card>
         </div>
       </div>
-      </main>
-    </div>
+    </AdminLayout>
   );
 }
