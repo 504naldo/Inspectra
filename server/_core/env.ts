@@ -24,4 +24,14 @@ export const ENV = {
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   notificationEmail: process.env.NOTIFICATION_EMAIL ?? "",
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
+
+  // ── Customer Records shared drive ──────────────────────────────────────────
+  // Set CUSTOMER_SHARE_ROOT to the local path where the network share is mounted.
+  // On Windows on-premises: \\SERVER\CustomerRecords
+  // On Linux/Railway: /mnt/customer-records  (mount the CIFS share first)
+  // Leave empty to disable the Customer Records feature gracefully.
+  customerShareRoot:     process.env.CUSTOMER_SHARE_ROOT ?? "",
+  customerShareUsername: process.env.CUSTOMER_SHARE_USERNAME ?? "",
+  customerSharePassword: process.env.CUSTOMER_SHARE_PASSWORD ?? "",
+  customerShareDomain:   process.env.CUSTOMER_SHARE_DOMAIN ?? "",
 };

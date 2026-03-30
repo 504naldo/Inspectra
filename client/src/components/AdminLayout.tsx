@@ -1,8 +1,8 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { APP_NAME } from "../../../shared/constants";
 import { Button } from "@/components/ui/button";
-import { 
-  Shield, 
+import {
+  Shield,
   LogOut,
   Menu,
   X,
@@ -12,7 +12,8 @@ import {
   AlertTriangle,
   FileText,
   TrendingUp,
-  CalendarDays
+  CalendarDays,
+  FolderOpen
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -30,6 +31,7 @@ const navItems = [
   { label: "Devices", href: "/admin/devices", icon: AlertTriangle },
   { label: "Schedule", href: "/admin/schedule", icon: CalendarDays },
   { label: "Reports", href: "/admin/reports", icon: FileText },
+  { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen },
   { label: "Users", href: "/admin/users", icon: Users, adminOnly: true },
 ];
 
