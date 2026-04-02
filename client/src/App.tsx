@@ -38,6 +38,7 @@ import SiteFiles from "./pages/admin/SiteFiles";
 import AssetImport from "./pages/admin/AssetImport";
 import AdminSchedule from "./pages/admin/Schedule";
 import CustomerRecordsPage from "./pages/admin/CustomerRecords";
+import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
 // import CustomerReports from "./pages/customer/Reports";
@@ -118,6 +119,7 @@ function Router() {
       {/* Public routes */}
       <Route path="/" component={Home} />
       <Route path="/login" component={Login} />
+      <Route path="/quote/accept" component={QuoteAccept} />
 
       {/* Technician routes */}
       <Route path="/tech">

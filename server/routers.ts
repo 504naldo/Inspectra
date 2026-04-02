@@ -29,6 +29,7 @@ import { calendarRouter } from "./routers/calendarRouter";
 import { driveRouter } from "./routers/driveRouter";
 import { fireAlarmFormRouter } from "./routers/fireAlarmFormRouter";
 import { customerRecordsRouter } from "./routers/customerRecordsRouter";
+import { quoteRouter } from "./routers/quoteRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -83,6 +84,7 @@ export const appRouter = router({
   calendar: calendarRouter,
   drive: driveRouter,
   customerRecords: customerRecordsRouter,
+  quote: quoteRouter,
 });
 
 export type AppRouter = typeof appRouter;

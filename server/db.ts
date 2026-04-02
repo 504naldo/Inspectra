@@ -22,6 +22,7 @@ import {
   knowledgeBase, InsertKnowledgeBase, KnowledgeBase,
   syncLogs, InsertSyncLog, SyncLog,
   inspectionChecklistResponses, InsertInspectionChecklistResponse, InspectionChecklistResponse,
+  quotes, InsertQuote, Quote,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1438,4 +1439,47 @@ export async function withAudit<T>(
   } finally {
     await connection.end();
   }
+}
+
+// ============================================
+// QUOTE QUERIES
+// ============================================
+
+export async function createQuote(data: InsertQuote) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(quotes).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getQuoteById(id: number): Promise<Quote | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(quotes).where(eq(quotes.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getQuoteByToken(token: string): Promise<Quote | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(quotes).where(eq(quotes.acceptToken, token)).limit(1);
+  return result[0];
+}
+
+export async function getQuotesByJob(jobId: number): Promise<Quote[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(quotes).where(eq(quotes.jobId, jobId)).orderBy(desc(quotes.createdAt));
+}
+
+export async function getQuotesByCompany(companyId: number): Promise<Quote[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(quotes).where(eq(quotes.companyId, companyId)).orderBy(desc(quotes.createdAt));
+}
+
+export async function updateQuote(id: number, data: Partial<InsertQuote>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(quotes).set(data).where(eq(quotes.id, id));
 }

@@ -1,11 +1,15 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
-import { 
-  ArrowLeft, 
+import {
+  ArrowLeft,
   Check,
   X,
   Minus,
@@ -16,7 +20,9 @@ import {
   AlertTriangle,
   Save,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Flag,
+  Image,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -36,6 +42,14 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
   const [result, setResult] = useState<'pass' | 'fail' | 'na' | 'not_tested'>('not_tested');
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Inline "Flag Deficiency" panel
+  const [showFlagPanel, setShowFlagPanel] = useState(false);
+  const [flagTitle, setFlagTitle] = useState("");
+  const [flagSeverity, setFlagSeverity] = useState<"critical" | "major" | "minor" | "observation">("major");
+  const [flagDescription, setFlagDescription] = useState("");
+  const [flagPhotoFile, setFlagPhotoFile] = useState<File | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   // Get category from URL search params
   const searchParams = new URLSearchParams(window.location.search);
@@ -147,6 +161,36 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
     setIsSaving(false);
   };
 
+  const createDeficiencyMutation = trpc.deficiency.create.useMutation({
+    onSuccess: (def) => {
+      toast.success("Deficiency flagged");
+      // Upload photo if provided
+      if (flagPhotoFile && def?.id) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(",")[1];
+          uploadPhotoMutation.mutate({
+            entityType: "deficiency",
+            entityId: def.id,
+            fileName: flagPhotoFile.name,
+            fileData: base64,
+            mimeType: flagPhotoFile.type,
+            jobId,
+            deviceId,
+          });
+        };
+        reader.readAsDataURL(flagPhotoFile);
+      }
+      setShowFlagPanel(false);
+      setFlagTitle("");
+      setFlagDescription("");
+      setFlagPhotoFile(null);
+    },
+    onError: () => toast.error("Failed to create deficiency"),
+  });
+
+  const uploadPhotoMutation = trpc.attachment.upload.useMutation();
+
   const handleCreateDeficiency = () => {
     // Save current result first
     if (result === 'fail') {
@@ -161,6 +205,29 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
       });
     }
     setLocation(`/tech/deficiency/new/${jobId}?deviceId=${deviceId}`);
+  };
+
+  const handleFlagDeficiency = () => {
+    if (!flagTitle.trim()) {
+      toast.error("Please enter a title for the deficiency");
+      return;
+    }
+    createDeficiencyMutation.mutate({
+      jobId,
+      deviceId,
+      title: flagTitle.trim(),
+      severity: flagSeverity,
+      observedIssue: flagDescription.trim() || undefined,
+      systemCategory: device?.category === "FIRE_EXTINGUISHER"
+        ? "FIRE_EXTINGUISHER"
+        : device?.category === "EMERGENCY_LIGHT"
+        ? "EMERGENCY_LIGHTING"
+        : device?.category === "SPRINKLER"
+        ? "SPRINKLER"
+        : device?.category === "SMOKE_ALARM"
+        ? "SMOKE_ALARM"
+        : "FIRE_ALARM",
+    });
   };
 
   if (deviceLoading && !device) {
@@ -266,16 +333,14 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
               <Camera className="h-5 w-5 mr-2" />
               Add Photo
             </Button>
-            {result === 'fail' && (
-              <Button 
-                variant="outline" 
-                className="h-14 border-destructive text-destructive hover:bg-destructive/10"
-                onClick={handleCreateDeficiency}
-              >
-                <AlertTriangle className="h-5 w-5 mr-2" />
-                Create Deficiency
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              className="h-14 border-destructive text-destructive hover:bg-destructive/10"
+              onClick={() => setShowFlagPanel(true)}
+            >
+              <Flag className="h-5 w-5 mr-2" />
+              Flag Deficiency
+            </Button>
           </div>
         </div>
       </main>
@@ -316,7 +381,7 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
             </p>
           )}
           
-          <Button 
+          <Button
             className="w-full action-btn h-12"
             onClick={handleSave}
             disabled={isSaving || result === 'not_tested'}
@@ -326,6 +391,98 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
           </Button>
         </div>
       </div>
+
+      {/* ── Inline Flag Deficiency Sheet ──────────────────────────────────── */}
+      <Sheet open={showFlagPanel} onOpenChange={setShowFlagPanel}>
+        <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto rounded-t-xl">
+          <SheetHeader className="mb-4">
+            <SheetTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Flag Deficiency
+            </SheetTitle>
+          </SheetHeader>
+
+          <div className="space-y-4">
+            {/* Title */}
+            <div className="space-y-1.5">
+              <Label>Title *</Label>
+              <Input
+                value={flagTitle}
+                onChange={(e) => setFlagTitle(e.target.value)}
+                placeholder="e.g. Detector missing cover plate"
+              />
+            </div>
+
+            {/* Severity */}
+            <div className="space-y-1.5">
+              <Label>Severity</Label>
+              <Select value={flagSeverity} onValueChange={(v) => setFlagSeverity(v as typeof flagSeverity)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="critical">Critical</SelectItem>
+                  <SelectItem value="major">Major</SelectItem>
+                  <SelectItem value="minor">Minor</SelectItem>
+                  <SelectItem value="observation">Observation</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Description */}
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Textarea
+                value={flagDescription}
+                onChange={(e) => setFlagDescription(e.target.value)}
+                placeholder="Describe the issue observed..."
+                rows={3}
+              />
+            </div>
+
+            {/* Photo upload */}
+            <div className="space-y-1.5">
+              <Label>Photo (optional)</Label>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => setFlagPhotoFile(e.target.files?.[0] ?? null)}
+              />
+              {flagPhotoFile ? (
+                <div className="flex items-center gap-2 p-2 border rounded-md text-sm">
+                  <Image className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="truncate flex-1">{flagPhotoFile.name}</span>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setFlagPhotoFile(null)}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" className="w-full" onClick={() => photoInputRef.current?.click()}>
+                  <Camera className="h-4 w-4 mr-2" />
+                  Take / Choose Photo
+                </Button>
+              )}
+            </div>
+
+            {/* Submit */}
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <Button variant="outline" onClick={() => setShowFlagPanel(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleFlagDeficiency}
+                disabled={createDeficiencyMutation.isPending}
+              >
+                {createDeficiencyMutation.isPending ? "Saving..." : "Flag Deficiency"}
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

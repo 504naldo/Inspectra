@@ -318,7 +318,7 @@ export const deficiencies = mysqlTable("deficiencies", {
   deviceId: int("deviceId"),
   inspectionResultId: int("inspectionResultId"),
   reportedById: int("reportedById").notNull(),
-  status: mysqlEnum("status", ["open", "in_progress", "resolved", "closed", "deferred"]).default("open").notNull(),
+  status: mysqlEnum("status", ["open", "in_progress", "resolved", "closed", "deferred", "quoted"]).default("open").notNull(),
   severity: mysqlEnum("severity", ["critical", "major", "minor", "observation"]).default("major").notNull(),
   // BUG-02 fix: added SMOKE_ALARM. BUG-03 fix: EMERGENCY_LIGHTING (was missing SMOKE_ALARM, now consistent with pdfGenerator)
   systemCategory: mysqlEnum("systemCategory", ["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER"]),
@@ -935,3 +935,40 @@ export const fireAlarmAncillaryCircuits = mysqlTable("fire_alarm_ancillary_circu
 
 export type FireAlarmAncillaryCircuit = typeof fireAlarmAncillaryCircuits.$inferSelect;
 export type InsertFireAlarmAncillaryCircuit = typeof fireAlarmAncillaryCircuits.$inferInsert;
+
+// ============================================
+// QUOTES (deficiency → repair quote sent to customer)
+// ============================================
+
+export type QuoteLineItem = {
+  deficiencyId: number | null;
+  description: string;
+  unitPrice: number;
+  qty: number;
+};
+
+export const quotes = mysqlTable("quotes", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  siteId: int("siteId").notNull(),
+  customerOrgId: int("customerOrgId").notNull(),
+  companyId: int("companyId").notNull(),
+  lineItems: json("lineItems").$type<QuoteLineItem[]>().notNull(),
+  status: mysqlEnum("status", ["draft", "sent", "accepted", "declined"]).default("draft").notNull(),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull().default("0"),
+  notes: text("notes"),
+  // S3 URL for the generated PDF (set when the quote is sent)
+  pdfUrl: text("pdfUrl"),
+  // Opaque token for the customer accept link (set when the quote is sent)
+  acceptToken: varchar("acceptToken", { length: 64 }),
+  sentAt: timestamp("sentAt"),
+  acceptedAt: timestamp("acceptedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  jobIdIdx: index("quotes_jobId_idx").on(table.jobId),
+}));
+
+export type Quote = typeof quotes.$inferSelect;
+export type InsertQuote = typeof quotes.$inferInsert;
+

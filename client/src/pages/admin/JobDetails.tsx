@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import FinalizeJobDialog from "@/components/FinalizeJobDialog";
@@ -28,7 +31,9 @@ import {
   RefreshCw,
   Calendar,
   CalendarCheck,
-  CalendarX
+  CalendarX,
+  FileCheck,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -44,6 +49,11 @@ export default function AdminJobDetails() {
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
   const [verifyResult, setVerifyResult] = useState<any>(null);
   const [reInspectDialogOpen, setReInspectDialogOpen] = useState(false);
+
+  // Quote state
+  const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
+  const [selectedDeficiencyIds, setSelectedDeficiencyIds] = useState<number[]>([]);
+  const [quoteNotes, setQuoteNotes] = useState("");
 
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
@@ -149,6 +159,22 @@ export default function AdminJobDetails() {
     { jobId: parseInt(jobId!) },
     { enabled: !!jobId }
   );
+
+  const { data: quotes, refetch: refetchQuotes } = trpc.quote.listByJob.useQuery(
+    { jobId: parseInt(jobId!) },
+    { enabled: !!jobId }
+  );
+
+  const createQuoteMutation = trpc.quote.create.useMutation({
+    onSuccess: (data) => {
+      toast.success("Quote created — navigate to Quotes to send it");
+      setQuoteDialogOpen(false);
+      setSelectedDeficiencyIds([]);
+      setQuoteNotes("");
+      refetchQuotes();
+    },
+    onError: (err) => toast.error(err.message || "Failed to create quote"),
+  });
 
   const uploadMutation = trpc.files.create.useMutation({
     onSuccess: () => {
@@ -528,19 +554,79 @@ export default function AdminJobDetails() {
                     </Card>
                   )}
 
+                  {/* Existing Quotes */}
+                  {quotes && quotes.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Quotes ({quotes.length})</CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/50">
+                              <th className="text-left px-4 py-2 font-medium">Quote #</th>
+                              <th className="text-left px-4 py-2 font-medium">Status</th>
+                              <th className="text-right px-4 py-2 font-medium">Total</th>
+                              <th className="text-left px-4 py-2 font-medium">Created</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {quotes.map((q: any) => (
+                              <tr key={q.id} className="border-b last:border-0 hover:bg-muted/30">
+                                <td className="px-4 py-2 font-mono text-xs">Q-{q.id}</td>
+                                <td className="px-4 py-2">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                    q.status === "accepted" ? "status-pass" :
+                                    q.status === "sent" ? "bg-blue-100 text-blue-700" :
+                                    q.status === "declined" ? "status-fail" :
+                                    "bg-muted text-muted-foreground"
+                                  }`}>{q.status}</span>
+                                </td>
+                                <td className="px-4 py-2 text-right font-mono">
+                                  ${parseFloat(String(q.total)).toFixed(2)}
+                                </td>
+                                <td className="px-4 py-2 text-xs text-muted-foreground">
+                                  {new Date(q.createdAt).toLocaleDateString()}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </CardContent>
+                    </Card>
+                  )}
+
                   {/* Deficiency Table */}
                   <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                       <CardTitle>Deficiencies ({deficiencies.length})</CardTitle>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={handleExportCSV}
-                      >
-                        <FileDown className="h-4 w-4" />
-                        Export CSV
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {deficiencies.filter((d: any) => d.status === "open").length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 text-destructive border-destructive hover:bg-destructive/10"
+                            onClick={() => {
+                              setSelectedDeficiencyIds(
+                                deficiencies.filter((d: any) => d.status === "open").map((d: any) => d.id)
+                              );
+                              setQuoteDialogOpen(true);
+                            }}
+                          >
+                            <FileCheck className="h-4 w-4" />
+                            Create Quote
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={handleExportCSV}
+                        >
+                          <FileDown className="h-4 w-4" />
+                          Export CSV
+                        </Button>
+                      </div>
                     </CardHeader>
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
@@ -874,6 +960,106 @@ export default function AdminJobDetails() {
                 <><RefreshCw className="h-4 w-4 mr-2" />Create Re-inspect Job</>
               )}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Quote Dialog */}
+      <Dialog open={quoteDialogOpen} onOpenChange={setQuoteDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-destructive" />
+              Create Repair Quote
+            </DialogTitle>
+            <DialogDescription>
+              Select deficiencies to include in the quote. Line items will be pre-populated from estimated costs.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Deficiency checkboxes */}
+            <div className="space-y-2">
+              {(deficiencies ?? []).filter((d: any) => d.status !== "resolved" && d.status !== "closed").map((def: any) => {
+                const cost = def.estimatedCost != null ? parseFloat(String(def.estimatedCost)) : 0;
+                const checked = selectedDeficiencyIds.includes(def.id);
+                return (
+                  <div
+                    key={def.id}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${checked ? "border-primary bg-primary/5" : "hover:bg-muted/30"}`}
+                    onClick={() =>
+                      setSelectedDeficiencyIds((prev) =>
+                        prev.includes(def.id) ? prev.filter((id) => id !== def.id) : [...prev, def.id]
+                      )
+                    }
+                  >
+                    <Checkbox checked={checked} onCheckedChange={() => {}} className="mt-0.5 pointer-events-none" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{def.title}</p>
+                      {def.observedIssue && (
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{def.observedIssue}</p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-xs font-medium ${
+                          def.severity === "critical" ? "text-red-600" :
+                          def.severity === "major" ? "text-orange-600" :
+                          "text-yellow-600"
+                        }`}>{def.severity}</span>
+                        {cost > 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            Est. ${cost.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-1.5">
+              <Label>Notes (optional)</Label>
+              <Input
+                value={quoteNotes}
+                onChange={(e) => setQuoteNotes(e.target.value)}
+                placeholder="Additional notes for the customer..."
+              />
+            </div>
+
+            {/* Total preview */}
+            {selectedDeficiencyIds.length > 0 && (() => {
+              const total = (deficiencies ?? [])
+                .filter((d: any) => selectedDeficiencyIds.includes(d.id))
+                .reduce((sum: number, d: any) => sum + (d.estimatedCost ? parseFloat(String(d.estimatedCost)) : 0), 0);
+              return (
+                <p className="text-sm font-medium text-right">
+                  Estimated Total: ${total.toFixed(2)}
+                </p>
+              );
+            })()}
+
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="outline" onClick={() => setQuoteDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={selectedDeficiencyIds.length === 0 || createQuoteMutation.isPending}
+                onClick={() =>
+                  createQuoteMutation.mutate({
+                    jobId: parseInt(jobId!),
+                    deficiencyIds: selectedDeficiencyIds,
+                    notes: quoteNotes || undefined,
+                  })
+                }
+              >
+                {createQuoteMutation.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating...</>
+                ) : (
+                  <><FileCheck className="h-4 w-4 mr-2" />Create Quote</>
+                )}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
