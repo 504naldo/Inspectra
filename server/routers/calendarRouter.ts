@@ -34,8 +34,8 @@ async function buildEventBody(jobId: number) {
   if (leadTech?.email) {
     attendees.push({ email: leadTech.email, displayName: leadTech.name || undefined });
   }
-  if (technicians) {
-    for (const tech of technicians) {
+  if (technicians?.additional) {
+    for (const tech of technicians.additional) {
       if (tech.email && tech.email !== leadTech?.email) {
         attendees.push({ email: tech.email, displayName: tech.name || undefined });
       }

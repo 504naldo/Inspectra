@@ -23,7 +23,7 @@ type ChecklistRow = {
   inputType: string;
   numericLabel: string | null;
   numericUnit: string | null;
-  isRequired: boolean;
+  isRequired: boolean | null;
   hasSubItems: boolean;
   subItems: string[] | null;
   notApplicableNote: string | null;
@@ -308,7 +308,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
 
   // ── Group checklist into sections ──
   const sections = new Map<string, { meta: ChecklistRow; items: ChecklistRow[] }>();
-  (jobChecklist || []).forEach((row: ChecklistRow) => {
+  ((jobChecklist || []) as ChecklistRow[]).forEach((row) => {
     const key = `${row.sectionOrder}:${row.sectionName}`;
     if (!sections.has(key)) sections.set(key, { meta: row, items: [] });
     sections.get(key)!.items.push(row);
