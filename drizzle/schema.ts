@@ -1050,3 +1050,44 @@ export const monthlyServiceTracking = mysqlTable("monthly_service_tracking", {
 
 export type MonthlyServiceTracking = typeof monthlyServiceTracking.$inferSelect;
 export type InsertMonthlyServiceTracking = typeof monthlyServiceTracking.$inferInsert;
+
+// ============================================
+// REPAIR LETTER TRACKING
+// Admin tracking sheet for repair-letter follow-up per site/period.
+// ============================================
+
+export const repairLetterTracking = mysqlTable("repair_letter_tracking", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  buildingId: varchar("buildingId", { length: 50 }),
+  customerOrgId: int("customerOrgId").notNull(),
+  companyId: int("companyId").notNull(),
+  trackingPeriod: varchar("trackingPeriod", { length: 7 }).notNull(), // YYYY-MM
+  linkedJobId: int("linkedJobId"),
+  linkedReportId: int("linkedReportId"),
+  deficiencyCount: int("deficiencyCount").default(0),
+  linkedDeficiencyIds: json("linkedDeficiencyIds").$type<number[]>(),
+  repairLetterStatus: mysqlEnum("repairLetterStatus", [
+    "not_started",
+    "draft_needed",
+    "drafted",
+    "sent",
+    "follow_up_needed",
+    "completed",
+    "closed",
+  ]).default("not_started").notNull(),
+  letterSentDate: date("letterSentDate"),
+  followUpDate: date("followUpDate"),
+  assignedToUserId: int("assignedToUserId"),
+  notes: text("notes"),
+  sourceImportId: int("sourceImportId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  siteIdIdx: index("repair_letter_siteId_idx").on(table.siteId),
+  companyIdIdx: index("repair_letter_companyId_idx").on(table.companyId),
+  periodIdx: index("repair_letter_period_idx").on(table.trackingPeriod),
+}));
+
+export type RepairLetterTracking = typeof repairLetterTracking.$inferSelect;
+export type InsertRepairLetterTracking = typeof repairLetterTracking.$inferInsert;

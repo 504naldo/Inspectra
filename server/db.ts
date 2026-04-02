@@ -25,6 +25,7 @@ import {
   quotes, InsertQuote, Quote,
   serviceSchedules, InsertServiceSchedule, ServiceSchedule,
   monthlyServiceTracking, InsertMonthlyServiceTracking, MonthlyServiceTracking,
+  repairLetterTracking, InsertRepairLetterTracking, RepairLetterTracking,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1570,6 +1571,43 @@ export async function updateMonthlyTracking(id: number, data: Partial<InsertMont
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(monthlyServiceTracking).set(data).where(eq(monthlyServiceTracking.id, id));
+}
+
+// ── Repair Letter Tracking ────────────────────────────────────────────────────
+
+export async function createRepairLetterTracking(data: InsertRepairLetterTracking) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(repairLetterTracking).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getRepairLetterTrackingById(id: number): Promise<RepairLetterTracking | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(repairLetterTracking).where(eq(repairLetterTracking.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getRepairLetterTrackingByCompany(
+  companyId: number,
+  trackingPeriod?: string
+): Promise<RepairLetterTracking[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(repairLetterTracking.companyId, companyId)];
+  if (trackingPeriod) conditions.push(eq(repairLetterTracking.trackingPeriod, trackingPeriod));
+  return db
+    .select()
+    .from(repairLetterTracking)
+    .where(and(...conditions))
+    .orderBy(asc(repairLetterTracking.buildingId), asc(repairLetterTracking.trackingPeriod));
+}
+
+export async function updateRepairLetterTracking(id: number, data: Partial<InsertRepairLetterTracking>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(repairLetterTracking).set(data).where(eq(repairLetterTracking.id, id));
 }
 
 export async function findSiteByBuildingId(companyId: number, buildingId: string) {

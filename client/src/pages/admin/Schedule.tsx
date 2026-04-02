@@ -58,6 +58,26 @@ const STATUS_COLORS: Record<string, string> = {
   overdue: "bg-red-100 text-red-700",
 };
 
+const RL_STATUS_LABELS: Record<string, string> = {
+  not_started: "Not Started",
+  draft_needed: "Draft Needed",
+  drafted: "Drafted",
+  sent: "Sent",
+  follow_up_needed: "Follow-Up Needed",
+  completed: "Completed",
+  closed: "Closed",
+};
+
+const RL_STATUS_COLORS: Record<string, string> = {
+  not_started: "bg-gray-100 text-gray-600",
+  draft_needed: "bg-orange-100 text-orange-700",
+  drafted: "bg-yellow-100 text-yellow-700",
+  sent: "bg-blue-100 text-blue-700",
+  follow_up_needed: "bg-purple-100 text-purple-700",
+  completed: "bg-green-100 text-green-700",
+  closed: "bg-gray-100 text-gray-400",
+};
+
 const REPORT_STATUS_COLORS: Record<string, string> = {
   none: "bg-gray-100 text-gray-500",
   pending: "bg-yellow-100 text-yellow-700",
@@ -101,12 +121,17 @@ export default function AdminSchedule() {
       <Tabs defaultValue="tracking">
         <TabsList className="mb-4">
           <TabsTrigger value="tracking">Monthly Tracking</TabsTrigger>
+          <TabsTrigger value="repair">Repair Letter Tracking</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="schedules">Service Schedules</TabsTrigger>
         </TabsList>
 
         <TabsContent value="tracking">
           <MonthlyTrackingTab companyId={companyId} utils={utils} />
+        </TabsContent>
+
+        <TabsContent value="repair">
+          <RepairLetterTab companyId={companyId} />
         </TabsContent>
 
         <TabsContent value="calendar">
@@ -897,5 +922,344 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ── Repair Letter Tracking Tab ────────────────────────────────────────────────
+
+function RepairLetterTab({ companyId }: { companyId: number }) {
+  const today = new Date();
+  const [period, setPeriod] = useState(monthStr(today));
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<number | null>(null);
+  const [editStatus, setEditStatus] = useState<string>("");
+  const [editNotes, setEditNotes] = useState<string>("");
+
+  const { data: rows = [], isLoading, refetch } = trpc.repairLetter.listTracking.useQuery(
+    {
+      companyId,
+      trackingPeriod: period,
+      status: statusFilter !== "all" ? (statusFilter as any) : undefined,
+      search: search.trim() || undefined,
+    },
+    { enabled: !!companyId }
+  );
+
+  const updateTracking = trpc.repairLetter.updateTracking.useMutation({
+    onSuccess: () => { refetch(); setEditingRow(null); },
+  });
+
+  function prevPeriod() {
+    const [y, m] = period.split("-").map(Number);
+    setPeriod(monthStr(new Date(y, m - 2, 1)));
+  }
+  function nextPeriod() {
+    const [y, m] = period.split("-").map(Number);
+    setPeriod(monthStr(new Date(y, m, 1)));
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={prevPeriod}><ChevronLeft className="h-4 w-4" /></Button>
+          <span className="font-semibold text-sm w-24 text-center">{period}</span>
+          <Button variant="ghost" size="icon" onClick={nextPeriod}><ChevronRight className="h-4 w-4" /></Button>
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-48 h-8 text-xs">
+            <SelectValue placeholder="All Statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {Object.entries(RL_STATUS_LABELS).map(([v, l]) => (
+              <SelectItem key={v} value={v}>{l}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          placeholder="Search building / notes…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 text-xs w-52"
+        />
+        <div className="ml-auto">
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="h-3.5 w-3.5 mr-1" /> Import
+          </Button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-lg border overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-gray-50 border-b text-left text-gray-500 font-semibold">
+              <th className="px-3 py-2">Bldg ID</th>
+              <th className="px-3 py-2">Site</th>
+              <th className="px-3 py-2">Customer</th>
+              <th className="px-3 py-2">Job #</th>
+              <th className="px-3 py-2">Deficiencies</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Letter Sent</th>
+              <th className="px-3 py-2">Follow-Up Date</th>
+              <th className="px-3 py-2">Notes</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr><td colSpan={10} className="text-center py-8 text-gray-400">Loading…</td></tr>
+            )}
+            {!isLoading && (rows as any[]).length === 0 && (
+              <tr>
+                <td colSpan={10} className="text-center py-8 text-gray-400">
+                  No repair letter rows for {period}.{" "}
+                  <button className="text-blue-600 underline" onClick={() => setImportOpen(true)}>Import a spreadsheet</button>
+                </td>
+              </tr>
+            )}
+            {(rows as any[]).map((row: any) => (
+              <tr key={row.id} className="border-b hover:bg-gray-50 align-top">
+                <td className="px-3 py-2 font-mono text-[11px] text-gray-500">{row.buildingId ?? "—"}</td>
+                <td className="px-3 py-2 max-w-[140px]"><span className="truncate block font-medium">{row.siteName}</span></td>
+                <td className="px-3 py-2 max-w-[120px] text-gray-500 truncate">{row.customerName}</td>
+                <td className="px-3 py-2">
+                  {row.linkedJob ? (
+                    <Link href={`/admin/jobs/${row.linkedJob.id}`}>
+                      <span className="text-blue-600 underline">{row.linkedJob.jobNumber}</span>
+                    </Link>
+                  ) : "—"}
+                </td>
+                <td className="px-3 py-2 text-center">
+                  {(row.deficiencyCount ?? 0) > 0 ? (
+                    <span className="text-red-600 font-semibold">{row.deficiencyCount}</span>
+                  ) : "—"}
+                </td>
+                <td className="px-3 py-2">
+                  {editingRow === row.id ? (
+                    <Select value={editStatus} onValueChange={setEditStatus}>
+                      <SelectTrigger className="h-6 text-[11px] w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(RL_STATUS_LABELS).map(([v, l]) => (
+                          <SelectItem key={v} value={v}>{l}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <button onClick={() => { setEditingRow(row.id); setEditStatus(row.repairLetterStatus); setEditNotes(row.notes ?? ""); }}>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer ${RL_STATUS_COLORS[row.repairLetterStatus] ?? "bg-gray-100 text-gray-500"}`}>
+                        {RL_STATUS_LABELS[row.repairLetterStatus] ?? row.repairLetterStatus}
+                      </span>
+                    </button>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-gray-500">
+                  {row.letterSentDate ? new Date(row.letterSentDate).toLocaleDateString() : "—"}
+                </td>
+                <td className="px-3 py-2 text-gray-500">
+                  {row.followUpDate ? new Date(row.followUpDate).toLocaleDateString() : "—"}
+                </td>
+                <td className="px-3 py-2 max-w-[160px]">
+                  {editingRow === row.id ? (
+                    <Input value={editNotes} onChange={(e) => setEditNotes(e.target.value)} className="h-6 text-[11px]" />
+                  ) : (
+                    <span className="text-gray-500 truncate block">{row.notes ?? "—"}</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {editingRow === row.id ? (
+                    <div className="flex gap-1">
+                      <Button size="sm" className="h-6 px-2 text-[11px]"
+                        onClick={() => updateTracking.mutate({ id: row.id, repairLetterStatus: editStatus as any, notes: editNotes || undefined })}
+                        disabled={updateTracking.isPending}>
+                        Save
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => setEditingRow(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="text-xs text-gray-400">{(rows as any[]).length} row{(rows as any[]).length !== 1 ? "s" : ""} — click a status badge to edit inline</div>
+
+      {importOpen && (
+        <RepairLetterImportDialog
+          companyId={companyId}
+          defaultPeriod={period}
+          onClose={() => setImportOpen(false)}
+          onImported={() => { setImportOpen(false); refetch(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Repair Letter Import Dialog ────────────────────────────────────────────────
+
+function RepairLetterImportDialog({
+  companyId,
+  defaultPeriod,
+  onClose,
+  onImported,
+}: {
+  companyId: number;
+  defaultPeriod: string;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [step, setStep] = useState<"upload" | "preview" | "result">("upload");
+  const [period, setPeriod] = useState(defaultPeriod);
+  const [file, setFile] = useState<File | null>(null);
+  const [fileData, setFileData] = useState<string>("");
+  const [preview, setPreview] = useState<any | null>(null);
+  const [result, setResult] = useState<any | null>(null);
+  const [skipUnmatched, setSkipUnmatched] = useState(true);
+  const [updateExisting, setUpdateExisting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const importPreview = trpc.repairLetter.importPreview.useMutation({
+    onSuccess: (data) => { setPreview(data); setStep("preview"); },
+  });
+  const importExecute = trpc.repairLetter.importExecute.useMutation({
+    onSuccess: (data) => { setResult(data); setStep("result"); },
+  });
+
+  function handleFile(f: File) {
+    setFile(f);
+    const reader = new FileReader();
+    reader.onload = (e) => setFileData((e.target?.result as string).split(",")[1] ?? "");
+    reader.readAsDataURL(f);
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Import Repair Letter Tracking</DialogTitle>
+        </DialogHeader>
+
+        {step === "upload" && (
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <Label>Tracking Period</Label>
+              <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="w-44" />
+            </div>
+            <div
+              className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-blue-400 transition-colors"
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+            >
+              <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+              <p className="text-sm font-medium">{file ? file.name : "Drop your XLSX here or click to browse"}</p>
+              <p className="text-xs text-gray-400 mt-1">Supports .xlsx, .xls, .csv</p>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+            </div>
+            <div className="bg-blue-50 rounded p-3 text-xs text-blue-700 space-y-1">
+              <p className="font-semibold">Expected columns (order flexible):</p>
+              <p>Building ID / File No., Site Name, Deficiencies, Letter Sent Date, Follow-Up Date, Notes</p>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+              <Button onClick={() => { if (file && fileData) importPreview.mutate({ companyId, trackingPeriod: period, fileName: file.name, fileData }); }}
+                disabled={!file || importPreview.isPending}>
+                {importPreview.isPending ? "Parsing…" : "Preview Import"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "preview" && preview && (
+          <div className="space-y-4">
+            <div className="flex gap-4 text-sm">
+              <span className="text-green-700 font-semibold">{preview.matched} matched</span>
+              <span className="text-red-600 font-semibold">{preview.unmatched} unmatched</span>
+              <span className="text-gray-500">{preview.totalRows} total rows</span>
+            </div>
+            <div className="rounded border overflow-auto max-h-64">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-left border-b text-gray-500 font-semibold">
+                    <th className="px-2 py-1">Row</th>
+                    <th className="px-2 py-1">Bldg ID</th>
+                    <th className="px-2 py-1">Site Name</th>
+                    <th className="px-2 py-1">Defs</th>
+                    <th className="px-2 py-1">Match</th>
+                    <th className="px-2 py-1">Matched To</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(preview.previewRows as any[]).map((r: any) => (
+                    <tr key={r.rowIndex} className={`border-b ${r.matchStatus === "unmatched" ? "bg-red-50" : ""}`}>
+                      <td className="px-2 py-1 text-gray-400">{r.rowIndex}</td>
+                      <td className="px-2 py-1 font-mono">{r.rawBldg || "—"}</td>
+                      <td className="px-2 py-1">{r.rawSite || "—"}</td>
+                      <td className="px-2 py-1">{r.rawDefs || "—"}</td>
+                      <td className="px-2 py-1">
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${r.matchStatus === "matched" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                          {r.matchStatus === "matched" ? r.matchMethod : "unmatched"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1 text-gray-500">{r.matchedSiteName ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center gap-4 text-sm">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={skipUnmatched} onChange={(e) => setSkipUnmatched(e.target.checked)} />
+                Skip unmatched rows
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />
+                Update existing rows
+              </label>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
+              <Button onClick={() => { if (file && fileData) importExecute.mutate({ companyId, trackingPeriod: period, fileName: file.name, fileData, skipUnmatched, updateExisting }); }}
+                disabled={importExecute.isPending}>
+                {importExecute.isPending ? "Importing…" : `Import ${preview.matched} Rows`}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "result" && result && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-green-700">
+              <CheckCircle2 className="h-5 w-5" />
+              <span className="font-semibold">Import Complete</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {[["Created", result.created, "bg-green-50 text-green-700"], ["Updated", result.updated, "bg-blue-50 text-blue-700"],
+                ["Skipped", result.skipped, "bg-gray-50 text-gray-700"], ["Errors", result.errors, "bg-red-50 text-red-700"]].map(([label, val, cls]) => (
+                <div key={label as string} className={`rounded p-3 ${cls}`}>
+                  <p className="font-semibold text-lg">{val}</p>
+                  <p>{label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={onImported}>Done</Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
