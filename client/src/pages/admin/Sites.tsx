@@ -490,9 +490,14 @@ export default function AdminSites() {
         companyId={companyId}
         initialFolderId={driveRoot?.folderId ?? undefined}
         onImportComplete={(result) => {
-          toast.success(`Site "${result.siteName}" created from Drive`);
           refetch();
-          navigate(`/admin/sites/${result.siteId}/import`);
+          if (result.isPdfImport) {
+            // PDF import: site + devices already created by AI, go straight to site files
+            navigate(`/admin/sites/${result.siteId}/files`);
+          } else {
+            // Spreadsheet import: continue to asset import wizard
+            navigate(`/admin/sites/${result.siteId}/import`);
+          }
         }}
       />
 
