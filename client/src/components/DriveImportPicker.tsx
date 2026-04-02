@@ -54,6 +54,11 @@ interface DriveImportPickerProps {
   onOpenChange: (open: boolean) => void;
   companyId: number;
   onImportComplete: (result: DriveImportResult) => void;
+  /** When set, the picker opens directly inside this Drive folder instead of
+   *  showing the full Drive root (My Drive / Shared with me / Shared Drives). */
+  initialFolderId?: string;
+  /** Label shown in the breadcrumb for the initial folder. Defaults to "Customer Records". */
+  initialFolderName?: string;
 }
 
 function formatDate(iso: string | null) {
@@ -74,25 +79,39 @@ export function DriveImportPicker({
   onOpenChange,
   companyId,
   onImportComplete,
+  initialFolderId,
+  initialFolderName = "Customer Records",
 }: DriveImportPickerProps) {
-  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
+  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(initialFolderId);
   const [isSharedWithMe, setIsSharedWithMe] = useState(false);
-  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>(
+    initialFolderId ? [{ id: initialFolderId, name: initialFolderName }] : []
+  );
   const [selectedFile, setSelectedFile] = useState<DriveItem | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
-      setCurrentFolderId(undefined);
-      setIsSharedWithMe(false);
-      setBreadcrumbs([]);
+      if (initialFolderId) {
+        setCurrentFolderId(initialFolderId);
+        setIsSharedWithMe(false);
+        setBreadcrumbs([{ id: initialFolderId, name: initialFolderName }]);
+      } else {
+        setCurrentFolderId(undefined);
+        setIsSharedWithMe(false);
+        setBreadcrumbs([]);
+      }
       setSelectedFile(null);
       setIsImporting(false);
     }
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const atRoot = breadcrumbs.length === 0;
+  // atRoot: true when we're at the full Drive root (no initialFolderId) or at the
+  // initial folder boundary (initialFolderId set + only one breadcrumb remaining).
+  const atRoot = initialFolderId
+    ? breadcrumbs.length <= 1
+    : breadcrumbs.length === 0;
 
   // List shared drives
   const sharedDrivesQuery = trpc.drive.listSharedDrives.useQuery(undefined, {
@@ -101,10 +120,11 @@ export function DriveImportPicker({
     staleTime: Infinity,
   });
 
-  // List current folder contents (only when not at root)
+  // List current folder contents — enabled whenever we have a folder ID to browse.
+  // When initialFolderId is set, we're always inside a folder (never at Drive root).
   const listQuery = trpc.drive.listFolder.useQuery(
     { folderId: currentFolderId, sharedWithMe: isSharedWithMe },
-    { enabled: open && !atRoot, retry: false }
+    { enabled: open && (!!currentFolderId || isSharedWithMe), retry: false }
   );
 
   const importMutation = trpc.drive.importFromDrive.useMutation({
@@ -192,7 +212,7 @@ export function DriveImportPicker({
     });
   };
 
-  const isLoading = !atRoot && listQuery.isLoading;
+  const isLoading = (!!currentFolderId || isSharedWithMe) && listQuery.isLoading;
   const items = listQuery.data?.items ?? [];
   const folders = items.filter((i) => i.isFolder);
   const spreadsheets = items.filter((i) => !i.isFolder && i.isSpreadsheet);
@@ -212,14 +232,20 @@ export function DriveImportPicker({
             <button
               className={`transition-colors ${atRoot ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => {
-                setCurrentFolderId(undefined);
-                setIsSharedWithMe(false);
-                setBreadcrumbs([]);
+                if (initialFolderId) {
+                  // Go back to the initial folder, not the full Drive root
+                  setCurrentFolderId(initialFolderId);
+                  setBreadcrumbs([{ id: initialFolderId, name: initialFolderName }]);
+                } else {
+                  setCurrentFolderId(undefined);
+                  setIsSharedWithMe(false);
+                  setBreadcrumbs([]);
+                }
                 setSelectedFile(null);
               }}
               disabled={atRoot}
             >
-              Drive
+              {initialFolderId ? initialFolderName : "Drive"}
             </button>
             {breadcrumbs.map((crumb, i) => (
               <span key={crumb.id ?? i} className="flex items-center gap-1">
@@ -263,8 +289,9 @@ export function DriveImportPicker({
 
         {/* File list */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-1 min-h-0">
-          {/* Root view — show My Drive, Shared Drives, Shared with me */}
-          {atRoot && (
+          {/* Root view — show My Drive, Shared Drives, Shared with me.
+              Hidden when initialFolderId is set (picker always starts in a folder). */}
+          {atRoot && !initialFolderId && (
             <div className="space-y-1">
               {/* My Drive */}
               <button
@@ -319,7 +346,7 @@ export function DriveImportPicker({
           )}
 
           {/* Loading */}
-          {!atRoot && isLoading && (
+          {isLoading && (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-11 w-full rounded-lg" />
@@ -328,7 +355,7 @@ export function DriveImportPicker({
           )}
 
           {/* Error */}
-          {!atRoot && !isLoading && listQuery.isError && (() => {
+          {!isLoading && listQuery.isError && (() => {
             const isAuthError =
               (listQuery.error as any)?.data?.code === "PRECONDITION_FAILED";
             const errorMsg = (listQuery.error as any)?.message || "";
@@ -362,7 +389,7 @@ export function DriveImportPicker({
           })()}
 
           {/* Empty folder */}
-          {!atRoot && !isLoading && !listQuery.isError && items.length === 0 && (
+          {(!!currentFolderId || isSharedWithMe) && !isLoading && !listQuery.isError && items.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
               <Folder className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
@@ -372,7 +399,7 @@ export function DriveImportPicker({
           )}
 
           {/* Folders */}
-          {!atRoot && folders.map((item) => (
+          {(!!currentFolderId || isSharedWithMe) && folders.map((item) => (
             <button
               key={item.id}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/60 text-left transition-colors"
@@ -393,12 +420,12 @@ export function DriveImportPicker({
           ))}
 
           {/* Divider between folders and files */}
-          {!atRoot && folders.length > 0 && spreadsheets.length > 0 && (
+          {(!!currentFolderId || isSharedWithMe) && folders.length > 0 && spreadsheets.length > 0 && (
             <div className="border-t my-1" />
           )}
 
           {/* Spreadsheet files */}
-          {!atRoot && spreadsheets.map((item) => {
+          {(!!currentFolderId || isSharedWithMe) && spreadsheets.map((item) => {
             const isSelected = selectedFile?.id === item.id;
             return (
               <button

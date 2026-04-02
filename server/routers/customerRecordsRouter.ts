@@ -15,6 +15,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import { getValidGoogleToken } from "../_core/googleAuth.js";
+import { ENV } from "../_core/env.js";
 import * as drive from "../customerRecords/driveService.js";
 import * as db from "../db.js";
 
@@ -56,7 +57,16 @@ async function requireToken(ctx: { user: { id: number } }): Promise<string> {
 
 export const customerRecordsRouter = router({
   /**
-   * Returns whether Google Drive is configured and the current user has a valid
+   * Returns the configured Drive root folder ID so the frontend can initialise
+   * the import picker at the customer-records root instead of the Drive root.
+   * Only the folder ID is returned — no credentials are exposed.
+   */
+  getRootFolderId: officeProcedure.query(({ ctx }) => {
+    auditLog("customer_records_get_root_id", ctx);
+    return { folderId: ENV.googleDriveCustomerRootId || null };
+  }),
+
+  /**
    * Google OAuth token.  Used by the UI to render the correct empty state.
    */
   status: officeProcedure.query(async ({ ctx }) => {

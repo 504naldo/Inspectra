@@ -74,6 +74,11 @@ export default function AdminSites() {
 
   const { data: sites, isLoading, refetch } = trpc.site.listByCompany.useQuery({ companyId });
   const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
+  // Pre-fetch the customer records Drive root so the import picker opens there directly
+  const { data: driveRoot } = trpc.customerRecords.getRootFolderId.useQuery(undefined, {
+    staleTime: Infinity,
+    retry: false,
+  });
 
   const createSite = trpc.site.create.useMutation({
     onSuccess: () => {
@@ -483,6 +488,7 @@ export default function AdminSites() {
         open={showDriveImport}
         onOpenChange={setShowDriveImport}
         companyId={companyId}
+        initialFolderId={driveRoot?.folderId ?? undefined}
         onImportComplete={(result) => {
           toast.success(`Site "${result.siteName}" created from Drive`);
           refetch();
