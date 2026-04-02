@@ -18,7 +18,7 @@ const repairLetterStatusEnum = z.enum([
   "closed",
 ]);
 
-const norm = (s: string) => s.toLowerCase().replace(/[\s_\-\/]+/g, "");
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 function findCol(headers: string[], ...keywords: string[]): number {
   return headers.findIndex((h) => keywords.some((k) => norm(h).includes(norm(k))));
 }

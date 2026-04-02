@@ -21,8 +21,8 @@ function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Normalize a header string for fuzzy matching */
-const norm = (s: string) => s.toLowerCase().replace(/[\s_\-\/]+/g, "");
+/** Normalize a header string for fuzzy matching — strip all non-alphanumeric chars */
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 /** Find the first column whose normalised header matches any of the given keywords */
 function findCol(headers: string[], ...keywords: string[]): number {
@@ -294,10 +294,10 @@ export const serviceScheduleRouter = router({
         rawPreviewRows,
         rowCount: rows.length - hi - 1,
         detected: {
-          buildingId:  findCol(headers, "file#", "file #", "file#", "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id"),
-          siteName:    findCol(headers, "sitename", "site name", "building name", "location", "address", "property", "site", "building", "name"),
-          serviceType: findCol(headers, "servicetype", "service type", "service type", "service", "type", "inspection"),
-          targetDate:  findCol(headers, "targetdate", "target date", "due date", "scheduled", "date"),
+          buildingId:  findCol(headers, "file", "buildingid", "accountno", "account", "fileno", "filenumber", "bldg", "building", "acct"),
+          siteName:    findCol(headers, "sitename", "buildingname", "location", "address", "property", "site", "name"),
+          serviceType: findCol(headers, "servicetype", "service", "type", "inspection"),
+          targetDate:  findCol(headers, "targetdate", "duedate", "scheduled", "date"),
           notes:       findCol(headers, "notes", "comments", "remarks"),
         },
       };
@@ -336,12 +336,12 @@ export const serviceScheduleRouter = router({
 
       // Column detection — use caller overrides if provided, otherwise auto-detect
       const ov = input.colOverrides ?? {};
-      const colBuildingId = ov.buildingId  ?? findCol(headers, "file#", "file #", "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id");
-      const colSiteName   = ov.siteName    ?? findCol(headers, "sitename", "site name", "building name", "location", "address", "property", "site", "building", "name");
+      const colBuildingId = ov.buildingId  ?? findCol(headers, "file", "buildingid", "accountno", "account", "fileno", "filenumber", "bldg", "building", "acct");
+      const colSiteName   = ov.siteName    ?? findCol(headers, "sitename", "buildingname", "location", "address", "property", "site", "name");
       const colCustomer   =                   findCol(headers, "customer", "client", "org", "company");
-      const colServiceType= ov.serviceType ?? findCol(headers, "service type", "servicetype", "service", "type", "inspection");
+      const colServiceType= ov.serviceType ?? findCol(headers, "servicetype", "service", "type", "inspection");
       const colFrequency  =                   findCol(headers, "frequency", "freq");
-      const colTargetDate = ov.targetDate  ?? findCol(headers, "targetdate", "target date", "due date", "scheduled", "date");
+      const colTargetDate = ov.targetDate  ?? findCol(headers, "targetdate", "duedate", "scheduled", "date");
       const colNotes      = ov.notes       ?? findCol(headers, "notes", "comments", "remarks");
 
       // Fetch all sites for this company once
