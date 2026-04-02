@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Folder,
+  File,
+  FileText,
   FileSpreadsheet,
   ArrowLeft,
   ChevronRight,
@@ -30,7 +32,7 @@ interface DriveItem {
   isFolder: boolean;
   isSpreadsheet: boolean;
   modifiedTime: string | null;
-  size: string | null;
+  size?: string | null;
 }
 
 // Special virtual section IDs
@@ -47,6 +49,9 @@ export interface DriveImportResult {
   siteName: string;
   customerOrgId: number;
   sheetNames: string[];
+  /** True when the site was created via AI PDF extraction rather than spreadsheet parsing. */
+  isPdfImport?: boolean;
+  devicesCreated?: number;
 }
 
 interface DriveImportPickerProps {
@@ -54,6 +59,11 @@ interface DriveImportPickerProps {
   onOpenChange: (open: boolean) => void;
   companyId: number;
   onImportComplete: (result: DriveImportResult) => void;
+  /** When set, the picker opens directly inside this Drive folder instead of
+   *  showing the full Drive root (My Drive / Shared with me / Shared Drives). */
+  initialFolderId?: string;
+  /** Label shown in the breadcrumb for the initial folder. Defaults to "Customer Records". */
+  initialFolderName?: string;
 }
 
 function formatDate(iso: string | null) {
@@ -74,25 +84,39 @@ export function DriveImportPicker({
   onOpenChange,
   companyId,
   onImportComplete,
+  initialFolderId,
+  initialFolderName = "Customer Records",
 }: DriveImportPickerProps) {
-  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
+  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(initialFolderId);
   const [isSharedWithMe, setIsSharedWithMe] = useState(false);
-  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>(
+    initialFolderId ? [{ id: initialFolderId, name: initialFolderName }] : []
+  );
   const [selectedFile, setSelectedFile] = useState<DriveItem | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
-      setCurrentFolderId(undefined);
-      setIsSharedWithMe(false);
-      setBreadcrumbs([]);
+      if (initialFolderId) {
+        setCurrentFolderId(initialFolderId);
+        setIsSharedWithMe(false);
+        setBreadcrumbs([{ id: initialFolderId, name: initialFolderName }]);
+      } else {
+        setCurrentFolderId(undefined);
+        setIsSharedWithMe(false);
+        setBreadcrumbs([]);
+      }
       setSelectedFile(null);
       setIsImporting(false);
     }
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const atRoot = breadcrumbs.length === 0;
+  // atRoot: true when we're at the full Drive root (no initialFolderId) or at the
+  // initial folder boundary (initialFolderId set + only one breadcrumb remaining).
+  const atRoot = initialFolderId
+    ? breadcrumbs.length <= 1
+    : breadcrumbs.length === 0;
 
   // List shared drives
   const sharedDrivesQuery = trpc.drive.listSharedDrives.useQuery(undefined, {
@@ -101,10 +125,11 @@ export function DriveImportPicker({
     staleTime: Infinity,
   });
 
-  // List current folder contents (only when not at root)
+  // List current folder contents — enabled whenever we have a folder ID to browse.
+  // allFiles: true so users can see every file in the folder, not just spreadsheets.
   const listQuery = trpc.drive.listFolder.useQuery(
-    { folderId: currentFolderId, sharedWithMe: isSharedWithMe },
-    { enabled: open && !atRoot, retry: false }
+    { folderId: currentFolderId, sharedWithMe: isSharedWithMe, allFiles: true },
+    { enabled: open && (!!currentFolderId || isSharedWithMe), retry: false }
   );
 
   const importMutation = trpc.drive.importFromDrive.useMutation({
@@ -122,6 +147,29 @@ export function DriveImportPicker({
     onError: (error) => {
       setIsImporting(false);
       toast.error(error.message || "Failed to import from Drive");
+    },
+  });
+
+  const importPdfMutation = trpc.drive.importPdfFromDrive.useMutation({
+    onSuccess: (data) => {
+      setIsImporting(false);
+      const msg = data.devicesCreated
+        ? `Site "${data.siteName}" created — ${data.devicesCreated} device(s) extracted`
+        : `Site "${data.siteName}" created from PDF`;
+      toast.success(msg);
+      onImportComplete({
+        siteId: data.siteId,
+        siteName: data.siteName,
+        customerOrgId: data.customerOrgId,
+        sheetNames: [],
+        isPdfImport: true,
+        devicesCreated: data.devicesCreated,
+      });
+      onOpenChange(false);
+    },
+    onError: (error) => {
+      setIsImporting(false);
+      toast.error(error.message || "Failed to import PDF from Drive");
     },
   });
 
@@ -184,18 +232,29 @@ export function DriveImportPicker({
   const handleConfirmImport = () => {
     if (!selectedFile) return;
     setIsImporting(true);
-    importMutation.mutate({
-      fileId: selectedFile.id,
-      fileName: selectedFile.name,
-      mimeType: selectedFile.mimeType,
-      companyId,
-    });
+    if (selectedFile.mimeType === "application/pdf") {
+      importPdfMutation.mutate({
+        fileId: selectedFile.id,
+        fileName: selectedFile.name,
+        companyId,
+      });
+    } else {
+      importMutation.mutate({
+        fileId: selectedFile.id,
+        fileName: selectedFile.name,
+        mimeType: selectedFile.mimeType,
+        companyId,
+      });
+    }
   };
 
-  const isLoading = !atRoot && listQuery.isLoading;
+  const isLoading = (!!currentFolderId || isSharedWithMe) && listQuery.isLoading;
   const items = listQuery.data?.items ?? [];
-  const folders = items.filter((i) => i.isFolder);
+  const folders     = items.filter((i) => i.isFolder);
   const spreadsheets = items.filter((i) => !i.isFolder && i.isSpreadsheet);
+  const pdfFiles    = items.filter((i) => !i.isFolder && !i.isSpreadsheet && i.mimeType === "application/pdf");
+  // Other files (Word, images, etc.) are visible but not selectable
+  const otherFiles  = items.filter((i) => !i.isFolder && !i.isSpreadsheet && i.mimeType !== "application/pdf");
   const sharedDrives = sharedDrivesQuery.data?.drives ?? [];
 
   return (
@@ -212,14 +271,20 @@ export function DriveImportPicker({
             <button
               className={`transition-colors ${atRoot ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => {
-                setCurrentFolderId(undefined);
-                setIsSharedWithMe(false);
-                setBreadcrumbs([]);
+                if (initialFolderId) {
+                  // Go back to the initial folder, not the full Drive root
+                  setCurrentFolderId(initialFolderId);
+                  setBreadcrumbs([{ id: initialFolderId, name: initialFolderName }]);
+                } else {
+                  setCurrentFolderId(undefined);
+                  setIsSharedWithMe(false);
+                  setBreadcrumbs([]);
+                }
                 setSelectedFile(null);
               }}
               disabled={atRoot}
             >
-              Drive
+              {initialFolderId ? initialFolderName : "Drive"}
             </button>
             {breadcrumbs.map((crumb, i) => (
               <span key={crumb.id ?? i} className="flex items-center gap-1">
@@ -253,18 +318,20 @@ export function DriveImportPicker({
           </Button>
 
           <span className="text-xs text-muted-foreground ml-auto">
-            {atRoot
-              ? "Select a location"
-              : spreadsheets.length > 0
-              ? `${spreadsheets.length} spreadsheet${spreadsheets.length !== 1 ? "s" : ""} found`
-              : "Select a spreadsheet to import"}
+            {atRoot ? "Select a location" : (() => {
+              const parts = [];
+              if (spreadsheets.length) parts.push(`${spreadsheets.length} spreadsheet${spreadsheets.length !== 1 ? "s" : ""}`);
+              if (pdfFiles.length) parts.push(`${pdfFiles.length} PDF${pdfFiles.length !== 1 ? "s" : ""}`);
+              return parts.length ? parts.join(", ") + " importable" : items.length > 0 ? "No importable files" : "Empty folder";
+            })()}
           </span>
         </div>
 
         {/* File list */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-1 min-h-0">
-          {/* Root view — show My Drive, Shared Drives, Shared with me */}
-          {atRoot && (
+          {/* Root view — show My Drive, Shared Drives, Shared with me.
+              Hidden when initialFolderId is set (picker always starts in a folder). */}
+          {atRoot && !initialFolderId && (
             <div className="space-y-1">
               {/* My Drive */}
               <button
@@ -319,7 +386,7 @@ export function DriveImportPicker({
           )}
 
           {/* Loading */}
-          {!atRoot && isLoading && (
+          {isLoading && (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-11 w-full rounded-lg" />
@@ -328,7 +395,7 @@ export function DriveImportPicker({
           )}
 
           {/* Error */}
-          {!atRoot && !isLoading && listQuery.isError && (() => {
+          {!isLoading && listQuery.isError && (() => {
             const isAuthError =
               (listQuery.error as any)?.data?.code === "PRECONDITION_FAILED";
             const errorMsg = (listQuery.error as any)?.message || "";
@@ -362,17 +429,17 @@ export function DriveImportPicker({
           })()}
 
           {/* Empty folder */}
-          {!atRoot && !isLoading && !listQuery.isError && items.length === 0 && (
+          {(!!currentFolderId || isSharedWithMe) && !isLoading && !listQuery.isError && items.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
               <Folder className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                {isSharedWithMe ? "No spreadsheets or folders shared with you." : "This folder is empty or contains no spreadsheet files."}
+                {isSharedWithMe ? "No files or folders shared with you." : "This folder is empty."}
               </p>
             </div>
           )}
 
           {/* Folders */}
-          {!atRoot && folders.map((item) => (
+          {(!!currentFolderId || isSharedWithMe) && folders.map((item) => (
             <button
               key={item.id}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/60 text-left transition-colors"
@@ -393,12 +460,12 @@ export function DriveImportPicker({
           ))}
 
           {/* Divider between folders and files */}
-          {!atRoot && folders.length > 0 && spreadsheets.length > 0 && (
+          {(!!currentFolderId || isSharedWithMe) && folders.length > 0 && spreadsheets.length > 0 && (
             <div className="border-t my-1" />
           )}
 
           {/* Spreadsheet files */}
-          {!atRoot && spreadsheets.map((item) => {
+          {(!!currentFolderId || isSharedWithMe) && spreadsheets.map((item) => {
             const isSelected = selectedFile?.id === item.id;
             return (
               <button
@@ -430,6 +497,63 @@ export function DriveImportPicker({
               </button>
             );
           })}
+
+          {/* PDF files — selectable, imported via AI extraction */}
+          {(!!currentFolderId || isSharedWithMe) && pdfFiles.map((item) => {
+            const isSelected = selectedFile?.id === item.id;
+            return (
+              <button
+                key={item.id}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+                  isSelected
+                    ? "bg-orange-50 border border-orange-300 ring-1 ring-orange-200 dark:bg-orange-900/20"
+                    : "hover:bg-orange-50 hover:dark:bg-orange-900/10"
+                }`}
+                onClick={() => setSelectedFile(isSelected ? null : item)}
+                disabled={isImporting}
+              >
+                <FileText
+                  className={`h-5 w-5 shrink-0 ${isSelected ? "text-orange-600" : "text-orange-500"}`}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className={`font-medium truncate text-sm ${isSelected ? "text-orange-700" : ""}`}>
+                    {item.name}
+                  </p>
+                  {item.modifiedTime && (
+                    <p className="text-xs text-muted-foreground">{formatDate(item.modifiedTime)}</p>
+                  )}
+                </div>
+                {isSelected && <CheckCircle2 className="h-4 w-4 text-orange-600 shrink-0" />}
+              </button>
+            );
+          })}
+
+          {/* Non-importable files — visible but not selectable */}
+          {(!!currentFolderId || isSharedWithMe) && otherFiles.length > 0 && (
+            <>
+              {(folders.length > 0 || spreadsheets.length > 0 || pdfFiles.length > 0) && (
+                <div className="border-t my-1" />
+              )}
+              {otherFiles.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg opacity-50 cursor-not-allowed"
+                  title="This file type cannot be imported as a site. Use spreadsheet (.xlsx / Google Sheets) files."
+                >
+                  <File className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm text-muted-foreground">{item.name}</p>
+                    {item.modifiedTime && (
+                      <p className="text-xs text-muted-foreground">{formatDate(item.modifiedTime)}</p>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground border rounded px-1.5 py-0.5 shrink-0 whitespace-nowrap">
+                    {item.mimeType === "application/pdf" ? "PDF — use Import from PDF" : "Not importable"}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
         </div>
 
         {/* Selected file confirmation + footer */}
@@ -440,7 +564,9 @@ export function DriveImportPicker({
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{selectedFile.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  Inspectra will parse site info and create the site automatically
+                  {selectedFile?.mimeType === "application/pdf"
+                    ? "AI will extract site info and devices from this PDF report"
+                    : "Inspectra will parse site info and create the site automatically"}
                 </p>
               </div>
             </div>
@@ -448,7 +574,9 @@ export function DriveImportPicker({
 
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              Google Sheets are exported as .xlsx before import
+              {selectedFile?.mimeType === "application/pdf"
+                ? "PDF import uses AI — may take 10–20 seconds"
+                : "Google Sheets are exported as .xlsx before import"}
             </p>
             <div className="flex items-center gap-2">
               <Button

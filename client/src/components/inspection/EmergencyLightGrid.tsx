@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { CheckCheck } from "lucide-react";
 
 interface EmergencyLightRow {
   id: number;
@@ -97,7 +98,30 @@ export function EmergencyLightGrid({
     return localResults[device.id] ?? device.result ?? "not_tested";
   };
 
+  const handleAllPass = useCallback(() => {
+    if (isFinalized) return;
+    const updates: Record<number, InspectionResult> = {};
+    devices.forEach((d) => { updates[d.id] = "pass"; });
+    setLocalResults((prev) => ({ ...prev, ...updates }));
+    devices.forEach((d) => {
+      upsertResult.mutate({ jobId, deviceId: d.id, result: "pass" });
+      onResultChange?.(d.id, "pass");
+    });
+    toast.success(`Marked ${devices.length} emergency light${devices.length !== 1 ? "s" : ""} as pass`);
+  }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
+
   return (
+    <div>
+      {!isFinalized && devices.length > 0 && (
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={handleAllPass}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+          >
+            <CheckCheck className="h-3.5 w-3.5" /> All Pass
+          </button>
+        </div>
+      )}
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full text-xs border-collapse">
         <thead>
@@ -197,6 +221,7 @@ export function EmergencyLightGrid({
           )}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }

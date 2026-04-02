@@ -147,7 +147,13 @@ export const driveRouter = router({
    * Pass sharedWithMe=true to list files shared with the user instead.
    */
   listFolder: adminOrOfficeProcedure
-    .input(z.object({ folderId: z.string().optional(), sharedWithMe: z.boolean().optional() }))
+    .input(z.object({
+      folderId: z.string().optional(),
+      sharedWithMe: z.boolean().optional(),
+      /** When true, return all file types instead of only spreadsheets/folders/PDFs.
+       *  Used by the import picker so users can see the full folder contents. */
+      allFiles: z.boolean().optional(),
+    }))
     .query(async ({ input, ctx }) => {
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
@@ -161,10 +167,10 @@ export const driveRouter = router({
 
       let q: string;
       if (input.sharedWithMe) {
-        q = `sharedWithMe=true and trashed=false and ${mimeFilter}`;
+        q = `sharedWithMe=true and trashed=false${input.allFiles ? "" : " and " + mimeFilter}`;
       } else {
         const parent = input.folderId ? `'${input.folderId}'` : "'root'";
-        q = `${parent} in parents and trashed=false and ${mimeFilter}`;
+        q = `${parent} in parents and trashed=false${input.allFiles ? "" : " and " + mimeFilter}`;
       }
 
       const baseUrl = new URL(`${DRIVE_API}/files`);

@@ -841,3 +841,225 @@ export function drawSignatureTable(
 
   return y + 10;
 }
+
+// ============================================
+// INSPECTION SUMMARY PAGE
+// ============================================
+
+/**
+ * Draw the Inspection Summary page — shows device results table and a
+ * prominent status callout (green "No Deficiencies" or coloured warning block).
+ * Used as the second interior page in both packages.
+ */
+export function drawInspectionSummaryPage(
+  doc: PDFKit.PDFDocument,
+  options: {
+    deviceSummaries: Array<{
+      deviceType: string;
+      total: number;
+      passed: number;
+      failed: number;
+      na: number;
+    }>;
+    deficiencies: Array<{ severity: string }>;
+    startY: number;
+    technicianName?: string;
+    jobNumber?: string;
+    inspectionDate?: Date;
+  }
+): number {
+  let y = options.startY;
+  const margin = 50;
+  const contentWidth = 512;
+  const hasDeficiencies = options.deficiencies.length > 0;
+
+  // ── Section header bar ───────────────────────────────────────────────────
+  doc.rect(margin, y, contentWidth, 28).fill(PDF_COLORS.brandNavy);
+  doc.fontSize(12).font(PDF_FONTS.bold).fillColor(PDF_COLORS.white)
+     .text('INSPECTION SUMMARY', margin + 12, y + 9);
+  y += 36;
+
+  // ── Service metadata strip ────────────────────────────────────────────────
+  if (options.inspectionDate || options.jobNumber || options.technicianName) {
+    doc.rect(margin, y, contentWidth, 24).fill('#f1f5f9');
+    doc.rect(margin, y, contentWidth, 24).lineWidth(0.4).stroke(PDF_COLORS.grayLight);
+    doc.fontSize(8).font(PDF_FONTS.regular).fillColor(PDF_COLORS.grayDark);
+
+    const metaParts: string[] = [];
+    if (options.inspectionDate) {
+      metaParts.push(`Service Date: ${options.inspectionDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`);
+    }
+    if (options.jobNumber) metaParts.push(`Job #: ${options.jobNumber}`);
+    if (options.technicianName) metaParts.push(`Technician: ${options.technicianName}`);
+
+    doc.text(metaParts.join('    |    '), margin + 10, y + 8, { width: contentWidth - 20 });
+    y += 30;
+  }
+
+  // ── Device results table ─────────────────────────────────────────────────
+  if (options.deviceSummaries.length > 0) {
+    const cols = [234, 60, 60, 60, 98]; // DeviceType | Total | Pass | Fail | N/A
+    const tableWidth = cols.reduce((a, b) => a + b, 0);
+    const rowH = 22;
+
+    // Header
+    doc.rect(margin, y, tableWidth, rowH).fill(PDF_COLORS.brandNavy);
+    doc.fontSize(9).font(PDF_FONTS.bold).fillColor(PDF_COLORS.white);
+    let cx = margin;
+    ['Device / System Type', 'Total', 'Pass', 'Fail', 'N/A'].forEach((h, i) => {
+      doc.text(h, cx + 6, y + 7, { width: cols[i] - 10, align: i > 0 ? 'center' : 'left' });
+      cx += cols[i];
+    });
+    y += rowH;
+
+    options.deviceSummaries.forEach((ds, idx) => {
+      const bg = idx % 2 === 0 ? '#ffffff' : PDF_COLORS.grayLightest;
+      doc.rect(margin, y, tableWidth, rowH).fill(bg);
+      doc.rect(margin, y, tableWidth, rowH).lineWidth(0.4).stroke(PDF_COLORS.grayLight);
+
+      cx = margin;
+      doc.fontSize(9).font(PDF_FONTS.regular).fillColor(PDF_COLORS.black)
+         .text(ds.deviceType, cx + 6, y + 7, { width: cols[0] - 10, align: 'left' });
+      cx += cols[0];
+
+      doc.text(ds.total.toString(), cx, y + 7, { width: cols[1], align: 'center' });
+      cx += cols[1];
+
+      doc.fillColor(ds.passed > 0 ? PDF_COLORS.successGreen : PDF_COLORS.grayDark)
+         .text(ds.passed.toString(), cx, y + 7, { width: cols[2], align: 'center' });
+      cx += cols[2];
+
+      doc.fillColor(ds.failed > 0 ? PDF_COLORS.dangerRed : PDF_COLORS.grayDark)
+         .text(ds.failed.toString(), cx, y + 7, { width: cols[3], align: 'center' });
+      cx += cols[3];
+
+      doc.fillColor(PDF_COLORS.grayDark)
+         .text(ds.na.toString(), cx, y + 7, { width: cols[4], align: 'center' });
+
+      y += rowH;
+    });
+
+    y += 20;
+  }
+
+  // ── Status callout ────────────────────────────────────────────────────────
+  if (!hasDeficiencies) {
+    const blockH = 56;
+    doc.rect(margin, y, contentWidth, blockH).fill('#dcfce7');
+    doc.rect(margin, y, contentWidth, blockH).lineWidth(2).stroke('#16a34a');
+
+    // Checkmark icon area (left accent bar)
+    doc.rect(margin, y, 6, blockH).fill('#16a34a');
+
+    doc.fontSize(15).font(PDF_FONTS.bold).fillColor('#15803d')
+       .text('NO DEFICIENCIES IDENTIFIED', margin + 20, y + 10);
+    doc.fontSize(9).font(PDF_FONTS.regular).fillColor('#166534')
+       .text(
+         'All inspected systems and devices are operating within normal parameters.',
+         margin + 20, y + 33, { width: contentWidth - 28 }
+       );
+    y += blockH + 16;
+  } else {
+    const critCount = options.deficiencies.filter(d => d.severity === 'critical').length;
+    const majCount  = options.deficiencies.filter(d => d.severity === 'major').length;
+    const minCount  = options.deficiencies.filter(d => d.severity === 'minor').length;
+    const total     = options.deficiencies.length;
+
+    const bgColor     = critCount > 0 ? '#fee2e2' : majCount > 0 ? '#ffedd5' : '#fef9c3';
+    const barColor    = critCount > 0 ? '#dc2626' : majCount > 0 ? '#ea580c' : '#ca8a04';
+    const textColor   = critCount > 0 ? '#991b1b' : majCount > 0 ? '#7c2d12' : '#713f12';
+
+    const blockH = 72;
+    doc.rect(margin, y, contentWidth, blockH).fill(bgColor);
+    doc.rect(margin, y, contentWidth, blockH).lineWidth(2).stroke(barColor);
+    doc.rect(margin, y, 6, blockH).fill(barColor);
+
+    doc.fontSize(15).font(PDF_FONTS.bold).fillColor(textColor)
+       .text(`${total} DEFICIEN${total === 1 ? 'CY' : 'CIES'} IDENTIFIED`, margin + 20, y + 10);
+
+    const sevParts: string[] = [];
+    if (critCount > 0) sevParts.push(`${critCount} Critical`);
+    if (majCount  > 0) sevParts.push(`${majCount} Major`);
+    if (minCount  > 0) sevParts.push(`${minCount} Minor`);
+
+    doc.fontSize(10).font(PDF_FONTS.regular).fillColor(textColor)
+       .text(sevParts.join('   •   '), margin + 20, y + 33);
+    doc.fontSize(8).font(PDF_FONTS.italic).fillColor(textColor)
+       .text(
+         'Please review the enclosed deficiency report for full details and corrective action recommendations.',
+         margin + 20, y + 51, { width: contentWidth - 28 }
+       );
+    y += blockH + 16;
+  }
+
+  return y;
+}
+
+// ============================================
+// CLIENT AUTHORIZATION BLOCK
+// ============================================
+
+/**
+ * Draw the client authorization / approval block for deficiency packages.
+ * The customer signs here to authorize the quoted corrective work.
+ */
+export function drawClientAuthorizationBlock(
+  doc: PDFKit.PDFDocument,
+  startY: number,
+  companyName: string,
+  reportDate: Date,
+  leftMargin = 50,
+  contentWidth = 512
+): number {
+  let y = startY;
+
+  // Section header
+  doc.rect(leftMargin, y, contentWidth, 28).fill(PDF_COLORS.brandNavy);
+  doc.fontSize(12).font(PDF_FONTS.bold).fillColor(PDF_COLORS.white)
+     .text('AUTHORIZATION TO PROCEED — CORRECTIVE WORK', leftMargin + 12, y + 9);
+  y += 36;
+
+  // Authorization text
+  const validUntil = new Date(reportDate);
+  validUntil.setDate(validUntil.getDate() + 30);
+  const validUntilStr = validUntil.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const authText =
+    `By signing below, you authorize ${companyName} to proceed with the corrective work ` +
+    `detailed in this report at the quoted prices. This quotation is valid until ${validUntilStr}. ` +
+    `Verbal authorization is not accepted. A signed copy must be returned before work will be scheduled.`;
+
+  doc.fontSize(9).font(PDF_FONTS.regular).fillColor(PDF_COLORS.black)
+     .text(authText, leftMargin, y, { width: contentWidth, lineGap: 3 });
+  y = doc.y + 18;
+
+  // Signature table
+  const col1 = contentWidth * 0.55;
+  const col2 = contentWidth * 0.45;
+  const lineY = y + 32;
+
+  // Left column — signature line
+  doc.moveTo(leftMargin, lineY).lineTo(leftMargin + col1 - 20, lineY).lineWidth(0.5).stroke(PDF_COLORS.grayDark);
+  doc.fontSize(8).font(PDF_FONTS.regular).fillColor(PDF_COLORS.grayDark)
+     .text('Authorized Signature', leftMargin, lineY + 4);
+
+  // Right column — date line
+  doc.moveTo(leftMargin + col1, lineY).lineTo(leftMargin + contentWidth, lineY).lineWidth(0.5).stroke(PDF_COLORS.grayDark);
+  doc.text('Date', leftMargin + col1, lineY + 4);
+
+  y = lineY + 22;
+
+  // Second row — name/title
+  const nameLine = y + 28;
+  doc.moveTo(leftMargin, nameLine).lineTo(leftMargin + col1 - 20, nameLine).lineWidth(0.5).stroke(PDF_COLORS.grayDark);
+  doc.fontSize(8).font(PDF_FONTS.regular).fillColor(PDF_COLORS.grayDark)
+     .text('Printed Name and Title', leftMargin, nameLine + 4);
+
+  // Company reference line
+  doc.moveTo(leftMargin + col1, nameLine).lineTo(leftMargin + contentWidth, nameLine).lineWidth(0.5).stroke(PDF_COLORS.grayDark);
+  doc.text('Purchase Order / Reference #', leftMargin + col1, nameLine + 4);
+
+  y = nameLine + 22;
+
+  return y + 12;
+}

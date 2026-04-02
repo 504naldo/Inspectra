@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Info } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, CheckCheck } from "lucide-react";
 import { useIsMobile } from "@/hooks/useMobile";
 
 // ─── Legend data ────────────────────────────────────────────────────────────
@@ -299,6 +299,18 @@ export function SmokeAlarmGrid({
 
   const completed = devices.filter((d) => getEffectiveResult(d) !== "not_tested").length;
 
+  const handleAllPass = useCallback(() => {
+    if (isFinalized) return;
+    const updates: Record<number, InspectionResult> = {};
+    devices.forEach((d) => { updates[d.id] = "pass"; });
+    setLocalResults((prev) => ({ ...prev, ...updates }));
+    devices.forEach((d) => {
+      upsertResult.mutate({ jobId, deviceId: d.id, result: "pass" });
+      onResultChange?.(d.id, "pass");
+    });
+    toast.success(`Marked ${devices.length} smoke alarm${devices.length !== 1 ? "s" : ""} as pass`);
+  }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
+
   // ── Header bar ─────────────────────────────────────────────────────────────
   const header = (
     <div className="space-y-2 mb-3">
@@ -306,9 +318,19 @@ export function SmokeAlarmGrid({
         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
           CAN/ULC-S552 · Smoke Alarm Inspection &amp; Testing
         </p>
-        <span className="text-xs text-muted-foreground">
-          {completed} / {devices.length} tested
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">
+            {completed} / {devices.length} tested
+          </span>
+          {!isFinalized && devices.length > 0 && (
+            <button
+              onClick={handleAllPass}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+            >
+              <CheckCheck className="h-3.5 w-3.5" /> All Pass
+            </button>
+          )}
+        </div>
       </div>
       <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
     </div>
