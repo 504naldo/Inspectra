@@ -23,6 +23,8 @@ import {
   syncLogs, InsertSyncLog, SyncLog,
   inspectionChecklistResponses, InsertInspectionChecklistResponse, InspectionChecklistResponse,
   quotes, InsertQuote, Quote,
+  serviceSchedules, InsertServiceSchedule, ServiceSchedule,
+  monthlyServiceTracking, InsertMonthlyServiceTracking, MonthlyServiceTracking,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1482,4 +1484,112 @@ export async function updateQuote(id: number, data: Partial<InsertQuote>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(quotes).set(data).where(eq(quotes.id, id));
+}
+// ============================================
+// SERVICE SCHEDULE QUERIES
+// ============================================
+
+export async function createServiceSchedule(data: InsertServiceSchedule) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(serviceSchedules).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getServiceScheduleById(id: number): Promise<ServiceSchedule | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(serviceSchedules).where(eq(serviceSchedules.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getServiceSchedulesByCompany(companyId: number): Promise<ServiceSchedule[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(serviceSchedules)
+    .where(and(eq(serviceSchedules.companyId, companyId), eq(serviceSchedules.active, true)))
+    .orderBy(asc(serviceSchedules.createdAt));
+}
+
+export async function getServiceSchedulesBySite(siteId: number): Promise<ServiceSchedule[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(serviceSchedules).where(eq(serviceSchedules.siteId, siteId));
+}
+
+export async function updateServiceSchedule(id: number, data: Partial<InsertServiceSchedule>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(serviceSchedules).set(data).where(eq(serviceSchedules.id, id));
+}
+
+// ============================================
+// MONTHLY SERVICE TRACKING QUERIES
+// ============================================
+
+export async function createMonthlyTracking(data: InsertMonthlyServiceTracking) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(monthlyServiceTracking).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getMonthlyTrackingById(id: number): Promise<MonthlyServiceTracking | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(monthlyServiceTracking).where(eq(monthlyServiceTracking.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getMonthlyTrackingByCompany(
+  companyId: number,
+  trackingMonth?: string
+): Promise<MonthlyServiceTracking[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(monthlyServiceTracking.companyId, companyId)];
+  if (trackingMonth) conditions.push(eq(monthlyServiceTracking.trackingMonth, trackingMonth));
+  return db
+    .select()
+    .from(monthlyServiceTracking)
+    .where(and(...conditions))
+    .orderBy(asc(monthlyServiceTracking.targetDate), asc(monthlyServiceTracking.buildingId));
+}
+
+export async function getMonthlyTrackingBySite(siteId: number, trackingMonth?: string): Promise<MonthlyServiceTracking[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(monthlyServiceTracking.siteId, siteId)];
+  if (trackingMonth) conditions.push(eq(monthlyServiceTracking.trackingMonth, trackingMonth));
+  return db.select().from(monthlyServiceTracking).where(and(...conditions));
+}
+
+export async function updateMonthlyTracking(id: number, data: Partial<InsertMonthlyServiceTracking>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(monthlyServiceTracking).set(data).where(eq(monthlyServiceTracking.id, id));
+}
+
+export async function findSiteByBuildingId(companyId: number, buildingId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(sites)
+    .where(and(eq(sites.companyId, companyId), eq(sites.buildingId, buildingId)))
+    .limit(1);
+  return result[0];
+}
+
+export async function findSiteByNameFuzzy(companyId: number, name: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(sites)
+    .where(and(eq(sites.companyId, companyId), like(sites.name, `%${name}%`)))
+    .limit(1);
+  return result[0];
 }

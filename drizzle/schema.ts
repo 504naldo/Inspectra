@@ -972,3 +972,81 @@ export const quotes = mysqlTable("quotes", {
 export type Quote = typeof quotes.$inferSelect;
 export type InsertQuote = typeof quotes.$inferInsert;
 
+
+// ============================================
+// SERVICE SCHEDULES
+// Long-term recurring service definition per site/service type.
+// ============================================
+
+export const serviceSchedules = mysqlTable("service_schedules", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  buildingId: varchar("buildingId", { length: 50 }),
+  customerOrgId: int("customerOrgId").notNull(),
+  companyId: int("companyId").notNull(),
+  serviceType: varchar("serviceType", { length: 100 }).notNull(),
+  frequency: mysqlEnum("frequency", ["monthly", "quarterly", "semi_annual", "annual", "other"]).notNull().default("annual"),
+  estimatedHours: decimal("estimatedHours", { precision: 5, scale: 2 }),
+  requiredTechCount: int("requiredTechCount").default(1),
+  requiredSystems: json("requiredSystems").$type<string[]>(),
+  active: boolean("active").default(true).notNull(),
+  lastCompletedAt: timestamp("lastCompletedAt"),
+  nextDueAt: timestamp("nextDueAt"),
+  sourceImportId: int("sourceImportId"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  siteIdIdx: index("service_schedules_siteId_idx").on(table.siteId),
+  companyIdIdx: index("service_schedules_companyId_idx").on(table.companyId),
+}));
+
+export type ServiceSchedule = typeof serviceSchedules.$inferSelect;
+export type InsertServiceSchedule = typeof serviceSchedules.$inferInsert;
+
+// ============================================
+// MONTHLY SERVICE TRACKING
+// Admin tracking sheet layer — one row per site/service/month.
+// ============================================
+
+export const monthlyServiceTracking = mysqlTable("monthly_service_tracking", {
+  id: int("id").autoincrement().primaryKey(),
+  serviceScheduleId: int("serviceScheduleId"),
+  siteId: int("siteId").notNull(),
+  buildingId: varchar("buildingId", { length: 50 }),
+  customerOrgId: int("customerOrgId").notNull(),
+  companyId: int("companyId").notNull(),
+  // YYYY-MM — the month this row belongs to
+  trackingMonth: varchar("trackingMonth", { length: 7 }).notNull(),
+  serviceType: varchar("serviceType", { length: 100 }).notNull(),
+  targetDate: date("targetDate"),
+  scheduledDate: date("scheduledDate"),
+  // Array of user IDs assigned
+  assignedTechnicianIds: json("assignedTechnicianIds").$type<number[]>(),
+  plannedHours: decimal("plannedHours", { precision: 5, scale: 2 }),
+  status: mysqlEnum("status", [
+    "not_scheduled",
+    "scheduled",
+    "in_progress",
+    "completed",
+    "report_pending",
+    "rescheduled",
+    "overdue",
+  ]).default("not_scheduled").notNull(),
+  linkedJobId: int("linkedJobId"),
+  linkedCalendarEventId: varchar("linkedCalendarEventId", { length: 255 }),
+  reportStatus: mysqlEnum("reportStatus", ["none", "pending", "generated", "sent"]).default("none").notNull(),
+  deficiencyCount: int("deficiencyCount").default(0),
+  rescheduleReason: text("rescheduleReason"),
+  notes: text("notes"),
+  sourceImportId: int("sourceImportId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  siteIdIdx: index("monthly_tracking_siteId_idx").on(table.siteId),
+  companyIdIdx: index("monthly_tracking_companyId_idx").on(table.companyId),
+  monthIdx: index("monthly_tracking_month_idx").on(table.trackingMonth),
+}));
+
+export type MonthlyServiceTracking = typeof monthlyServiceTracking.$inferSelect;
+export type InsertMonthlyServiceTracking = typeof monthlyServiceTracking.$inferInsert;
