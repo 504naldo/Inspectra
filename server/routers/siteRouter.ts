@@ -34,6 +34,7 @@ const siteRouter = router({
     companyId: z.number(),
     customerOrgId: z.number(),
     name: z.string().min(1),
+    buildingId: z.string().max(50).optional(),
     address: z.string().optional(),
     city: z.string().optional(),
     state: z.string().optional(),
@@ -42,6 +43,8 @@ const siteRouter = router({
     contactPhone: z.string().optional(),
     contactEmail: z.string().optional(),
     notes: z.string().optional(),
+    keyLocation: z.string().optional(),
+    keyNumber: z.string().optional(),
   })).mutation(async ({ input }) => {
     // Build summary object from form data - always initialize with complete structure
     const summary = {
@@ -78,6 +81,7 @@ const siteRouter = router({
   update: officeProcedure.input(z.object({
     id: z.number(),
     name: z.string().optional(),
+    buildingId: z.string().max(50).optional(),
     address: z.string().optional(),
     city: z.string().optional(),
     state: z.string().optional(),

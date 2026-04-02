@@ -60,6 +60,7 @@ export default function AdminSites() {
   const [editSite, setEditSite] = useState<any>(null);
   const [newSite, setNewSite] = useState({
     name: "",
+    buildingId: "",
     customerOrgId: "",
     address: "",
     city: "",
@@ -74,6 +75,11 @@ export default function AdminSites() {
 
   const { data: sites, isLoading, refetch } = trpc.site.listByCompany.useQuery({ companyId });
   const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
+  // Pre-fetch the customer records Drive root so the import picker opens there directly
+  const { data: driveRoot } = trpc.customerRecords.getRootFolderId.useQuery(undefined, {
+    staleTime: Infinity,
+    retry: false,
+  });
 
   const createSite = trpc.site.create.useMutation({
     onSuccess: () => {
@@ -81,6 +87,7 @@ export default function AdminSites() {
       setIsCreateOpen(false);
       setNewSite({
         name: "",
+        buildingId: "",
         customerOrgId: "",
         address: "",
         city: "",
@@ -161,6 +168,7 @@ export default function AdminSites() {
       companyId,
       customerOrgId: parseInt(newSite.customerOrgId),
       name: newSite.name,
+      buildingId: newSite.buildingId || undefined,
       address: newSite.address || undefined,
       city: newSite.city || undefined,
       state: newSite.state || undefined,
@@ -220,9 +228,18 @@ export default function AdminSites() {
                 </div>
                 
                 <div className="space-y-2">
+                  <Label>Building ID <span className="text-muted-foreground text-xs">(file / account number)</span></Label>
+                  <Input
+                    value={newSite.buildingId}
+                    onChange={(e) => setNewSite({ ...newSite, buildingId: e.target.value })}
+                    placeholder="e.g. EWF-1234"
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label>Customer *</Label>
-                  <Select 
-                    value={newSite.customerOrgId} 
+                  <Select
+                    value={newSite.customerOrgId}
                     onValueChange={(v) => setNewSite({ ...newSite, customerOrgId: v })}
                   >
                     <SelectTrigger>
@@ -361,7 +378,12 @@ export default function AdminSites() {
                       <Building2 className="h-5 w-5 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold truncate">{site.name}</h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold truncate">{site.name}</h3>
+                        {site.buildingId && (
+                          <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">{site.buildingId}</span>
+                        )}
+                      </div>
                       {site.address && (
                         <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                           <MapPin className="h-3 w-3" />
@@ -438,6 +460,14 @@ export default function AdminSites() {
           {editSite && (
             <div className="space-y-4 py-2">
               <div className="space-y-2">
+                <Label>Building ID <span className="text-muted-foreground text-xs">(file / account number)</span></Label>
+                <Input
+                  value={editSite.buildingId ?? ""}
+                  onChange={(e) => setEditSite({ ...editSite, buildingId: e.target.value })}
+                  placeholder="e.g. EWF-1234"
+                />
+              </div>
+              <div className="space-y-2">
                 <Label>Key Location</Label>
                 <Input
                   value={editSite.keyLocation ?? ""}
@@ -465,6 +495,7 @@ export default function AdminSites() {
                 className="w-full"
                 onClick={() => updateSite.mutate({
                   id: editSite.id,
+                  buildingId: editSite.buildingId || undefined,
                   keyLocation: editSite.keyLocation || undefined,
                   keyNumber: editSite.keyNumber || undefined,
                   keySignedOutBy: editSite.keySignedOutBy || undefined,
@@ -483,10 +514,16 @@ export default function AdminSites() {
         open={showDriveImport}
         onOpenChange={setShowDriveImport}
         companyId={companyId}
+        initialFolderId={driveRoot?.folderId ?? undefined}
         onImportComplete={(result) => {
-          toast.success(`Site "${result.siteName}" created from Drive`);
           refetch();
-          navigate(`/admin/sites/${result.siteId}/import`);
+          if (result.isPdfImport) {
+            // PDF import: site + devices already created by AI, go straight to site files
+            navigate(`/admin/sites/${result.siteId}/files`);
+          } else {
+            // Spreadsheet import: continue to asset import wizard
+            navigate(`/admin/sites/${result.siteId}/import`);
+          }
         }}
       />
 

@@ -23,6 +23,7 @@ export interface ExtractedSiteData {
     customerOrgName: string | null;
     monitoringCompany: string | null;
     monitoringAccount: string | null;
+    buildingId: string | null;
     buildingYear: string | null;
     buildingClass: string | null;
     stories: string | null;
@@ -85,6 +86,7 @@ export async function extractSiteDataFromPdf(pdfText: string): Promise<Extracted
     "customerOrgName": "string or null - the client/customer organization name",
     "monitoringCompany": "string or null - alarm monitoring company name",
     "monitoringAccount": "string or null - monitoring account number",
+    "buildingId": "string or null - EWF building/account ID or file number if present (e.g. 'EWF-1234', 'A-0042')",
     "buildingYear": "string or null",
     "buildingClass": "string or null",
     "stories": "string or null - number of stories/floors",
@@ -243,6 +245,7 @@ export async function importPdfData(opts: PdfImportOpts): Promise<PdfImportResul
         companyId,
         customerOrgId: customerOrgId!,
         name: siteName,
+        buildingId: extracted.site.buildingId || undefined,
         address: extracted.site.address || undefined,
         city: extracted.site.city || undefined,
         state: extracted.site.state || undefined,

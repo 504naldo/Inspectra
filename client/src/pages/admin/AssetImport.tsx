@@ -117,6 +117,15 @@ export default function AssetImport() {
   // Queries
   const { data: site } = trpc.site.get.useQuery({ id: siteId }, { enabled: siteId > 0 });
   const { data: importHistory } = trpc.import.listBySite.useQuery({ siteId }, { enabled: siteId > 0 });
+
+  // File number — defaults from the site's buildingId once loaded
+  const [fileNumber, setFileNumber] = useState("");
+  // Keep in sync with site.buildingId when it first loads (only if user hasn't overridden it)
+  const [fileNumberInitialised, setFileNumberInitialised] = useState(false);
+  if (site?.buildingId && !fileNumberInitialised) {
+    setFileNumber(site.buildingId);
+    setFileNumberInitialised(true);
+  }
   
   // Mutations
   const [parseError, setParseError] = useState<{
@@ -281,6 +290,16 @@ export default function AssetImport() {
           <div className="flex-1">
             <h1 className="text-2xl font-bold">Import Assets</h1>
             <p className="text-muted-foreground">{site?.name || 'Loading...'}</p>
+          </div>
+          {/* File number — pre-filled from site's Building ID */}
+          <div className="flex items-center gap-2 shrink-0">
+            <Label className="text-sm text-muted-foreground whitespace-nowrap">File No.</Label>
+            <Input
+              value={fileNumber}
+              onChange={(e) => setFileNumber(e.target.value)}
+              placeholder="—"
+              className="w-32 h-8 text-sm font-mono"
+            />
           </div>
         </div>
         

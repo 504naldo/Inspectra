@@ -151,6 +151,7 @@ export const sites = mysqlTable("sites", {
   notes: text("notes"),
   summary: json("summary").$type<SiteSummary>(),
   // Key tracking (mirrors AppSheet portal KeyLocation / KeyNumber / KeySignOutDate)
+  buildingId: varchar("buildingId", { length: 50 }),
   keyLocation: text("keyLocation"),
   keyNumber: varchar("keyNumber", { length: 50 }),
   keySignOutDate: timestamp("keySignOutDate"),
