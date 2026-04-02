@@ -455,6 +455,8 @@ function ImportDialog({
   const [month, setMonth] = useState(defaultMonth);
   const [file, setFile] = useState<File | null>(null);
   const [fileData, setFileData] = useState<string>("");
+  const [headerRowIndex, setHeaderRowIndex] = useState(0);
+  const [rawPreviewRows, setRawPreviewRows] = useState<string[][]>([]);
   const [parsedHeaders, setParsedHeaders] = useState<string[]>([]);
   const [colBuildingId,  setColBuildingId]  = useState(-1);
   const [colSiteName,    setColSiteName]    = useState(-1);
@@ -467,8 +469,9 @@ function ImportDialog({
   const [updateExisting, setUpdateExisting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const parseHeaders = trpc.serviceSchedule.parseHeaders.useMutation({
+  const parseHeadersMutation = trpc.serviceSchedule.parseHeaders.useMutation({
     onSuccess: (data) => {
+      setRawPreviewRows(data.rawPreviewRows as string[][]);
       setParsedHeaders(data.headers);
       setColBuildingId(data.detected.buildingId);
       setColSiteName(data.detected.siteName);
@@ -491,15 +494,21 @@ function ImportDialog({
     reader.onload = (e) => {
       const fd = (e.target?.result as string).split(",")[1] ?? "";
       setFileData(fd);
-      parseHeaders.mutate({ companyId, fileName: f.name, fileData: fd });
+      parseHeadersMutation.mutate({ companyId, fileName: f.name, fileData: fd, headerRowIndex: 0 });
     };
     reader.readAsDataURL(f);
+  }
+
+  function reDetect(newIdx: number) {
+    if (!fileData || !file) return;
+    setHeaderRowIndex(newIdx);
+    parseHeadersMutation.mutate({ companyId, fileName: file.name, fileData, headerRowIndex: newIdx });
   }
 
   function runPreview() {
     if (!file || !fileData) return;
     importPreview.mutate({
-      companyId, trackingMonth: month, fileName: file.name, fileData,
+      companyId, trackingMonth: month, fileName: file.name, fileData, headerRowIndex,
       colOverrides: { buildingId: colBuildingId, siteName: colSiteName, serviceType: colServiceType, targetDate: colTargetDate, notes: colNotes },
     });
   }
@@ -508,7 +517,7 @@ function ImportDialog({
     if (!file || !fileData) return;
     importExecute.mutate({
       companyId, trackingMonth: month, fileName: file.name, fileData,
-      skipUnmatched, updateExisting,
+      skipUnmatched, updateExisting, headerRowIndex,
       colOverrides: { buildingId: colBuildingId, siteName: colSiteName, serviceType: colServiceType, targetDate: colTargetDate, notes: colNotes },
     });
   }
@@ -540,7 +549,7 @@ function ImportDialog({
             >
               <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
               <p className="text-sm font-medium">
-                {parseHeaders.isPending ? "Reading file…" : file ? file.name : "Drop your XLSX here or click to browse"}
+                {parseHeadersMutation.isPending ? "Reading file…" : file ? file.name : "Drop your XLSX here or click to browse"}
               </p>
               <p className="text-xs text-gray-400 mt-1">Supports .xlsx, .xls, .csv</p>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
@@ -554,13 +563,39 @@ function ImportDialog({
 
         {step === "map" && (
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Map your spreadsheet columns. Auto-detected values are pre-filled — adjust if anything looks wrong.
-            </p>
-            <div className="rounded border p-3 space-y-2 bg-gray-50">
-              <p className="text-xs font-semibold text-gray-500 mb-1">Your file has {parsedHeaders.length} columns:</p>
-              <p className="text-xs font-mono text-gray-600 break-all">{parsedHeaders.join(" · ")}</p>
+            {/* Raw rows preview — lets user identify which row has real headers */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-1">First rows of your file — click the row that contains column headers:</p>
+              <div className="rounded border overflow-x-auto">
+                <table className="text-[11px] w-full">
+                  <tbody>
+                    {rawPreviewRows.map((rawRow, ri) => (
+                      <tr
+                        key={ri}
+                        onClick={() => reDetect(ri)}
+                        className={`cursor-pointer border-b transition-colors ${headerRowIndex === ri ? "bg-blue-50 border-blue-300" : "hover:bg-gray-50"}`}
+                      >
+                        <td className={`px-2 py-1 font-semibold w-10 shrink-0 ${headerRowIndex === ri ? "text-blue-600" : "text-gray-400"}`}>
+                          {headerRowIndex === ri ? "▶ " : ""}{ri + 1}
+                        </td>
+                        {rawRow.slice(0, 10).map((cell, ci) => (
+                          <td key={ci} className="px-2 py-1 truncate max-w-[100px] border-l text-gray-700">
+                            {cell || <span className="text-gray-300">—</span>}
+                          </td>
+                        ))}
+                        {rawRow.length > 10 && <td className="px-2 py-1 text-gray-400">+{rawRow.length - 10} more</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {headerRowIndex > 0 && (
+                <p className="text-xs text-blue-600 mt-1">Using row {headerRowIndex + 1} as headers — data starts from row {headerRowIndex + 2}.</p>
+              )}
             </div>
+
+            <p className="text-sm text-gray-600">Map the columns detected from the selected header row:</p>
+
             <div className="space-y-2">
               <ColSelect label="Building ID *" headers={parsedHeaders} value={colBuildingId} onChange={setColBuildingId} />
               <ColSelect label="Site Name *"   headers={parsedHeaders} value={colSiteName}   onChange={setColSiteName} />

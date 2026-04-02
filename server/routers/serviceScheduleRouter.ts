@@ -269,9 +269,10 @@ export const serviceScheduleRouter = router({
    */
   parseHeaders: officeProcedure
     .input(z.object({
-      companyId: z.number().int().positive(),
-      fileName:  z.string(),
-      fileData:  z.string(), // base64
+      companyId:       z.number().int().positive(),
+      fileName:        z.string(),
+      fileData:        z.string(), // base64
+      headerRowIndex:  z.number().int().min(0).max(20).default(0),
     }))
     .mutation(async ({ input, ctx }) => {
       if (ctx.user.companyId !== input.companyId) throw new TRPCError({ code: "FORBIDDEN" });
@@ -280,14 +281,22 @@ export const serviceScheduleRouter = router({
       const wb = XLSX.read(new Uint8Array(buffer), { type: "array" });
       const rows: any[][] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
       if (!rows.length) throw new TRPCError({ code: "BAD_REQUEST", message: "File appears empty." });
-      const headers = rows[0].map((h: any) => String(h ?? "").trim());
+
+      // Return up to 5 raw rows so the UI can let the user pick which one is the header
+      const rawPreviewRows = rows.slice(0, 5).map((r) =>
+        r.map((c: any) => String(c ?? "").trim())
+      );
+
+      const hi = Math.min(input.headerRowIndex, rows.length - 1);
+      const headers = rows[hi].map((h: any) => String(h ?? "").trim());
       return {
         headers,
-        rowCount: rows.length - 1,
+        rawPreviewRows,
+        rowCount: rows.length - hi - 1,
         detected: {
-          buildingId:  findCol(headers, "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id"),
+          buildingId:  findCol(headers, "file#", "file #", "file#", "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id"),
           siteName:    findCol(headers, "sitename", "site name", "building name", "location", "address", "property", "site", "building", "name"),
-          serviceType: findCol(headers, "servicetype", "service type", "service", "type", "inspection"),
+          serviceType: findCol(headers, "servicetype", "service type", "service type", "service", "type", "inspection"),
           targetDate:  findCol(headers, "targetdate", "target date", "due date", "scheduled", "date"),
           notes:       findCol(headers, "notes", "comments", "remarks"),
         },
@@ -302,11 +311,12 @@ export const serviceScheduleRouter = router({
   importPreview: officeProcedure
     .input(
       z.object({
-        companyId:    z.number().int().positive(),
-        trackingMonth: z.string().regex(/^\d{4}-\d{2}$/),
-        fileName:     z.string(),
-        fileData:     z.string(), // base64
-        colOverrides: colOverridesSchema,
+        companyId:      z.number().int().positive(),
+        trackingMonth:  z.string().regex(/^\d{4}-\d{2}$/),
+        fileName:       z.string(),
+        fileData:       z.string(), // base64
+        colOverrides:   colOverridesSchema,
+        headerRowIndex: z.number().int().min(0).max(20).default(0),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -321,14 +331,15 @@ export const serviceScheduleRouter = router({
       const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
       if (rows.length < 2) throw new TRPCError({ code: "BAD_REQUEST", message: "Spreadsheet appears empty." });
 
-      const headers = rows[0].map((h: any) => String(h ?? "").trim());
+      const hi = Math.min(input.headerRowIndex, rows.length - 1);
+      const headers = rows[hi].map((h: any) => String(h ?? "").trim());
 
       // Column detection — use caller overrides if provided, otherwise auto-detect
       const ov = input.colOverrides ?? {};
-      const colBuildingId = ov.buildingId  ?? findCol(headers, "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id");
+      const colBuildingId = ov.buildingId  ?? findCol(headers, "file#", "file #", "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id");
       const colSiteName   = ov.siteName    ?? findCol(headers, "sitename", "site name", "building name", "location", "address", "property", "site", "building", "name");
       const colCustomer   =                   findCol(headers, "customer", "client", "org", "company");
-      const colServiceType= ov.serviceType ?? findCol(headers, "servicetype", "service type", "service", "type", "inspection");
+      const colServiceType= ov.serviceType ?? findCol(headers, "service type", "servicetype", "service", "type", "inspection");
       const colFrequency  =                   findCol(headers, "frequency", "freq");
       const colTargetDate = ov.targetDate  ?? findCol(headers, "targetdate", "target date", "due date", "scheduled", "date");
       const colNotes      = ov.notes       ?? findCol(headers, "notes", "comments", "remarks");
@@ -340,7 +351,7 @@ export const serviceScheduleRouter = router({
       );
       const siteByName = new Map(allSites.map((s) => [s.name.toLowerCase(), s]));
 
-      const previewRows = rows.slice(1).map((row, i) => {
+      const previewRows = rows.slice(hi + 1).map((row, i) => {
         const rawBuildingId = colBuildingId >= 0 ? String(row[colBuildingId] ?? "").trim() : "";
         const rawSiteName   = colSiteName >= 0   ? String(row[colSiteName] ?? "").trim()   : "";
         const serviceType   = colServiceType >= 0 ? String(row[colServiceType] ?? "").trim() : "Annual Inspection";
@@ -411,13 +422,14 @@ export const serviceScheduleRouter = router({
   importExecute: officeProcedure
     .input(
       z.object({
-        companyId:     z.number().int().positive(),
-        trackingMonth: z.string().regex(/^\d{4}-\d{2}$/),
-        fileName:      z.string(),
-        fileData:      z.string(), // base64
-        skipUnmatched: z.boolean().default(true),
+        companyId:      z.number().int().positive(),
+        trackingMonth:  z.string().regex(/^\d{4}-\d{2}$/),
+        fileName:       z.string(),
+        fileData:       z.string(), // base64
+        skipUnmatched:  z.boolean().default(true),
         updateExisting: z.boolean().default(false),
-        colOverrides:  colOverridesSchema,
+        colOverrides:   colOverridesSchema,
+        headerRowIndex: z.number().int().min(0).max(20).default(0),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -430,11 +442,12 @@ export const serviceScheduleRouter = router({
       const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
       if (rows.length < 2) throw new TRPCError({ code: "BAD_REQUEST", message: "Spreadsheet appears empty." });
 
-      const headers = rows[0].map((h: any) => String(h ?? "").trim());
+      const hi = Math.min(input.headerRowIndex, rows.length - 1);
+      const headers = rows[hi].map((h: any) => String(h ?? "").trim());
       const ov = input.colOverrides ?? {};
-      const colBuildingId = ov.buildingId  ?? findCol(headers, "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id");
+      const colBuildingId = ov.buildingId  ?? findCol(headers, "file#", "file #", "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id");
       const colSiteName   = ov.siteName    ?? findCol(headers, "sitename", "site name", "building name", "location", "address", "property", "site", "building", "name");
-      const colServiceType= ov.serviceType ?? findCol(headers, "servicetype", "service type", "service", "type", "inspection");
+      const colServiceType= ov.serviceType ?? findCol(headers, "service type", "servicetype", "service", "type", "inspection");
       const colFrequency  =                   findCol(headers, "frequency", "freq");
       const colTargetDate = ov.targetDate  ?? findCol(headers, "targetdate", "target date", "due date", "scheduled", "date");
       const colNotes      = ov.notes       ?? findCol(headers, "notes", "comments", "remarks");
@@ -451,7 +464,7 @@ export const serviceScheduleRouter = router({
       let created = 0, skipped = 0, updated = 0, errors = 0;
       const rowResults: Array<{ row: number; status: string; message?: string }> = [];
 
-      for (let i = 1; i < rows.length; i++) {
+      for (let i = hi + 1; i < rows.length; i++) {
         const row = rows[i];
         const rawBuildingId = colBuildingId >= 0 ? String(row[colBuildingId] ?? "").trim() : "";
         const rawSiteName   = colSiteName >= 0   ? String(row[colSiteName] ?? "").trim()   : "";
