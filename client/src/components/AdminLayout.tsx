@@ -30,21 +30,21 @@ interface AdminLayoutProps {
   title?: string;
 }
 
-// Primary nav — always visible in the desktop header
+// Primary nav — always visible in the desktop header (kept short so they fit at lg/1024px)
 const primaryNavItems = [
-  { label: "Dashboard",         href: "/admin",                  icon: TrendingUp  },
-  { label: "Jobs",              href: "/admin/jobs",             icon: ClipboardList },
-  { label: "Customers",         href: "/admin/customers",        icon: Building2   },
-  { label: "Sites",             href: "/admin/sites",            icon: Building2   },
-  { label: "Schedule",          href: "/admin/schedule",         icon: CalendarDays },
-  { label: "Reports",           href: "/admin/reports",          icon: FileText    },
-  { label: "Customer Records",  href: "/admin/customer-records", icon: FolderOpen  },
+  { label: "Dashboard",  href: "/admin",           icon: TrendingUp   },
+  { label: "Jobs",       href: "/admin/jobs",       icon: ClipboardList },
+  { label: "Customers",  href: "/admin/customers",  icon: Building2    },
+  { label: "Sites",      href: "/admin/sites",      icon: Building2    },
+  { label: "Schedule",   href: "/admin/schedule",   icon: CalendarDays },
+  { label: "Reports",    href: "/admin/reports",    icon: FileText     },
 ];
 
 // Secondary nav — collapsed into "More" on desktop, visible in mobile drawer
 const secondaryNavItems = [
-  { label: "Devices", href: "/admin/devices", icon: AlertTriangle, adminOnly: false },
-  { label: "Users",   href: "/admin/users",   icon: Users,         adminOnly: true  },
+  { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen,   adminOnly: false },
+  { label: "Devices",          href: "/admin/devices",          icon: AlertTriangle, adminOnly: false },
+  { label: "Users",            href: "/admin/users",            icon: Users,         adminOnly: true  },
 ];
 
 export default function AdminLayout({ children, title }: AdminLayoutProps) {
@@ -77,8 +77,8 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             </div>
           </Link>
 
-          {/* Desktop nav — grows to fill available space, items never wrap */}
-          <nav className="hidden lg:flex items-center gap-0.5 flex-1 min-w-0">
+          {/* Desktop nav — fills available space; overflow-hidden hard-stops spill */}
+          <nav className="hidden lg:flex items-center gap-0.5 flex-1 min-w-0 overflow-hidden">
             {primaryNavItems.map((item) => (
               <Link key={item.href} href={item.href}>
                 <Button
