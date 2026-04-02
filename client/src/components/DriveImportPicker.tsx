@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Folder,
+  File,
   FileSpreadsheet,
   ArrowLeft,
   ChevronRight,
@@ -121,9 +122,9 @@ export function DriveImportPicker({
   });
 
   // List current folder contents — enabled whenever we have a folder ID to browse.
-  // When initialFolderId is set, we're always inside a folder (never at Drive root).
+  // allFiles: true so users can see every file in the folder, not just spreadsheets.
   const listQuery = trpc.drive.listFolder.useQuery(
-    { folderId: currentFolderId, sharedWithMe: isSharedWithMe },
+    { folderId: currentFolderId, sharedWithMe: isSharedWithMe, allFiles: true },
     { enabled: open && (!!currentFolderId || isSharedWithMe), retry: false }
   );
 
@@ -216,6 +217,8 @@ export function DriveImportPicker({
   const items = listQuery.data?.items ?? [];
   const folders = items.filter((i) => i.isFolder);
   const spreadsheets = items.filter((i) => !i.isFolder && i.isSpreadsheet);
+  // Other files are visible so users can see folder contents, but not selectable for import
+  const otherFiles = items.filter((i) => !i.isFolder && !i.isSpreadsheet);
   const sharedDrives = sharedDrivesQuery.data?.drives ?? [];
 
   return (
@@ -283,7 +286,9 @@ export function DriveImportPicker({
               ? "Select a location"
               : spreadsheets.length > 0
               ? `${spreadsheets.length} spreadsheet${spreadsheets.length !== 1 ? "s" : ""} found`
-              : "Select a spreadsheet to import"}
+              : items.length > 0
+              ? "No importable spreadsheets in this folder"
+              : "Empty folder"}
           </span>
         </div>
 
@@ -393,7 +398,7 @@ export function DriveImportPicker({
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
               <Folder className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                {isSharedWithMe ? "No spreadsheets or folders shared with you." : "This folder is empty or contains no spreadsheet files."}
+                {isSharedWithMe ? "No files or folders shared with you." : "This folder is empty."}
               </p>
             </div>
           )}
@@ -457,6 +462,33 @@ export function DriveImportPicker({
               </button>
             );
           })}
+
+          {/* Non-importable files — visible but not selectable */}
+          {(!!currentFolderId || isSharedWithMe) && otherFiles.length > 0 && (
+            <>
+              {(folders.length > 0 || spreadsheets.length > 0) && (
+                <div className="border-t my-1" />
+              )}
+              {otherFiles.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg opacity-50 cursor-not-allowed"
+                  title="This file type cannot be imported as a site. Use spreadsheet (.xlsx / Google Sheets) files."
+                >
+                  <File className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm text-muted-foreground">{item.name}</p>
+                    {item.modifiedTime && (
+                      <p className="text-xs text-muted-foreground">{formatDate(item.modifiedTime)}</p>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground border rounded px-1.5 py-0.5 shrink-0">
+                    Not importable
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
         </div>
 
         {/* Selected file confirmation + footer */}
