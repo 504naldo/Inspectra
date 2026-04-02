@@ -43,6 +43,15 @@ const trackingStatusEnum = z.enum([
 
 const reportStatusEnum = z.enum(["none", "pending", "generated", "sent"]);
 
+/** Optional column-index overrides — -1 means "not present" */
+const colOverridesSchema = z.object({
+  buildingId:  z.number().int().min(-1).optional(),
+  siteName:    z.number().int().min(-1).optional(),
+  serviceType: z.number().int().min(-1).optional(),
+  targetDate:  z.number().int().min(-1).optional(),
+  notes:       z.number().int().min(-1).optional(),
+}).optional();
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const serviceScheduleRouter = router({
@@ -255,6 +264,37 @@ export const serviceScheduleRouter = router({
   // ── Import ─────────────────────────────────────────────────────────────────
 
   /**
+   * Parse file headers + auto-detect column indices.
+   * Called immediately after file selection, before the mapping step.
+   */
+  parseHeaders: officeProcedure
+    .input(z.object({
+      companyId: z.number().int().positive(),
+      fileName:  z.string(),
+      fileData:  z.string(), // base64
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (ctx.user.companyId !== input.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const buffer = Buffer.from(input.fileData, "base64");
+      const XLSX = await import("xlsx");
+      const wb = XLSX.read(new Uint8Array(buffer), { type: "array" });
+      const rows: any[][] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
+      if (!rows.length) throw new TRPCError({ code: "BAD_REQUEST", message: "File appears empty." });
+      const headers = rows[0].map((h: any) => String(h ?? "").trim());
+      return {
+        headers,
+        rowCount: rows.length - 1,
+        detected: {
+          buildingId:  findCol(headers, "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id"),
+          siteName:    findCol(headers, "sitename", "site name", "building name", "location", "address", "property", "site", "building", "name"),
+          serviceType: findCol(headers, "servicetype", "service type", "service", "type", "inspection"),
+          targetDate:  findCol(headers, "targetdate", "target date", "due date", "scheduled", "date"),
+          notes:       findCol(headers, "notes", "comments", "remarks"),
+        },
+      };
+    }),
+
+  /**
    * Parse a Monthly Service List spreadsheet and return a preview.
    * Matches rows to sites by buildingId (primary) or site name (fallback).
    * Returns preview rows with match status — no DB writes yet.
@@ -262,10 +302,11 @@ export const serviceScheduleRouter = router({
   importPreview: officeProcedure
     .input(
       z.object({
-        companyId: z.number().int().positive(),
+        companyId:    z.number().int().positive(),
         trackingMonth: z.string().regex(/^\d{4}-\d{2}$/),
-        fileName: z.string(),
-        fileData: z.string(), // base64
+        fileName:     z.string(),
+        fileData:     z.string(), // base64
+        colOverrides: colOverridesSchema,
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -282,14 +323,15 @@ export const serviceScheduleRouter = router({
 
       const headers = rows[0].map((h: any) => String(h ?? "").trim());
 
-      // Column detection
-      const colBuildingId = findCol(headers, "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number");
-      const colSiteName   = findCol(headers, "sitename", "site name", "building name", "location", "address");
-      const colCustomer   = findCol(headers, "customer", "client", "org", "company");
-      const colServiceType= findCol(headers, "servicetype", "service type", "service", "type", "inspection");
-      const colFrequency  = findCol(headers, "frequency", "freq");
-      const colTargetDate = findCol(headers, "targetdate", "target date", "due date", "scheduled", "date");
-      const colNotes      = findCol(headers, "notes", "comments", "remarks");
+      // Column detection — use caller overrides if provided, otherwise auto-detect
+      const ov = input.colOverrides ?? {};
+      const colBuildingId = ov.buildingId  ?? findCol(headers, "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id");
+      const colSiteName   = ov.siteName    ?? findCol(headers, "sitename", "site name", "building name", "location", "address", "property", "site", "building", "name");
+      const colCustomer   =                   findCol(headers, "customer", "client", "org", "company");
+      const colServiceType= ov.serviceType ?? findCol(headers, "servicetype", "service type", "service", "type", "inspection");
+      const colFrequency  =                   findCol(headers, "frequency", "freq");
+      const colTargetDate = ov.targetDate  ?? findCol(headers, "targetdate", "target date", "due date", "scheduled", "date");
+      const colNotes      = ov.notes       ?? findCol(headers, "notes", "comments", "remarks");
 
       // Fetch all sites for this company once
       const allSites = await db.getSitesByCompany(input.companyId);
@@ -350,7 +392,15 @@ export const serviceScheduleRouter = router({
       const matched = previewRows.filter((r) => r!.matchStatus === "matched").length;
       const unmatched = previewRows.filter((r) => r!.matchStatus === "unmatched").length;
 
-      return { previewRows, matched, unmatched, totalRows: previewRows.length, trackingMonth: input.trackingMonth };
+      return {
+        previewRows,
+        matched,
+        unmatched,
+        totalRows: previewRows.length,
+        trackingMonth: input.trackingMonth,
+        headers,
+        usedCols: { buildingId: colBuildingId, siteName: colSiteName, serviceType: colServiceType, targetDate: colTargetDate, notes: colNotes },
+      };
     }),
 
   /**
@@ -361,18 +411,18 @@ export const serviceScheduleRouter = router({
   importExecute: officeProcedure
     .input(
       z.object({
-        companyId: z.number().int().positive(),
+        companyId:     z.number().int().positive(),
         trackingMonth: z.string().regex(/^\d{4}-\d{2}$/),
-        fileName: z.string(),
-        fileData: z.string(), // base64
+        fileName:      z.string(),
+        fileData:      z.string(), // base64
         skipUnmatched: z.boolean().default(true),
         updateExisting: z.boolean().default(false),
+        colOverrides:  colOverridesSchema,
       })
     )
     .mutation(async ({ input, ctx }) => {
       if (ctx.user.companyId !== input.companyId) throw new TRPCError({ code: "FORBIDDEN" });
 
-      // Re-run preview internally to get the resolved rows
       const buffer = Buffer.from(input.fileData, "base64");
       const XLSX = await import("xlsx");
       const workbook = XLSX.read(new Uint8Array(buffer), { type: "array", cellDates: true });
@@ -381,12 +431,13 @@ export const serviceScheduleRouter = router({
       if (rows.length < 2) throw new TRPCError({ code: "BAD_REQUEST", message: "Spreadsheet appears empty." });
 
       const headers = rows[0].map((h: any) => String(h ?? "").trim());
-      const colBuildingId = findCol(headers, "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number");
-      const colSiteName   = findCol(headers, "sitename", "site name", "building name", "location", "address");
-      const colServiceType= findCol(headers, "servicetype", "service type", "service", "type", "inspection");
-      const colFrequency  = findCol(headers, "frequency", "freq");
-      const colTargetDate = findCol(headers, "targetdate", "target date", "due date", "scheduled", "date");
-      const colNotes      = findCol(headers, "notes", "comments", "remarks");
+      const ov = input.colOverrides ?? {};
+      const colBuildingId = ov.buildingId  ?? findCol(headers, "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id");
+      const colSiteName   = ov.siteName    ?? findCol(headers, "sitename", "site name", "building name", "location", "address", "property", "site", "building", "name");
+      const colServiceType= ov.serviceType ?? findCol(headers, "servicetype", "service type", "service", "type", "inspection");
+      const colFrequency  =                   findCol(headers, "frequency", "freq");
+      const colTargetDate = ov.targetDate  ?? findCol(headers, "targetdate", "target date", "due date", "scheduled", "date");
+      const colNotes      = ov.notes       ?? findCol(headers, "notes", "comments", "remarks");
 
       const allSites = await db.getSitesByCompany(input.companyId);
       const siteByBuildingId = new Map(

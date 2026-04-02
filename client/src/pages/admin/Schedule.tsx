@@ -407,6 +407,39 @@ type PreviewRow = {
   matchedBuildingId: string | null;
 };
 
+// ── Shared column-selector dropdown ──────────────────────────────────────────
+
+function ColSelect({
+  label,
+  headers,
+  value,
+  onChange,
+}: {
+  label: string;
+  headers: string[];
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-28 text-xs text-gray-600 shrink-0">{label}</span>
+      <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
+        <SelectTrigger className="h-7 text-xs flex-1">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="-1"><span className="text-gray-400">(not in file)</span></SelectItem>
+          {headers.map((h, i) => (
+            <SelectItem key={i} value={String(i)}>
+              <span className="font-mono text-[11px] text-gray-500 mr-1">{i + 1}:</span> {h || <span className="text-gray-400">(empty)</span>}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function ImportDialog({
   companyId,
   defaultMonth,
@@ -418,16 +451,33 @@ function ImportDialog({
   onClose: () => void;
   onImported: () => void;
 }) {
-  const [step, setStep] = useState<"upload" | "preview" | "result">("upload");
+  const [step, setStep] = useState<"upload" | "map" | "preview" | "result">("upload");
   const [month, setMonth] = useState(defaultMonth);
   const [file, setFile] = useState<File | null>(null);
   const [fileData, setFileData] = useState<string>("");
+  const [parsedHeaders, setParsedHeaders] = useState<string[]>([]);
+  const [colBuildingId,  setColBuildingId]  = useState(-1);
+  const [colSiteName,    setColSiteName]    = useState(-1);
+  const [colServiceType, setColServiceType] = useState(-1);
+  const [colTargetDate,  setColTargetDate]  = useState(-1);
+  const [colNotes,       setColNotes]       = useState(-1);
   const [preview, setPreview] = useState<any | null>(null);
   const [result, setResult] = useState<any | null>(null);
   const [skipUnmatched, setSkipUnmatched] = useState(true);
   const [updateExisting, setUpdateExisting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const parseHeaders = trpc.serviceSchedule.parseHeaders.useMutation({
+    onSuccess: (data) => {
+      setParsedHeaders(data.headers);
+      setColBuildingId(data.detected.buildingId);
+      setColSiteName(data.detected.siteName);
+      setColServiceType(data.detected.serviceType);
+      setColTargetDate(data.detected.targetDate);
+      setColNotes(data.detected.notes);
+      setStep("map");
+    },
+  });
   const importPreview = trpc.serviceSchedule.importPreview.useMutation({
     onSuccess: (data) => { setPreview(data); setStep("preview"); },
   });
@@ -438,24 +488,28 @@ function ImportDialog({
   function handleFile(f: File) {
     setFile(f);
     const reader = new FileReader();
-    reader.onload = (e) => setFileData((e.target?.result as string).split(",")[1] ?? "");
+    reader.onload = (e) => {
+      const fd = (e.target?.result as string).split(",")[1] ?? "";
+      setFileData(fd);
+      parseHeaders.mutate({ companyId, fileName: f.name, fileData: fd });
+    };
     reader.readAsDataURL(f);
   }
 
   function runPreview() {
     if (!file || !fileData) return;
-    importPreview.mutate({ companyId, trackingMonth: month, fileName: file.name, fileData });
+    importPreview.mutate({
+      companyId, trackingMonth: month, fileName: file.name, fileData,
+      colOverrides: { buildingId: colBuildingId, siteName: colSiteName, serviceType: colServiceType, targetDate: colTargetDate, notes: colNotes },
+    });
   }
 
   function runExecute() {
     if (!file || !fileData) return;
     importExecute.mutate({
-      companyId,
-      trackingMonth: month,
-      fileName: file.name,
-      fileData,
-      skipUnmatched,
-      updateExisting,
+      companyId, trackingMonth: month, fileName: file.name, fileData,
+      skipUnmatched, updateExisting,
+      colOverrides: { buildingId: colBuildingId, siteName: colSiteName, serviceType: colServiceType, targetDate: colTargetDate, notes: colNotes },
     });
   }
 
@@ -485,20 +539,44 @@ function ImportDialog({
               onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
             >
               <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
-              <p className="text-sm font-medium">{file ? file.name : "Drop your XLSX here or click to browse"}</p>
+              <p className="text-sm font-medium">
+                {parseHeaders.isPending ? "Reading file…" : file ? file.name : "Drop your XLSX here or click to browse"}
+              </p>
               <p className="text-xs text-gray-400 mt-1">Supports .xlsx, .xls, .csv</p>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
             </div>
 
-            <div className="bg-blue-50 rounded p-3 text-xs text-blue-700 space-y-1">
-              <p className="font-semibold">Expected columns (order flexible):</p>
-              <p>Building ID / File No., Site Name, Customer, Service Type, Frequency, Target Date, Notes</p>
-            </div>
-
             <div className="flex gap-3 justify-end">
               <Button variant="outline" onClick={onClose}>Cancel</Button>
-              <Button onClick={runPreview} disabled={!file || importPreview.isPending}>
-                {importPreview.isPending ? "Parsing…" : "Preview Import"}
+            </div>
+          </div>
+        )}
+
+        {step === "map" && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Map your spreadsheet columns. Auto-detected values are pre-filled — adjust if anything looks wrong.
+            </p>
+            <div className="rounded border p-3 space-y-2 bg-gray-50">
+              <p className="text-xs font-semibold text-gray-500 mb-1">Your file has {parsedHeaders.length} columns:</p>
+              <p className="text-xs font-mono text-gray-600 break-all">{parsedHeaders.join(" · ")}</p>
+            </div>
+            <div className="space-y-2">
+              <ColSelect label="Building ID *" headers={parsedHeaders} value={colBuildingId} onChange={setColBuildingId} />
+              <ColSelect label="Site Name *"   headers={parsedHeaders} value={colSiteName}   onChange={setColSiteName} />
+              <ColSelect label="Service Type"  headers={parsedHeaders} value={colServiceType} onChange={setColServiceType} />
+              <ColSelect label="Target Date"   headers={parsedHeaders} value={colTargetDate}  onChange={setColTargetDate} />
+              <ColSelect label="Notes"         headers={parsedHeaders} value={colNotes}       onChange={setColNotes} />
+            </div>
+            {colBuildingId === -1 && colSiteName === -1 && (
+              <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">
+                Neither Building ID nor Site Name column is mapped — rows won't match any sites. Please select at least one.
+              </p>
+            )}
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
+              <Button onClick={runPreview} disabled={importPreview.isPending || (colBuildingId === -1 && colSiteName === -1)}>
+                {importPreview.isPending ? "Previewing…" : "Preview Import"}
               </Button>
             </div>
           </div>
@@ -511,6 +589,12 @@ function ImportDialog({
               <span className="text-red-600 font-semibold">{preview.unmatched} unmatched</span>
               <span className="text-gray-500">{preview.totalRows} total rows</span>
             </div>
+
+            {preview.matched === 0 && (
+              <div className="text-xs text-amber-700 bg-amber-50 rounded p-2">
+                No rows matched. <button className="underline" onClick={() => setStep("map")}>Go back and adjust column mapping</button> if the columns look wrong above.
+              </div>
+            )}
 
             <div className="rounded border overflow-auto max-h-64">
               <table className="w-full text-xs">
@@ -557,7 +641,7 @@ function ImportDialog({
             </div>
 
             <div className="flex gap-3 justify-end">
-              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
+              <Button variant="outline" onClick={() => setStep("map")}>Back</Button>
               <Button onClick={runExecute} disabled={importExecute.isPending}>
                 {importExecute.isPending ? "Importing…" : `Import ${preview.matched} Rows`}
               </Button>
