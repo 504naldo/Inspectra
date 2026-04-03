@@ -308,7 +308,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
 
   // ── Group checklist into sections ──
   const sections = new Map<string, { meta: ChecklistRow; items: ChecklistRow[] }>();
-  (jobChecklist as ChecklistRow[] || []).forEach((row: ChecklistRow) => {
+  ((jobChecklist || []) as ChecklistRow[]).forEach((row) => {
     const key = `${row.sectionOrder}:${row.sectionName}`;
     if (!sections.has(key)) sections.set(key, { meta: row, items: [] });
     sections.get(key)!.items.push(row);
@@ -321,7 +321,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
 
   // Progress
   const totalItems = (jobChecklist || []).length;
-  const completedItems = (jobChecklist as ChecklistRow[] || []).filter(
+  const completedItems = (jobChecklist || []).filter(
     (row: ChecklistRow) => (results[row.id]?.result ?? row.result) !== "not_tested"
   ).length;
   const progressPct = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;

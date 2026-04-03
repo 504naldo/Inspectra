@@ -380,6 +380,7 @@ const reportRouter = router({
       });
     }
     
+    // Fetch saved checklist responses
     const savedResponses = await db.getChecklistResponsesByJob(input.jobId);
 
     // Build a map of responses for quick lookup

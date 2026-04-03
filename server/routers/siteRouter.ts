@@ -146,8 +146,8 @@ const siteRouter = router({
     
     await db.updateSite(id, {
       ...data,
-      keySignOutDate: data.keySignOutDate ? new Date(data.keySignOutDate) : undefined,
       summary: updatedSummary,
+      keySignOutDate: data.keySignOutDate ? new Date(data.keySignOutDate) : undefined,
     });
     return { success: true };
   }),
