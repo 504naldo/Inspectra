@@ -1091,3 +1091,36 @@ export const repairLetterTracking = mysqlTable("repair_letter_tracking", {
 
 export type RepairLetterTracking = typeof repairLetterTracking.$inferSelect;
 export type InsertRepairLetterTracking = typeof repairLetterTracking.$inferInsert;
+
+// ============================================
+// AI REVIEWS
+// Pre-publish inspection quality checks.
+// ============================================
+
+export type AiReviewIssue = {
+  device_id: number | null;
+  device_type: string;
+  field: string;
+  issue: string;
+  severity: "warning" | "blocker";
+};
+
+export type AiReviewOverride = {
+  issueIndex: number;
+  dismissedAt: string; // ISO timestamp
+};
+
+export const aiReviews = mysqlTable("ai_reviews", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  issues: json("issues").$type<AiReviewIssue[]>().notNull(),
+  modelUsed: varchar("modelUsed", { length: 64 }).notNull(),
+  reviewedAt: timestamp("reviewedAt").defaultNow().notNull(),
+  overrides: json("overrides").$type<AiReviewOverride[]>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  jobIdIdx: index("ai_reviews_jobId_idx").on(table.jobId),
+}));
+
+export type AiReview = typeof aiReviews.$inferSelect;
+export type InsertAiReview = typeof aiReviews.$inferInsert;

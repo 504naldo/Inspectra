@@ -72,6 +72,8 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /** Override the default model (e.g. "gpt-4o" for higher-quality tasks) */
+  model?: string;
 };
 
 export type ToolCall = {
@@ -249,7 +251,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: DEFAULT_MODEL,
+    model: params.model || DEFAULT_MODEL,
     messages: messages.map(normalizeMessage),
     max_tokens: maxTokens || max_tokens || 4096,
   };

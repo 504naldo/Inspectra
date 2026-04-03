@@ -255,6 +255,182 @@ Format your response as JSON with keys: caption (short, 10 words max), inspectio
   }),
   
   // QA check for admin
+  /**
+   * Pre-publish AI inspection quality review.
+   * Callable by technicians (pre-finalize) and admins (post-submit audit).
+   * Returns structured issues with severity: "warning" | "blocker".
+   * Persists result to ai_reviews table.
+   */
+  prePublishReview: protectedProcedure.input(z.object({
+    jobId: z.number(),
+  })).mutation(async ({ input }) => {
+    const job = await db.getJobById(input.jobId);
+    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+
+    const site = await db.getSiteById(job.siteId);
+    const allDevices = await db.getDevicesBySite(job.siteId);
+    const results = await db.getInspectionResultsByJob(input.jobId);
+    const deficiencies = await db.getDeficienciesByJob(input.jobId);
+
+    // ── Build compact summary ───────────────────────────────────────────────
+
+    // Stats by device category
+    const resultByDevice = new Map(results.map(r => [r.deviceId, r]));
+    const catStats = new Map<string, { total: number; pass: number; fail: number; notTested: number; na: number }>();
+    for (const dev of allDevices) {
+      const cat = dev.category || 'UNKNOWN';
+      if (!catStats.has(cat)) catStats.set(cat, { total: 0, pass: 0, fail: 0, notTested: 0, na: 0 });
+      const s = catStats.get(cat)!;
+      s.total++;
+      const r = resultByDevice.get(dev.id);
+      if (!r || r.result === 'not_tested') s.notTested++;
+      else if (r.result === 'pass') s.pass++;
+      else if (r.result === 'fail') s.fail++;
+      else if (r.result === 'na') s.na++;
+    }
+
+    const PROBLEM_NOTE_RE = /attention|concern|issue|problem|repair|check|inspect|replace|broken|damage|crack|worn|missing|leak|corrod/i;
+
+    // Problematic device details (capped for token budget)
+    const problematic = allDevices
+      .filter(dev => {
+        const r = resultByDevice.get(dev.id);
+        if (!r || r.result === 'not_tested') return true;
+        if (r.result === 'fail') return true;
+        if (r.result === 'pass' && r.notes && PROBLEM_NOTE_RE.test(r.notes)) return true;
+        return false;
+      })
+      .slice(0, 35);
+
+    const summaryLines = Array.from(catStats.entries())
+      .map(([cat, s]) => `  ${cat}: ${s.total} total, ${s.pass} pass, ${s.fail} fail, ${s.notTested} not_tested, ${s.na} na`)
+      .join('\n');
+
+    const deviceLines = problematic.map(dev => {
+      const r = resultByDevice.get(dev.id);
+      const result = r?.result ?? 'not_tested';
+      const notes = r?.notes ? `, notes="${r.notes.slice(0, 120)}"` : '';
+      return `  id=${dev.id} cat=${dev.category} type=${dev.deviceType} loc="${dev.location ?? 'unset'}" result=${result}${notes}`;
+    }).join('\n');
+
+    const defLines = deficiencies.slice(0, 20).map(d =>
+      `  id=${d.id} device=${d.deviceId ?? 'site'} sev=${d.severity} title="${d.title}" desc="${(d.description ?? '').slice(0, 100)}"`
+    ).join('\n');
+
+    const systemPrompt = `You are a fire alarm inspection QA reviewer for CAN/ULC-S536 compliance.
+Analyze the inspection data and return ONLY a JSON array of issues.
+Each issue: {"device_id": number|null, "device_type": string, "field": string, "issue": string, "severity": "warning"|"blocker"}
+Rules:
+- blocker: must be fixed before report is published (missing required data, clear contradiction)
+- warning: should be reviewed but tech may override with justification
+- device_id null = site-level issue
+- Be concise. Max 20 issues. Prioritize by severity.`;
+
+    const userPrompt = `INSPECTION SUMMARY
+Job: ${job.jobNumber} | Type: ${job.jobType} | Site: ${site?.name ?? 'Unknown'}
+Date: ${job.scheduledDate ? new Date(job.scheduledDate).toDateString() : 'unset'}
+Total devices: ${allDevices.length} | Results recorded: ${results.length}
+
+DEVICE STATS BY CATEGORY:
+${summaryLines}
+
+PROBLEMATIC DEVICES (untested, failed, or pass-with-concern-note):
+${deviceLines || '  none'}
+
+DEFICIENCIES (${deficiencies.length} total):
+${defLines || '  none'}
+
+CHECKS TO PERFORM:
+1. Any device with result=not_tested (blocker if required category)
+2. Devices result=fail with no deficiency logged (blocker)
+3. Devices result=fail with no notes (warning)
+4. Devices result=pass but notes suggest a problem (warning)
+5. Deficiencies with severity=critical or major but no description (blocker)
+6. Inconsistent results within same device category (e.g. 1 of 12 smoke alarms untested) (warning)
+7. Site-level: missing scheduledDate, job not in correct status (warning)
+
+Return JSON array only. No prose.`;
+
+    let parsed: { issues: { device_id: number | null; device_type: string; field: string; issue: string; severity: string }[] };
+    const MODEL = "gpt-4o";
+
+    try {
+      const response = await invokeLLM({
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "inspection_review",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                issues: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      device_id: { type: ["number", "null"] },
+                      device_type: { type: "string" },
+                      field: { type: "string" },
+                      issue: { type: "string" },
+                      severity: { type: "string", enum: ["warning", "blocker"] },
+                    },
+                    required: ["device_id", "device_type", "field", "issue", "severity"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["issues"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 1024,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content || typeof content !== 'string') throw new Error('Empty AI response');
+      parsed = JSON.parse(content);
+    } catch (err) {
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `AI review failed: ${String(err)}` });
+    }
+
+    // Persist result
+    const saved = await db.createAiReview({
+      jobId: input.jobId,
+      issues: parsed.issues as any,
+      modelUsed: MODEL,
+    });
+
+    const blockers = parsed.issues.filter(i => i.severity === 'blocker').length;
+    const warnings = parsed.issues.filter(i => i.severity === 'warning').length;
+
+    return {
+      reviewId: saved.id,
+      issues: parsed.issues,
+      blockers,
+      warnings,
+      passedReview: blockers === 0,
+    };
+  }),
+
+  saveReviewOverrides: protectedProcedure.input(z.object({
+    reviewId: z.number(),
+    dismissedIndices: z.array(z.number()),
+  })).mutation(async ({ input }) => {
+    const overrides = input.dismissedIndices.map(idx => ({
+      issueIndex: idx,
+      dismissedAt: new Date().toISOString(),
+    }));
+    await db.updateAiReview(input.reviewId, { overrides });
+    return { ok: true };
+  }),
+
   runQACheck: adminProcedure.input(z.object({
     jobId: z.number(),
   })).mutation(async ({ input }) => {

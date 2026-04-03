@@ -26,6 +26,7 @@ import {
   serviceSchedules, InsertServiceSchedule, ServiceSchedule,
   monthlyServiceTracking, InsertMonthlyServiceTracking, MonthlyServiceTracking,
   repairLetterTracking, InsertRepairLetterTracking, RepairLetterTracking,
+  aiReviews, InsertAiReview, AiReview,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1630,4 +1631,25 @@ export async function findSiteByNameFuzzy(companyId: number, name: string) {
     .where(and(eq(sites.companyId, companyId), like(sites.name, `%${name}%`)))
     .limit(1);
   return result[0];
+}
+
+// ── AI Reviews ────────────────────────────────────────────────────────────────
+
+export async function createAiReview(data: InsertAiReview) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(aiReviews).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getAiReviewsByJob(jobId: number): Promise<AiReview[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiReviews).where(eq(aiReviews.jobId, jobId)).orderBy(desc(aiReviews.createdAt));
+}
+
+export async function updateAiReview(id: number, data: Partial<InsertAiReview>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(aiReviews).set(data).where(eq(aiReviews.id, id));
 }
