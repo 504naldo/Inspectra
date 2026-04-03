@@ -347,7 +347,7 @@ export const serviceScheduleRouter = router({
       // Fetch all sites for this company once
       const allSites = await db.getSitesByCompany(input.companyId);
       const siteByBuildingId = new Map(
-        allSites.filter((s) => s.buildingId).map((s) => [s.buildingId!.toLowerCase(), s])
+        allSites.filter((s) => s.buildingId).map((s) => [norm(s.buildingId!), s])
       );
       const siteByName = new Map(allSites.map((s) => [s.name.toLowerCase(), s]));
 
@@ -366,7 +366,7 @@ export const serviceScheduleRouter = router({
 
         // Match
         let matchedSite = rawBuildingId
-          ? siteByBuildingId.get(rawBuildingId.toLowerCase())
+          ? siteByBuildingId.get(norm(rawBuildingId))
           : undefined;
         let matchMethod = matchedSite ? "buildingId" : "none";
 
@@ -454,7 +454,7 @@ export const serviceScheduleRouter = router({
 
       const allSites = await db.getSitesByCompany(input.companyId);
       const siteByBuildingId = new Map(
-        allSites.filter((s) => s.buildingId).map((s) => [s.buildingId!.toLowerCase(), s])
+        allSites.filter((s) => s.buildingId).map((s) => [norm(s.buildingId!), s])
       );
       const siteByName = new Map(allSites.map((s) => [s.name.toLowerCase(), s]));
 
@@ -475,7 +475,7 @@ export const serviceScheduleRouter = router({
 
         if (!rawBuildingId && !rawSiteName && !serviceType) continue; // blank
 
-        let matchedSite = rawBuildingId ? siteByBuildingId.get(rawBuildingId.toLowerCase()) : undefined;
+        let matchedSite = rawBuildingId ? siteByBuildingId.get(norm(rawBuildingId)) : undefined;
         if (!matchedSite && rawSiteName) {
           matchedSite = siteByName.get(rawSiteName.toLowerCase());
           if (!matchedSite) {
