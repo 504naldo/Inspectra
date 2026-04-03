@@ -380,6 +380,8 @@ const reportRouter = router({
       });
     }
     
+    const savedResponses = await db.getChecklistResponsesByJob(input.jobId);
+
     // Build a map of responses for quick lookup
     const responseMap = new Map<string, { status: 'PASS' | 'DEFICIENT' | 'NA'; comment?: string }>();
     savedResponses.forEach(r => {

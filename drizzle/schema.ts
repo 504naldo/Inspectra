@@ -972,3 +972,155 @@ export const quotes = mysqlTable("quotes", {
 export type Quote = typeof quotes.$inferSelect;
 export type InsertQuote = typeof quotes.$inferInsert;
 
+
+// ============================================
+// SERVICE SCHEDULES
+// Long-term recurring service definition per site/service type.
+// ============================================
+
+export const serviceSchedules = mysqlTable("service_schedules", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  buildingId: varchar("buildingId", { length: 50 }),
+  customerOrgId: int("customerOrgId").notNull(),
+  companyId: int("companyId").notNull(),
+  serviceType: varchar("serviceType", { length: 100 }).notNull(),
+  frequency: mysqlEnum("frequency", ["monthly", "quarterly", "semi_annual", "annual", "other"]).notNull().default("annual"),
+  estimatedHours: decimal("estimatedHours", { precision: 5, scale: 2 }),
+  requiredTechCount: int("requiredTechCount").default(1),
+  requiredSystems: json("requiredSystems").$type<string[]>(),
+  active: boolean("active").default(true).notNull(),
+  lastCompletedAt: timestamp("lastCompletedAt"),
+  nextDueAt: timestamp("nextDueAt"),
+  sourceImportId: int("sourceImportId"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  siteIdIdx: index("service_schedules_siteId_idx").on(table.siteId),
+  companyIdIdx: index("service_schedules_companyId_idx").on(table.companyId),
+}));
+
+export type ServiceSchedule = typeof serviceSchedules.$inferSelect;
+export type InsertServiceSchedule = typeof serviceSchedules.$inferInsert;
+
+// ============================================
+// MONTHLY SERVICE TRACKING
+// Admin tracking sheet layer — one row per site/service/month.
+// ============================================
+
+export const monthlyServiceTracking = mysqlTable("monthly_service_tracking", {
+  id: int("id").autoincrement().primaryKey(),
+  serviceScheduleId: int("serviceScheduleId"),
+  siteId: int("siteId").notNull(),
+  buildingId: varchar("buildingId", { length: 50 }),
+  customerOrgId: int("customerOrgId").notNull(),
+  companyId: int("companyId").notNull(),
+  // YYYY-MM — the month this row belongs to
+  trackingMonth: varchar("trackingMonth", { length: 7 }).notNull(),
+  serviceType: varchar("serviceType", { length: 100 }).notNull(),
+  targetDate: date("targetDate"),
+  scheduledDate: date("scheduledDate"),
+  // Array of user IDs assigned
+  assignedTechnicianIds: json("assignedTechnicianIds").$type<number[]>(),
+  plannedHours: decimal("plannedHours", { precision: 5, scale: 2 }),
+  status: mysqlEnum("status", [
+    "not_scheduled",
+    "scheduled",
+    "in_progress",
+    "completed",
+    "report_pending",
+    "rescheduled",
+    "overdue",
+  ]).default("not_scheduled").notNull(),
+  linkedJobId: int("linkedJobId"),
+  linkedCalendarEventId: varchar("linkedCalendarEventId", { length: 255 }),
+  reportStatus: mysqlEnum("reportStatus", ["none", "pending", "generated", "sent"]).default("none").notNull(),
+  deficiencyCount: int("deficiencyCount").default(0),
+  rescheduleReason: text("rescheduleReason"),
+  notes: text("notes"),
+  sourceImportId: int("sourceImportId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  siteIdIdx: index("monthly_tracking_siteId_idx").on(table.siteId),
+  companyIdIdx: index("monthly_tracking_companyId_idx").on(table.companyId),
+  monthIdx: index("monthly_tracking_month_idx").on(table.trackingMonth),
+}));
+
+export type MonthlyServiceTracking = typeof monthlyServiceTracking.$inferSelect;
+export type InsertMonthlyServiceTracking = typeof monthlyServiceTracking.$inferInsert;
+
+// ============================================
+// REPAIR LETTER TRACKING
+// Admin tracking sheet for repair-letter follow-up per site/period.
+// ============================================
+
+export const repairLetterTracking = mysqlTable("repair_letter_tracking", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  buildingId: varchar("buildingId", { length: 50 }),
+  customerOrgId: int("customerOrgId").notNull(),
+  companyId: int("companyId").notNull(),
+  trackingPeriod: varchar("trackingPeriod", { length: 7 }).notNull(), // YYYY-MM
+  linkedJobId: int("linkedJobId"),
+  linkedReportId: int("linkedReportId"),
+  deficiencyCount: int("deficiencyCount").default(0),
+  linkedDeficiencyIds: json("linkedDeficiencyIds").$type<number[]>(),
+  repairLetterStatus: mysqlEnum("repairLetterStatus", [
+    "not_started",
+    "draft_needed",
+    "drafted",
+    "sent",
+    "follow_up_needed",
+    "completed",
+    "closed",
+  ]).default("not_started").notNull(),
+  letterSentDate: date("letterSentDate"),
+  followUpDate: date("followUpDate"),
+  assignedToUserId: int("assignedToUserId"),
+  notes: text("notes"),
+  sourceImportId: int("sourceImportId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  siteIdIdx: index("repair_letter_siteId_idx").on(table.siteId),
+  companyIdIdx: index("repair_letter_companyId_idx").on(table.companyId),
+  periodIdx: index("repair_letter_period_idx").on(table.trackingPeriod),
+}));
+
+export type RepairLetterTracking = typeof repairLetterTracking.$inferSelect;
+export type InsertRepairLetterTracking = typeof repairLetterTracking.$inferInsert;
+
+// ============================================
+// AI REVIEWS
+// Pre-publish inspection quality checks.
+// ============================================
+
+export type AiReviewIssue = {
+  device_id: number | null;
+  device_type: string;
+  field: string;
+  issue: string;
+  severity: "warning" | "blocker";
+};
+
+export type AiReviewOverride = {
+  issueIndex: number;
+  dismissedAt: string; // ISO timestamp
+};
+
+export const aiReviews = mysqlTable("ai_reviews", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: int("jobId").notNull(),
+  issues: json("issues").$type<AiReviewIssue[]>().notNull(),
+  modelUsed: varchar("modelUsed", { length: 64 }).notNull(),
+  reviewedAt: timestamp("reviewedAt").defaultNow().notNull(),
+  overrides: json("overrides").$type<AiReviewOverride[]>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  jobIdIdx: index("ai_reviews_jobId_idx").on(table.jobId),
+}));
+
+export type AiReview = typeof aiReviews.$inferSelect;
+export type InsertAiReview = typeof aiReviews.$inferInsert;

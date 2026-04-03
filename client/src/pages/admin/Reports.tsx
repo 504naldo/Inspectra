@@ -610,7 +610,7 @@ EWF Fire & Security`
                         {driveSavedJobIds.has(job.id) && (
                           <HardDrive
                             className="h-3.5 w-3.5 text-[var(--success)]"
-                            title="Report saved to Google Drive"
+                            aria-label="Report saved to Google Drive"
                           />
                         )}
                       </div>

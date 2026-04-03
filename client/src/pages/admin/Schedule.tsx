@@ -155,7 +155,7 @@ export default function AdminSchedule() {
                     {job.googleCalendarEventId && (
                       <CalendarCheck
                         className="h-3.5 w-3.5 shrink-0 text-[var(--success)]"
-                        title="Synced to Google Calendar"
+                        aria-label="Synced to Google Calendar"
                       />
                     )}
                   </div>

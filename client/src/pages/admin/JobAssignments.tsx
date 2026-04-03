@@ -34,7 +34,7 @@ export default function JobAssignments() {
 
       // After assigning a technician, prompt to add to calendar if job has a date but no event
       const job = jobs?.find((j: any) => j.id === jobId);
-      if (job?.scheduledDate && !job?.googleCalendarEventId && technicianId !== 'unassigned') {
+      if (job?.scheduledDate && !(job as any)?.googleCalendarEventId && technicianId !== 'unassigned') {
         toast('Add to Google Calendar?', {
           action: {
             label: 'Add',

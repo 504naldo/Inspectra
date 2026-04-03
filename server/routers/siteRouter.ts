@@ -144,7 +144,11 @@ const siteRouter = router({
       notes: data.notes ?? existingSite.summary?.notes ?? existingSite.notes ?? '',
     };
     
-    await db.updateSite(id, { ...data, summary: updatedSummary });
+    await db.updateSite(id, {
+      ...data,
+      keySignOutDate: data.keySignOutDate ? new Date(data.keySignOutDate) : undefined,
+      summary: updatedSummary,
+    });
     return { success: true };
   }),
 });
