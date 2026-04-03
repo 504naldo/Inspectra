@@ -24,6 +24,16 @@ function currentMonth(): string {
 /** Normalize a header string for fuzzy matching — strip all non-alphanumeric chars */
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
+/**
+ * Normalize a building ID for site matching.
+ * Strips non-alphanumeric chars AND leading zeros for purely numeric IDs,
+ * so "#0007" → "7", "0007" → "7", "7" → "7" all match each other.
+ */
+const normBldg = (s: string): string => {
+  const a = norm(s);
+  return /^\d+$/.test(a) ? String(parseInt(a, 10)) : a;
+};
+
 /** Find the first column whose normalised header matches any of the given keywords */
 function findCol(headers: string[], ...keywords: string[]): number {
   return headers.findIndex((h) => keywords.some((k) => norm(h).includes(norm(k))));
@@ -347,7 +357,7 @@ export const serviceScheduleRouter = router({
       // Fetch all sites for this company once
       const allSites = await db.getSitesByCompany(input.companyId);
       const siteByBuildingId = new Map(
-        allSites.filter((s) => s.buildingId).map((s) => [norm(s.buildingId!), s])
+        allSites.filter((s) => s.buildingId).map((s) => [normBldg(s.buildingId!), s])
       );
       const siteByName = new Map(allSites.map((s) => [s.name.toLowerCase(), s]));
 
@@ -366,7 +376,7 @@ export const serviceScheduleRouter = router({
 
         // Match
         let matchedSite = rawBuildingId
-          ? siteByBuildingId.get(norm(rawBuildingId))
+          ? siteByBuildingId.get(normBldg(rawBuildingId))
           : undefined;
         let matchMethod = matchedSite ? "buildingId" : "none";
 
@@ -454,7 +464,7 @@ export const serviceScheduleRouter = router({
 
       const allSites = await db.getSitesByCompany(input.companyId);
       const siteByBuildingId = new Map(
-        allSites.filter((s) => s.buildingId).map((s) => [norm(s.buildingId!), s])
+        allSites.filter((s) => s.buildingId).map((s) => [normBldg(s.buildingId!), s])
       );
       const siteByName = new Map(allSites.map((s) => [s.name.toLowerCase(), s]));
 
@@ -475,7 +485,7 @@ export const serviceScheduleRouter = router({
 
         if (!rawBuildingId && !rawSiteName && !serviceType) continue; // blank
 
-        let matchedSite = rawBuildingId ? siteByBuildingId.get(norm(rawBuildingId)) : undefined;
+        let matchedSite = rawBuildingId ? siteByBuildingId.get(normBldg(rawBuildingId)) : undefined;
         if (!matchedSite && rawSiteName) {
           matchedSite = siteByName.get(rawSiteName.toLowerCase());
           if (!matchedSite) {
