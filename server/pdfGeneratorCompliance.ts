@@ -16,6 +16,8 @@ import {
   drawSectionHeader,
   applyFootersToAllPages,
   drawSignatureTable,
+  fetchImageBuffer,
+  type SignatureOpts,
 } from './pdfSharedStyles.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -116,6 +118,12 @@ interface ComplianceReportData {
   secondaryTechnicianCertificateNumber?: string;
   companyName: string;
   companyPhone: string;
+
+  // Signature capture (optional — populated after job completion)
+  techSignatureUrl?: string;
+  contactSignatureUrl?: string;
+  contactName?: string;
+  contactSignedAt?: Date;
   
   // Checklist sections
   checklists: ChecklistSection[];
@@ -235,7 +243,18 @@ function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
   return addressY + 16;
 }
 
-export function generateComplianceReportPDF(data: ComplianceReportData): Promise<Buffer> {
+export async function generateComplianceReportPDF(data: ComplianceReportData): Promise<Buffer> {
+  // Pre-fetch signature images so the inner PDF callback stays synchronous
+  const sigOpts: SignatureOpts = {};
+  if (data.techSignatureUrl) {
+    sigOpts.techSignatureBuffer = await fetchImageBuffer(data.techSignatureUrl);
+  }
+  if (data.contactSignatureUrl) {
+    sigOpts.contactSignatureBuffer = await fetchImageBuffer(data.contactSignatureUrl);
+    sigOpts.contactName = data.contactName;
+    sigOpts.contactSignedAt = data.contactSignedAt;
+  }
+
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -514,7 +533,8 @@ export function generateComplianceReportPDF(data: ComplianceReportData): Promise
         data.secondaryTechnicianName,
         data.secondaryTechnicianCertificateNumber,
         40,
-        532
+        532,
+        sigOpts
       );
 
       // Company conducting test row

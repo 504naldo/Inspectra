@@ -261,6 +261,12 @@ export const jobs = mysqlTable("jobs", {
   syncAssertedById: int("syncAssertedById"),
   // Google Calendar integration
   googleCalendarEventId: varchar("googleCalendarEventId", { length: 255 }),
+  // Digital signatures — collected at end of inspection before completion
+  techSignatureUrl: text("tech_signature_url"),
+  contactSignatureUrl: text("contact_signature_url"),
+  contactName: varchar("contact_name", { length: 255 }),
+  contactSignedAt: timestamp("contact_signed_at"),
+  techSignedAt: timestamp("tech_signed_at"),
 });
 
 export type Job = typeof jobs.$inferSelect;

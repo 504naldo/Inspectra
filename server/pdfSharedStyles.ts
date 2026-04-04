@@ -733,6 +733,17 @@ export function drawRFPTSeal(
  * @param contentWidth       Usable width (default 532)
  * @returns                  Y position immediately below the table
  */
+export interface SignatureOpts {
+  /** Pre-fetched PNG buffer for the technician's signature */
+  techSignatureBuffer?: Buffer;
+  /** Pre-fetched PNG buffer for the site contact's signature */
+  contactSignatureBuffer?: Buffer;
+  /** Site contact full name */
+  contactName?: string;
+  /** Timestamp when the contact signed */
+  contactSignedAt?: Date;
+}
+
 export function drawSignatureTable(
   doc: PDFKit.PDFDocument,
   startY: number,
@@ -744,7 +755,8 @@ export function drawSignatureTable(
   secondaryName?: string,
   secondaryCertNumber?: string,
   leftMargin = 40,
-  contentWidth = 532
+  contentWidth = 532,
+  sigOpts?: SignatureOpts
 ): number {
   let y = startY;
 
@@ -778,7 +790,8 @@ export function drawSignatureTable(
     col1Text: string,
     col2Content: 'header' | { name: string; cert: string },
     col3Text: string,
-    col4Text: string
+    col4Text: string,
+    sigBuffer?: Buffer
   ) => {
     const rowH = isHeader ? headerRowH : dataRowH;
     const bgColor = isHeader ? '#1e3a8a' : '#ffffff';
@@ -817,9 +830,22 @@ export function drawSignatureTable(
       // Col 3 – date
       doc.text(col3Text, leftMargin + col1W + col2W + 4, rowY + 6, { width: col3W - 8 });
 
-      // Col 4 – company name placeholder (grey)
-      doc.fillColor('#9ca3af').fontSize(7)
-         .text(companyName, leftMargin + col1W + col2W + col3W + 4, rowY + 6, { width: col4W - 8 });
+      // Col 4 – signature image or placeholder
+      const sig4X = leftMargin + col1W + col2W + col3W;
+      if (sigBuffer) {
+        try {
+          const maxW = col4W - 8;
+          const maxH = dataRowH - 10;
+          doc.image(sigBuffer, sig4X + 4, rowY + 5, { fit: [maxW, maxH] });
+        } catch {
+          // Fallback to placeholder if image fails
+          doc.fillColor('#9ca3af').fontSize(7)
+             .text(companyName, sig4X + 4, rowY + 6, { width: col4W - 8 });
+        }
+      } else {
+        doc.fillColor('#9ca3af').fontSize(7)
+           .text(companyName, sig4X + 4, rowY + 6, { width: col4W - 8 });
+      }
     }
   };
 
@@ -828,7 +854,7 @@ export function drawSignatureTable(
   // ── Primary technician rows ──────────────────────────────────────────────
   drawRow(y, true, 'Supervising / Primary Technician Name', 'header', 'Date', 'Signature');
   y += headerRowH;
-  drawRow(y, false, primaryName, { name: primaryName, cert: primaryCertNumber }, dateStr, '');
+  drawRow(y, false, primaryName, { name: primaryName, cert: primaryCertNumber }, dateStr, '', sigOpts?.techSignatureBuffer);
   y += dataRowH;
 
   // ── Secondary technician rows (optional) ─────────────────────────────────
@@ -839,7 +865,72 @@ export function drawSignatureTable(
     y += dataRowH;
   }
 
+  // ── Site contact rows (optional) ─────────────────────────────────────────
+  if (sigOpts?.contactName) {
+    const contactDateStr = sigOpts.contactSignedAt
+      ? sigOpts.contactSignedAt.toLocaleDateString('en-CA')
+      : dateStr;
+
+    // Simplified 3-column header for the contact block (no cert/seal)
+    const contactRowH = 55;
+    const c1W = col1W; // Name
+    const c2W = col3W; // Date
+    const c3W = contentWidth - c1W - c2W; // Signature
+
+    const drawContactHeader = (rowY: number) => {
+      doc.rect(leftMargin, rowY, contentWidth, headerRowH).fill('#1e3a8a');
+      doc.rect(leftMargin, rowY, contentWidth, headerRowH).lineWidth(0.5).stroke('#000000');
+      doc.moveTo(leftMargin + c1W, rowY).lineTo(leftMargin + c1W, rowY + headerRowH).stroke('#000000');
+      doc.moveTo(leftMargin + c1W + c2W, rowY).lineTo(leftMargin + c1W + c2W, rowY + headerRowH).stroke('#000000');
+      doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold');
+      doc.text('Site Contact / Customer Representative', leftMargin + 4, rowY + 7, { width: c1W - 8 });
+      doc.text('Date', leftMargin + c1W + 4, rowY + 7, { width: c2W - 8 });
+      doc.text('Signature', leftMargin + c1W + c2W + 4, rowY + 7, { width: c3W - 8 });
+    };
+
+    const drawContactRow = (rowY: number) => {
+      doc.rect(leftMargin, rowY, contentWidth, contactRowH).fill('#ffffff');
+      doc.rect(leftMargin, rowY, contentWidth, contactRowH).lineWidth(0.5).stroke('#000000');
+      doc.moveTo(leftMargin + c1W, rowY).lineTo(leftMargin + c1W, rowY + contactRowH).stroke('#000000');
+      doc.moveTo(leftMargin + c1W + c2W, rowY).lineTo(leftMargin + c1W + c2W, rowY + contactRowH).stroke('#000000');
+
+      doc.fillColor('#000000').fontSize(8).font('Helvetica');
+      doc.text(sigOpts!.contactName!, leftMargin + 4, rowY + 6, { width: c1W - 8 });
+      doc.text(contactDateStr, leftMargin + c1W + 4, rowY + 6, { width: c2W - 8 });
+
+      if (sigOpts?.contactSignatureBuffer) {
+        try {
+          const maxW = c3W - 8;
+          const maxH = contactRowH - 10;
+          doc.image(sigOpts.contactSignatureBuffer, leftMargin + c1W + c2W + 4, rowY + 5, { fit: [maxW, maxH] });
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    drawContactHeader(y);
+    y += headerRowH;
+    drawContactRow(y);
+    y += contactRowH;
+  }
+
   return y + 10;
+}
+
+/**
+ * Fetch a URL and return its body as a Buffer.
+ * Returns undefined if the fetch fails, so callers can fall back gracefully.
+ */
+export async function fetchImageBuffer(url: string): Promise<Buffer | undefined> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return undefined;
+    const ab = await res.arrayBuffer();
+    return Buffer.from(ab);
+  } catch {
+    return undefined;
+  }
 }
 
 // ============================================
