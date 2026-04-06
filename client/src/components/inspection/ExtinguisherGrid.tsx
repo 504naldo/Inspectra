@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { CheckCheck } from "lucide-react";
+import { CheckCheck, Trash2, Plus } from "lucide-react";
 
 interface ExtinguisherRow {
   id: number;
@@ -21,16 +21,24 @@ interface ExtinguisherRow {
 
 interface ExtinguisherGridProps {
   jobId: number;
+  siteId: number;
+  companyId: number;
   devices: ExtinguisherRow[];
   isFinalized?: boolean;
   onResultChange?: (deviceId: number, result: InspectionResult) => void;
   carriedForwardDeviceIds?: Set<number>;
+  onRefresh?: () => void;
 }
 
 interface EditState {
   deviceId: number;
   field: string;
   value: string;
+}
+
+interface AddForm {
+  location: string;
+  deviceType: string;
 }
 
 const COL_HEADERS = [
@@ -47,16 +55,23 @@ const COL_HEADERS = [
 ];
 
 const EDITABLE_FIELDS = ["location", "manufacturer", "model", "serialNumber", "mfgDate", "lastHST", "last6yr"];
+const TOTAL_COLS = COL_HEADERS.length + 1; // +1 for delete column
 
 export function ExtinguisherGrid({
   jobId,
+  siteId,
+  companyId,
   devices,
   isFinalized,
   onResultChange,
   carriedForwardDeviceIds,
+  onRefresh,
 }: ExtinguisherGridProps) {
   const [editing, setEditing] = useState<EditState | null>(null);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [showAddRow, setShowAddRow] = useState(false);
+  const [addForm, setAddForm] = useState<AddForm>({ location: "", deviceType: "Fire Extinguisher" });
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -64,6 +79,25 @@ export function ExtinguisherGrid({
 
   const updateDevice = trpc.device.technicianUpdate.useMutation({
     onError: () => toast.error("Failed to save field"),
+  });
+
+  const addDevice = trpc.device.addDuringInspection.useMutation({
+    onSuccess: () => {
+      toast.success("Device added");
+      setShowAddRow(false);
+      setAddForm({ location: "", deviceType: "Fire Extinguisher" });
+      onRefresh?.();
+    },
+    onError: (e) => toast.error(e.message || "Failed to add device"),
+  });
+
+  const softDelete = trpc.device.softDelete.useMutation({
+    onSuccess: () => {
+      toast.success("Device removed");
+      setConfirmDeleteId(null);
+      onRefresh?.();
+    },
+    onError: (e) => toast.error(e.message || "Failed to remove device"),
   });
 
   const handleResultChange = useCallback(
@@ -103,6 +137,21 @@ export function ExtinguisherGrid({
     toast.success(`Marked ${devices.length} extinguisher${devices.length !== 1 ? "s" : ""} as pass`);
   }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
 
+  const handleAddSubmit = () => {
+    if (!addForm.location.trim() && !addForm.deviceType.trim()) {
+      toast.error("Location or device type required");
+      return;
+    }
+    addDevice.mutate({
+      jobId,
+      siteId,
+      companyId,
+      category: "FIRE_EXTINGUISHER",
+      deviceType: addForm.deviceType.trim() || "Fire Extinguisher",
+      location: addForm.location.trim() || undefined,
+    });
+  };
+
   return (
     <div>
       {!isFinalized && devices.length > 0 && (
@@ -132,6 +181,7 @@ export function ExtinguisherGrid({
                 {col.label}
               </th>
             ))}
+            {!isFinalized && <th className="w-8 min-w-[2rem] px-1 py-2 bg-muted/80" />}
           </tr>
         </thead>
         <tbody>
@@ -203,12 +253,92 @@ export function ExtinguisherGrid({
                     size="sm"
                   />
                 </td>
+
+                {/* Delete */}
+                {!isFinalized && (
+                  <td className="px-1 py-1 text-center">
+                    {confirmDeleteId === device.id ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => softDelete.mutate({ deviceId: device.id, jobId })}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-red-600 text-white hover:bg-red-700"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/70"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteId(device.id)}
+                        className="text-muted-foreground/40 hover:text-red-500 transition-colors p-0.5"
+                        title="Remove device"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             );
           })}
-          {devices.length === 0 && (
+
+          {/* Add row */}
+          {!isFinalized && showAddRow && (
+            <tr className="border-b bg-blue-50/40 dark:bg-blue-950/10">
+              <td className="sticky left-0 bg-inherit px-2 py-1.5 text-center text-muted-foreground border-r font-mono w-8">
+                {devices.length + 1}
+              </td>
+              <td className="px-2 py-1 border-r">
+                <input
+                  autoFocus
+                  placeholder="Location"
+                  className="w-full bg-transparent outline-none border-b border-primary text-xs"
+                  value={addForm.location}
+                  onChange={(e) => setAddForm((p) => ({ ...p, location: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAddSubmit(); if (e.key === "Escape") setShowAddRow(false); }}
+                />
+              </td>
+              <td className="px-2 py-1 border-r">
+                <input
+                  placeholder="Type"
+                  className="w-full bg-transparent outline-none border-b border-primary text-xs"
+                  value={addForm.deviceType}
+                  onChange={(e) => setAddForm((p) => ({ ...p, deviceType: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAddSubmit(); if (e.key === "Escape") setShowAddRow(false); }}
+                />
+              </td>
+              <td colSpan={COL_HEADERS.length - 3} className="px-2 py-1 text-muted-foreground/40 text-[10px] border-r">
+                Fill remaining fields after saving
+              </td>
+              <td className="sticky right-0 bg-inherit px-2 py-1 border-l" />
+              <td className="px-1 py-1">
+                <div className="flex gap-1">
+                  <button
+                    onClick={handleAddSubmit}
+                    disabled={addDevice.isPending}
+                    className="text-[10px] px-2 py-0.5 rounded bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setShowAddRow(false)}
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/70"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </td>
+            </tr>
+          )}
+
+          {devices.length === 0 && !showAddRow && (
             <tr>
-              <td colSpan={COL_HEADERS.length} className="text-center py-8 text-muted-foreground">
+              <td colSpan={TOTAL_COLS} className="text-center py-8 text-muted-foreground">
                 No fire extinguishers for this site
               </td>
             </tr>
@@ -216,6 +346,18 @@ export function ExtinguisherGrid({
         </tbody>
       </table>
     </div>
+
+    {/* Add Device button */}
+    {!isFinalized && (
+      <div className="mt-2">
+        <button
+          onClick={() => setShowAddRow(true)}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add Device
+        </button>
+      </div>
+    )}
     </div>
   );
 }

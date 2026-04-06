@@ -27,7 +27,28 @@ export default function AdminUsers() {
   const [editCertLevel, setEditCertLevel] = useState('');
   const [editCertExpiry, setEditCertExpiry] = useState('');
 
+  // Add User dialog state
+  const [addUserOpen, setAddUserOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newRole, setNewRole] = useState<'admin' | 'office' | 'technician' | 'customer'>('technician');
+
   const utils = trpc.useUtils();
+
+  const createUserMutation = trpc.user.createUser.useMutation({
+    onSuccess: () => {
+      toast.success('User pre-registered. They can now sign in with Google.');
+      setAddUserOpen(false);
+      setNewEmail('');
+      setNewName('');
+      setNewRole('technician');
+      utils.user.listUsers.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to create user');
+    },
+  });
+
   const updateUserMutation = trpc.user.updateUser.useMutation({
     onSuccess: () => {
       toast.success('User updated successfully');
@@ -104,7 +125,7 @@ export default function AdminUsers() {
             <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
             <p className="text-muted-foreground">Manage user accounts, roles, and permissions</p>
           </div>
-          <Button>
+          <Button onClick={() => setAddUserOpen(true)}>
             <UserPlus className="h-4 w-4 mr-2" />
             Add User
           </Button>
@@ -218,6 +239,64 @@ export default function AdminUsers() {
             </TableBody>
           </Table>
         </div>
+
+        {/* Add User Dialog */}
+        <Dialog open={addUserOpen} onOpenChange={setAddUserOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add User</DialogTitle>
+              <DialogDescription>
+                Pre-register a user by email. They'll sign in with Google and be automatically matched to this account.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-name">Full Name</Label>
+                <Input
+                  id="new-name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Jane Smith"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-email">Email Address</Label>
+                <Input
+                  id="new-email"
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="jane@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-role">Role</Label>
+                <Select value={newRole} onValueChange={(v) => setNewRole(v as typeof newRole)}>
+                  <SelectTrigger id="new-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="office">Office</SelectItem>
+                    <SelectItem value="technician">Technician</SelectItem>
+                    <SelectItem value="customer">Customer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAddUserOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => createUserMutation.mutate({ email: newEmail, name: newName, role: newRole })}
+                disabled={createUserMutation.isPending || !newEmail.trim() || !newName.trim()}
+              >
+                {createUserMutation.isPending ? 'Adding...' : 'Add User'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Edit User Dialog */}
         <Dialog open={editingUser !== null} onOpenChange={(open) => !open && setEditingUser(null)}>

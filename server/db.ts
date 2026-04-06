@@ -59,8 +59,20 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
-    // Check if user exists
-    const existing = await getUserByOpenId(user.openId);
+    // Check if user exists by openId
+    let existing = await getUserByOpenId(user.openId);
+
+    // If no match by openId, check if admin pre-registered this email (pending_ openId)
+    // If found, claim that record by updating its openId to the real Google openId
+    if (!existing && user.email) {
+      const pendingByEmail = await getUserByEmail(user.email);
+      if (pendingByEmail && pendingByEmail.openId.startsWith('pending_')) {
+        await db!.update(users)
+          .set({ openId: user.openId, name: user.name ?? pendingByEmail.name, lastSignedIn: new Date() })
+          .where(eq(users.id, pendingByEmail.id));
+        return; // Record claimed — don't create a new one
+      }
+    }
     
     const values: InsertUser = { openId: user.openId };
     const updateSet: Record<string, unknown> = {};
@@ -128,6 +140,13 @@ export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 

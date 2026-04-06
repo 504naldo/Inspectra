@@ -157,6 +157,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   const { job, site, devices, inspectionResults, deficiencies, stats } = jobData;
   const isFinalized = !!(job as any).finalizedAt;
+  const siteId: number = (job as any).siteId;
+  const companyId: number = (job as any).companyId;
   const siteNotes = (() => {
     const raw = (site as any)?.notes as unknown;
     if (typeof raw === "string") return raw;
@@ -411,22 +413,16 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </CardHeader>
           {openGridSection === 'smokealarm' && (
             <CardContent className="p-3 pt-0">
-              {smokeStats.total > 0 ? (
-                <SmokeAlarmGrid
-                  jobId={jobId}
-                  devices={sortedSmokeAlarms}
-                  isFinalized={isFinalized}
-                  onResultChange={() => refetch()}
-                  carriedForwardDeviceIds={carriedForwardDeviceIds}
-                />
-              ) : (
-                <div className="text-center py-6 text-muted-foreground text-sm">
-                  No smoke alarms loaded for this site.
-                  <Button variant="link" size="sm" onClick={() => importAssets.mutate({ jobId })} disabled={importAssets.isPending}>
-                    Import Assets
-                  </Button>
-                </div>
-              )}
+              <SmokeAlarmGrid
+                jobId={jobId}
+                siteId={siteId}
+                companyId={companyId}
+                devices={sortedSmokeAlarms}
+                isFinalized={isFinalized}
+                onResultChange={() => refetch()}
+                carriedForwardDeviceIds={carriedForwardDeviceIds}
+                onRefresh={refetch}
+              />
             </CardContent>
           )}
         </Card>
@@ -461,22 +457,16 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </CardHeader>
           {openGridSection === 'firealarm' && (
             <CardContent className="p-3 pt-0">
-              {fireAlarmStats.total > 0 ? (
-                <IndividualDeviceGrid
-                  jobId={jobId}
-                  devices={sortedFireAlarmDevices}
-                  isFinalized={isFinalized}
-                  onResultChange={() => refetch()}
-                  carriedForwardDeviceIds={carriedForwardDeviceIds}
-                />
-              ) : (
-                <div className="text-center py-6 text-muted-foreground text-sm">
-                  No fire alarm devices loaded for this site.
-                  <Button variant="link" size="sm" onClick={() => importAssets.mutate({ jobId })} disabled={importAssets.isPending}>
-                    Import Assets
-                  </Button>
-                </div>
-              )}
+              <IndividualDeviceGrid
+                jobId={jobId}
+                siteId={siteId}
+                companyId={companyId}
+                devices={sortedFireAlarmDevices}
+                isFinalized={isFinalized}
+                onResultChange={() => refetch()}
+                carriedForwardDeviceIds={carriedForwardDeviceIds}
+                onRefresh={refetch}
+              />
             </CardContent>
           )}
         </Card>
@@ -511,22 +501,16 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </CardHeader>
           {openGridSection === 'extinguisher' && (
             <CardContent className="p-3 pt-0">
-              {extinguisherStats.total > 0 ? (
-                <ExtinguisherGrid
-                  jobId={jobId}
-                  devices={sortedExtinguishers}
-                  isFinalized={isFinalized}
-                  onResultChange={() => refetch()}
-                  carriedForwardDeviceIds={carriedForwardDeviceIds}
-                />
-              ) : (
-                <div className="text-center py-6 text-muted-foreground text-sm">
-                  No fire extinguishers loaded for this site.
-                  <Button variant="link" size="sm" onClick={() => importAssets.mutate({ jobId })} disabled={importAssets.isPending}>
-                    Import Assets
-                  </Button>
-                </div>
-              )}
+              <ExtinguisherGrid
+                jobId={jobId}
+                siteId={siteId}
+                companyId={companyId}
+                devices={sortedExtinguishers}
+                isFinalized={isFinalized}
+                onResultChange={() => refetch()}
+                carriedForwardDeviceIds={carriedForwardDeviceIds}
+                onRefresh={refetch}
+              />
             </CardContent>
           )}
         </Card>
@@ -561,22 +545,16 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </CardHeader>
           {openGridSection === 'emergency' && (
             <CardContent className="p-3 pt-0">
-              {emergencyLightStats.total > 0 ? (
-                <EmergencyLightGrid
-                  jobId={jobId}
-                  devices={sortedEmergencyLights}
-                  isFinalized={isFinalized}
-                  onResultChange={() => refetch()}
-                  carriedForwardDeviceIds={carriedForwardDeviceIds}
-                />
-              ) : (
-                <div className="text-center py-6 text-muted-foreground text-sm">
-                  No emergency lights loaded for this site.
-                  <Button variant="link" size="sm" onClick={() => importAssets.mutate({ jobId })} disabled={importAssets.isPending}>
-                    Import Assets
-                  </Button>
-                </div>
-              )}
+              <EmergencyLightGrid
+                jobId={jobId}
+                siteId={siteId}
+                companyId={companyId}
+                devices={sortedEmergencyLights}
+                isFinalized={isFinalized}
+                onResultChange={() => refetch()}
+                carriedForwardDeviceIds={carriedForwardDeviceIds}
+                onRefresh={refetch}
+              />
             </CardContent>
           )}
         </Card>
