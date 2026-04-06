@@ -85,9 +85,6 @@ interface ReportData {
 
   // Signature capture (optional — populated after job completion)
   techSignatureUrl?: string;
-  contactSignatureUrl?: string;
-  contactName?: string;
-  contactSignedAt?: Date;
 }
 
 // ─── Local constants ──────────────────────────────────────────────────────────
@@ -371,11 +368,6 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
   const sigOpts: SignatureOpts = {};
   if (data.techSignatureUrl) {
     sigOpts.techSignatureBuffer = await fetchImageBuffer(data.techSignatureUrl);
-  }
-  if (data.contactSignatureUrl) {
-    sigOpts.contactSignatureBuffer = await fetchImageBuffer(data.contactSignatureUrl);
-    sigOpts.contactName = data.contactName;
-    sigOpts.contactSignedAt = data.contactSignedAt;
   }
 
   return new Promise((resolve, reject) => {

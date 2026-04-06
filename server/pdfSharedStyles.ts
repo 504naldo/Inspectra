@@ -736,12 +736,6 @@ export function drawRFPTSeal(
 export interface SignatureOpts {
   /** Pre-fetched PNG buffer for the technician's signature */
   techSignatureBuffer?: Buffer;
-  /** Pre-fetched PNG buffer for the site contact's signature */
-  contactSignatureBuffer?: Buffer;
-  /** Site contact full name */
-  contactName?: string;
-  /** Timestamp when the contact signed */
-  contactSignedAt?: Date;
 }
 
 export function drawSignatureTable(
@@ -863,56 +857,6 @@ export function drawSignatureTable(
     y += headerRowH;
     drawRow(y, false, secondaryName, { name: secondaryName, cert: secondaryCertNumber || '' }, dateStr, '');
     y += dataRowH;
-  }
-
-  // ── Site contact rows (optional) ─────────────────────────────────────────
-  if (sigOpts?.contactName) {
-    const contactDateStr = sigOpts.contactSignedAt
-      ? sigOpts.contactSignedAt.toLocaleDateString('en-CA')
-      : dateStr;
-
-    // Simplified 3-column header for the contact block (no cert/seal)
-    const contactRowH = 55;
-    const c1W = col1W; // Name
-    const c2W = col3W; // Date
-    const c3W = contentWidth - c1W - c2W; // Signature
-
-    const drawContactHeader = (rowY: number) => {
-      doc.rect(leftMargin, rowY, contentWidth, headerRowH).fill('#1e3a8a');
-      doc.rect(leftMargin, rowY, contentWidth, headerRowH).lineWidth(0.5).stroke('#000000');
-      doc.moveTo(leftMargin + c1W, rowY).lineTo(leftMargin + c1W, rowY + headerRowH).stroke('#000000');
-      doc.moveTo(leftMargin + c1W + c2W, rowY).lineTo(leftMargin + c1W + c2W, rowY + headerRowH).stroke('#000000');
-      doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold');
-      doc.text('Site Contact / Customer Representative', leftMargin + 4, rowY + 7, { width: c1W - 8 });
-      doc.text('Date', leftMargin + c1W + 4, rowY + 7, { width: c2W - 8 });
-      doc.text('Signature', leftMargin + c1W + c2W + 4, rowY + 7, { width: c3W - 8 });
-    };
-
-    const drawContactRow = (rowY: number) => {
-      doc.rect(leftMargin, rowY, contentWidth, contactRowH).fill('#ffffff');
-      doc.rect(leftMargin, rowY, contentWidth, contactRowH).lineWidth(0.5).stroke('#000000');
-      doc.moveTo(leftMargin + c1W, rowY).lineTo(leftMargin + c1W, rowY + contactRowH).stroke('#000000');
-      doc.moveTo(leftMargin + c1W + c2W, rowY).lineTo(leftMargin + c1W + c2W, rowY + contactRowH).stroke('#000000');
-
-      doc.fillColor('#000000').fontSize(8).font('Helvetica');
-      doc.text(sigOpts!.contactName!, leftMargin + 4, rowY + 6, { width: c1W - 8 });
-      doc.text(contactDateStr, leftMargin + c1W + 4, rowY + 6, { width: c2W - 8 });
-
-      if (sigOpts?.contactSignatureBuffer) {
-        try {
-          const maxW = c3W - 8;
-          const maxH = contactRowH - 10;
-          doc.image(sigOpts.contactSignatureBuffer, leftMargin + c1W + c2W + 4, rowY + 5, { fit: [maxW, maxH] });
-        } catch {
-          // ignore
-        }
-      }
-    };
-
-    drawContactHeader(y);
-    y += headerRowH;
-    drawContactRow(y);
-    y += contactRowH;
   }
 
   return y + 10;

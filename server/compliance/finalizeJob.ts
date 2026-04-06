@@ -136,11 +136,11 @@ export async function finalizeJob(
 
   // status must be 'in_progress' at this point
 
-  // 5. Signature check — both must be captured before finalization
-  if (!job.techSignatureUrl || !job.contactSignatureUrl) {
+  // 5. Signature check — technician signature required before finalization
+  if (!job.techSignatureUrl) {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: "Both technician and site contact signatures are required before finalizing.",
+      message: "Technician signature is required before finalizing.",
     });
   }
 
