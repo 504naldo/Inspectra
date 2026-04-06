@@ -451,21 +451,41 @@ export const assetImportRouter = router({
       const workbook = XLSX.read(buffer, { type: "buffer" });
       const sheetNames = workbook.SheetNames;
 
+      // Claimed-sheet tracking prevents one sheet from matching multiple categories
+      const claimedSheets = new Set<string>();
       const findSheet = (keywords: string[]): string | null => {
         for (const name of sheetNames) {
-          const lower = safeToLower(name);
-          if (lower && keywords.some((kw) => lower.includes(kw))) return name;
+          if (claimedSheets.has(name)) continue;
+          const lower = (safeToLower(name) ?? "").trim();
+          if (!lower) continue;
+          // Normalise to space-separated words for word-boundary matching
+          const words = lower.replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+          const matched = keywords.some((kw) => {
+            const kwNorm = kw.trim();
+            if (!kwNorm) return false;
+            if (kwNorm.includes(" ")) {
+              // Multi-word keyword: substring match on full lower string
+              return lower.includes(kwNorm);
+            }
+            // Single-word keyword: exact word match OR substring for long keywords (>3 chars)
+            return words.includes(kwNorm) || (kwNorm.length > 3 && lower.includes(kwNorm));
+          });
+          if (matched) {
+            claimedSheets.add(name);
+            return name;
+          }
         }
         return null;
       };
 
-      const siteSheet = findSheet(["site", "building", "property", "info"]);
-      const fireAlarmSheet = findSheet(["fire alarm device", "alarm device", "fa device", "device list"]);
-      const extinguisherSheet = findSheet(["exting", "extinguisher", "fire ext"]);
-      const emergencyLightSheet = findSheet(["emerg", "exit", "lighting", "light"]);
-      const sprinklerSystemSheet = findSheet(["sprinkler system", "sprinkler"]);
+      // Detect specific categories BEFORE general ones to prevent keyword collisions
+      const extinguisherSheet    = findSheet(["extinguisher", "exting", "fire ext"]);
+      const smokeAlarmSheet      = findSheet(["smoke alarm", "smoke alarms", "smoke detector", "smoke detectors", "sa"]);
+      const emergencyLightSheet  = findSheet(["emergency light", "emergency lighting", "emerg light", "exit light", "emerg", "exit"]);
       const sprinklerDeviceSheet = findSheet(["sprinkler device", "sprinkler head"]);
-      const smokeAlarmSheet = findSheet(["smoke alarm", "smoke detector", "smoke", "sa "]);
+      const sprinklerSystemSheet = findSheet(["sprinkler system", "sprinkler"]);
+      const fireAlarmSheet       = findSheet(["fire alarm device", "alarm device", "fa device", "fire alarm", "alarm"]);
+      const siteSheet            = findSheet(["site info", "building info", "property info", "site", "building", "property", "info"]);
 
       let siteFieldsUpdated = 0;
       let fireAlarmCount = 0;
