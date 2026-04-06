@@ -178,8 +178,8 @@ const jobRouter = router({
     if (job.status !== 'in_progress') {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only in-progress jobs can be completed' });
     }
-    if (!job.techSignatureUrl || !job.contactSignatureUrl) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Both technician and site contact signatures are required before completing the job.' });
+    if (!job.techSignatureUrl) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Technician signature is required before completing the job.' });
     }
     await db.updateJob(input.id, { status: 'completed', completedAt: new Date() });
     return { success: true };
@@ -189,26 +189,21 @@ const jobRouter = router({
     jobId: z.number(),
     /** Base64-encoded PNG of the technician's signature */
     techSignatureBase64: z.string().min(1),
-    /** Base64-encoded PNG of the site contact's signature */
-    contactSignatureBase64: z.string().min(1),
-    contactName: z.string().min(1),
   })).mutation(async ({ input }) => {
     const job = await db.getJobById(input.jobId);
     if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
     if (job.finalizedAt) throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
 
     const now = new Date();
-    const [techResult, contactResult] = await Promise.all([
-      storagePut(`signatures/${nanoid()}.png`, Buffer.from(input.techSignatureBase64, "base64"), "image/png"),
-      storagePut(`signatures/${nanoid()}.png`, Buffer.from(input.contactSignatureBase64, "base64"), "image/png"),
-    ]);
+    const techResult = await storagePut(
+      `signatures/${nanoid()}.png`,
+      Buffer.from(input.techSignatureBase64, "base64"),
+      "image/png"
+    );
 
     await db.updateJob(input.jobId, {
       techSignatureUrl: techResult.url,
       techSignedAt: now,
-      contactSignatureUrl: contactResult.url,
-      contactName: input.contactName,
-      contactSignedAt: now,
     });
     return { success: true };
   }),

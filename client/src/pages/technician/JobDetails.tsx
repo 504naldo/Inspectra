@@ -4,8 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { InspectionSummary } from "@/components/InspectionSummary";
@@ -91,10 +89,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   // Signature capture state
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
-  const [sigStep, setSigStep] = useState<"tech" | "contact">("tech");
   const [techSigUrl, setTechSigUrl] = useState<string | null>(null);
-  const [contactSigUrl, setContactSigUrl] = useState<string | null>(null);
-  const [contactName, setContactName] = useState("");
 
   const saveSignatures = trpc.job.saveSignatures.useMutation({
     onSuccess: () => {
@@ -106,19 +101,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   function openSignatureDialog() {
     setTechSigUrl(null);
-    setContactSigUrl(null);
-    setContactName("");
-    setSigStep("tech");
     setSigDialogOpen(true);
   }
 
   function handleSignaturesSubmit() {
-    if (!techSigUrl || !contactSigUrl || !contactName.trim()) return;
+    if (!techSigUrl) return;
     saveSignatures.mutate({
       jobId,
       techSignatureBase64: techSigUrl.split(",")[1],
-      contactSignatureBase64: contactSigUrl.split(",")[1],
-      contactName: contactName.trim(),
     });
   }
   
@@ -769,72 +759,31 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       <Dialog open={sigDialogOpen} onOpenChange={(open) => { if (!saveSignatures.isPending) setSigDialogOpen(open); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>
-              {sigStep === "tech" ? "Technician Signature" : "Site Contact Signature"}
-            </DialogTitle>
+            <DialogTitle>Technician Signature</DialogTitle>
           </DialogHeader>
 
-          {sigStep === "tech" ? (
-            <div className="flex flex-col gap-4 py-2">
-              <p className="text-sm text-muted-foreground">
-                Sign below to confirm completion of this inspection.
-              </p>
-              <SignaturePad
-                label="Your signature"
-                height={200}
-                onConfirm={(dataUrl) => setTechSigUrl(dataUrl)}
-                onClear={() => setTechSigUrl(null)}
-              />
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4 py-2">
-              <p className="text-sm text-muted-foreground">
-                Have the site contact sign to acknowledge the inspection.
-              </p>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="contact-name">Site contact name</Label>
-                <Input
-                  id="contact-name"
-                  placeholder="Full name"
-                  value={contactName}
-                  onChange={(e) => setContactName(e.target.value)}
-                />
-              </div>
-              <SignaturePad
-                label="Site contact signature"
-                height={200}
-                onConfirm={(dataUrl) => setContactSigUrl(dataUrl)}
-                onClear={() => setContactSigUrl(null)}
-              />
-            </div>
-          )}
+          <div className="flex flex-col gap-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Sign below to confirm completion of this inspection.
+            </p>
+            <SignaturePad
+              label="Your signature"
+              height={200}
+              onConfirm={(dataUrl) => setTechSigUrl(dataUrl)}
+              onClear={() => setTechSigUrl(null)}
+            />
+          </div>
 
           <DialogFooter className="gap-2">
-            {sigStep === "tech" ? (
-              <>
-                <Button variant="outline" onClick={() => setSigDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => setSigStep("contact")}
-                  disabled={!techSigUrl}
-                >
-                  Next
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button variant="outline" onClick={() => setSigStep("tech")}>
-                  Back
-                </Button>
-                <Button
-                  onClick={handleSignaturesSubmit}
-                  disabled={!contactSigUrl || !contactName.trim() || saveSignatures.isPending}
-                >
-                  {saveSignatures.isPending ? "Saving…" : "Complete Job"}
-                </Button>
-              </>
-            )}
+            <Button variant="outline" onClick={() => setSigDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSignaturesSubmit}
+              disabled={!techSigUrl || saveSignatures.isPending}
+            >
+              {saveSignatures.isPending ? "Saving…" : "Complete Job"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -245,13 +245,10 @@ const reportRouter = router({
       missingLocationDeficiencies: allowOverride && locationValidation.missingDeficiencies.length > 0
         ? locationValidation.missingDeficiencies
         : undefined,
-      // Signature data captured during job completion
+      // Signature captured during job completion
       techSignatureUrl: (job as any).techSignatureUrl || undefined,
-      contactSignatureUrl: (job as any).contactSignatureUrl || undefined,
-      contactName: (job as any).contactName || undefined,
-      contactSignedAt: (job as any).contactSignedAt || undefined,
     });
-    
+
     // Upload to S3
     const fileKey = `reports/${job.companyId}/Inspectra-${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pdf`;
     const { url } = await storagePut(fileKey, pdfBuffer, 'application/pdf');
@@ -609,13 +606,10 @@ const reportRouter = router({
       fireExtinguishers,
       emergencyLights,
       deficiencies: deficienciesSummary,
-      // Signature data captured during job completion
+      // Signature captured during job completion
       techSignatureUrl: (job as any).techSignatureUrl || undefined,
-      contactSignatureUrl: (job as any).contactSignatureUrl || undefined,
-      contactName: (job as any).contactName || undefined,
-      contactSignedAt: (job as any).contactSignedAt || undefined,
     });
-    
+
     // Upload to S3
     const fileKey = `reports/${job.companyId}/Inspectra-${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-compliance-${Date.now()}.pdf`;
     const { url } = await storagePut(fileKey, pdfBuffer, 'application/pdf');

@@ -121,10 +121,7 @@ interface ComplianceReportData {
 
   // Signature capture (optional — populated after job completion)
   techSignatureUrl?: string;
-  contactSignatureUrl?: string;
-  contactName?: string;
-  contactSignedAt?: Date;
-  
+
   // Checklist sections
   checklists: ChecklistSection[];
   
@@ -244,15 +241,10 @@ function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
 }
 
 export async function generateComplianceReportPDF(data: ComplianceReportData): Promise<Buffer> {
-  // Pre-fetch signature images so the inner PDF callback stays synchronous
+  // Pre-fetch signature image so the inner PDF callback stays synchronous
   const sigOpts: SignatureOpts = {};
   if (data.techSignatureUrl) {
     sigOpts.techSignatureBuffer = await fetchImageBuffer(data.techSignatureUrl);
-  }
-  if (data.contactSignatureUrl) {
-    sigOpts.contactSignatureBuffer = await fetchImageBuffer(data.contactSignatureUrl);
-    sigOpts.contactName = data.contactName;
-    sigOpts.contactSignedAt = data.contactSignedAt;
   }
 
   return new Promise((resolve, reject) => {
