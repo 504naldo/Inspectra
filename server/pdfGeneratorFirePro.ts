@@ -13,6 +13,8 @@ import {
   drawSignatureTable,
   drawInspectionSummaryPage,
   drawClientAuthorizationBlock,
+  fetchImageBuffer,
+  type SignatureOpts,
 } from './pdfSharedStyles.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -80,6 +82,12 @@ interface ReportData {
   deficiencies: Deficiency[];
   inspectionResults: InspectionResult[];
   missingLocationDeficiencies?: Array<{ id: number; description: string; severity: string }>;
+
+  // Signature capture (optional — populated after job completion)
+  techSignatureUrl?: string;
+  contactSignatureUrl?: string;
+  contactName?: string;
+  contactSignedAt?: Date;
 }
 
 // ─── Local constants ──────────────────────────────────────────────────────────
@@ -358,7 +366,18 @@ function drawDefTableHeader(doc: any, y: number, colWidths: number[]): number {
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
-export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
+export async function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
+  // Pre-fetch signature images so the inner PDF callback stays synchronous
+  const sigOpts: SignatureOpts = {};
+  if (data.techSignatureUrl) {
+    sigOpts.techSignatureBuffer = await fetchImageBuffer(data.techSignatureUrl);
+  }
+  if (data.contactSignatureUrl) {
+    sigOpts.contactSignatureBuffer = await fetchImageBuffer(data.contactSignatureUrl);
+    sigOpts.contactName = data.contactName;
+    sigOpts.contactSignedAt = data.contactSignedAt;
+  }
+
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -579,7 +598,8 @@ export function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
             doc, defY, doc.bufferedPageRange().count,
             data.technicianName, data.technicianCertNumber || '',
             data.inspectionDate, data.companyName,
-            undefined, undefined, M, CW
+            undefined, undefined, M, CW,
+            sigOpts
           );
         }
 

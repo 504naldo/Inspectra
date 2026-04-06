@@ -136,7 +136,15 @@ export async function finalizeJob(
 
   // status must be 'in_progress' at this point
 
-  // 5. Sync assertion: set fields and run best-effort unsynced row check
+  // 5. Signature check — both must be captured before finalization
+  if (!job.techSignatureUrl || !job.contactSignatureUrl) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Both technician and site contact signatures are required before finalizing.",
+    });
+  }
+
+  // 6. Sync assertion: set fields and run best-effort unsynced row check
   const now = new Date();
   const warnings: string[] = [];
 
