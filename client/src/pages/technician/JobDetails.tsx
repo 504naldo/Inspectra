@@ -195,6 +195,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const extinguishers = devices?.filter((d: any) => categorizeDevice(d) === 'extinguisher') || [];
   const emergencyLights = devices?.filter((d: any) => categorizeDevice(d) === 'emergency') || [];
 
+  // Set of deviceIds whose inspection_result row was auto-carried forward from a prior job
+  const carriedForwardDeviceIds = new Set<number>(
+    (inspectionResults as any[])?.filter((r: any) => r.carriedForward).map((r: any) => r.deviceId) ?? []
+  );
+
   // Sort devices by walk order and add inspection results
   // Smoke alarms are sorted by suite number descending (highest to lowest)
   const sortedSmokeAlarms = sortBySuiteNumberDescending(smokeAlarms).map((d: any) => ({
@@ -412,6 +417,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   devices={sortedSmokeAlarms}
                   isFinalized={isFinalized}
                   onResultChange={() => refetch()}
+                  carriedForwardDeviceIds={carriedForwardDeviceIds}
                 />
               ) : (
                 <div className="text-center py-6 text-muted-foreground text-sm">
@@ -461,6 +467,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   devices={sortedFireAlarmDevices}
                   isFinalized={isFinalized}
                   onResultChange={() => refetch()}
+                  carriedForwardDeviceIds={carriedForwardDeviceIds}
                 />
               ) : (
                 <div className="text-center py-6 text-muted-foreground text-sm">
@@ -510,6 +517,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   devices={sortedExtinguishers}
                   isFinalized={isFinalized}
                   onResultChange={() => refetch()}
+                  carriedForwardDeviceIds={carriedForwardDeviceIds}
                 />
               ) : (
                 <div className="text-center py-6 text-muted-foreground text-sm">
@@ -559,6 +567,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   devices={sortedEmergencyLights}
                   isFinalized={isFinalized}
                   onResultChange={() => refetch()}
+                  carriedForwardDeviceIds={carriedForwardDeviceIds}
                 />
               ) : (
                 <div className="text-center py-6 text-muted-foreground text-sm">

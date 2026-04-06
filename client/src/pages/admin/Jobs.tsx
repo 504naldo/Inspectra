@@ -12,15 +12,16 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { 
-  Plus, 
-  Search, 
+import {
+  Plus,
+  Search,
   ChevronRight,
   Calendar,
   CheckCircle2,
   X,
   Star,
-  UserPlus
+  UserPlus,
+  Info
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -74,6 +75,13 @@ export default function AdminJobs() {
   const { data: sites } = trpc.site.listByCompany.useQuery({ companyId });
   const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
   const { data: technicians, isLoading: techsLoading, error: techsError } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
+
+  // Last inspection summary — fetched whenever the site selector changes in the create dialog
+  const selectedSiteIdNum = newJob.siteId ? parseInt(newJob.siteId) : undefined;
+  const { data: lastInspectionSummary } = trpc.site.getLastInspectionSummary.useQuery(
+    { siteId: selectedSiteIdNum! },
+    { enabled: !!selectedSiteIdNum }
+  );
   
   // Deduplicate technicians as a guardrail (backend should already handle this)
   const uniqueTechnicians = React.useMemo(() => {
@@ -264,8 +272,8 @@ export default function AdminJobs() {
                   
                   <div className="space-y-2">
                     <Label>Site *</Label>
-                    <Select 
-                      value={newJob.siteId} 
+                    <Select
+                      value={newJob.siteId}
                       onValueChange={(v) => setNewJob({ ...newJob, siteId: v })}
                     >
                       <SelectTrigger>
@@ -277,6 +285,16 @@ export default function AdminJobs() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {lastInspectionSummary?.found && (
+                      <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>
+                          Prior inspection found ({lastInspectionSummary.deviceCount} device{lastInspectionSummary.deviceCount !== 1 ? 's' : ''}, {lastInspectionSummary.jobType?.replace('_', ' ')}
+                          {lastInspectionSummary.completedAt ? `, ${new Date(lastInspectionSummary.completedAt).toLocaleDateString()}` : ''}).
+                          {' '}Device list will be pre-filled for the technician.
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

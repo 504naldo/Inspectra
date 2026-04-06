@@ -463,6 +463,42 @@ export async function getJobsBySite(siteId: number) {
   return db.select().from(jobs).where(eq(jobs.siteId, siteId)).orderBy(desc(jobs.scheduledDate));
 }
 
+export async function getLastCompletedJobForSite(siteId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.siteId, siteId), sql`${jobs.finalizedAt} IS NOT NULL`))
+    .orderBy(desc(jobs.finalizedAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function getLastInspectionSummaryForSite(siteId: number): Promise<{
+  found: boolean;
+  jobId?: number;
+  completedAt?: Date;
+  deviceCount?: number;
+  jobType?: string;
+}> {
+  const db = await getDb();
+  if (!db) return { found: false };
+  const lastJob = await getLastCompletedJobForSite(siteId);
+  if (!lastJob) return { found: false };
+  const rows = await db
+    .select({ id: inspectionResults.id })
+    .from(inspectionResults)
+    .where(eq(inspectionResults.jobId, lastJob.id));
+  return {
+    found: true,
+    jobId: lastJob.id,
+    completedAt: lastJob.finalizedAt ?? undefined,
+    deviceCount: rows.length,
+    jobType: lastJob.jobType,
+  };
+}
+
 export async function getJobById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -578,6 +614,7 @@ export async function getInspectionResultsByJob(jobId: number) {
       testedAt: inspectionResults.testedAt,
       syncedAt: inspectionResults.syncedAt,
       walkOrder: inspectionResults.walkOrder,
+      carriedForward: inspectionResults.carriedForward,
       createdAt: inspectionResults.createdAt,
       updatedAt: inspectionResults.updatedAt,
       deviceType: devices.deviceType,

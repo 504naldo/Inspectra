@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
@@ -7,6 +8,7 @@ import { JOB_FINALIZED_IMMUTABLE } from "../../shared/_core/errors";
 import { populateJobFireAlarmChecklist } from "../fireAlarmRouter";
 import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
+import * as schema from "../../drizzle/schema";
 
 // Job router
 const jobRouter = router({
@@ -71,7 +73,54 @@ const jobRouter = router({
     scheduledDate: z.date().optional(),
   })).mutation(async ({ input, ctx }) => {
     const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
-    const newJob = await db.createJob({ ...input, jobNumber });
+
+    // Find the last finalized job for this site so we can copy its inspection_results
+    const lastJob = await db.getLastCompletedJobForSite(input.siteId);
+
+    // Create the job and (if applicable) pre-fill inspection_results in a single transaction
+    const newJob = await withAudit(ctx, "job.create", async (tx) => {
+      // Insert the new job row
+      const insertResult = await tx
+        .insert(schema.jobs)
+        .values({ ...input, jobNumber, copiedFromJobId: lastJob?.id ?? null } as schema.InsertJob);
+      const newJobId = Number(insertResult[0].insertId);
+
+      // Pre-fill inspection_results from prior job if one exists
+      if (lastJob) {
+        const priorResults = await tx
+          .select({
+            deviceId: schema.inspectionResults.deviceId,
+            walkOrder: schema.inspectionResults.walkOrder,
+          })
+          .from(schema.inspectionResults)
+          .where(eq(schema.inspectionResults.jobId, lastJob.id));
+
+        if (priorResults.length > 0) {
+          const rows = priorResults.map((r) => ({
+            jobId: newJobId,
+            deviceId: r.deviceId,
+            technicianId: null as number | null,
+            result: "not_tested" as const,
+            notes: null as string | null,
+            testedAt: null as Date | null,
+            syncedAt: null as Date | null,
+            walkOrder: r.walkOrder,
+            carriedForward: 1,
+          }));
+          await tx.insert(schema.inspectionResults).values(rows);
+        }
+      }
+
+      // Re-fetch the new job row to return the same shape as db.createJob
+      const fetched = await tx
+        .select()
+        .from(schema.jobs)
+        .where(eq(schema.jobs.id, newJobId))
+        .limit(1);
+      const row = fetched[0];
+      if (!row) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Job creation failed" });
+      return row;
+    });
 
     // Auto-create Google Calendar event if job has a scheduled date (best-effort)
     if (input.scheduledDate && ctx.user) {

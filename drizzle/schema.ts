@@ -267,6 +267,8 @@ export const jobs = mysqlTable("jobs", {
   contactName: varchar("contact_name", { length: 255 }),
   contactSignedAt: timestamp("contact_signed_at"),
   techSignedAt: timestamp("tech_signed_at"),
+  // Pre-fill audit: tracks which prior job's inspection_results were copied into this one
+  copiedFromJobId: int("copied_from_job_id"),
 });
 
 export type Job = typeof jobs.$inferSelect;
@@ -298,7 +300,7 @@ export const inspectionResults = mysqlTable("inspection_results", {
   id: int("id").autoincrement().primaryKey(),
   jobId: int("jobId").notNull(),
   deviceId: int("deviceId").notNull(),
-  technicianId: int("technicianId").notNull(),
+  technicianId: int("technicianId"), // nullable — null for pre-filled rows until technician tests the device
   result: mysqlEnum("result", ["pass", "fail", "na", "not_tested"]).default("not_tested").notNull(),
   notes: text("notes"),
   testedAt: timestamp("testedAt"),
@@ -308,6 +310,8 @@ export const inspectionResults = mysqlTable("inspection_results", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   // --- Compliance Hardening: Technician Credential Snapshot ---
   technicianCertificationSnapshot: json("technicianCertificationSnapshot"),
+  // Pre-fill: true when this row was auto-created from a prior job's inspection_results
+  carriedForward: tinyint("carried_forward").default(0).notNull(),
 }, (table) => ({
   jobIdIdx: index("inspection_results_jobId_idx").on(table.jobId),
 }));
