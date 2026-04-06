@@ -4,6 +4,7 @@ import { users } from '../drizzle/schema';
 import { eq, and, or, like, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { adminProcedure, protectedProcedure, router } from './_core/trpc';
+import { randomUUID } from 'crypto';
 
 export const userRouter = router({
   // List all users in company (admin only)
@@ -109,6 +110,42 @@ export const userRouter = router({
         .set(updates)
         .where(eq(users.id, userId));
       
+      return { success: true };
+    }),
+
+  // Pre-register a new user (admin only)
+  // Creates a placeholder record; when the user signs in with Google their email
+  // is matched and the placeholder openId is replaced with the real one.
+  createUser: adminProcedure
+    .input(z.object({
+      email: z.string().email(),
+      name: z.string().min(1),
+      role: z.enum(['admin', 'office', 'technician', 'customer']),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+
+      // Prevent duplicate emails
+      const existing = await db.select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, input.email))
+        .limit(1);
+      if (existing.length > 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'A user with this email already exists' });
+      }
+
+      const placeholderOpenId = `pending_${randomUUID()}`;
+      await db.insert(users).values({
+        openId: placeholderOpenId,
+        email: input.email,
+        name: input.name,
+        role: input.role,
+        companyId: ctx.user.companyId,
+        isActive: 1,
+        lastSignedIn: new Date(),
+      });
+
       return { success: true };
     }),
 

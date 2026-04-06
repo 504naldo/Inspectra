@@ -128,6 +128,38 @@ const deviceRouter = router({
   getCount: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
     return db.getDeviceCountBySite(input.siteId);
   }),
+
+  // Add a brand-new device to a site during an active inspection
+  addDuringInspection: technicianProcedure.input(z.object({
+    jobId: z.number(),
+    siteId: z.number(),
+    companyId: z.number(),
+    category: z.enum(['FIRE_ALARM_DEVICE', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHT', 'SMOKE_ALARM', 'SPRINKLER']),
+    deviceType: z.string().min(1),
+    location: z.string().optional(),
+    notes: z.string().optional(),
+    suiteNumber: z.string().optional(),
+    powerType: z.enum(['hardwired', 'battery', 'sealed', 'unknown']).optional(),
+  })).mutation(async ({ input }) => {
+    const { jobId, ...deviceData } = input;
+    const job = await db.getJobById(jobId);
+    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+    if ((job as any).finalizedAt) throw new TRPCError({ code: 'FORBIDDEN', message: 'Job is finalized' });
+    const device = await db.createDevice(deviceData as any);
+    return { success: true, deviceId: device.id };
+  }),
+
+  // Soft-delete a device (marks isActive = false) — only allowed while job is not finalized
+  softDelete: technicianProcedure.input(z.object({
+    deviceId: z.number(),
+    jobId: z.number(),
+  })).mutation(async ({ input }) => {
+    const job = await db.getJobById(input.jobId);
+    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+    if ((job as any).finalizedAt) throw new TRPCError({ code: 'FORBIDDEN', message: 'Job is finalized' });
+    await db.updateDevice(input.deviceId, { isActive: false } as any);
+    return { success: true };
+  }),
 });
 
 // Smoke Alarm router
