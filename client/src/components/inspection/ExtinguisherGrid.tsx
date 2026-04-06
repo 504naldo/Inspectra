@@ -24,6 +24,7 @@ interface ExtinguisherGridProps {
   devices: ExtinguisherRow[];
   isFinalized?: boolean;
   onResultChange?: (deviceId: number, result: InspectionResult) => void;
+  carriedForwardDeviceIds?: Set<number>;
 }
 
 interface EditState {
@@ -52,6 +53,7 @@ export function ExtinguisherGrid({
   devices,
   isFinalized,
   onResultChange,
+  carriedForwardDeviceIds,
 }: ExtinguisherGridProps) {
   const [editing, setEditing] = useState<EditState | null>(null);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
@@ -147,6 +149,9 @@ export function ExtinguisherGrid({
                 {/* # */}
                 <td className="sticky left-0 bg-inherit px-2 py-1.5 text-center text-muted-foreground border-r font-mono w-8">
                   {idx + 1}
+                  {carriedForwardDeviceIds?.has(device.id) && (
+                    <span className="block text-[9px] font-semibold uppercase tracking-wide text-blue-600 leading-none mt-0.5">carried</span>
+                  )}
                 </td>
 
                 {(["location", "deviceType", "manufacturer", "model", "serialNumber", "mfgDate", "lastHST", "last6yr"] as const).map(

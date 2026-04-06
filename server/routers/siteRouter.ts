@@ -151,6 +151,12 @@ const siteRouter = router({
     });
     return { success: true };
   }),
+
+  getLastInspectionSummary: officeProcedure
+    .input(z.object({ siteId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getLastInspectionSummaryForSite(input.siteId);
+    }),
 });
 
 export { siteRouter };

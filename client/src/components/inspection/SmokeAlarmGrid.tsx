@@ -87,6 +87,7 @@ interface SmokeAlarmGridProps {
   devices: SmokeAlarmRow[];
   isFinalized?: boolean;
   onResultChange?: (deviceId: number, result: InspectionResult) => void;
+  carriedForwardDeviceIds?: Set<number>;
 }
 
 interface EditState {
@@ -228,6 +229,7 @@ export function SmokeAlarmGrid({
   devices,
   isFinalized,
   onResultChange,
+  carriedForwardDeviceIds,
 }: SmokeAlarmGridProps) {
   const isMobile = useIsMobile();
   const [editing, setEditing] = useState<EditState | null>(null);
@@ -374,6 +376,9 @@ export function SmokeAlarmGrid({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-sm">{device.suiteNumber || device.location || "—"}</span>
+                    {carriedForwardDeviceIds?.has(device.id) && (
+                      <span className="text-[9px] font-semibold uppercase tracking-wide text-blue-600 border border-blue-300 rounded px-1">carried</span>
+                    )}
                     {device.deviceType && (
                       <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-[#16324F]/10 text-[#16324F] dark:bg-[#2E5B7A]/20 dark:text-blue-200">
                         {device.deviceType}
@@ -553,6 +558,9 @@ export function SmokeAlarmGrid({
                   <td className="sticky left-0 bg-inherit px-2 py-1.5 border-r font-mono font-medium whitespace-nowrap">
                     {device.suiteNumber || device.location || (
                       <span className="text-muted-foreground/40">—</span>
+                    )}
+                    {carriedForwardDeviceIds?.has(device.id) && (
+                      <span className="block text-[9px] font-semibold uppercase tracking-wide text-blue-600 leading-none mt-0.5">carried</span>
                     )}
                   </td>
 

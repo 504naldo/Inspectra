@@ -53,6 +53,7 @@ interface IndividualDeviceGridProps {
   devices: DeviceRow[];
   isFinalized?: boolean;
   onResultChange?: (deviceId: number, result: string) => void;
+  carriedForwardDeviceIds?: Set<number>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -169,6 +170,7 @@ function MobileCard({
   onRemarksBlur,
   onFBlur,
   isFinalized,
+  isCarriedForward,
 }: {
   device: DeviceRow;
   idx: number;
@@ -179,6 +181,7 @@ function MobileCard({
   onRemarksBlur: () => void;
   onFBlur: () => void;
   isFinalized?: boolean;
+  isCarriedForward?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -190,6 +193,9 @@ function MobileCard({
       >
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs text-muted-foreground font-mono shrink-0">{idx + 1}</span>
+          {isCarriedForward && (
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-blue-600 border border-blue-300 rounded px-1 shrink-0">carried</span>
+          )}
           <span className="text-sm font-medium truncate">{device.location || "—"}</span>
           {device.label && <span className="text-xs text-muted-foreground shrink-0">[{device.label}]</span>}
           <span className="text-xs text-muted-foreground shrink-0">{device.deviceType}</span>
@@ -272,6 +278,7 @@ export function IndividualDeviceGrid({
   devices,
   isFinalized,
   onResultChange,
+  carriedForwardDeviceIds,
 }: IndividualDeviceGridProps) {
   const [legendOpen, setLegendOpen] = useState(false);
   const [localChecks, setLocalChecks] = useState<Record<number, CheckData>>({});
@@ -380,6 +387,7 @@ export function IndividualDeviceGrid({
               onFBlur={() => handleTextBlur(device.id)}
               onRemarksBlur={() => handleTextBlur(device.id)}
               isFinalized={isFinalized}
+              isCarriedForward={carriedForwardDeviceIds?.has(device.id)}
             />
           );
         })}
@@ -435,7 +443,12 @@ export function IndividualDeviceGrid({
               return (
                 <tr key={device.id} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
                   {/* # */}
-                  <td className="px-2 py-1.5 text-center text-muted-foreground border-r font-mono">{idx + 1}</td>
+                  <td className="px-2 py-1.5 text-center text-muted-foreground border-r font-mono">
+                    {idx + 1}
+                    {carriedForwardDeviceIds?.has(device.id) && (
+                      <span className="block text-[9px] font-semibold uppercase tracking-wide text-blue-600 leading-none mt-0.5">carried</span>
+                    )}
+                  </td>
 
                   {/* Read-only device fields */}
                   <td className="px-2 py-1.5 border-r max-w-[8rem]">

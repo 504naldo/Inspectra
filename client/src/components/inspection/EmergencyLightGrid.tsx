@@ -26,6 +26,7 @@ interface EmergencyLightGridProps {
   devices: EmergencyLightRow[];
   isFinalized?: boolean;
   onResultChange?: (deviceId: number, result: InspectionResult) => void;
+  carriedForwardDeviceIds?: Set<number>;
 }
 
 interface EditState {
@@ -59,6 +60,7 @@ export function EmergencyLightGrid({
   devices,
   isFinalized,
   onResultChange,
+  carriedForwardDeviceIds,
 }: EmergencyLightGridProps) {
   const [editing, setEditing] = useState<EditState | null>(null);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
@@ -156,6 +158,9 @@ export function EmergencyLightGrid({
                 {/* # */}
                 <td className="sticky left-0 bg-inherit px-2 py-1.5 text-center text-muted-foreground border-r font-mono w-8">
                   {idx + 1}
+                  {carriedForwardDeviceIds?.has(device.id) && (
+                    <span className="block text-[9px] font-semibold uppercase tracking-wide text-blue-600 leading-none mt-0.5">carried</span>
+                  )}
                 </td>
 
                 {(["location", "deviceType", "manufacturer", "model", "supplyVoltage", "modelWattage", "batteryYear", "batterySize", "batteryCount", "lampCount"] as const).map(
