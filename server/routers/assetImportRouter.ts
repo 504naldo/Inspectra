@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { attachments, devices, jobs, sites } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
@@ -412,6 +412,187 @@ export const assetImportRouter = router({
         excludedRowsCount: excludedRows.length,
         excludedRows: excludedRows.slice(0, 20), // Return first 20 for display
         message: `Imported ${totalDevices} devices across ${Object.values({ fireAlarmCount, extinguisherCount, emergencyLightCount, sprinklerSystemCount, sprinklerDeviceCount }).filter(c => c > 0).length} categories. ${siteFieldsUpdated > 0 ? `Updated ${siteFieldsUpdated} site fields.` : ''} ${excludedRows.length > 0 ? `Excluded ${excludedRows.length} rows.` : ''}`,
+      };
+    }),
+
+  /**
+   * Quick Import — all device categories from a directly uploaded file.
+   * Accepts base64 file data; no job attachment lookup required.
+   * Identical sheet-parsing logic to importAssetsFromExcel.
+   */
+  importAllFromFile: officeProcedure
+    .input(z.object({
+      siteId: z.number(),
+      fileData: z.string(), // base64-encoded Excel file
+      fileName: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { siteId, fileData, fileName } = input;
+      const companyId = ctx.user.companyId;
+
+      if (!companyId) {
+        throw new Error("User must belong to a company");
+      }
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      // Verify site belongs to this company
+      const [site] = await db
+        .select()
+        .from(sites)
+        .where(and(eq(sites.id, siteId), eq(sites.companyId, companyId)))
+        .limit(1);
+
+      if (!site) throw new Error("Site not found or access denied");
+
+      // Parse workbook from base64
+      const buffer = Buffer.from(fileData, "base64");
+      const workbook = XLSX.read(buffer, { type: "buffer" });
+      const sheetNames = workbook.SheetNames;
+
+      const findSheet = (keywords: string[]): string | null => {
+        for (const name of sheetNames) {
+          const lower = safeToLower(name);
+          if (lower && keywords.some((kw) => lower.includes(kw))) return name;
+        }
+        return null;
+      };
+
+      const siteSheet = findSheet(["site", "building", "property", "info"]);
+      const fireAlarmSheet = findSheet(["fire alarm device", "alarm device", "fa device", "device list"]);
+      const extinguisherSheet = findSheet(["exting", "extinguisher", "fire ext"]);
+      const emergencyLightSheet = findSheet(["emerg", "exit", "lighting", "light"]);
+      const sprinklerSystemSheet = findSheet(["sprinkler system", "sprinkler"]);
+      const sprinklerDeviceSheet = findSheet(["sprinkler device", "sprinkler head"]);
+      const smokeAlarmSheet = findSheet(["smoke alarm", "smoke detector", "smoke", "sa "]);
+
+      let siteFieldsUpdated = 0;
+      let fireAlarmCount = 0;
+      let extinguisherCount = 0;
+      let emergencyLightCount = 0;
+      let sprinklerSystemCount = 0;
+      let sprinklerDeviceCount = 0;
+      let smokeAlarmCount = 0;
+      const excludedRows: Array<{ sheet: string; reason: string; rowData?: any }> = [];
+
+      // Parse and update Site info
+      if (siteSheet) {
+        try {
+          const rows = XLSX.utils.sheet_to_json<any>(workbook.Sheets[siteSheet], { defval: "" });
+          if (rows.length > 0) {
+            const d = rows[0];
+            const fields: Record<string, string[]> = {
+              name:         ["site name", "building name", "property name", "name"],
+              address:      ["address", "street", "location"],
+              city:         ["city", "municipality"],
+              state:        ["state", "province", "region"],
+              postalCode:   ["postal", "zip", "postal code", "zip code"],
+              contactName:  ["contact name", "contact", "site contact"],
+              contactPhone: ["contact phone", "phone", "telephone"],
+              notes:        ["notes", "comments", "remarks"],
+            };
+            const updateData: any = {};
+            for (const [col, keys] of Object.entries(fields)) {
+              const val = extractField(d, keys);
+              if (val) { updateData[col] = val; siteFieldsUpdated++; }
+            }
+            if (Object.keys(updateData).length > 0) {
+              updateData.updatedAt = new Date();
+              await db.update(sites).set(updateData).where(eq(sites.id, siteId));
+            }
+          }
+        } catch (e: any) {
+          excludedRows.push({ sheet: "Site", reason: `Parse error: ${e.message}` });
+        }
+      }
+
+      // Shared device-sheet parser
+      const parseDeviceSheet = async (
+        sheetName: string,
+        category: "FIRE_ALARM_DEVICE" | "FIRE_EXTINGUISHER" | "EMERGENCY_LIGHT" | "SMOKE_ALARM",
+        defaultType: string,
+        sheetLabel: string,
+      ): Promise<number> => {
+        const rows = XLSX.utils.sheet_to_json<any>(workbook.Sheets[sheetName], { defval: "" });
+        let count = 0;
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          if (isRowBlank(row)) continue;
+          const location = extractField(row, ["location", "area", "room", "zone", "suite", "unit"]);
+          const identifier = extractField(row, ["tag", "id", "number", "identifier", "label", "suite", "unit"]);
+          const type = extractField(row, ["type", "class", "category", "device type"]);
+          const notes = extractField(row, ["notes", "comments", "remarks"]);
+          if (!location && !identifier) {
+            excludedRows.push({ sheet: sheetLabel, reason: "Missing location", rowData: { row: i + 2, type } });
+            continue;
+          }
+          const ref = identifier || createHash(location, type, category);
+          await upsertDevice({ companyId, siteId, category, location: location || identifier, deviceType: type || defaultType, barcode: identifier || null, notes: notes || null, externalRef: ref });
+          count++;
+        }
+        return count;
+      };
+
+      if (fireAlarmSheet) fireAlarmCount = await parseDeviceSheet(fireAlarmSheet, "FIRE_ALARM_DEVICE", "Fire Alarm Device", "Fire Alarm Devices");
+      if (extinguisherSheet) extinguisherCount = await parseDeviceSheet(extinguisherSheet, "FIRE_EXTINGUISHER", "Fire Extinguisher", "Fire Extinguishers");
+      if (emergencyLightSheet) emergencyLightCount = await parseDeviceSheet(emergencyLightSheet, "EMERGENCY_LIGHT", "Emergency Light", "Emergency Lights");
+      if (smokeAlarmSheet) smokeAlarmCount = await parseDeviceSheet(smokeAlarmSheet, "SMOKE_ALARM", "Smoke Alarm", "Smoke Alarms");
+
+      // Sprinkler systems (with numeric fields stored in notes)
+      if (sprinklerSystemSheet) {
+        const rows = XLSX.utils.sheet_to_json<any>(workbook.Sheets[sprinklerSystemSheet], { defval: "" });
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          if (isRowBlank(row)) continue;
+          const location = extractField(row, ["location", "area", "coverage", "zone"]);
+          const identifier = extractField(row, ["system number", "system id", "id"]);
+          const type = extractField(row, ["type", "system type"]);
+          const pressure = extractField(row, ["pressure", "water pressure", "system pressure"]);
+          const manufacturer = extractField(row, ["manufacturer", "make"]);
+          const model = extractField(row, ["model", "model number"]);
+          let notes = extractField(row, ["notes", "comments", "remarks"]);
+          if (pressure) notes += `\nPressure: ${pressure}`;
+          if (manufacturer) notes += `\nManufacturer: ${manufacturer}`;
+          if (model) notes += `\nModel: ${model}`;
+          if (!location) { excludedRows.push({ sheet: "Sprinkler Systems", reason: "Missing location", rowData: { row: i + 2 } }); continue; }
+          await upsertDevice({ companyId, siteId, category: "FIRE_ALARM_DEVICE", location, deviceType: type || "Sprinkler System", barcode: identifier || null, notes: notes.trim() || null, externalRef: identifier || createHash(location, type, "SPRINKLER_SYSTEM") });
+          sprinklerSystemCount++;
+        }
+      }
+
+      if (sprinklerDeviceSheet) {
+        const rows = XLSX.utils.sheet_to_json<any>(workbook.Sheets[sprinklerDeviceSheet], { defval: "" });
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          if (isRowBlank(row)) continue;
+          const location = extractField(row, ["location", "area", "room", "zone"]);
+          const identifier = extractField(row, ["tag", "id", "number", "identifier", "head number"]);
+          const type = extractField(row, ["type", "head type", "sprinkler type"]);
+          const notes = extractField(row, ["notes", "comments", "remarks"]);
+          if (!location) { excludedRows.push({ sheet: "Sprinkler Devices", reason: "Missing location", rowData: { row: i + 2 } }); continue; }
+          await upsertDevice({ companyId, siteId, category: "FIRE_ALARM_DEVICE", location, deviceType: type || "Sprinkler Head", barcode: identifier || null, notes: notes || null, externalRef: identifier || createHash(location, type, "SPRINKLER_DEVICE") });
+          sprinklerDeviceCount++;
+        }
+      }
+
+      const total = fireAlarmCount + extinguisherCount + emergencyLightCount + smokeAlarmCount + sprinklerSystemCount + sprinklerDeviceCount;
+      const categoryCount = [fireAlarmCount, extinguisherCount, emergencyLightCount, smokeAlarmCount, sprinklerSystemCount, sprinklerDeviceCount].filter(c => c > 0).length;
+
+      return {
+        success: true,
+        siteFieldsUpdated,
+        deviceCounts: {
+          fireAlarm: fireAlarmCount,
+          extinguishers: extinguisherCount,
+          emergencyLights: emergencyLightCount,
+          smokeAlarms: smokeAlarmCount,
+          sprinklerSystems: sprinklerSystemCount,
+          sprinklerDevices: sprinklerDeviceCount,
+          total,
+        },
+        excludedRowsCount: excludedRows.length,
+        message: `Imported ${total} devices across ${categoryCount} categor${categoryCount === 1 ? "y" : "ies"}.${siteFieldsUpdated > 0 ? ` Updated ${siteFieldsUpdated} site fields.` : ""}${excludedRows.length > 0 ? ` Skipped ${excludedRows.length} rows.` : ""}`,
       };
     }),
 });

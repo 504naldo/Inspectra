@@ -9,10 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
-import { 
-  Upload, 
-  FileSpreadsheet, 
-  ArrowRight, 
+import {
+  Upload,
+  FileSpreadsheet,
+  ArrowRight,
   ArrowLeft,
   Check,
   X,
@@ -20,7 +20,8 @@ import {
   Loader2,
   Download,
   RefreshCw,
-  ChevronRight
+  ChevronRight,
+  Zap,
 } from "lucide-react";
 import { useState, useRef } from "react";
 import { useParams, Link, useLocation } from "wouter";
@@ -113,10 +114,28 @@ export default function AssetImport() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showDrivePicker, setShowDrivePicker] = useState(false);
-  
+
+  // Mode toggle: 'quick' = one-shot all-categories, 'advanced' = per-category wizard
+  const [mode, setMode] = useState<'quick' | 'advanced'>('quick');
+
+  // Quick Import state
+  const [quickSiteId, setQuickSiteId] = useState<string>(siteId > 0 ? siteId.toString() : '');
+  const [quickFile, setQuickFile] = useState<File | null>(null);
+  const [quickFileData, setQuickFileData] = useState<string>('');
+  const [quickStep, setQuickStep] = useState<'upload' | 'importing' | 'results'>('upload');
+  const [quickResults, setQuickResults] = useState<{
+    success: boolean;
+    siteFieldsUpdated: number;
+    deviceCounts: { fireAlarm: number; extinguishers: number; emergencyLights: number; smokeAlarms: number; sprinklerSystems: number; sprinklerDevices: number; total: number };
+    excludedRowsCount: number;
+    message: string;
+  } | null>(null);
+  const quickFileInputRef = useRef<HTMLInputElement>(null);
+
   // Queries
   const { data: site } = trpc.site.get.useQuery({ id: siteId }, { enabled: siteId > 0 });
   const { data: importHistory } = trpc.import.listBySite.useQuery({ siteId }, { enabled: siteId > 0 });
+  const { data: allSites } = trpc.site.listByCompany.useQuery({ companyId }, { enabled: companyId > 0 });
 
   // File number — defaults from the site's buildingId once loaded
   const [fileNumber, setFileNumber] = useState("");
@@ -193,6 +212,47 @@ export default function AssetImport() {
     },
   });
   
+  const importAllMutation = trpc.assetImport.importAllFromFile.useMutation({
+    onSuccess: (data) => {
+      setQuickResults(data);
+      setQuickStep('results');
+    },
+    onError: (err) => {
+      toast.error(err.message || 'Import failed');
+      setQuickStep('upload');
+    },
+  });
+
+  const handleQuickFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!isSpreadsheetFile(file)) { toast.error(getSpreadsheetErrorMessage()); return; }
+    setQuickFile(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = btoa(
+        new Uint8Array(event.target?.result as ArrayBuffer)
+          .reduce((d, b) => d + String.fromCharCode(b), '')
+      );
+      setQuickFileData(base64);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleQuickImport = () => {
+    if (!quickSiteId || !quickFileData || !quickFile) return;
+    setQuickStep('importing');
+    importAllMutation.mutate({ siteId: parseInt(quickSiteId), fileData: quickFileData, fileName: quickFile.name });
+  };
+
+  const resetQuickImport = () => {
+    setQuickStep('upload');
+    setQuickFile(null);
+    setQuickFileData('');
+    setQuickResults(null);
+    if (quickFileInputRef.current) quickFileInputRef.current.value = '';
+  };
+
   // Handlers
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -303,6 +363,153 @@ export default function AssetImport() {
           </div>
         </div>
         
+        {/* Mode Toggle */}
+        <div className="flex gap-2 p-1 rounded-lg bg-muted w-fit">
+          <button
+            onClick={() => setMode('quick')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'quick' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Zap className="h-4 w-4" />
+            Quick Import
+          </button>
+          <button
+            onClick={() => setMode('advanced')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'advanced' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Advanced
+          </button>
+        </div>
+
+        {/* Quick Import Mode */}
+        {mode === 'quick' && (
+          <>
+            {quickStep === 'upload' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quick Import — All Device Types</CardTitle>
+                  <CardDescription>
+                    Select a site and drop your Excel workbook. All sheets are detected automatically — fire alarm devices, extinguishers, emergency lights, smoke alarms, and sprinklers in one shot.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Site selector */}
+                  <div className="space-y-2">
+                    <Label>Site</Label>
+                    <Select value={quickSiteId} onValueChange={setQuickSiteId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a site…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allSites?.map((s: any) => (
+                          <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* File drop zone */}
+                  <div
+                    className="border-2 border-dashed rounded-lg p-10 text-center cursor-pointer hover:border-primary transition-colors"
+                    onClick={() => quickFileInputRef.current?.click()}
+                  >
+                    {quickFile ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <FileSpreadsheet className="h-10 w-10 text-[var(--success)]" />
+                        <p className="text-sm font-medium text-[var(--success)]">{quickFile.name}</p>
+                        <p className="text-xs text-muted-foreground">Click to change file</p>
+                      </div>
+                    ) : (
+                      <>
+                        <FileSpreadsheet className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                        <p className="text-base font-medium mb-1">Drop your Excel file here or click to browse</p>
+                        <p className="text-sm text-muted-foreground">Supports CSV, XLS, XLSX, XLSM</p>
+                      </>
+                    )}
+                    <input
+                      ref={quickFileInputRef}
+                      type="file"
+                      className="hidden"
+                      accept={getSpreadsheetAcceptAttribute()}
+                      onChange={handleQuickFileSelect}
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleQuickImport}
+                      disabled={!quickSiteId || !quickFile || !quickFileData}
+                      size="lg"
+                    >
+                      <Zap className="h-4 w-4 mr-2" />
+                      Import All Device Types
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {quickStep === 'importing' && (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Loader2 className="h-12 w-12 mx-auto animate-spin text-primary mb-4" />
+                  <h3 className="text-lg font-medium mb-2">Importing…</h3>
+                  <p className="text-muted-foreground">Detecting sheets and importing all device categories</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {quickStep === 'results' && quickResults && (
+              <div className="space-y-6">
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <div className="w-16 h-16 rounded-full bg-[var(--success)]/10 flex items-center justify-center mx-auto mb-4">
+                      <Check className="h-8 w-8 text-[var(--success)]" />
+                    </div>
+                    <h3 className="text-xl font-bold mb-1">Import Complete!</h3>
+                    <p className="text-muted-foreground mb-6">{quickResults.message}</p>
+
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 max-w-2xl mx-auto mb-2">
+                      {([
+                        ['Fire Alarm', quickResults.deviceCounts.fireAlarm],
+                        ['Extinguishers', quickResults.deviceCounts.extinguishers],
+                        ['Emerg. Lights', quickResults.deviceCounts.emergencyLights],
+                        ['Smoke Alarms', quickResults.deviceCounts.smokeAlarms],
+                        ['Sprinkler Sys.', quickResults.deviceCounts.sprinklerSystems],
+                        ['Sprinkler Dev.', quickResults.deviceCounts.sprinklerDevices],
+                      ] as [string, number][]).map(([label, count]) => (
+                        <div key={label} className="text-center">
+                          <div className={`text-2xl font-bold ${count > 0 ? 'text-[var(--success)]' : 'text-muted-foreground'}`}>{count}</div>
+                          <p className="text-xs text-muted-foreground">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-sm font-semibold mt-2">Total: {quickResults.deviceCounts.total} devices</p>
+                    {quickResults.excludedRowsCount > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">{quickResults.excludedRowsCount} rows skipped (missing location)</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <div className="flex justify-center gap-4">
+                  <Button variant="outline" onClick={resetQuickImport}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Import Another File
+                  </Button>
+                  <Link href={`/admin/devices${quickSiteId ? `?siteId=${quickSiteId}` : ''}`}>
+                    <Button>
+                      View Devices
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Advanced Mode — existing per-category wizard */}
+        {mode === 'advanced' && (
+        <>
         {/* Progress Steps */}
         <Card>
           <CardContent className="py-4">
@@ -929,6 +1136,8 @@ export default function AssetImport() {
             </div>
           </div>
         )}
+        </>
+        )} {/* end mode === 'advanced' */}
       </div>
       {/* Google Drive File Picker */}
       <DriveFilePicker
