@@ -620,7 +620,6 @@ export function SmokeAlarmGrid({
                   {col.label}
                 </th>
               ))}
-              {!isFinalized && <th className="w-8 min-w-[2rem] px-1 py-2 bg-[#16324F]" />}
             </tr>
           </thead>
           <tbody>
@@ -643,13 +642,25 @@ export function SmokeAlarmGrid({
                   key={device.id}
                   className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}
                 >
-                  {/* A — Suite / Location (sticky) */}
+                  {/* A — Suite / Location (sticky) + delete */}
                   <td className="sticky left-0 bg-inherit px-2 py-1.5 border-r font-mono font-medium whitespace-nowrap">
                     {device.suiteNumber || device.location || (
                       <span className="text-muted-foreground/40">—</span>
                     )}
                     {carriedForwardDeviceIds?.has(device.id) && (
                       <span className="block text-[9px] font-semibold uppercase tracking-wide text-blue-600 leading-none mt-0.5">carried</span>
+                    )}
+                    {!isFinalized && (
+                      confirmDeleteId === device.id ? (
+                        <div className="flex gap-1 mt-0.5">
+                          <button onClick={() => softDelete.mutate({ deviceId: device.id, jobId })} className="text-[9px] px-1 py-0.5 rounded bg-red-600 text-white leading-none">✓</button>
+                          <button onClick={() => setConfirmDeleteId(null)} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground leading-none">✕</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setConfirmDeleteId(device.id)} className="mt-0.5 text-muted-foreground/30 hover:text-red-500 transition-colors" title="Remove smoke alarm">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )
                     )}
                   </td>
 
@@ -791,21 +802,6 @@ export function SmokeAlarmGrid({
                     )}
                   </td>
 
-                  {/* Delete */}
-                  {!isFinalized && (
-                    <td className="px-1 py-1 text-center">
-                      {confirmDeleteId === device.id ? (
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => softDelete.mutate({ deviceId: device.id, jobId })} className="text-[10px] px-1.5 py-0.5 rounded bg-red-600 text-white hover:bg-red-700">Yes</button>
-                          <button onClick={() => setConfirmDeleteId(null)} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">No</button>
-                        </div>
-                      ) : (
-                        <button onClick={() => setConfirmDeleteId(device.id)} className="text-muted-foreground/40 hover:text-red-500 transition-colors p-0.5" title="Remove smoke alarm">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </td>
-                  )}
                 </tr>
               );
             })}
@@ -839,7 +835,7 @@ export function SmokeAlarmGrid({
 
             {devices.length === 0 && !showAddRow && (
               <tr>
-                <td colSpan={COL_HEADERS.length + 1} className="text-center py-8 text-muted-foreground">
+                <td colSpan={COL_HEADERS.length} className="text-center py-8 text-muted-foreground">
                   No smoke alarms for this site
                 </td>
               </tr>
