@@ -14,6 +14,8 @@ vi.mock("./db", () => ({
   getInspectionStats: vi.fn(),
   getDeficienciesByJob: vi.fn(),
   createDeficiency: vi.fn(),
+  withAudit: vi.fn(async (_ctx: any, _name: any, fn: any) => fn({})),
+  assertJobNotFinalized: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Import mocked db
@@ -44,6 +46,7 @@ function createTechnicianContext(): TrpcContext {
     } as TrpcContext["req"],
     res: {
       clearCookie: vi.fn(),
+      setHeader: vi.fn(),
     } as unknown as TrpcContext["res"],
   };
 }
@@ -71,6 +74,7 @@ function createAdminContext(): TrpcContext {
     } as TrpcContext["req"],
     res: {
       clearCookie: vi.fn(),
+      setHeader: vi.fn(),
     } as unknown as TrpcContext["res"],
   };
 }

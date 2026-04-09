@@ -7,29 +7,32 @@ export type DeviceCategory = 'smoke' | 'fire_alarm' | 'extinguisher' | 'emergenc
 
 /**
  * Determines if a device is a smoke alarm
- * Checks deviceType, deviceCategory, model, and description fields
+ * Checks deviceType, deviceCategory, category, model, and description fields
  */
 export function isSmokeAlarm(device: {
   deviceType?: string | null;
+  deviceCategory?: string | null;
   category?: string | null;
   model?: string | null;
   description?: string | null;
 }): boolean {
+  // If the DB category enum is set, use it authoritatively
+  if (device.category) return device.category === 'SMOKE_ALARM';
+
   const searchFields = [
     device.deviceType,
-    device.category,
+    device.deviceCategory,
     device.model,
     device.description,
   ]
     .filter(Boolean)
     .map(f => f!.toLowerCase());
 
-  // Check if any field contains "smoke alarm" specifically
-  const hasSmokeAlarm = searchFields.some(field => field.includes('smoke alarm'));
-  
+  // Device must mention "smoke" in at least one field
+  const hasSmoke = searchFields.some(field => field.includes('smoke'));
+
   // Exclude devices that are clearly not smoke alarms even if they mention smoke
-  const isNotSmokeAlarm = searchFields.some(field => 
-    field.includes('detector') || // Smoke detectors are fire alarm system devices
+  const isExcluded = searchFields.some(field =>
     field.includes('extinguisher') ||
     field.includes('pull') ||
     field.includes('horn') ||
@@ -37,7 +40,7 @@ export function isSmokeAlarm(device: {
     field.includes('bell')
   );
 
-  return hasSmokeAlarm && !isNotSmokeAlarm;
+  return hasSmoke && !isExcluded;
 }
 
 /**

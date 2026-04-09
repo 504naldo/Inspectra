@@ -59,6 +59,7 @@ export const MAPPING_RULES: Record<ImportType, MappingRule[]> = {
     { targetField: 'manufacturer',  keywords: ['manufacturer', 'mfr', 'make', 'brand'], priority: 7 },
     { targetField: 'floor',         keywords: ['floor', 'level', 'storey'], priority: 8 },
     { targetField: 'barcode',       keywords: ['barcode', 'tag', 'asset tag'], priority: 6 },
+    { targetField: 'quantity',      keywords: ['qty', 'quantity', 'count', 'amount'], priority: 5 },
   ],
   emergencyLights: [
     { targetField: 'location',      keywords: ['location', 'room', 'area', 'unit #', 'unit number', 'unit', 'zone'], priority: 10 },

@@ -64,11 +64,15 @@ const fireAlarmDevicesSchema: ImportSchema = {
  * Fire Extinguishers import schema
  */
 const fireExtinguishersSchema: ImportSchema = {
-  requiredFields: [],
-  optionalFields: ['deviceType', 'location', 'floor', 'serialNumber', 'barcode', 'notes', 'manufacturer', 'model', 'quantity', 'mfgDate', 'lastHST', 'last6yr'],
+  requiredFields: ['deviceType'],
+  optionalFields: ['location', 'floor', 'serialNumber', 'barcode', 'notes', 'manufacturer', 'model', 'quantity', 'mfgDate', 'lastHST', 'last6yr'],
   category: 'FIRE_EXTINGUISHER',
-  validateRow: (_row) => {
-    return { valid: true, errors: [] };
+  validateRow: (row) => {
+    const errors: string[] = [];
+    if (!row.deviceType || String(row.deviceType).trim() === '') {
+      errors.push('Device type is required');
+    }
+    return { valid: errors.length === 0, errors };
   },
 };
 
