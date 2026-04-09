@@ -3,7 +3,7 @@
 import type { InspectionChecklistResponse } from '../drizzle/schema';
 
 // Define all required checklist items (from complianceChecklists.ts)
-const REQUIRED_CHECKLIST_ITEMS = [
+export const REQUIRED_CHECKLIST_ITEMS = [
   // Section 22.1: Control Unit Inspection (10 items)
   { sectionNumber: '22.1', itemId: 'A', description: 'Input circuit designations correctly identified' },
   { sectionNumber: '22.1', itemId: 'B', description: 'Output circuit designations correctly identified' },

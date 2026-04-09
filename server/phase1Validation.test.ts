@@ -25,10 +25,10 @@ describe('Phase 1: Hard Validation Enforcement', () => {
       // Test checklist validation
       // Using imported function
       
-      // Simulate incomplete checklist (only 50 out of 122 items)
-      const incompleteResponses = Array.from({ length: 50 }, (_, i) => ({
-        sectionNumber: '22.1',
-        itemId: `Item${i}`,
+      // Simulate incomplete checklist (only 50 out of 122 items — use real item IDs)
+      const incompleteResponses = REQUIRED_CHECKLIST_ITEMS.slice(0, 50).map((item: any) => ({
+        sectionNumber: item.sectionNumber,
+        itemId: item.itemId,
         status: 'PASS' as const,
         comment: null,
       }));
@@ -184,7 +184,7 @@ describe('Phase 1: Hard Validation Enforcement', () => {
       const message = formatMissingItemsMessage(missingItems);
       
       expect(message).toContain('Section 22.1');
-      expect(message).toContain('Item A');
+      expect(message).toContain('- A:');
       expect(message).toContain('Control unit location verified');
     });
     

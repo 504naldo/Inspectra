@@ -130,8 +130,8 @@ describe('Inspectra Rebrand', () => {
       }
     });
 
-    it('should include Inspectra in PDF filenames in routers.ts', () => {
-      const routersPath = path.join(process.cwd(), 'server/routers.ts');
+    it('should include Inspectra in PDF filenames in reportRouter.ts', () => {
+      const routersPath = path.join(process.cwd(), 'server/routers/reportRouter.ts');
       const content = fs.readFileSync(routersPath, 'utf-8');
 
       // Check for Inspectra prefix in PDF file keys

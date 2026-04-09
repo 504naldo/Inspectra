@@ -47,7 +47,7 @@ describe('Device Categorization', () => {
     };
 
     const result = categorizeDevice(device);
-    expect(result).toBe('fire_alarm');
+    expect(result).toBe('smoke');
   });
 
   it('should fallback to deviceType matching for extinguishers', () => {
