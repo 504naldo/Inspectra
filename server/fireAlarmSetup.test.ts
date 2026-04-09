@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+
+// Mock the DB so tests don't need a real database connection
+vi.mock("./db", () => ({ getDb: vi.fn() }));
+import * as db from "./db";
+import { createMockDb } from "./fireAlarmTestFixture";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -21,15 +26,17 @@ function createAuthContext(companyId: number = 2): { ctx: TrpcContext } {
 
   const ctx: TrpcContext = {
     user,
-    req: {
-      protocol: "https",
-      headers: {},
-    } as TrpcContext["req"],
+    req: { protocol: "https", headers: {} } as TrpcContext["req"],
     res: {} as TrpcContext["res"],
   };
 
   return { ctx };
 }
+
+// Each test gets a fresh in-memory DB (no cross-test state)
+beforeEach(() => {
+  vi.mocked(db.getDb).mockResolvedValue(createMockDb() as any);
+});
 
 describe("fireAlarm.upsertSystem", () => {
   it("creates a new fire alarm system for a site", async () => {
@@ -53,7 +60,6 @@ describe("fireAlarm.upsertSystem", () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
-    // First create
     await caller.fireAlarm.upsertSystem({
       siteId: 2,
       manufacturer: "Notifier",
@@ -62,7 +68,6 @@ describe("fireAlarm.upsertSystem", () => {
       connectedToMonitoring: false,
     });
 
-    // Then update
     const result = await caller.fireAlarm.upsertSystem({
       siteId: 2,
       manufacturer: "Notifier Updated",
@@ -75,7 +80,6 @@ describe("fireAlarm.upsertSystem", () => {
 
     expect(result.success).toBe(true);
 
-    // Verify the update
     const system = await caller.fireAlarm.getSystemBySite({ siteId: 2 });
     expect(system?.connectedToMonitoring).toBe(true);
     expect(system?.monitoringCentreName).toBe("Chubb");
@@ -87,7 +91,6 @@ describe("fireAlarm.getSystemBySite", () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
-    // Create a system first
     await caller.fireAlarm.upsertSystem({
       siteId: 2,
       manufacturer: "Edwards",

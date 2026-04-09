@@ -1,6 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { appRouter } from './routers';
 import type { TrpcContext } from './_core/context';
+
+// Mock the LLM so tests don't need a real OPENAI_API_KEY
+vi.mock('./_core/llm', () => ({
+  invokeLLM: vi.fn().mockResolvedValue({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          description: 'The smoke detector failed the sensitivity test and did not respond to smoke.',
+          correctiveAction: 'Replace the smoke detector unit and re-test after installation.',
+          customerExplanation: 'A smoke detector needs to be replaced due to failed testing.',
+        }),
+      },
+    }],
+  }),
+}));
 
 // Mock user context for testing
 function createTestContext(role: 'admin' | 'office' | 'technician' | 'customer' = 'technician'): TrpcContext {

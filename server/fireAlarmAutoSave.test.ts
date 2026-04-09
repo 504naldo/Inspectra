@@ -1,6 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+
+// Mock the DB so tests don't need a real database connection
+vi.mock("./db", () => ({ getDb: vi.fn() }));
+import * as db from "./db";
+import { createMockDb } from "./fireAlarmTestFixture";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -13,6 +18,7 @@ function createAuthContext(): { ctx: TrpcContext } {
     loginMethod: "manus",
     role: "admin",
     companyId: 1,
+    customerOrgId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -20,46 +26,45 @@ function createAuthContext(): { ctx: TrpcContext } {
 
   const ctx: TrpcContext = {
     user,
-    req: {
-      protocol: "https",
-      headers: {},
-    } as TrpcContext["req"],
-    res: {
-      clearCookie: () => {},
-    } as TrpcContext["res"],
+    req: { protocol: "https", headers: {} } as TrpcContext["req"],
+    res: {} as TrpcContext["res"],
   };
 
   return { ctx };
 }
+
+// Each test gets a fresh in-memory DB (no cross-test state)
+beforeEach(() => {
+  vi.mocked(db.getDb).mockResolvedValue(createMockDb() as any);
+});
+
+const BATTERY_SECTION = "Emergency Power Supply Test and Inspection";
 
 describe("Fire Alarm Auto-Save Functionality", () => {
   it("should save inspection result with text value", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
-    // Create or get fire alarm system
     await caller.fireAlarm.upsertSystem({
       siteId: 1,
       manufacturer: "Edwards",
       modelNumber: "EST3",
       operationType: "single_stage",
     });
-    
+
     const system = await caller.fireAlarm.getSystemBySite({ siteId: 1 });
     expect(system).toBeDefined();
 
-    // Get checklist sections
     const sections = await caller.fireAlarm.getChecklistSections();
-    const section4 = sections.find((s: any) => s.sectionName === "Emergency Power Supply Test");
-    expect(section4).toBeDefined();
+    const batterySection = sections.find((s: any) => s.sectionName === BATTERY_SECTION);
+    expect(batterySection).toBeDefined();
 
-    // Find Battery Manufacturer item
-    const batteryManufacturerItem = section4.items.find((i: any) => 
-      i.itemDescription.includes("Battery Manufacturer")
+    // Item M: "Battery manufacturer's date code." — inputType text
+    const batteryManufacturerItem = batterySection.items.find((i: any) =>
+      i.itemDescription.includes("Battery manufacturer")
     );
     expect(batteryManufacturerItem).toBeDefined();
 
-    // Save result with text value (simulating auto-save)
     const saveResult = await caller.fireAlarm.saveInspectionResult({
       jobId: 1,
       fireAlarmSystemId: system!.id,
@@ -77,21 +82,19 @@ describe("Fire Alarm Auto-Save Functionality", () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
-    // Create or get fire alarm system
     await caller.fireAlarm.upsertSystem({
       siteId: 1,
       manufacturer: "Edwards",
       modelNumber: "EST3",
     });
-    
+
     const system = await caller.fireAlarm.getSystemBySite({ siteId: 1 });
     const sections = await caller.fireAlarm.getChecklistSections();
-    const section4 = sections.find((s: any) => s.sectionName === "Emergency Power Supply Test");
-    const batteryManufacturerItem = section4.items.find((i: any) => 
-      i.itemDescription.includes("Battery Manufacturer")
+    const batterySection = sections.find((s: any) => s.sectionName === BATTERY_SECTION);
+    const batteryManufacturerItem = batterySection.items.find((i: any) =>
+      i.itemDescription.includes("Battery manufacturer")
     );
 
-    // First save
     const firstSave = await caller.fireAlarm.saveInspectionResult({
       jobId: 1,
       fireAlarmSystemId: system!.id,
@@ -100,10 +103,8 @@ describe("Fire Alarm Auto-Save Functionality", () => {
       textValue: "Yuasa",
       notes: "",
     });
-
     expect(firstSave.success).toBe(true);
 
-    // Second save (should update, not insert)
     const secondSave = await caller.fireAlarm.saveInspectionResult({
       jobId: 1,
       fireAlarmSystemId: system!.id,
@@ -112,14 +113,12 @@ describe("Fire Alarm Auto-Save Functionality", () => {
       textValue: "Panasonic",
       notes: "Changed manufacturer",
     });
-
     expect(secondSave.success).toBe(true);
-    expect(secondSave.id).toBe(firstSave.id); // Should be the same ID (update)
+    expect(secondSave.id).toBe(firstSave.id); // same ID → update, not insert
 
-    // Verify the updated value
     const results = await caller.fireAlarm.getInspectionResults({ jobId: 1 });
     const savedResult = results.find((r: any) => r.checklistItemId === batteryManufacturerItem.id);
-    
+
     expect(savedResult).toBeDefined();
     expect(savedResult.textValue).toBe("Panasonic");
     expect(savedResult.notes).toBe("Changed manufacturer");
@@ -129,24 +128,23 @@ describe("Fire Alarm Auto-Save Functionality", () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
-    // Create or get fire alarm system
     await caller.fireAlarm.upsertSystem({
       siteId: 1,
       manufacturer: "Edwards",
       modelNumber: "EST3",
     });
-    
+
     const system = await caller.fireAlarm.getSystemBySite({ siteId: 1 });
     const sections = await caller.fireAlarm.getChecklistSections();
-    const section4 = sections.find((s: any) => s.sectionName === "Emergency Power Supply Test");
-    
-    const batteryVoltageItem = section4.items.find((i: any) => 
-      i.itemDescription.includes("Battery Rated Voltage")
+    const batterySection = sections.find((s: any) => s.sectionName === BATTERY_SECTION);
+
+    // Item C: "Battery voltage with main power supply 'ON'." — inputType text
+    const batteryVoltageItem = batterySection.items.find((i: any) =>
+      i.itemDescription.includes("Battery voltage with main power supply")
     );
     expect(batteryVoltageItem).toBeDefined();
-    expect(batteryVoltageItem.inputType).toBe("voltage");
+    expect(batteryVoltageItem.inputType).toBe("text");
 
-    // Save voltage value
     const saveResult = await caller.fireAlarm.saveInspectionResult({
       jobId: 1,
       fireAlarmSystemId: system!.id,
@@ -155,53 +153,48 @@ describe("Fire Alarm Auto-Save Functionality", () => {
       numericValue: "12.6",
       notes: "",
     });
-
     expect(saveResult.success).toBe(true);
 
-    // Verify saved value
     const results = await caller.fireAlarm.getInspectionResults({ jobId: 1 });
     const savedResult = results.find((r: any) => r.checklistItemId === batteryVoltageItem.id);
-    
+
     expect(savedResult).toBeDefined();
-    expect(savedResult.numericValue).toBe("12.6");
+    expect(savedResult.numericValueRaw).toBe("12.6");
   });
 
   it("should save checkbox results (YES/NO/NA)", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
-    // Create or get fire alarm system
     await caller.fireAlarm.upsertSystem({
       siteId: 1,
       manufacturer: "Edwards",
       modelNumber: "EST3",
     });
-    
+
     const system = await caller.fireAlarm.getSystemBySite({ siteId: 1 });
     const sections = await caller.fireAlarm.getChecklistSections();
-    const section4 = sections.find((s: any) => s.sectionName === "Emergency Power Supply Test");
-    
-    const verifyConnectionsItem = section4.items.find((i: any) => 
-      i.itemDescription.includes("Verify battery connections")
-    );
-    expect(verifyConnectionsItem).toBeDefined();
-    expect(verifyConnectionsItem.inputType).toBe("checkbox");
+    const batterySection = sections.find((s: any) => s.sectionName === BATTERY_SECTION);
 
-    // Save PASS result (YES)
+    // Item H: "Battery terminals clamped tightly." — inputType checkbox
+    const clampedItem = batterySection.items.find((i: any) =>
+      i.itemDescription.includes("Battery terminals clamped")
+    );
+    expect(clampedItem).toBeDefined();
+    expect(clampedItem.inputType).toBe("checkbox");
+
     const saveResult = await caller.fireAlarm.saveInspectionResult({
       jobId: 1,
       fireAlarmSystemId: system!.id,
-      checklistItemId: verifyConnectionsItem.id,
+      checklistItemId: clampedItem.id,
       result: "pass",
       notes: "Connections are clean and secure",
     });
-
     expect(saveResult.success).toBe(true);
 
-    // Verify saved value
     const results = await caller.fireAlarm.getInspectionResults({ jobId: 1 });
-    const savedResult = results.find((r: any) => r.checklistItemId === verifyConnectionsItem.id);
-    
+    const savedResult = results.find((r: any) => r.checklistItemId === clampedItem.id);
+
     expect(savedResult).toBeDefined();
     expect(savedResult.result).toBe("pass");
     expect(savedResult.notes).toBe("Connections are clean and secure");
@@ -211,19 +204,17 @@ describe("Fire Alarm Auto-Save Functionality", () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
-    // Create or get fire alarm system
     await caller.fireAlarm.upsertSystem({
       siteId: 1,
       manufacturer: "Edwards",
       modelNumber: "EST3",
     });
-    
+
     const system = await caller.fireAlarm.getSystemBySite({ siteId: 1 });
     const sections = await caller.fireAlarm.getChecklistSections();
-    const section4 = sections.find((s: any) => s.sectionName === "Emergency Power Supply Test");
-    const firstItem = section4.items[0];
+    const batterySection = sections.find((s: any) => s.sectionName === BATTERY_SECTION);
+    const firstItem = batterySection.items[0];
 
-    // Save with notes only
     const saveResult = await caller.fireAlarm.saveInspectionResult({
       jobId: 1,
       fireAlarmSystemId: system!.id,
@@ -231,13 +222,11 @@ describe("Fire Alarm Auto-Save Functionality", () => {
       result: "not_tested",
       notes: "This is a test note for auto-save",
     });
-
     expect(saveResult.success).toBe(true);
 
-    // Verify notes were saved
     const results = await caller.fireAlarm.getInspectionResults({ jobId: 1 });
     const savedResult = results.find((r: any) => r.checklistItemId === firstItem.id);
-    
+
     expect(savedResult).toBeDefined();
     expect(savedResult.notes).toBe("This is a test note for auto-save");
   });
