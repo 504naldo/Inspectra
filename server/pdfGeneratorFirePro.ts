@@ -52,6 +52,21 @@ interface InspectionResult {
   notes?: string | null;
 }
 
+interface FireAlarmChecklistItem {
+  id: number;
+  sectionName: string;
+  sectionOrder: number;
+  itemLetter: string;
+  itemDescription: string;
+  inputType: string;
+  numericLabel?: string | null;
+  numericUnit?: string | null;
+  result: 'pass' | 'fail' | 'na' | 'not_tested';
+  numericValue?: string | null;
+  textValue?: string | null;
+  notes?: string | null;
+}
+
 interface ReportData {
   jobNumber: string;
   jobTitle: string;
@@ -85,6 +100,9 @@ interface ReportData {
 
   // Signature capture (optional — populated after job completion)
   techSignatureUrl?: string;
+
+  // Fire Alarm CAN/ULC-S536 checklist (optional — only for fire alarm jobs with results)
+  fireAlarmChecklist?: FireAlarmChecklistItem[];
 }
 
 // ─── Local constants ──────────────────────────────────────────────────────────
@@ -348,6 +366,125 @@ function drawAfterServiceLetter(doc: any, data: ReportData, hasDeficiencies: boo
      );
 }
 
+/** Returns display text and colour for a fire alarm checklist result value. */
+function faResultDisplay(result: string): { text: string; color: string } {
+  switch (result) {
+    case 'pass':       return { text: 'PASS', color: '#16a34a' };
+    case 'fail':       return { text: 'FAIL', color: DANGER };
+    case 'na':         return { text: 'N/A',  color: GRAY_TEXT };
+    default:           return { text: '—',    color: '#9ca3af' };
+  }
+}
+
+/**
+ * Renders the CAN/ULC-S536 fire alarm inspection checklist onto the PDF.
+ * Starts at startY on the current page; adds new pages as needed.
+ */
+function drawFireAlarmChecklistSection(doc: any, data: ReportData, startY: number): void {
+  const items = data.fireAlarmChecklist;
+  if (!items || items.length === 0) return;
+
+  let y = startY;
+
+  // Page-section title
+  doc.fontSize(13).font('Helvetica-Bold').fillColor(NAVY)
+     .text('Fire Alarm Inspection Checklist  —  CAN/ULC-S536', M, y);
+  y += 6;
+  doc.moveTo(M, y + 8).lineTo(M + CW, y + 8).lineWidth(0.5).stroke(NAVY);
+  y += 20;
+
+  // Column widths: letter | description | result | value/notes
+  const colW = [28, 292, 68, 124]; // total = 512
+
+  /** Draws the grey column-header row and returns new Y below it. */
+  const drawColHeader = (headerY: number): number => {
+    doc.rect(M, headerY, CW, 16).fill('#374151');
+    doc.fillColor(WHITE).fontSize(7.5).font('Helvetica-Bold');
+    let dx = M + 4;
+    ['#', 'Inspection Item', 'Result', 'Value / Notes'].forEach((h, i) => {
+      doc.text(h, dx, headerY + 4, { width: colW[i] - 6, lineBreak: false,
+        align: i === 2 ? 'center' : 'left' });
+      dx += colW[i];
+    });
+    return headerY + 16;
+  };
+
+  // Group items by section, preserving sectionOrder sort
+  const sectionMap = new Map<string, { order: number; items: FireAlarmChecklistItem[] }>();
+  for (const item of items) {
+    if (!sectionMap.has(item.sectionName)) {
+      sectionMap.set(item.sectionName, { order: item.sectionOrder, items: [] });
+    }
+    sectionMap.get(item.sectionName)!.items.push(item);
+  }
+  const sections = Array.from(sectionMap.entries()).sort((a, b) => a[1].order - b[1].order);
+
+  for (const [sectionName, { items: sectionItems }] of sections) {
+    // Ensure enough room for the section header + col header + at least one row
+    if (y + 54 > 720) {
+      doc.addPage();
+      y = drawPageHeader(doc, data);
+    }
+
+    // Navy section header bar
+    doc.rect(M, y, CW, 20).fill(NAVY);
+    doc.fillColor(WHITE).fontSize(8.5).font('Helvetica-Bold')
+       .text(sectionName, M + 8, y + 6, { width: CW - 12, lineBreak: false });
+    y += 20;
+
+    // Column headers
+    y = drawColHeader(y);
+
+    sectionItems.forEach((item: FireAlarmChecklistItem, rowIdx: number) => {
+      const rowH = 18;
+
+      if (y + rowH > 720) {
+        doc.addPage();
+        y = drawPageHeader(doc, data);
+        // Continuation header
+        doc.rect(M, y, CW, 20).fill(NAVY);
+        doc.fillColor(WHITE).fontSize(8.5).font('Helvetica-Bold')
+           .text(`${sectionName}  (cont.)`, M + 8, y + 6, { width: CW - 12, lineBreak: false });
+        y += 20;
+        y = drawColHeader(y);
+      }
+
+      const bg = rowIdx % 2 === 0 ? WHITE : '#f9fafb';
+      doc.rect(M, y, CW, rowH).fill(bg);
+      doc.rect(M, y, CW, rowH).lineWidth(0.3).stroke(LIGHT_GRAY);
+
+      let dx = M + 4;
+
+      // Column 1 — letter
+      doc.fillColor(GRAY_TEXT).fontSize(7.5).font('Helvetica')
+         .text(item.itemLetter, dx, y + 5, { width: colW[0] - 6, lineBreak: false });
+      dx += colW[0];
+
+      // Column 2 — description
+      doc.fillColor(BLACK).fontSize(7.5).font('Helvetica')
+         .text(item.itemDescription, dx, y + 5, { width: colW[1] - 6, lineBreak: false });
+      dx += colW[1];
+
+      // Column 3 — result
+      const { text: resText, color: resColor } = faResultDisplay(item.result);
+      doc.fillColor(resColor).fontSize(7.5).font('Helvetica-Bold')
+         .text(resText, dx, y + 5, { width: colW[2] - 6, align: 'center', lineBreak: false });
+      dx += colW[2];
+
+      // Column 4 — value / notes
+      const valueStr = item.numericValue ?? item.textValue ?? item.notes ?? '';
+      if (valueStr) {
+        doc.fillColor(GRAY_TEXT).fontSize(7).font('Helvetica')
+           .text(valueStr, dx, y + 5, { width: colW[3] - 6, lineBreak: false });
+      }
+
+      y += rowH;
+    });
+
+    y += 10; // gap between sections
+  }
+}
+
 /** Draws the deficiency table header row and returns the new Y below it. */
 function drawDefTableHeader(doc: any, y: number, colWidths: number[]): number {
   const tableW = colWidths.reduce((a, b) => a + b, 0);
@@ -412,6 +549,15 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
         jobNumber: data.jobNumber,
         inspectionDate: data.inspectionDate,
       });
+
+      // ════════════════════════════════════════════════════════════════════
+      // FIRE ALARM CHECKLIST (CAN/ULC-S536) — inserted after summary
+      // ════════════════════════════════════════════════════════════════════
+      if (data.fireAlarmChecklist && data.fireAlarmChecklist.length > 0) {
+        doc.addPage();
+        const faHeaderY = drawPageHeader(doc, data);
+        drawFireAlarmChecklistSection(doc, data, faHeaderY);
+      }
 
       // ════════════════════════════════════════════════════════════════════
       // DEFICIENCY PACKAGE (>0 deficiencies)
