@@ -598,11 +598,16 @@ function ImportDialog({
 
             <div className="space-y-2">
               <ColSelect label="Building ID *" headers={parsedHeaders} value={colBuildingId} onChange={setColBuildingId} />
-              <ColSelect label="Site Name *"   headers={parsedHeaders} value={colSiteName}   onChange={setColSiteName} />
+              <ColSelect label="Site Name"     headers={parsedHeaders} value={colSiteName}   onChange={setColSiteName} />
               <ColSelect label="Service Type"  headers={parsedHeaders} value={colServiceType} onChange={setColServiceType} />
               <ColSelect label="Target Date"   headers={parsedHeaders} value={colTargetDate}  onChange={setColTargetDate} />
               <ColSelect label="Notes"         headers={parsedHeaders} value={colNotes}       onChange={setColNotes} />
             </div>
+            {colBuildingId !== -1 && colSiteName === -1 && (
+              <p className="text-xs text-green-700 bg-green-50 rounded p-2">
+                Building ID is mapped — rows will be matched by file number. Site Name is only needed as a fallback when Building ID is absent.
+              </p>
+            )}
             {colBuildingId === -1 && colSiteName === -1 && (
               <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">
                 Neither Building ID nor Site Name column is mapped — rows won't match any sites. Please select at least one.
