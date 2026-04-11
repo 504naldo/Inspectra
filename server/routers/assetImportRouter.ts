@@ -152,6 +152,7 @@ export const assetImportRouter = router({
             const contactName = extractField(siteData, ["contact name", "contact", "site contact"]);
             const contactPhone = extractField(siteData, ["contact phone", "phone", "telephone"]);
             const notes = extractField(siteData, ["notes", "comments", "remarks"]);
+            const buildingId = extractField(siteData, ["file #", "file#", "file number", "fileno", "file no", "account no", "account number", "acct", "acct#", "building id", "buildingid"]);
 
             // Update site record (only overwrite non-empty values)
             const updateData: any = {};
@@ -163,6 +164,7 @@ export const assetImportRouter = router({
             if (contactName) { updateData.contactName = contactName; siteFieldsUpdated++; }
             if (contactPhone) { updateData.contactPhone = contactPhone; siteFieldsUpdated++; }
             if (notes) { updateData.notes = notes; siteFieldsUpdated++; }
+            if (buildingId) { updateData.buildingId = buildingId; siteFieldsUpdated++; }
 
             if (Object.keys(updateData).length > 0) {
               updateData.updatedAt = new Date();
@@ -511,6 +513,7 @@ export const assetImportRouter = router({
               contactName:  ["contact name", "contact", "site contact"],
               contactPhone: ["contact phone", "phone", "telephone"],
               notes:        ["notes", "comments", "remarks"],
+              buildingId:   ["file #", "file#", "file number", "fileno", "file no", "account no", "account number", "acct", "acct#", "building id", "buildingid"],
             };
             const updateData: any = {};
             for (const [col, keys] of Object.entries(fields)) {

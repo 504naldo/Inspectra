@@ -440,6 +440,11 @@ export const serviceScheduleRouter = router({
         updateExisting: z.boolean().default(false),
         colOverrides:   colOverridesSchema,
         headerRowIndex: z.number().int().min(0).max(20).default(0),
+        /** Manual site assignments for rows that couldn't be auto-matched */
+        manualMappings: z.array(z.object({
+          rawBuildingId: z.string(),
+          siteId:        z.number().int().positive(),
+        })).default([]),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -468,6 +473,19 @@ export const serviceScheduleRouter = router({
       );
       const siteByName = new Map(allSites.map((s) => [s.name.toLowerCase(), s]));
 
+      // Build manual mapping lookup (user-provided overrides for unmatched building IDs)
+      const manualMap = new Map<string, typeof allSites[0]>();
+      for (const m of input.manualMappings) {
+        const site = allSites.find((s) => s.id === m.siteId);
+        if (site) {
+          manualMap.set(normBldg(m.rawBuildingId), site);
+          // Persist the building ID onto the site so future imports auto-match
+          if (!site.buildingId && m.rawBuildingId) {
+            await db.updateSite(site.id, { buildingId: m.rawBuildingId });
+          }
+        }
+      }
+
       // Fetch existing rows for this month to detect duplicates
       const existingRows = await db.getMonthlyTrackingByCompany(input.companyId, input.trackingMonth);
 
@@ -486,6 +504,8 @@ export const serviceScheduleRouter = router({
         if (!rawBuildingId && !rawSiteName && !serviceType) continue; // blank
 
         let matchedSite = rawBuildingId ? siteByBuildingId.get(normBldg(rawBuildingId)) : undefined;
+        // Fall back to manual mapping if auto-match failed
+        if (!matchedSite && rawBuildingId) matchedSite = manualMap.get(normBldg(rawBuildingId));
         if (!matchedSite && rawSiteName) {
           matchedSite = siteByName.get(rawSiteName.toLowerCase());
           if (!matchedSite) {

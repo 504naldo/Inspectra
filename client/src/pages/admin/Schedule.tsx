@@ -467,7 +467,10 @@ function ImportDialog({
   const [result, setResult] = useState<any | null>(null);
   const [skipUnmatched, setSkipUnmatched] = useState(true);
   const [updateExisting, setUpdateExisting] = useState(false);
+  const [manualMappings, setManualMappings] = useState<{ rawBuildingId: string; siteId: number }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const { data: sitesData } = trpc.site.listByCompany.useQuery({ companyId }, { enabled: !!companyId });
 
   const parseHeadersMutation = trpc.serviceSchedule.parseHeaders.useMutation({
     onSuccess: (data) => {
@@ -482,7 +485,7 @@ function ImportDialog({
     },
   });
   const importPreview = trpc.serviceSchedule.importPreview.useMutation({
-    onSuccess: (data) => { setPreview(data); setStep("preview"); },
+    onSuccess: (data) => { setManualMappings([]); setPreview(data); setStep("preview"); },
   });
   const importExecute = trpc.serviceSchedule.importExecute.useMutation({
     onSuccess: (data) => { setResult(data); setStep("result"); },
@@ -519,6 +522,7 @@ function ImportDialog({
       companyId, trackingMonth: month, fileName: file.name, fileData,
       skipUnmatched, updateExisting, headerRowIndex,
       colOverrides: { buildingId: colBuildingId, siteName: colSiteName, serviceType: colServiceType, targetDate: colTargetDate, notes: colNotes },
+      manualMappings: manualMappings.filter((m) => m.siteId > 0),
     });
   }
 
@@ -622,72 +626,134 @@ function ImportDialog({
           </div>
         )}
 
-        {step === "preview" && preview && (
-          <div className="space-y-4">
-            <div className="flex gap-4 text-sm">
-              <span className="text-green-700 font-semibold">{preview.matched} matched</span>
-              <span className="text-red-600 font-semibold">{preview.unmatched} unmatched</span>
-              <span className="text-gray-500">{preview.totalRows} total rows</span>
-            </div>
-
-            {preview.matched === 0 && (
-              <div className="text-xs text-amber-700 bg-amber-50 rounded p-2">
-                No rows matched. <button className="underline" onClick={() => setStep("map")}>Go back and adjust column mapping</button> if the columns look wrong above.
+        {step === "preview" && preview && (() => {
+          const allSites: any[] = (sitesData as any) ?? [];
+          const unmatchedBuildingIds: string[] = Array.from(
+            new Set(
+              (preview.previewRows as PreviewRow[])
+                .filter((r) => r.matchStatus === "unmatched" && r.rawBuildingId)
+                .map((r) => r.rawBuildingId)
+            )
+          );
+          const manualCount = manualMappings.filter((m) => m.siteId > 0).length;
+          const importCount = preview.matched + manualCount;
+          return (
+            <div className="space-y-4">
+              <div className="flex gap-4 text-sm">
+                <span className="text-green-700 font-semibold">{preview.matched} matched</span>
+                <span className="text-red-600 font-semibold">{preview.unmatched} unmatched</span>
+                <span className="text-gray-500">{preview.totalRows} total rows</span>
               </div>
-            )}
 
-            <div className="rounded border overflow-auto max-h-64">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 text-left border-b text-gray-500 font-semibold">
-                    <th className="px-2 py-1">Row</th>
-                    <th className="px-2 py-1">Bldg ID</th>
-                    <th className="px-2 py-1">Site Name</th>
-                    <th className="px-2 py-1">Service Type</th>
-                    <th className="px-2 py-1">Target Date</th>
-                    <th className="px-2 py-1">Match</th>
-                    <th className="px-2 py-1">Matched To</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(preview.previewRows as PreviewRow[]).map((r) => (
-                    <tr key={r.rowIndex} className={`border-b ${r.matchStatus === "unmatched" ? "bg-red-50" : ""}`}>
-                      <td className="px-2 py-1 text-gray-400">{r.rowIndex}</td>
-                      <td className="px-2 py-1 font-mono">{r.rawBuildingId || "—"}</td>
-                      <td className="px-2 py-1">{r.rawSiteName || "—"}</td>
-                      <td className="px-2 py-1">{r.serviceType}</td>
-                      <td className="px-2 py-1">{r.targetDate || "—"}</td>
-                      <td className="px-2 py-1">
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${r.matchStatus === "matched" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
-                          {r.matchStatus === "matched" ? `${r.matchMethod}` : "unmatched"}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1 text-gray-500">{r.matchedSiteName ?? "—"}</td>
+              {preview.unmatched > 0 && unmatchedBuildingIds.length > 0 && (
+                <div className="border rounded-lg p-3 bg-amber-50 space-y-2">
+                  <p className="text-xs font-semibold text-amber-800">
+                    {unmatchedBuildingIds.length} building ID{unmatchedBuildingIds.length !== 1 ? "s" : ""} couldn't be auto-matched.
+                    Assign them to sites below, or they'll be skipped.
+                  </p>
+                  <div className="space-y-1.5">
+                    {unmatchedBuildingIds.map((bldgId) => {
+                      const current = manualMappings.find((m) => m.rawBuildingId === bldgId);
+                      return (
+                        <div key={bldgId} className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-gray-700 w-20 shrink-0">{bldgId}</span>
+                          <Select
+                            value={String(current?.siteId ?? -1)}
+                            onValueChange={(v) => {
+                              const siteId = Number(v);
+                              setManualMappings((prev) => {
+                                const filtered = prev.filter((m) => m.rawBuildingId !== bldgId);
+                                return siteId > 0 ? [...filtered, { rawBuildingId: bldgId, siteId }] : filtered;
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-7 text-xs flex-1">
+                              <SelectValue placeholder="— assign to site —" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="-1"><span className="text-gray-400">— skip this building ID —</span></SelectItem>
+                              {allSites.map((s: any) => (
+                                <SelectItem key={s.id} value={String(s.id)}>
+                                  {s.name}{s.buildingId ? ` (${s.buildingId})` : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {manualCount > 0 && (
+                    <p className="text-xs text-green-700">
+                      {manualCount} manually assigned — building IDs will be saved to those sites automatically.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="rounded border overflow-auto max-h-64">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-left border-b text-gray-500 font-semibold">
+                      <th className="px-2 py-1">Row</th>
+                      <th className="px-2 py-1">Bldg ID</th>
+                      <th className="px-2 py-1">Site Name</th>
+                      <th className="px-2 py-1">Service Type</th>
+                      <th className="px-2 py-1">Target Date</th>
+                      <th className="px-2 py-1">Match</th>
+                      <th className="px-2 py-1">Matched To</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {(preview.previewRows as PreviewRow[]).map((r) => {
+                      const manual = r.matchStatus === "unmatched"
+                        ? manualMappings.find((m) => m.rawBuildingId === r.rawBuildingId)
+                        : undefined;
+                      const manualSite = manual ? allSites.find((s: any) => s.id === manual.siteId) : undefined;
+                      return (
+                        <tr key={r.rowIndex} className={`border-b ${r.matchStatus === "unmatched" && !manual ? "bg-red-50" : r.matchStatus === "unmatched" && manual ? "bg-yellow-50" : ""}`}>
+                          <td className="px-2 py-1 text-gray-400">{r.rowIndex}</td>
+                          <td className="px-2 py-1 font-mono">{r.rawBuildingId || "—"}</td>
+                          <td className="px-2 py-1">{r.rawSiteName || "—"}</td>
+                          <td className="px-2 py-1">{r.serviceType}</td>
+                          <td className="px-2 py-1">{r.targetDate || "—"}</td>
+                          <td className="px-2 py-1">
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              r.matchStatus === "matched" ? "bg-green-100 text-green-700"
+                              : manualSite ? "bg-yellow-100 text-yellow-800"
+                              : "bg-red-100 text-red-600"
+                            }`}>
+                              {r.matchStatus === "matched" ? r.matchMethod : manualSite ? "manual" : "unmatched"}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1 text-gray-500">{r.matchedSiteName ?? manualSite?.name ?? "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-            <div className="flex items-center gap-4 text-sm">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={skipUnmatched} onChange={(e) => setSkipUnmatched(e.target.checked)} />
-                Skip unmatched rows
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />
-                Update existing rows
-              </label>
-            </div>
+              <div className="flex items-center gap-4 text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={skipUnmatched} onChange={(e) => setSkipUnmatched(e.target.checked)} />
+                  Skip unmatched rows
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />
+                  Update existing rows
+                </label>
+              </div>
 
-            <div className="flex gap-3 justify-end">
-              <Button variant="outline" onClick={() => setStep("map")}>Back</Button>
-              <Button onClick={runExecute} disabled={importExecute.isPending}>
-                {importExecute.isPending ? "Importing…" : `Import ${preview.matched} Rows`}
-              </Button>
+              <div className="flex gap-3 justify-end">
+                <Button variant="outline" onClick={() => setStep("map")}>Back</Button>
+                <Button onClick={runExecute} disabled={importExecute.isPending || importCount === 0}>
+                  {importExecute.isPending ? "Importing…" : `Import ${importCount} Rows`}
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {step === "result" && result && (
           <div className="space-y-4">
