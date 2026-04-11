@@ -8,6 +8,7 @@ import {
   PDF_FONTS,
   PDF_SIZES,
   drawLogo,
+  drawCheckbox,
   drawEnhancedCoverPage,
   drawDeficiencySummaryPage,
   drawSignatureTable,
@@ -103,6 +104,15 @@ interface ReportData {
 
   // Fire Alarm CAN/ULC-S536 checklist (optional — only for fire alarm jobs with results)
   fireAlarmChecklist?: FireAlarmChecklistItem[];
+
+  // Fire alarm system details (for compliance cert block)
+  fireAlarmSystem?: {
+    operationType?: 'single_stage' | 'two_stage' | 'other';
+    connectedToMonitoring?: boolean;
+    monitoringCentreName?: string;
+    manufacturer?: string;
+    modelNumber?: string;
+  };
 }
 
 // ─── Local constants ──────────────────────────────────────────────────────────
@@ -727,19 +737,7 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
 
         // ── Client Authorization Block ───────────────────────────────────
         if (defY > 580) { doc.addPage(); defY = drawPageHeader(doc, data); } else { defY += 14; }
-        defY = drawClientAuthorizationBlock(doc, defY, data.companyName, data.inspectionDate, M, CW);
-
-        // ── ASTTBC Signature ─────────────────────────────────────────────
-        if (data.technicianName) {
-          if (defY > 560) { doc.addPage(); defY = drawPageHeader(doc, data); } else { defY += 20; }
-          defY = drawSignatureTable(
-            doc, defY, doc.bufferedPageRange().count,
-            data.technicianName, data.technicianCertNumber || '',
-            data.inspectionDate, data.companyName,
-            undefined, undefined, M, CW,
-            sigOpts
-          );
-        }
+        drawClientAuthorizationBlock(doc, defY, data.companyName, data.inspectionDate, M, CW);
 
         // ── Missing Locations Appendix ───────────────────────────────────
         if (data.missingLocationDeficiencies && data.missingLocationDeficiencies.length > 0) {
@@ -792,6 +790,157 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
         // ════════════════════════════════════════════════════════════════
         doc.addPage();
         drawAfterServiceLetter(doc, data, false);
+      }
+
+      // ════════════════════════════════════════════════════════════════════
+      // COMPLIANCE CERTIFICATE — CAN/ULC-S536:2019
+      // Final technical page in all report types (with or without deficiencies)
+      // ════════════════════════════════════════════════════════════════════
+      {
+        doc.addPage();
+        let certY = drawPageHeader(doc, data);
+
+        // ── Page title bar ───────────────────────────────────────────────
+        doc.rect(M, certY, CW, 26).fill(NAVY);
+        doc.fillColor(WHITE).fontSize(9.5).font('Helvetica-Bold')
+           .text(
+             'INSPECTION, TESTING, AND MAINTENANCE OF FIRE ALARM SYSTEMS',
+             M + 6, certY + 8, { width: CW - 12, align: 'center', lineBreak: false }
+           );
+        certY += 30;
+
+        doc.fontSize(8).font('Helvetica').fillColor(GRAY_TEXT)
+           .text(
+             'CAN/ULC-S536:2019  —  Inspection and Testing of Fire Alarm Systems',
+             M, certY, { width: CW, align: 'center', lineBreak: false }
+           );
+        certY += 20;
+
+        // ── System information box (if fire alarm system data present) ───
+        if (data.fireAlarmSystem) {
+          const sys = data.fireAlarmSystem;
+          const boxH = 36;
+          doc.rect(M, certY, CW, boxH).stroke(BLACK);
+
+          // Row 1: Single / Two stage + model
+          doc.fontSize(8).font('Helvetica-Bold').fillColor(BLACK)
+             .text('System Provides:', M + 6, certY + 6, { lineBreak: false });
+          drawCheckbox(doc, M + 86, certY + 6, sys.operationType !== 'two_stage', 9);
+          doc.fontSize(8).font('Helvetica').fillColor(BLACK)
+             .text('Single Stage', M + 99, certY + 6, { lineBreak: false });
+          drawCheckbox(doc, M + 180, certY + 6, sys.operationType === 'two_stage', 9);
+          doc.text('Two Stage', M + 193, certY + 6, { lineBreak: false });
+          const modelStr = [sys.manufacturer, sys.modelNumber].filter(Boolean).join(' ');
+          if (modelStr) {
+            doc.font('Helvetica-Bold').text('Model: ', M + 280, certY + 6, { lineBreak: false });
+            doc.font('Helvetica').text(modelStr, M + 310, certY + 6, { lineBreak: false });
+          }
+
+          // Row 2: Monitoring centre
+          doc.font('Helvetica').text(
+            'The fire alarm system is connected to a fire signal receiving centre.',
+            M + 6, certY + 20, { lineBreak: false }
+          );
+          drawCheckbox(doc, M + 332, certY + 20, sys.connectedToMonitoring === true, 9);
+          doc.text('Yes', M + 345, certY + 20, { lineBreak: false });
+          drawCheckbox(doc, M + 372, certY + 20, !sys.connectedToMonitoring, 9);
+          doc.text('No', M + 385, certY + 20, { lineBreak: false });
+          if (sys.monitoringCentreName) {
+            doc.text(`Centre: ${sys.monitoringCentreName}`, M + 415, certY + 20, { lineBreak: false });
+          }
+
+          certY += boxH + 10;
+        }
+
+        // ── Compliance checklist ─────────────────────────────────────────
+        const hasDefCert = data.deficiencies.length > 0;
+        type CertItem = { text: string; yes: boolean; no: boolean };
+        const certItems: CertItem[] = [
+          {
+            text: 'The entire fire alarm system has been inspected and tested in accordance with CAN/ULC-S536:2019, Inspection and Testing of Fire Alarm Systems.',
+            yes: true, no: false,
+          },
+          {
+            text: 'The fire alarm system is fully functional.',
+            yes: !hasDefCert, no: hasDefCert,
+          },
+          {
+            text: 'During the inspection and test, were any Deficiencies Identified? (See attached deficiency report, if applicable.)',
+            yes: hasDefCert, no: !hasDefCert,
+          },
+          {
+            text: 'During the inspection and test, were any Recommendations Identified?',
+            yes: false, no: true,
+          },
+        ];
+
+        const descColW = CW - 132;
+        const yesColW  = 66;
+        const noColW   = 66;
+
+        // Column headers
+        doc.rect(M, certY, descColW, 18).fill('#374151');
+        doc.rect(M + descColW, certY, yesColW, 18).fill('#374151');
+        doc.rect(M + descColW + yesColW, certY, noColW, 18).fill('#374151');
+        doc.fillColor(WHITE).fontSize(8).font('Helvetica-Bold');
+        doc.text('Inspection Item', M + 5, certY + 5, { width: descColW - 8, lineBreak: false });
+        doc.text('Yes', M + descColW + 22, certY + 5, { lineBreak: false });
+        doc.text('No', M + descColW + yesColW + 22, certY + 5, { lineBreak: false });
+        certY += 18;
+
+        certItems.forEach((item, i) => {
+          const itemH = 30;
+          const bg = i % 2 === 0 ? WHITE : '#f9fafb';
+          doc.rect(M, certY, descColW, itemH).fill(bg);
+          doc.rect(M, certY, descColW, itemH).lineWidth(0.3).stroke(LIGHT_GRAY);
+          doc.rect(M + descColW, certY, yesColW, itemH).fill(bg);
+          doc.rect(M + descColW, certY, yesColW, itemH).lineWidth(0.3).stroke(LIGHT_GRAY);
+          doc.rect(M + descColW + yesColW, certY, noColW, itemH).fill(bg);
+          doc.rect(M + descColW + yesColW, certY, noColW, itemH).lineWidth(0.3).stroke(LIGHT_GRAY);
+
+          doc.fillColor(BLACK).fontSize(7.5).font('Helvetica')
+             .text(item.text, M + 5, certY + 7, { width: descColW - 10, lineBreak: false });
+
+          const cbSize = 10;
+          const cbTop = certY + (itemH - cbSize) / 2;
+
+          // Yes checkbox
+          drawCheckbox(doc, M + descColW + 28, cbTop, item.yes, cbSize);
+
+          // No checkbox
+          drawCheckbox(doc, M + descColW + yesColW + 28, cbTop, item.no, cbSize);
+
+          certY += itemH;
+        });
+
+        certY += 18;
+
+        // ── ASTTBC affirmation + signature table ─────────────────────────
+        if (data.technicianName) {
+          certY = drawSignatureTable(
+            doc, certY, doc.bufferedPageRange().count,
+            data.technicianName, data.technicianCertNumber || '',
+            data.inspectionDate, data.companyName,
+            undefined, undefined, M, CW,
+            sigOpts
+          );
+        }
+
+        // ── Company conducting test row ───────────────────────────────────
+        certY += 6;
+        const halfW = Math.floor(CW / 2);
+        doc.rect(M, certY, halfW, 16).stroke(BLACK);
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(BLACK)
+           .text('Company Conducting Test:', M + 5, certY + 4, { lineBreak: false });
+        doc.font('Helvetica')
+           .text(data.companyName, M + 122, certY + 4, { lineBreak: false });
+        doc.rect(M + halfW, certY, CW - halfW, 16).stroke(BLACK);
+        doc.font('Helvetica-Bold')
+           .text('Phone:', M + halfW + 5, certY + 4, { lineBreak: false });
+        if (data.companyPhone) {
+          doc.font('Helvetica')
+             .text(data.companyPhone, M + halfW + 42, certY + 4, { lineBreak: false });
+        }
       }
 
       // ════════════════════════════════════════════════════════════════════
