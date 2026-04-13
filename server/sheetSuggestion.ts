@@ -67,6 +67,7 @@ function getSheetNameBonus(sheetNameLower: string, importType: ImportType): numb
     emergencyLights: ['emergency lighting', 'emergency lights'],
     sprinklerDevices: ['sprinkler devices'],
     smokeAlarms: ['smoke alarms', 'smoke alarm'],
+    backflows: ['backflow preventers', 'backflow preventer', 'backflows', 'backflow'],
   };
 
   for (const name of priorityNames[importType]) {
@@ -91,6 +92,7 @@ function getSheetNameBonus(sheetNameLower: string, importType: ImportType): numb
     emergencyLights: ['emergency', 'emergency light', 'exit', 'exit sign', 'lighting'],
     sprinklerDevices: ['sprinkler', 'sprinklers', 'fire sprinkler', 'suppression'],
     smokeAlarms: ['smoke detector', 'suite', 'unit', 'apartment'],
+    backflows: ['backflow', 'preventer', 'rpz', 'dcva', 'pvb'],
   };
 
   const keywords = bonusKeywords[importType];
@@ -126,8 +128,6 @@ function getExclusionPenalty(sheetNameLower: string): number {
     'instructions',
     'parts',
     'all parts',
-    'backflow',
-    'backflows',
   ];
 
   for (const keyword of exclusionKeywords) {

@@ -167,6 +167,18 @@ function getKeywordsForImportType(importType: string): string[] {
         'barcode',
         'floor',
       ];
+
+    case 'backflows':
+      return [
+        'location',
+        'type',
+        'manufacturer',
+        'model',
+        'serial',
+        'size',
+        'preventer',
+        'backflow',
+      ];
     
     case 'site':
       return [

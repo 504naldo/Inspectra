@@ -126,7 +126,7 @@ export default function AssetImport() {
   const [quickResults, setQuickResults] = useState<{
     success: boolean;
     siteFieldsUpdated: number;
-    deviceCounts: { fireAlarm: number; extinguishers: number; emergencyLights: number; smokeAlarms: number; sprinklerSystems: number; sprinklerDevices: number; total: number };
+    deviceCounts: { fireAlarm: number; extinguishers: number; emergencyLights: number; smokeAlarms: number; backflows: number; sprinklerSystems: number; sprinklerDevices: number; total: number };
     excludedRowsCount: number;
     message: string;
   } | null>(null);
@@ -388,7 +388,7 @@ export default function AssetImport() {
                 <CardHeader>
                   <CardTitle>Quick Import — All Device Types</CardTitle>
                   <CardDescription>
-                    Select a site and drop your Excel workbook. All sheets are detected automatically — fire alarm devices, extinguishers, emergency lights, smoke alarms, and sprinklers in one shot.
+                    Select a site and drop your Excel workbook. All sheets are detected automatically — fire alarm devices (including sprinklers), extinguishers, emergency lights, smoke alarms, and backflows in one shot.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -468,14 +468,13 @@ export default function AssetImport() {
                     <h3 className="text-xl font-bold mb-1">Import Complete!</h3>
                     <p className="text-muted-foreground mb-6">{quickResults.message}</p>
 
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 max-w-2xl mx-auto mb-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-4 max-w-2xl mx-auto mb-2">
                       {([
                         ['Fire Alarm', quickResults.deviceCounts.fireAlarm],
                         ['Extinguishers', quickResults.deviceCounts.extinguishers],
                         ['Emerg. Lights', quickResults.deviceCounts.emergencyLights],
                         ['Smoke Alarms', quickResults.deviceCounts.smokeAlarms],
-                        ['Sprinkler Sys.', quickResults.deviceCounts.sprinklerSystems],
-                        ['Sprinkler Dev.', quickResults.deviceCounts.sprinklerDevices],
+                        ['Backflows', quickResults.deviceCounts.backflows],
                       ] as [string, number][]).map(([label, count]) => (
                         <div key={label} className="text-center">
                           <div className={`text-2xl font-bold ${count > 0 ? 'text-[var(--success)]' : 'text-muted-foreground'}`}>{count}</div>

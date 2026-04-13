@@ -10,7 +10,7 @@ import { normalizePowerType, isValidPowerType, extractDeviceCode } from "./power
 export interface ImportSchema {
   requiredFields: string[];
   optionalFields: string[];
-  category?: 'FIRE_ALARM_DEVICE' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHT' | 'SPRINKLER' | 'SMOKE_ALARM';
+  category?: 'FIRE_ALARM_DEVICE' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHT' | 'SPRINKLER' | 'SMOKE_ALARM' | 'BACKFLOW';
   validateRow: (row: Record<string, any>) => { valid: boolean; errors: string[] };
 }
 
@@ -90,18 +90,19 @@ const emergencyLightsSchema: ImportSchema = {
 
 /**
  * Sprinkler Devices import schema
+ * Domain rule: sprinkler devices are stored under FIRE_ALARM_DEVICE category.
  */
 const sprinklerDevicesSchema: ImportSchema = {
   requiredFields: ['deviceType'],
   optionalFields: ['location', 'floor', 'notes', 'manufacturer', 'model', 'serialNumber'],
-  category: 'SPRINKLER',
+  category: 'FIRE_ALARM_DEVICE',
   validateRow: (row) => {
     const errors: string[] = [];
-    
+
     if (!row.deviceType || String(row.deviceType).trim() === '') {
       errors.push('Device type is required (e.g., valve, switch, gauge, test connection)');
     }
-    
+
     return {
       valid: errors.length === 0,
       errors,
@@ -160,6 +161,16 @@ const smokeAlarmsSchema: ImportSchema = {
 };
 
 /**
+ * Backflow preventers import schema
+ */
+const backflowsSchema: ImportSchema = {
+  requiredFields: [],
+  optionalFields: ['location', 'deviceType', 'manufacturer', 'model', 'serialNumber', 'floor', 'barcode', 'notes'],
+  category: 'BACKFLOW',
+  validateRow: (_row) => ({ valid: true, errors: [] }),
+};
+
+/**
  * Get schema for import type
  */
 export function getImportSchema(importType: ImportType): ImportSchema {
@@ -170,8 +181,9 @@ export function getImportSchema(importType: ImportType): ImportSchema {
     emergencyLights: emergencyLightsSchema,
     sprinklerDevices: sprinklerDevicesSchema,
     smokeAlarms: smokeAlarmsSchema,
+    backflows: backflowsSchema,
   };
-  
+
   return schemas[importType];
 }
 

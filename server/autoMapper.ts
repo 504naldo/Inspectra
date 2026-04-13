@@ -6,7 +6,7 @@
 
 import { safeToLower, safeTrim } from "./safeStringHelpers";
 
-export type ImportType = 'site' | 'fireAlarmDevices' | 'fireExtinguishers' | 'emergencyLights' | 'sprinklerDevices' | 'smokeAlarms';
+export type ImportType = 'site' | 'fireAlarmDevices' | 'fireExtinguishers' | 'emergencyLights' | 'sprinklerDevices' | 'smokeAlarms' | 'backflows';
 
 export interface MappingRule {
   targetField: string;
@@ -95,6 +95,16 @@ export const MAPPING_RULES: Record<ImportType, MappingRule[]> = {
     { targetField: 'installDate', keywords: ['install date', 'installation date', 'installed', 'date installed', 'install', 'date', 'in service date'], priority: 9 },
     { targetField: 'manufacturer', keywords: ['manufacturer', 'mfr', 'make', 'brand'], priority: 7 },
     { targetField: 'notes', keywords: ['notes', 'comments', 'remarks', 'description'], priority: 5 },
+  ],
+  backflows: [
+    { targetField: 'location',     keywords: ['location', 'address', 'room', 'area', 'zone', 'site'], priority: 10 },
+    { targetField: 'deviceType',   keywords: ['device type', 'type', 'preventer type', 'backflow type', 'asset type'], priority: 9 },
+    { targetField: 'manufacturer', keywords: ['manufacturer', 'mfr', 'make', 'brand'], priority: 8 },
+    { targetField: 'model',        keywords: ['model', 'model number', 'model #', 'size'], priority: 8 },
+    { targetField: 'serialNumber', keywords: ['serial', 'serial number', 'serial #', 's n', 'sn'], priority: 7 },
+    { targetField: 'floor',        keywords: ['floor', 'level', 'storey'], priority: 6 },
+    { targetField: 'barcode',      keywords: ['barcode', 'tag', 'asset tag'], priority: 5 },
+    { targetField: 'notes',        keywords: ['notes', 'comments', 'remarks', 'description'], priority: 4 },
   ],
 };
 
