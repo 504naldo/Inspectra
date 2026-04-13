@@ -38,14 +38,16 @@ export const MAPPING_RULES: Record<ImportType, MappingRule[]> = {
     { targetField: 'notes', keywords: ['notes', 'comments', 'remarks'], priority: 5 },
   ],
   fireAlarmDevices: [
-    { targetField: 'deviceType', keywords: ['device type', 'type', 'device', 'asset type', 'category'], priority: 10 },
+    // "Device Type" / "Type" / "Device" columns — also "Class" in some templates
+    { targetField: 'deviceType',   keywords: ['device type', 'type', 'device', 'asset type', 'category', 'class'], priority: 10 },
+    // Location — "Address" is used in fire alarm panels (loop address); "Install Location" in some sheets
+    { targetField: 'location',     keywords: ['location', 'install location', 'room', 'area', 'suite', 'unit', 'zone', 'address', 'position'], priority: 10 },
     { targetField: 'manufacturer', keywords: ['manufacturer', 'mfr', 'make', 'brand'], priority: 9 },
-    { targetField: 'model', keywords: ['model', 'model number', 'model #'], priority: 9 },
+    { targetField: 'model',        keywords: ['model', 'model number', 'model #', 'part number', 'part #', 'part no'], priority: 9 },
     { targetField: 'serialNumber', keywords: ['serial', 'serial number', 'serial #', 's n', 'sn'], priority: 8 },
-    { targetField: 'location', keywords: ['location', 'room', 'area', 'suite', 'unit', 'zone'], priority: 10 },
-    { targetField: 'floor', keywords: ['floor', 'level', 'storey'], priority: 8 },
-    { targetField: 'barcode', keywords: ['barcode', 'tag', 'asset tag', 'id'], priority: 7 },
-    { targetField: 'notes', keywords: ['notes', 'comments', 'remarks', 'description'], priority: 5 },
+    { targetField: 'floor',        keywords: ['floor', 'level', 'storey', 'building'], priority: 8 },
+    { targetField: 'barcode',      keywords: ['barcode', 'tag', 'asset tag', 'label', 'id #'], priority: 7 },
+    { targetField: 'notes',        keywords: ['notes', 'comments', 'remarks', 'description', 'status'], priority: 5 },
   ],
   fireExtinguishers: [
     { targetField: 'location',      keywords: ['location', 'room', 'area', 'zone', 'suite', 'unit'], priority: 10 },

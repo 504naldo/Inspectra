@@ -166,6 +166,14 @@ function getKeywordsForImportType(importType: string): string[] {
         'serial',
         'barcode',
         'floor',
+        // Additional keywords seen in real "Individual Device Record" templates
+        'address',
+        'make',
+        'class',
+        'label',
+        'install',
+        'zone',
+        'area',
       ];
 
     case 'backflows':

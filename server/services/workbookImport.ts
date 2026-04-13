@@ -68,8 +68,21 @@ const DEFAULT_DEVICE_TYPE: Partial<Record<WorkbookImportType, string>> = {
 
 /**
  * Detection rules in priority order (most specific first).
+ *
+ * FIRE ALARM SHEET NAMES IN THE WILD — all of these must be handled:
+ *   "Individual Devices"          — most common customer template
+ *   "Individual Device Record"    — alternate heading
+ *   "Fire Alarm Devices"
+ *   "FA Device List"
+ *   "Alarm Devices"
+ *   Any sheet containing "alarm", "sprinkler", etc.
+ *
  * Sprinkler keywords are listed under fireAlarmDevices so sprinkler sheets
  * are claimed before the generic alarm catch-all, and stored as FIRE_ALARM_DEVICE.
+ *
+ * Extinguishers / smoke alarms / emergency lights / backflows are detected
+ * first (more specific) so their sheets are not accidentally claimed by the
+ * broader fire-alarm catch-all below.
  */
 const SHEET_DETECTION: Array<{ importType: WorkbookImportType; keywords: string[] }> = [
   { importType: 'fireExtinguishers', keywords: ['extinguisher', 'exting', 'fire ext'] },
@@ -79,10 +92,16 @@ const SHEET_DETECTION: Array<{ importType: WorkbookImportType; keywords: string[
   {
     importType: 'fireAlarmDevices',
     keywords: [
-      // Sprinkler sheets fold into fire alarm devices per domain rule
+      // ── "Individual Device / Record" naming (most common in customer workbooks)
+      'individual device record',
+      'individual device',
+      'individual devices',
+      // ── Sprinkler sheets → fold into FIRE_ALARM_DEVICE per domain rule
       'sprinkler device', 'sprinkler head', 'sprinkler system', 'sprinkler',
-      // Fire alarm sheets
+      // ── Explicit fire alarm naming
       'fire alarm device', 'alarm device', 'fa device', 'fire alarm', 'alarm',
+      // ── Generic device-list naming (safe here because specific categories claimed first)
+      'device record', 'device list',
     ],
   },
   {
@@ -102,6 +121,7 @@ export interface ClassifiedSheet {
 /**
  * Classify workbook sheets into import types.
  * Each sheet is claimed by at most one type (most-specific detection rule wins).
+ * Logs which sheets were classified and which were unrecognised for diagnostics.
  */
 export function classifyWorkbookSheets(sheetNames: string[]): ClassifiedSheet[] {
   const claimed = new Set<string>();
@@ -119,6 +139,13 @@ export function classifyWorkbookSheets(sheetNames: string[]): ClassifiedSheet[] 
       }
     }
   }
+
+  const unclassified = sheetNames.filter((n) => !claimed.has(n));
+  console.log('[workbookImport] Sheet classification:', {
+    all: sheetNames,
+    classified: results.map((r) => `${r.sheetName} → ${r.importType}`),
+    unclassified,
+  });
 
   return results;
 }
@@ -163,7 +190,42 @@ export async function importWorkbookForSite(options: ImportWorkbookOptions): Pro
     cellStyles: false,
   });
 
+  // Phase 1: classify by sheet name
   const classified = classifyWorkbookSheets(workbook.SheetNames);
+
+  // Phase 2: for sheets not matched by name, try header-based classification.
+  // This handles sheets like "Individual Devices" whose name contains no
+  // category keyword, but whose headers clearly belong to fire alarm devices.
+  const classifiedNames = new Set(classified.map((c) => c.sheetName));
+  for (const sheetName of workbook.SheetNames) {
+    if (classifiedNames.has(sheetName)) continue;
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) continue;
+
+    const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
+    if (rawRows.length === 0) continue;
+
+    const headerInfo = detectHeaderRow(rawRows, 'fireAlarmDevices', 30);
+    const headers = headerInfo.headers.map((h) => (h == null ? '' : String(h)));
+    const mapping = autoMapColumns(headers, 'fireAlarmDevices');
+    const mappedCount = Object.keys(mapping).length;
+
+    if (mappedCount >= 2) {
+      // Headers match fire alarm device columns — treat as fire alarm sheet
+      console.log(
+        `[workbookImport] Header-based classification: "${sheetName}" → fireAlarmDevices` +
+        ` (${mappedCount} columns mapped: ${Object.keys(mapping).join(', ')})`,
+      );
+      classified.push({ sheetName, importType: 'fireAlarmDevices' });
+      classifiedNames.add(sheetName);
+    } else if (rawRows.length > 1) {
+      console.log(
+        `[workbookImport] Sheet "${sheetName}" unclassified — ` +
+        `${mappedCount} columns matched (need ≥2 for auto-classification). ` +
+        `Headers: [${headers.filter(Boolean).slice(0, 8).join(', ')}]`,
+      );
+    }
+  }
 
   const db = await getDb();
   if (!db) throw new Error('Database not available');
@@ -274,6 +336,16 @@ async function parseDeviceSheet(
   const schema = getImportSchema(importType);
   const category = TYPE_TO_CATEGORY[importType];
 
+  // If no columns were mapped, none of the headers matched the known keywords.
+  // Log this clearly so it's diagnosable rather than silently returning 0.
+  if (Object.keys(columnMapping).length === 0) {
+    console.warn(
+      `[workbookImport] No columns mapped for sheet (importType=${importType}). ` +
+      `Headers: [${headers.filter(Boolean).slice(0, 10).join(', ')}]. ` +
+      `All ${dataRows.length} data rows will be skipped.`,
+    );
+  }
+
   let count = 0;
   let excluded = 0;
 
@@ -288,6 +360,15 @@ async function parseDeviceSheet(
       if (idx >= 0 && rawRow[idx] != null && rawRow[idx] !== '') {
         rowData[field] = rawRow[idx];
       }
+    }
+
+    // If no columns were mapped, fall back to positional extraction using raw
+    // column values keyed by their header names so we at least preserve location.
+    if (Object.keys(columnMapping).length === 0) {
+      // Still count these as excluded — the import needs proper column mapping to
+      // assign fields correctly. The warning above tells the admin what happened.
+      excluded++;
+      continue;
     }
 
     // Skip rows with no mapped data at all
