@@ -7,8 +7,6 @@ import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
 import * as checklists from "../complianceChecklists";
 import { sendReportEmail } from "../emailService";
-import { eq } from "drizzle-orm";
-import { fireAlarmChecklistTemplates, fireAlarmInspectionResults, fireAlarmSystems } from "../../drizzle/schema";
 
 const reportRouter = router({
   listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
@@ -184,60 +182,6 @@ const reportRouter = router({
     // Get technician details
     const technician = await db.getUserById(job.assignedTechnicianId || ctx.user.id);
     
-    // Fetch fire alarm checklist results and system details for this job (if any)
-    let fireAlarmChecklist: any[] | undefined;
-    let fireAlarmSystem: any | undefined;
-    try {
-      const database = await db.getDb();
-      if (database) {
-        const [templates, jobResults, [faSystem]] = await Promise.all([
-          database.select().from(fireAlarmChecklistTemplates)
-            .where(eq(fireAlarmChecklistTemplates.isActive, true))
-            .orderBy(fireAlarmChecklistTemplates.sectionOrder, fireAlarmChecklistTemplates.id),
-          database.select().from(fireAlarmInspectionResults)
-            .where(eq(fireAlarmInspectionResults.jobId, input.jobId)),
-          database.select().from(fireAlarmSystems)
-            .where(eq(fireAlarmSystems.siteId, job.siteId))
-            .limit(1),
-        ]);
-
-        // Fire alarm system metadata (for compliance cert block)
-        if (faSystem) {
-          fireAlarmSystem = {
-            operationType: faSystem.operationType,
-            connectedToMonitoring: faSystem.connectedToMonitoring,
-            monitoringCentreName: faSystem.monitoringCentreName,
-            manufacturer: faSystem.manufacturer,
-            modelNumber: faSystem.modelNumber,
-          };
-        }
-
-        // Only include the checklist section when the technician has filled in at least one result
-        if (jobResults.length > 0) {
-          const byItemId = new Map(jobResults.map((r: any) => [r.checklistItemId, r]));
-          fireAlarmChecklist = templates.map((item: any) => {
-            const r = byItemId.get(item.id) as any;
-            return {
-              id: item.id,
-              sectionName: item.sectionName,
-              sectionOrder: item.sectionOrder,
-              itemLetter: item.itemLetter,
-              itemDescription: item.itemDescription,
-              inputType: item.inputType,
-              numericLabel: item.numericLabel,
-              numericUnit: item.numericUnit,
-              result: (r?.result ?? 'not_tested') as 'pass' | 'fail' | 'na' | 'not_tested',
-              numericValue: r?.numericValueRaw ?? null,
-              textValue: r?.textValue ?? null,
-              notes: r?.notes ?? null,
-            };
-          });
-        }
-      }
-    } catch {
-      // Non-fatal: skip the checklist/system section if fetch fails
-    }
-
     // Generate PDF with Fire-Pro style
     const pdfBuffer = await generateInspectionReportPDF({
       jobNumber: job.jobNumber,
@@ -303,10 +247,11 @@ const reportRouter = router({
         : undefined,
       // Signature captured during job completion
       techSignatureUrl: (job as any).techSignatureUrl || undefined,
-      // Fire alarm CAN/ULC-S536 checklist (only present when results exist)
-      fireAlarmChecklist,
-      // Fire alarm system details for compliance cert block
-      fireAlarmSystem,
+      // Deficiency reports do NOT include the fire alarm checklist section.
+      // The checklist belongs only in annual/compliance reports.
+      includeFireAlarmChecklist: false,
+      fireAlarmChecklist: undefined,
+      fireAlarmSystem: undefined,
     });
 
     // Upload to S3

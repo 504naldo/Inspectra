@@ -113,6 +113,11 @@ interface ReportData {
     manufacturer?: string;
     modelNumber?: string;
   };
+
+  // Controls whether the fire alarm checklist section is rendered.
+  // Set to true only for report types that include the CAN/ULC-S536 checklist.
+  // Deficiency reports must set this to false (or omit it) to suppress the section.
+  includeFireAlarmChecklist?: boolean;
 }
 
 // ─── Local constants ──────────────────────────────────────────────────────────
@@ -561,9 +566,9 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
       });
 
       // ════════════════════════════════════════════════════════════════════
-      // FIRE ALARM CHECKLIST (CAN/ULC-S536) — inserted after summary
+      // FIRE ALARM CHECKLIST (CAN/ULC-S536) — only in reports that opt in
       // ════════════════════════════════════════════════════════════════════
-      if (data.fireAlarmChecklist && data.fireAlarmChecklist.length > 0) {
+      if (data.includeFireAlarmChecklist === true && data.fireAlarmChecklist && data.fireAlarmChecklist.length > 0) {
         doc.addPage();
         const faHeaderY = drawPageHeader(doc, data);
         drawFireAlarmChecklistSection(doc, data, faHeaderY);
