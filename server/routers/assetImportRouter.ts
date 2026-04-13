@@ -105,25 +105,31 @@ export const assetImportRouter = router({
 
       // Step 4: Find relevant sheets using fuzzy matching
       const sheetNames = workbook.SheetNames;
-      
+
+      // Claimed-sheet tracking prevents one sheet from matching multiple categories
+      const claimedSheets = new Set<string>();
       const findSheet = (keywords: string[]): string | null => {
         for (const sheetName of sheetNames) {
+          if (claimedSheets.has(sheetName)) continue;
           const lowerName = safeToLower(sheetName);
           if (!lowerName) continue;
           if (keywords.some((kw) => lowerName.includes(kw))) {
+            claimedSheets.add(sheetName);
             return sheetName;
           }
         }
         return null;
       };
 
-      // Find all device sheets
-      const siteSheet = findSheet(["site", "building", "property", "info"]);
-      const fireAlarmSheet = findSheet(["fire alarm device", "alarm device", "fa device", "device list"]);
+      // Detect specific categories BEFORE general ones to prevent keyword collisions.
+      // "device list" removed from fire alarm keywords — too broad and causes
+      // extinguisher sheets to be misidentified as fire alarm devices.
       const extinguisherSheet = findSheet(["exting", "extinguisher", "fire ext"]);
       const emergencyLightSheet = findSheet(["emerg", "exit", "lighting", "light"]);
-      const sprinklerSystemSheet = findSheet(["sprinkler system", "sprinkler"]);
       const sprinklerDeviceSheet = findSheet(["sprinkler device", "sprinkler head"]);
+      const sprinklerSystemSheet = findSheet(["sprinkler system", "sprinkler"]);
+      const fireAlarmSheet = findSheet(["fire alarm device", "alarm device", "fa device", "fire alarm", "alarm"]);
+      const siteSheet = findSheet(["site", "building", "property", "info"]);
 
       // Initialize counters
       let siteFieldsUpdated = 0;
