@@ -310,8 +310,15 @@ async function parseDeviceSheet(
     }
 
     const deviceData = buildDeviceData(importType, rowData, siteId, companyId, category);
-    await upsertDeviceByRef(deviceData, db);
-    count++;
+    try {
+      await upsertDeviceByRef(deviceData, db);
+      count++;
+    } catch (err: any) {
+      // Row-level errors (e.g. enum value not yet in DB schema) are counted as
+      // excluded rather than crashing the entire import.
+      console.error(`[workbookImport] Row upsert failed (${importType}):`, err?.message ?? err);
+      excluded++;
+    }
   }
 
   return { count, excluded };
