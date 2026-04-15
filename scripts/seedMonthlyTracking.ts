@@ -428,8 +428,14 @@ async function main() {
     const unique = [...new Set(allUnmatched)].sort();
     console.log(`\n── Unmatched FILE # values (${unique.length} unique) ──────────────────`);
     unique.forEach(v => console.log(`  ${v}`));
-    console.log('\nThese sites need buildingId populated. Run:');
-    console.log('  pnpm exec tsx scripts/backfillSiteBuildingIds.ts --file "..." --company 1 --dry-run');
+    console.log('\nThese FILE# values have no matching site in the DB.');
+    console.log('The site records do not exist yet — backfill cannot help here.');
+    console.log('\nRun createMissingSitesFromWorkbook.ts to create stub sites for all of them:');
+    console.log('  pnpm sites:create-missing:dry   # preview');
+    console.log('  pnpm sites:create-missing       # create');
+    console.log('\nThen re-run this seed:');
+    console.log('  pnpm seed:monthly-tracking:dry');
+    console.log('  pnpm seed:monthly-tracking:all');
   }
 
   if (args.dryRun) console.log('\nDRY RUN — rerun without --dry-run to write rows.');
