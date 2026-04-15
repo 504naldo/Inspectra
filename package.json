@@ -11,7 +11,11 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
-    "seed:monthly-tracking:all": "tsx scripts/seedMonthlyTracking.ts --file FILE_MONTHLY_SERVICE_LIST.xlsx --company 1 --all-sheets"
+    "backfill:building-ids": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1",
+    "backfill:building-ids:dry": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --dry-run",
+    "backfill:building-ids:headers": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --dump-headers",
+    "seed:monthly-tracking:all": "tsx scripts/seedMonthlyTracking.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --all-sheets",
+    "seed:monthly-tracking:dry": "tsx scripts/seedMonthlyTracking.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --all-sheets --dry-run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
