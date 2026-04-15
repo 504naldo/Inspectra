@@ -1,15 +1,22 @@
 /**
  * scripts/createMissingSitesFromWorkbook.ts
  *
- * Bulk-create stub sites for every workbook FILE # that has no matching DB site.
+ * Bulk-create stub sites for every workbook FILE# that has no matching DB site.
  * After this runs, seedMonthlyTracking.ts will match all rows by buildingId.
  *
  * Customer org resolution (per row, in priority order):
- *   1. --customer-org <id>  Force every row to this org. Skips all inference.
- *   2. Existing site match  If a DB site already has this buildingId, reuse its org.
- *   3. City inference       If ALL existing sites in this city belong to one org, use it.
- *   4. --default-org <id>  Fallback for rows that can't be inferred automatically.
- *   5. Unresolved           No org found and no default provided → logged, not created.
+ *   1. --customer-org <id>   Force every row to this org. Skips all inference.
+ *   2. buildingId match      Existing DB site already has this FILE# as buildingId
+ *                            → reuse its customerOrgId. Deterministic.
+ *   3. City inference        All existing DB sites in this city share one org
+ *                            → use that org. Deterministic.
+ *
+ * If none of the above resolves confidently the row is SKIPPED:
+ *   - ambiguous  : city exists in DB but maps to multiple orgs → cannot guess
+ *   - unresolved : city not present in any existing DB site, or no city in workbook
+ *
+ * There is no default-org fallback. Junk data under the wrong org is worse
+ * than a skipped row that you fix manually.
  *
  * Usage:
  *   # Dry-run — see what would be created and under which org
@@ -17,15 +24,15 @@
  *     --file "./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx" \
  *     --company 1 --dry-run
  *
- *   # With a default org for rows that can't be auto-resolved
- *   ... --default-org 3 --dry-run
- *   ... --default-org 3
- *
- *   # Force ALL rows into one org (old behaviour, use when you know all sites belong to one org)
- *   ... --customer-org 3
+ *   # Force ALL rows into one known org (use when you know the batch belongs to one org)
+ *   pnpm exec tsx scripts/createMissingSitesFromWorkbook.ts \
+ *     --file "..." --company 1 --customer-org 3 --dry-run
+ *   pnpm exec tsx scripts/createMissingSitesFromWorkbook.ts \
+ *     --file "..." --company 1 --customer-org 3
  *
  *   # Include SPRING sheet FILE# values (skipped by default)
- *   ... --include-spring --dry-run
+ *   pnpm exec tsx scripts/createMissingSitesFromWorkbook.ts \
+ *     --file "..." --company 1 --include-spring --dry-run
  *
  * After running:
  *   pnpm exec tsx scripts/seedMonthlyTracking.ts \
@@ -89,8 +96,6 @@ interface CliArgs {
   companyId: number;
   /** If set, ALL rows use this org. Disables per-row inference. */
   customerOrgId: number;
-  /** If set, used as fallback when per-row inference finds no org. */
-  defaultOrgId: number;
   dryRun: boolean;
   includeSpring: boolean;
 }
@@ -98,7 +103,7 @@ interface CliArgs {
 function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
   const a: CliArgs = {
-    file: '', companyId: 1, customerOrgId: 0, defaultOrgId: 0,
+    file: '', companyId: 1, customerOrgId: 0,
     dryRun: false, includeSpring: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -106,7 +111,6 @@ function parseArgs(): CliArgs {
       case '--file':           a.file          = argv[++i]; break;
       case '--company':        a.companyId     = parseInt(argv[++i], 10); break;
       case '--customer-org':   a.customerOrgId = parseInt(argv[++i], 10); break;
-      case '--default-org':    a.defaultOrgId  = parseInt(argv[++i], 10); break;
       case '--dry-run':        a.dryRun        = true; break;
       case '--include-spring': a.includeSpring = true; break;
     }
@@ -218,21 +222,29 @@ function extractAllFileNumbers(
 
 interface OrgRef { id: number; name: string }
 
+/**
+ * Resolution result for a single workbook row.
+ *
+ * forced    — --customer-org override; all rows assigned unconditionally
+ * auto      — deterministic inference from existing DB site data
+ * ambiguous — city is present in DB but maps to multiple orgs; cannot guess
+ * unresolved — no city data, or city has no existing DB sites to infer from
+ */
 type OrgResolution =
-  | { type: 'forced';     org: OrgRef }                    // --customer-org override
-  | { type: 'auto';       org: OrgRef; reason: string }    // inferred from data
-  | { type: 'default';    org: OrgRef }                    // --default-org fallback
-  | { type: 'unresolved'; reason: string };                // cannot determine
+  | { type: 'forced';     org: OrgRef }
+  | { type: 'auto';       org: OrgRef; reason: string }
+  | { type: 'ambiguous';  reason: string }
+  | { type: 'unresolved'; reason: string };
 
 /**
- * Build lookup tables needed for per-row resolution from existing site data.
+ * Build lookup tables for per-row org resolution from existing DB site data.
  *
  * orgByBldgNorm  — normBldg(buildingId) → OrgRef
  *   Used when a DB site already has this FILE# as its buildingId.
  *
  * orgByNormCity  — normCity(city) → OrgRef | 'ambiguous'
  *   Built from existing sites that have both city and customerOrgId set.
- *   A city is 'ambiguous' if its existing sites span more than one org.
+ *   A city is 'ambiguous' when its sites span more than one org.
  */
 function buildOrgLookups(
   existingSites: { id: number; buildingId: string | null; city: string | null; customerOrgId: number }[],
@@ -273,9 +285,8 @@ function resolveOrg(
   orgByBldgNorm: Map<string, OrgRef>,
   orgByNormCity: Map<string, OrgRef | 'ambiguous'>,
   forcedOrg:  OrgRef | null,
-  defaultOrg: OrgRef | null,
 ): OrgResolution {
-  // Strategy 1: global force override
+  // Strategy 1: global --customer-org override
   if (forcedOrg) {
     return { type: 'forced', org: forcedOrg };
   }
@@ -283,37 +294,46 @@ function resolveOrg(
   // Strategy 2: existing DB site already has this buildingId → reuse its org
   const bldgOrg = orgByBldgNorm.get(entry.normFile);
   if (bldgOrg) {
-    return { type: 'auto', org: bldgOrg, reason: `existing site with buildingId="${entry.fileNum}" uses this org` };
+    return {
+      type: 'auto',
+      org: bldgOrg,
+      reason: `existing site with buildingId="${entry.fileNum}" uses this org`,
+    };
   }
 
-  // Strategy 3: city uniquely maps to one org across all existing sites
+  // Strategy 3: city present → look up existing DB sites in that city
   if (entry.normCity) {
     const cityResult = orgByNormCity.get(entry.normCity);
+
     if (cityResult && cityResult !== 'ambiguous') {
-      return { type: 'auto', org: cityResult, reason: `all existing sites in "${entry.city}" use this org` };
-    }
-    if (cityResult === 'ambiguous') {
-      // City maps to multiple orgs — fall through to default
-      if (defaultOrg) {
-        return { type: 'default', org: defaultOrg };
-      }
+      // All existing DB sites in this city share one org — deterministic
       return {
-        type: 'unresolved',
-        reason: `city "${entry.city}" has existing sites in multiple orgs — pass --default-org <id> to assign`,
+        type: 'auto',
+        org: cityResult,
+        reason: `all existing sites in "${entry.city}" use this org`,
       };
     }
+
+    if (cityResult === 'ambiguous') {
+      // City maps to multiple orgs — cannot safely guess
+      return {
+        type: 'ambiguous',
+        reason: `city "${entry.city}" has existing sites in multiple orgs — manual assignment required`,
+      };
+    }
+
+    // City is not in any existing DB site → no inference basis
+    return {
+      type: 'unresolved',
+      reason: `no existing DB sites in "${entry.city}" — cannot infer org`,
+    };
   }
 
-  // Strategy 4: default org fallback
-  if (defaultOrg) {
-    return { type: 'default', org: defaultOrg };
-  }
-
-  // Unresolved
-  const why = entry.city
-    ? `no existing sites in "${entry.city}" to infer org — pass --default-org <id>`
-    : 'no city data and no --default-org provided';
-  return { type: 'unresolved', reason: why };
+  // No city data at all
+  return {
+    type: 'unresolved',
+    reason: 'workbook row has no CITY value — cannot infer org',
+  };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -325,10 +345,12 @@ async function main() {
     console.error([
       'Usage: tsx scripts/createMissingSitesFromWorkbook.ts',
       '  --file <path> --company <id>',
-      '  [--default-org <id>]    fallback org for rows that cannot be auto-resolved',
-      '  [--customer-org <id>]   force ALL rows into this org (overrides inference)',
+      '  [--customer-org <id>]   force ALL rows into this org (use when the batch is one org)',
       '  [--dry-run]',
       '  [--include-spring]',
+      '',
+      'Org is resolved per row from existing DB site data (buildingId match or city inference).',
+      'Rows that cannot be resolved confidently are skipped and logged for manual review.',
     ].join('\n'));
     process.exit(1);
   }
@@ -374,23 +396,6 @@ async function main() {
     console.log(`\n⚠  --customer-org set: ALL rows will be assigned to "${o.name}" (id=${o.id})`);
   }
 
-  // Resolve default org (--default-org)
-  let defaultOrg: OrgRef | null = null;
-  if (args.defaultOrgId) {
-    const o = allOrgs.find(x => x.id === args.defaultOrgId);
-    if (!o) {
-      console.error(`\n--default-org ${args.defaultOrgId} not found under company ${args.companyId}.`);
-      process.exit(1);
-    }
-    defaultOrg = { id: o.id, name: o.name };
-    console.log(`\n   --default-org set: unresolved rows will fall back to "${o.name}" (id=${o.id})`);
-  }
-
-  if (!forcedOrg && !defaultOrg && allOrgs.length > 1) {
-    console.log('\n  ℹ  No --default-org provided. Rows that cannot be auto-resolved will be skipped.');
-    console.log('     Pass --default-org <id> to assign unresolved rows to a specific org.');
-  }
-
   // ── Load existing sites ──────────────────────────────────────────────────
   const existingSites = await db
     .select({
@@ -412,13 +417,17 @@ async function main() {
   const { orgByBldgNorm, orgByNormCity } = buildOrgLookups(existingSites, allOrgs);
 
   if (!forcedOrg) {
-    const cityEntries = [...orgByNormCity.entries()];
+    const cityEntries     = [...orgByNormCity.entries()];
     const uniqueCities    = cityEntries.filter(([, v]) => v !== 'ambiguous').length;
     const ambiguousCities = cityEntries.filter(([, v]) => v === 'ambiguous').length;
     console.log(`  City → org inference: ${uniqueCities} cities map to one org, ${ambiguousCities} cities are ambiguous`);
+    if (uniqueCities === 0 && !forcedOrg) {
+      console.log('  ℹ  No unambiguous city→org mappings found in existing sites.');
+      console.log('     Most rows will be unresolved unless you use --customer-org <id>.');
+    }
   }
 
-  // ── Extract workbook FILE # values ───────────────────────────────────────
+  // ── Extract workbook FILE# values ────────────────────────────────────────
   const { entries: wbEntries, junkSkipped, noCity } =
     extractAllFileNumbers(workbook, args.includeSpring);
 
@@ -430,11 +439,12 @@ async function main() {
   // ── Classify and resolve orgs ────────────────────────────────────────────
   interface PendingCreate {
     entry:      WbSiteEntry;
-    resolution: Extract<OrgResolution, { type: 'forced' | 'auto' | 'default' }>;
+    resolution: Extract<OrgResolution, { type: 'forced' | 'auto' }>;
   }
 
-  const alreadyExists: WbSiteEntry[] = [];
-  const toCreate:      PendingCreate[] = [];
+  const alreadyExists: WbSiteEntry[]                        = [];
+  const toCreate:      PendingCreate[]                      = [];
+  const ambiguous:     Array<{ entry: WbSiteEntry; reason: string }> = [];
   const unresolved:    Array<{ entry: WbSiteEntry; reason: string }> = [];
 
   for (const [nFile, entry] of wbEntries) {
@@ -443,18 +453,26 @@ async function main() {
       continue;
     }
 
-    const resolution = resolveOrg(entry, orgByBldgNorm, orgByNormCity, forcedOrg, defaultOrg);
+    const resolution = resolveOrg(entry, orgByBldgNorm, orgByNormCity, forcedOrg);
 
-    if (resolution.type === 'unresolved') {
-      unresolved.push({ entry, reason: resolution.reason });
-    } else {
-      toCreate.push({ entry, resolution });
+    switch (resolution.type) {
+      case 'forced':
+      case 'auto':
+        toCreate.push({ entry, resolution });
+        break;
+      case 'ambiguous':
+        ambiguous.push({ entry, reason: resolution.reason });
+        break;
+      case 'unresolved':
+        unresolved.push({ entry, reason: resolution.reason });
+        break;
     }
   }
 
   // Sort for predictable output
   toCreate.sort((a, b) => a.entry.fileNum.localeCompare(b.entry.fileNum));
   alreadyExists.sort((a, b) => a.fileNum.localeCompare(b.fileNum));
+  ambiguous.sort((a, b) => a.entry.fileNum.localeCompare(b.entry.fileNum));
   unresolved.sort((a, b) => a.entry.fileNum.localeCompare(b.entry.fileNum));
 
   // ── Summary preview ──────────────────────────────────────────────────────
@@ -463,10 +481,10 @@ async function main() {
   console.log(`  Will create               : ${toCreate.length}`);
   console.log(`    forced (--customer-org) : ${toCreate.filter(x => x.resolution.type === 'forced').length}`);
   console.log(`    auto-resolved           : ${toCreate.filter(x => x.resolution.type === 'auto').length}`);
-  console.log(`    default (--default-org) : ${toCreate.filter(x => x.resolution.type === 'default').length}`);
+  console.log(`  Ambiguous (skip)          : ${ambiguous.length}`);
   console.log(`  Unresolved (skip)         : ${unresolved.length}`);
 
-  if (toCreate.length === 0 && unresolved.length === 0) {
+  if (toCreate.length === 0 && ambiguous.length === 0 && unresolved.length === 0) {
     console.log('\nAll FILE# values already have a matching site. Nothing to do.');
     process.exit(0);
   }
@@ -477,24 +495,44 @@ async function main() {
       const cityLabel = entry.city || '(no city)';
       const orgLabel  = `org="${resolution.org.name}" (id=${resolution.org.id})`;
       const stratLabel = resolution.type === 'auto'
-        ? `[auto: ${(resolution as any).reason}]`
-        : `[${resolution.type}]`;
+        ? `[auto: ${resolution.reason}]`
+        : '[--customer-org override]';
       console.log(`  ${entry.fileNum.padEnd(12)} city="${cityLabel.padEnd(20)}" ${orgLabel}  ${stratLabel}`);
     }
   }
 
+  if (ambiguous.length > 0) {
+    console.log('\n── Ambiguous — NOT created (city maps to multiple orgs) ──────────');
+    for (const { entry, reason } of ambiguous) {
+      console.log(`  ${entry.fileNum.padEnd(12)} city="${entry.city || '(none)'}"  → ${reason}`);
+    }
+  }
+
   if (unresolved.length > 0) {
-    console.log('\n── Unresolved — will NOT be created ──────────────────────────────');
+    console.log('\n── Unresolved — NOT created (no org signal available) ────────────');
     for (const { entry, reason } of unresolved) {
       console.log(`  ${entry.fileNum.padEnd(12)} city="${entry.city || '(none)'}"  → ${reason}`);
     }
-    console.log('\nTo create these sites, add --default-org <id> to assign them a fallback org.');
-    console.log('Available orgs:');
-    allOrgs.forEach(o => console.log(`  --default-org ${o.id}   "${o.name}"`));
+  }
+
+  const skippedCount = ambiguous.length + unresolved.length;
+  if (skippedCount > 0) {
+    console.log(`\n── Manual review required for ${skippedCount} skipped rows ──────────────────`);
+    console.log('  These FILE#s were not created because their customer org cannot be');
+    console.log('  determined from the workbook data or existing site relationships.');
+    console.log('');
+    console.log('  Options:');
+    console.log('  a) If a batch of FILE#s belongs to a known org, rerun with:');
+    console.log('       --customer-org <id>   (forces all rows to that org)');
+    console.log('     Available orgs:');
+    allOrgs.forEach(o => console.log(`       --customer-org ${o.id}   "${o.name}"`));
+    console.log('');
+    console.log('  b) Create the sites manually in the app with the correct org assigned.');
+    console.log('     Once created, rerun this script — it will skip sites that already exist.');
   }
 
   if (args.dryRun) {
-    console.log(`\nDRY RUN: would create ${toCreate.length} sites, skip ${unresolved.length} unresolved.`);
+    console.log(`\nDRY RUN: would create ${toCreate.length} sites; ${skippedCount} skipped (need manual review).`);
     console.log('Rerun without --dry-run to apply.');
     process.exit(0);
   }
@@ -525,23 +563,36 @@ async function main() {
 
   console.log('\n');
   console.log('── Results ───────────────────────────────────────────────────────');
-  console.log(`  Created    : ${created}`);
-  console.log(`  Skipped    : ${alreadyExists.length} (already existed)`);
-  console.log(`  Unresolved : ${unresolved.length} (no org — not created)`);
-  console.log(`  Junk       : ${junkSkipped} (malformed FILE# values)`);
-  console.log(`  Errors     : ${errors}`);
+  console.log(`  Created          : ${created}`);
+  console.log(`  Skipped (exists) : ${alreadyExists.length}`);
+  console.log(`  Ambiguous (skip) : ${ambiguous.length}`);
+  console.log(`  Unresolved (skip): ${unresolved.length}`);
+  console.log(`  Junk             : ${junkSkipped} (malformed FILE# values)`);
+  console.log(`  Errors           : ${errors}`);
 
   if (errMessages.length) {
     console.log('\n── Errors ────────────────────────────────────────────────────────');
     errMessages.forEach(l => console.log(l));
   }
 
-  if (unresolved.length > 0) {
-    console.log(`\n── ${unresolved.length} unresolved (not created) ──────────────────────────────`);
-    unresolved.forEach(({ entry, reason }) =>
-      console.log(`  ${entry.fileNum.padEnd(12)} ${reason}`)
-    );
-    console.log('\nRerun with --default-org <id> to create these under a fallback org.');
+  if (skippedCount > 0) {
+    console.log(`\n── ${skippedCount} rows still need manual org assignment ──────────────────────`);
+    if (ambiguous.length > 0) {
+      console.log(`\n  Ambiguous (${ambiguous.length}) — city maps to multiple orgs:`);
+      ambiguous.forEach(({ entry }) =>
+        console.log(`    ${entry.fileNum.padEnd(12)} city="${entry.city}"`)
+      );
+    }
+    if (unresolved.length > 0) {
+      console.log(`\n  Unresolved (${unresolved.length}) — no org inference possible:`);
+      unresolved.forEach(({ entry }) =>
+        console.log(`    ${entry.fileNum.padEnd(12)} city="${entry.city || '(none)'}"`)
+      );
+    }
+    console.log('');
+    console.log('  Use --customer-org <id> if you know which org a group of FILE#s belongs to.');
+    console.log('  Available orgs:');
+    allOrgs.forEach(o => console.log(`    id=${o.id}  "${o.name}"`));
   }
 
   if (created > 0) {
