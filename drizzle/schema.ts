@@ -151,6 +151,8 @@ export const sites = mysqlTable("sites", {
   contactPhone: varchar("contactPhone", { length: 50 }),
   notes: text("notes"),
   summary: json("summary").$type<SiteSummary>(),
+  // File number (matches FILE # column in service tracking spreadsheets, e.g. "#0007")
+  fileNumber: varchar("fileNumber", { length: 20 }),
   // Key tracking (mirrors AppSheet portal KeyLocation / KeyNumber / KeySignOutDate)
   buildingId: varchar("buildingId", { length: 50 }),
   keyLocation: text("keyLocation"),
@@ -1051,6 +1053,14 @@ export const monthlyServiceTracking = mysqlTable("monthly_service_tracking", {
   rescheduleReason: text("rescheduleReason"),
   notes: text("notes"),
   sourceImportId: int("sourceImportId"),
+  // Fields seeded from service tracking spreadsheet (FILE_MONTHLY_SERVICE_LIST.xlsx)
+  hoursRequired: decimal("hoursRequired", { precision: 5, scale: 2 }),
+  techsRequired: int("techsRequired"),
+  stampsRequired: varchar("stampsRequired", { length: 100 }),
+  hasContractor: boolean("hasContractor"),
+  hasKeys: boolean("hasKeys"),
+  lastCompleted: varchar("lastCompleted", { length: 50 }),
+  agreementSigned: boolean("agreementSigned"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
