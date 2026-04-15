@@ -129,20 +129,31 @@ interface WbSiteEntry {
  * Collect every unique FILE # from the workbook.
  * For each FILE #, we take the city from the first occurrence.
  * SPRING is included only when includeSpring=true; WINTER always skipped.
+ *
+ * Validation rules applied per row:
+ *   - FILE # must be non-empty and start with '#' followed by at least one digit
+ *   - Rows failing validation are counted in junkSkipped and logged
+ *   - Empty city is allowed (site is still created, logged as a warning)
  */
 function extractAllFileNumbers(
   workbook: XLSX.WorkBook,
   includeSpring: boolean,
-): Map<string, WbSiteEntry> {
-  const entries = new Map<string, WbSiteEntry>();
-  // cityByFile collects city from monthly sheets for FILE#s that also appear in SPRING
+): { entries: Map<string, WbSiteEntry>; junkSkipped: number; noCity: string[] } {
+  const entries    = new Map<string, WbSiteEntry>();
   const cityByFile = new Map<string, string>();
+  let   junkSkipped = 0;
+  const noCity: string[] = [];
+
+  /** Returns true only for FILE# values like "#0032", "#0330-1", "#509" */
+  function isValidFileNum(raw: string): boolean {
+    return /^#\d/.test(raw);
+  }
 
   const sheetsToRead = workbook.SheetNames.filter(name => {
     const u = name.toUpperCase();
     if (u === 'WINTER') return false;
     if (u === 'SPRING') return includeSpring;
-    return true; // all monthly tabs + SPRING if opted in
+    return true;
   });
 
   // First pass: monthly sheets (definitive for CITY column)
@@ -162,12 +173,22 @@ function extractAllFileNumbers(
     for (let r = hi + 1; r < rows.length; r++) {
       const row = rows[r] as unknown[];
       if (row.every(c => c == null || c === '')) continue;
+
       const rawFile = String(row[fileIdx] ?? '').trim();
-      if (!rawFile || !rawFile.startsWith('#')) continue; // skip blank or non-file# values
-      const nFile = normBldg(rawFile);
+      if (!rawFile) continue; // blank → silently skip
+
+      if (!isValidFileNum(rawFile)) {
+        junkSkipped++;
+        continue; // header repeats, "N/A", etc.
+      }
+
+      const nFile   = normBldg(rawFile);
       const rawCity = cityIdx >= 0 ? String(row[cityIdx] ?? '').trim() : '';
+
       if (!cityByFile.has(nFile)) cityByFile.set(nFile, rawCity);
+
       if (!entries.has(nFile)) {
+        if (!rawCity) noCity.push(rawFile);
         entries.set(nFile, { fileNum: rawFile, normFile: nFile, city: rawCity, sheet: sheetName });
       }
     }
@@ -184,19 +205,22 @@ function extractAllFileNumbers(
       for (let r = hi + 1; r < rows.length; r++) {
         const row = rows[r] as unknown[];
         if (row.every(c => c == null || c === '')) continue;
+
         const rawFile = String(row[fileIdx] ?? '').trim();
-        if (!rawFile || !rawFile.startsWith('#')) continue;
+        if (!rawFile) continue;
+        if (!isValidFileNum(rawFile)) { junkSkipped++; continue; }
+
         const nFile = normBldg(rawFile);
         if (!entries.has(nFile)) {
-          // Use city from monthly sheet if available, else empty
           const city = cityByFile.get(nFile) ?? '';
+          if (!city) noCity.push(rawFile);
           entries.set(nFile, { fileNum: rawFile, normFile: nFile, city, sheet: 'SPRING' });
         }
       }
     }
   }
 
-  return entries;
+  return { entries, junkSkipped, noCity };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -260,9 +284,14 @@ async function main() {
   }
 
   // ── Extract workbook FILE # values ───────────────────────────────────────
-  const wbEntries = extractAllFileNumbers(workbook, args.includeSpring);
+  const { entries: wbEntries, junkSkipped, noCity } =
+    extractAllFileNumbers(workbook, args.includeSpring);
   console.log(`Workbook: ${wbEntries.size} unique FILE# values found`);
   if (args.includeSpring) console.log('  (including SPRING sheet)');
+  if (junkSkipped > 0)
+    console.log(`  ${junkSkipped} junk/non-FILE# values skipped (header repeats, N/A, etc.)`);
+  if (noCity.length > 0)
+    console.log(`  ${noCity.length} FILE#s have no CITY value — sites will be created without city`);
 
   // ── Load existing sites ──────────────────────────────────────────────────
   const existingSites = await db
@@ -305,7 +334,8 @@ async function main() {
   console.log('\n── Sites to create ───────────────────────────────────────────────');
   toCreate.forEach(e => {
     const namePlaceholder = `Site ${e.fileNum}`;
-    console.log(`  ${e.fileNum.padEnd(12)} city="${e.city.padEnd(18)}" → name="${namePlaceholder}"`);
+    const cityLabel = e.city ? `city="${e.city}"` : 'city=(empty — review later)';
+    console.log(`  ${e.fileNum.padEnd(12)} ${cityLabel.padEnd(32)} → name="${namePlaceholder}"`);
   });
 
   if (args.dryRun) {
@@ -342,6 +372,7 @@ async function main() {
   console.log('── Results ───────────────────────────────────────────────────────');
   console.log(`  Created  : ${created}`);
   console.log(`  Skipped  : ${alreadyExists.length} (already existed)`);
+  console.log(`  Junk     : ${junkSkipped} (malformed FILE# values, not created)`);
   console.log(`  Errors   : ${errors}`);
   if (errMessages.length) {
     console.log('\n── Errors ────────────────────────────────────────────────────────');

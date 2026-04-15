@@ -11,6 +11,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "backfill:building-ids:dry": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --dry-run",
     "backfill:building-ids": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1",
     "backfill:building-ids:headers": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --dump-headers",
     "sites:create-missing:dry": "tsx scripts/createMissingSitesFromWorkbook.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --dry-run",
