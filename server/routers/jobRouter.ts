@@ -10,6 +10,28 @@ import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
 import * as schema from "../../drizzle/schema";
 
+// ── Work-order helpers ────────────────────────────────────────────────────────
+
+function jobTypeToWorkType(
+  jobType: string | null | undefined
+): schema.WorkOrder["workType"] {
+  switch (jobType) {
+    case "service_call": return "service_call";
+    case "repair":       return "repair";
+    default:             return "inspection";
+  }
+}
+
+/** Fire-and-forget work-order sync — never throws. */
+async function syncWorkOrder(jobId: number, patch: Partial<schema.InsertWorkOrder>) {
+  try {
+    const wo = await db.getWorkOrderByJob(jobId);
+    if (wo) await db.updateWorkOrder(wo.id, patch);
+  } catch (err) {
+    console.warn(`[WorkOrder] Failed to sync for job ${jobId}:`, err);
+  }
+}
+
 // Job router
 const jobRouter = router({
   listByCompany: officeProcedure.input(z.object({ 
@@ -111,6 +133,21 @@ const jobRouter = router({
         }
       }
 
+      // Create work order in the same transaction
+      await tx.insert(schema.workOrders).values({
+        companyId:            input.companyId,
+        siteId:               input.siteId,
+        customerOrgId:        input.customerOrgId,
+        jobId:                newJobId,
+        workOrderNumber:      `WO-${Date.now().toString(36).toUpperCase()}`,
+        title:                input.title,
+        workType:             jobTypeToWorkType(input.jobType),
+        status:               "pending",
+        priority:             input.priority ?? "medium",
+        scheduledDate:        input.scheduledDate ?? null,
+        assignedTechnicianIds: input.assignedTechnicianId ? [input.assignedTechnicianId] : [],
+      } as schema.InsertWorkOrder);
+
       // Re-fetch the new job row to return the same shape as db.createJob
       const fetched = await tx
         .select()
@@ -204,18 +241,24 @@ const jobRouter = router({
     }
     const { id, ...data } = input;
     await db.updateJob(id, data);
+    // Best-effort: sync scheduledDate to work order
+    if (input.scheduledDate !== undefined) {
+      void syncWorkOrder(id, { scheduledDate: input.scheduledDate });
+    }
     return { success: true };
   }),
-  
+
   start: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     const job = await db.getJobById(input.id);
     if (job?.finalizedAt) {
       throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
     }
-    await db.updateJob(input.id, { status: 'in_progress', startedAt: new Date() });
+    const now = new Date();
+    await db.updateJob(input.id, { status: 'in_progress', startedAt: now });
+    void syncWorkOrder(input.id, { status: "in_progress", startedAt: now });
     return { success: true };
   }),
-  
+
   complete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     const job = await db.getJobById(input.id);
     if (!job) {
@@ -230,7 +273,9 @@ const jobRouter = router({
     if (!job.techSignatureUrl) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Technician signature is required before completing the job.' });
     }
-    await db.updateJob(input.id, { status: 'completed', completedAt: new Date() });
+    const completedNow = new Date();
+    await db.updateJob(input.id, { status: 'completed', completedAt: completedNow });
+    void syncWorkOrder(input.id, { status: "completed", completedAt: completedNow });
 
     // Best-effort sync to monthly_service_tracking.
     // Never fail job completion if tracker sync has an unexpected issue.
@@ -319,10 +364,11 @@ const jobRouter = router({
       assignedAt: new Date(),
       assignedByUserId: ctx.user.id
     });
-    
+    void syncWorkOrder(input.jobId, { assignedTechnicianIds: [input.technicianId] });
+
     return { success: true };
   }),
-  
+
   addAdditionalTechnician: officeProcedure.input(z.object({
     jobId: z.number(),
     technicianId: z.number()
@@ -400,10 +446,13 @@ const jobRouter = router({
         assignedByUserId: ctx.user.id
       });
     }
-    
+    void syncWorkOrder(input.jobId, {
+      assignedTechnicianIds: [input.leadTechnicianId, ...additionalIds],
+    });
+
     return { success: true };
   }),
-  
+
   unassignJob: officeProcedure.input(z.object({
     jobId: z.number()
   })).mutation(async ({ input }) => {
@@ -457,6 +506,25 @@ const jobRouter = router({
       jobNumber,
     });
     await withAudit(ctx, 'job.clone', async () => {});
+
+    // Best-effort: create work order for the cloned job
+    try {
+      await db.createWorkOrder({
+        companyId:            sourceJob.companyId,
+        siteId:               sourceJob.siteId,
+        customerOrgId:        sourceJob.customerOrgId,
+        jobId:                newJob.id,
+        workOrderNumber:      `WO-${Date.now().toString(36).toUpperCase()}`,
+        title:                `Re-inspect: ${sourceJob.title}`,
+        workType:             jobTypeToWorkType(sourceJob.jobType),
+        status:               "pending",
+        priority:             (sourceJob.priority ?? "medium") as schema.InsertWorkOrder["priority"],
+        scheduledDate:        input.scheduledDate ?? null,
+        assignedTechnicianIds: sourceJob.assignedTechnicianId ? [sourceJob.assignedTechnicianId] : [],
+      });
+    } catch (err) {
+      console.warn("[WorkOrder] Failed to create WO for cloned job", newJob.id, err);
+    }
 
     // Auto-populate fire alarm checklist (best-effort)
     try {
