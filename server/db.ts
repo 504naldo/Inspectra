@@ -1732,3 +1732,51 @@ export async function updateAiReview(id: number, data: Partial<InsertAiReview>) 
   if (!db) throw new Error("Database not available");
   await db.update(aiReviews).set(data).where(eq(aiReviews.id, id));
 }
+
+// ============================================
+// WORK ORDER QUERIES
+// ============================================
+
+import { workOrders, InsertWorkOrder, WorkOrder } from "../drizzle/schema";
+
+export async function createWorkOrder(data: InsertWorkOrder): Promise<WorkOrder> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(workOrders).values(data);
+  const id = Number(result[0].insertId);
+  return { ...data, id } as WorkOrder;
+}
+
+export async function getWorkOrderById(id: number): Promise<WorkOrder | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(workOrders).where(eq(workOrders.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getWorkOrdersByCompany(companyId: number, status?: string): Promise<WorkOrder[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(workOrders.companyId, companyId)];
+  if (status) conditions.push(eq(workOrders.status, status as WorkOrder["status"]));
+  return db.select().from(workOrders).where(and(...conditions)).orderBy(desc(workOrders.createdAt));
+}
+
+export async function getWorkOrdersBySite(siteId: number): Promise<WorkOrder[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(workOrders).where(eq(workOrders.siteId, siteId)).orderBy(desc(workOrders.createdAt));
+}
+
+export async function getWorkOrderByJob(jobId: number): Promise<WorkOrder | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(workOrders).where(eq(workOrders.jobId, jobId)).limit(1);
+  return result[0];
+}
+
+export async function updateWorkOrder(id: number, data: Partial<InsertWorkOrder>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(workOrders).set(data).where(eq(workOrders.id, id));
+}

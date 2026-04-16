@@ -200,6 +200,23 @@ export async function finalizeJob(
     })
     .where(eq(schema.jobs.id, jobId));
 
+  // Best-effort: finalize corresponding work order
+  try {
+    const woRows = await db
+      .select({ id: schema.workOrders.id })
+      .from(schema.workOrders)
+      .where(eq(schema.workOrders.jobId, jobId))
+      .limit(1);
+    if (woRows.length > 0) {
+      await db
+        .update(schema.workOrders)
+        .set({ finalizedAt: now, finalizedById: user.id, status: "completed", completedAt: now })
+        .where(eq(schema.workOrders.id, woRows[0].id));
+    }
+  } catch (woErr) {
+    warnings.push(`Work order finalization failed: ${String(woErr)}`);
+  }
+
   return {
     jobId,
     finalizedAt: now,

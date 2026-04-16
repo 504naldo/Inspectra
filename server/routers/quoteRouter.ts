@@ -282,15 +282,38 @@ export const quoteRouter = router({
         acceptedAt: new Date(),
       });
 
-      // Flag linked deficiencies as quoted
+      // Flag linked deficiencies as quoted and link to work order
       const lineItems = quote.lineItems as QuoteLineItem[];
       const defIds = lineItems
         .map((i) => i.deficiencyId)
         .filter((id): id is number => id !== null);
 
-      await Promise.all(
-        defIds.map((id) => db.updateDeficiency(id, { status: "quoted" }))
-      );
+      // Best-effort: link work order to this accepted quote
+      try {
+        const wo = await db.getWorkOrderByJob(quote.jobId);
+        if (wo) {
+          await db.updateWorkOrder(wo.id, {
+            quoteId: quote.id,
+            workType: "repair",
+            lineItems: lineItems,
+            total: String(quote.total),
+          });
+          // Link each deficiency to the work order
+          await Promise.all(
+            defIds.map((id) => db.updateDeficiency(id, { status: "quoted", workOrderId: wo.id }))
+          );
+        } else {
+          await Promise.all(
+            defIds.map((id) => db.updateDeficiency(id, { status: "quoted" }))
+          );
+        }
+      } catch (woErr) {
+        console.warn("[WorkOrder] Failed to link WO on quote accept:", woErr);
+        // Still mark deficiencies quoted even if WO link fails
+        await Promise.all(
+          defIds.map((id) => db.updateDeficiency(id, { status: "quoted" }))
+        );
+      }
 
       return { success: true, alreadyAccepted: false };
     }),
