@@ -17,6 +17,7 @@ import { SmokeAlarmGrid } from "@/components/inspection/SmokeAlarmGrid";
 import { SignaturePad } from "@/components/SignaturePad";
 import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
 import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending } from "@shared/deviceHelpers";
+import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
   MapPin,
@@ -33,7 +34,10 @@ import {
   FireExtinguisher,
   Lightbulb,
   Droplets,
-  Lock
+  Lock,
+  ClipboardList,
+  Clock,
+  Save,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -47,6 +51,10 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const { isOnline, getCachedJobData } = useOfflineStorage();
   const [activeTab, setActiveTab] = useState("devices");
   const [openGridSection, setOpenGridSection] = useState<string | null>(null);
+  const [woTechNotes, setWoTechNotes] = useState("");
+  const [woActualHours, setWoActualHours] = useState("");
+  const [woCompletionSummary, setWoCompletionSummary] = useState("");
+  const [woEditMode, setWoEditMode] = useState(false);
 
   const toggleGridSection = (section: string) => {
     setOpenGridSection((prev) => (prev === section ? null : section));
@@ -112,6 +120,20 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     });
   }
   
+  const { data: workOrder, refetch: refetchWorkOrder } = trpc.workOrder.listByJob.useQuery(
+    { jobId },
+    { enabled: true }
+  );
+
+  const woTechUpdateMutation = trpc.workOrder.techUpdate.useMutation({
+    onSuccess: () => {
+      toast.success("Work order updated");
+      setWoEditMode(false);
+      refetchWorkOrder();
+    },
+    onError: (err) => toast.error(err.message || "Failed to update work order"),
+  });
+
   const importAssets = trpc.assetImport.importAssetsFromExcel.useMutation({
     onSuccess: (result) => {
       toast.success(result.message);
@@ -634,6 +656,163 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Work Order */}
+        {workOrder && (
+          <Card className="border-primary/20">
+            <CardHeader
+              className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+              onClick={() => toggleGridSection("workorder")}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <ClipboardList className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Work Order</CardTitle>
+                    <p className="text-sm text-muted-foreground">{workOrder.workOrderNumber} · {workOrder.status.replace(/_/g, " ")}</p>
+                  </div>
+                </div>
+                {openGridSection === "workorder" ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+            </CardHeader>
+            {openGridSection === "workorder" && (
+              <CardContent className="p-4 pt-0 space-y-4">
+                {/* Read-only info */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Work Type</p>
+                    <p className="mt-0.5 capitalize">{workOrder.workType.replace(/_/g, " ")}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Priority</p>
+                    <p className="mt-0.5 capitalize">{workOrder.priority}</p>
+                  </div>
+                  {workOrder.estimatedHours && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Est. Hours</p>
+                      <p className="mt-0.5 flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                        {parseFloat(workOrder.estimatedHours).toFixed(1)} h
+                      </p>
+                    </div>
+                  )}
+                  {workOrder.officeNotes && (
+                    <div className="col-span-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Office Notes</p>
+                      <p className="mt-0.5 text-sm whitespace-pre-line">{workOrder.officeNotes}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tech editable section */}
+                {!workOrder.finalizedAt && (
+                  <>
+                    {woEditMode ? (
+                      <div className="space-y-3 border-t pt-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tech Notes</label>
+                          <Textarea
+                            value={woTechNotes}
+                            onChange={(e) => setWoTechNotes(e.target.value)}
+                            placeholder="Notes from the field..."
+                            rows={3}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Actual Hours</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={woActualHours}
+                            onChange={(e) => setWoActualHours(e.target.value)}
+                            placeholder="e.g. 2.5"
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Completion Summary</label>
+                          <Textarea
+                            value={woCompletionSummary}
+                            onChange={(e) => setWoCompletionSummary(e.target.value)}
+                            placeholder="Summary of work completed..."
+                            rows={2}
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            disabled={woTechUpdateMutation.isPending}
+                            onClick={() =>
+                              woTechUpdateMutation.mutate({
+                                id: workOrder.id,
+                                techNotes: woTechNotes || undefined,
+                                actualHours: woActualHours ? parseFloat(woActualHours) : undefined,
+                                completionSummary: woCompletionSummary || undefined,
+                              })
+                            }
+                          >
+                            {woTechUpdateMutation.isPending ? (
+                              <><div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />Saving…</>
+                            ) : (
+                              <><Save className="h-4 w-4 mr-1.5" />Save</>
+                            )}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setWoEditMode(false)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border-t pt-3 space-y-2">
+                        {workOrder.techNotes && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tech Notes</p>
+                            <p className="mt-0.5 text-sm whitespace-pre-line">{workOrder.techNotes}</p>
+                          </div>
+                        )}
+                        {workOrder.actualHours && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Actual Hours</p>
+                            <p className="mt-0.5 flex items-center gap-1 text-sm">
+                              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                              {parseFloat(workOrder.actualHours).toFixed(1)} h
+                            </p>
+                          </div>
+                        )}
+                        {workOrder.completionSummary && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Completion Summary</p>
+                            <p className="mt-0.5 text-sm whitespace-pre-line">{workOrder.completionSummary}</p>
+                          </div>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full mt-1"
+                          onClick={() => {
+                            setWoTechNotes(workOrder.techNotes ?? "");
+                            setWoActualHours(workOrder.actualHours ?? "");
+                            setWoCompletionSummary(workOrder.completionSummary ?? "");
+                            setWoEditMode(true);
+                          }}
+                        >
+                          Update Work Order
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        )}
 
         {/* Deficiencies Section - Only show deficiencies, devices are in category cards above */}
         <Card>
