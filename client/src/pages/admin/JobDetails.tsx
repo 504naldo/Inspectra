@@ -35,14 +35,12 @@ import {
   CalendarCheck,
   CalendarX,
   FileCheck,
-  Send,
   ClipboardList,
   Clock,
   Save,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-// S3 upload is handled server-side via tRPC
 
 export default function AdminJobDetails() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -62,11 +60,6 @@ export default function AdminJobDetails() {
 
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
-
-  const verifyHashQuery = trpc.compliance.verifyJobHash.useQuery(
-    { jobId: parseInt(jobId!) },
-    { enabled: false }
-  );
 
   const handleExportCSV = () => {
     if (!deficiencies || deficiencies.length === 0) return;
@@ -260,8 +253,6 @@ export default function AdminJobDetails() {
     setSelectedFile(file);
     toast.success(`Selected: ${file.name}`);
   };
-
-  const uploadToS3Mutation = trpc.files.uploadToS3.useMutation();
 
   const handleUpload = async () => {
     if (!selectedFile || !job || !user || !user.companyId) return;

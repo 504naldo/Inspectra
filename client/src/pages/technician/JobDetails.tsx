@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
@@ -49,7 +48,6 @@ interface JobDetailsProps {
 export default function JobDetails({ jobId }: JobDetailsProps) {
   const [location, setLocation] = useLocation();
   const { isOnline, getCachedJobData } = useOfflineStorage();
-  const [activeTab, setActiveTab] = useState("devices");
   const [openGridSection, setOpenGridSection] = useState<string | null>(null);
   const [woTechNotes, setWoTechNotes] = useState("");
   const [woActualHours, setWoActualHours] = useState("");
@@ -197,19 +195,6 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const totalDevices = devices?.length || 0;
   const progress = totalDevices > 0 ? (testedCount / totalDevices) * 100 : 0;
 
-  const getResultForDevice = (deviceId: number) => {
-    return inspectionResults?.find((r: any) => r.deviceId === deviceId);
-  };
-
-  const getResultBadgeClass = (result?: string) => {
-    switch (result) {
-      case 'pass': return 'status-pass';
-      case 'fail': return 'status-fail';
-      case 'na': return 'status-na';
-      default: return 'bg-muted text-muted-foreground';
-    }
-  };
-
   // Calculate progress for each category using centralized helpers
   const smokeAlarms = devices?.filter((d: any) => isSmokeAlarm(d)) || [];
   const fireAlarmDevices = devices?.filter((d: any) => {
@@ -295,15 +280,6 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const fireAlarmStats = getFireAlarmStats();
   const extinguisherStats = getExtinguisherStats();
   const emergencyLightStats = getEmergencyLightStats();
-
-  // Debug counts (dev-only)
-  console.log('[DEBUG] JobDetails device counts:', {
-    totalDevices: devices?.length || 0,
-    extinguishers: extinguisherStats.total,
-    emergencyLights: emergencyLightStats.total,
-    fireAlarms: fireAlarmStats.total,
-    smokeAlarms: smokeStats.total
-  });
 
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom pb-24">
