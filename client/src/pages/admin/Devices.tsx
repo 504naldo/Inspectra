@@ -1,33 +1,57 @@
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useState } from "react";
-import { 
-  Search, 
-  Plus,
-  ChevronRight,
-  AlertCircle
+import {
+  Search,
+  AlertCircle,
+  Pencil,
+  Save,
+  Loader2,
 } from "lucide-react";
-import { Link } from "wouter";
 import { toast } from "sonner";
 
 export default function AdminDevices() {
   const { user } = useAuth();
   const companyId = user?.companyId || 1;
-  
+
   const [selectedSiteId, setSelectedSiteId] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Edit state
+  const [editDevice, setEditDevice] = useState<any>(null);
+  const [editDeviceType, setEditDeviceType] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editManufacturer, setEditManufacturer] = useState("");
+  const [editModel, setEditModel] = useState("");
+  const [editSerialNumber, setEditSerialNumber] = useState("");
+  const [editBarcode, setEditBarcode] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editIsActive, setEditIsActive] = useState(true);
+
   const { data: sites } = trpc.site.listByCompany.useQuery({ companyId });
-  
-  const { data: devices, isLoading } = trpc.device.listBySite.useQuery(
+
+  const { data: devices, isLoading, refetch } = trpc.device.listBySite.useQuery(
     { siteId: parseInt(selectedSiteId) },
     { enabled: selectedSiteId !== "all" && selectedSiteId !== "" }
   );
+
+  const updateDevice = trpc.device.update.useMutation({
+    onSuccess: () => {
+      toast.success("Device updated");
+      setEditDevice(null);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message || "Failed to update device"),
+  });
 
   const filteredDevices = devices?.filter((device: any) => {
     if (!searchQuery) return true;
@@ -39,6 +63,18 @@ export default function AdminDevices() {
       device.serialNumber?.toLowerCase().includes(query)
     );
   }) || [];
+
+  function openEdit(device: any) {
+    setEditDevice(device);
+    setEditDeviceType(device.deviceType ?? "");
+    setEditLocation(device.location ?? "");
+    setEditManufacturer(device.manufacturer ?? "");
+    setEditModel(device.model ?? "");
+    setEditSerialNumber(device.serialNumber ?? "");
+    setEditBarcode(device.barcode ?? "");
+    setEditNotes(device.notes ?? "");
+    setEditIsActive(device.isActive ?? true);
+  }
 
   return (
     <AdminLayout title="Devices">
@@ -58,7 +94,7 @@ export default function AdminDevices() {
               ))}
             </SelectContent>
           </Select>
-          
+
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -69,11 +105,6 @@ export default function AdminDevices() {
               disabled={selectedSiteId === "all"}
             />
           </div>
-
-          <Button disabled>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Device
-          </Button>
         </div>
 
         {/* Content */}
@@ -99,7 +130,7 @@ export default function AdminDevices() {
             {filteredDevices.map((device: any) => (
               <Card key={device.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold truncate">{device.deviceType}</h3>
                       {device.location && (
@@ -111,13 +142,19 @@ export default function AdminDevices() {
                         {device.serialNumber && <p>S/N: {device.serialNumber}</p>}
                       </div>
                       <div className="mt-2">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          device.isActive ? 'status-pass' : 'status-fail'
-                        }`}>
-                          {device.isActive ? 'Active' : 'Inactive'}
-                        </span>
+                        <Badge variant={device.isActive ? "default" : "destructive"} className="text-xs">
+                          {device.isActive ? "Active" : "Inactive"}
+                        </Badge>
                       </div>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                      onClick={() => openEdit(device)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -125,6 +162,90 @@ export default function AdminDevices() {
           </div>
         )}
       </div>
+
+      {/* Edit Device Dialog */}
+      <Dialog open={!!editDevice} onOpenChange={(open) => { if (!open) setEditDevice(null); }}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4" />
+              Edit Device
+            </DialogTitle>
+            <DialogDescription>Update device metadata.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Device Type <span className="text-destructive">*</span></Label>
+              <Input value={editDeviceType} onChange={(e) => setEditDeviceType(e.target.value)} placeholder="e.g. Smoke Detector" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Location</Label>
+              <Input value={editLocation} onChange={(e) => setEditLocation(e.target.value)} placeholder="e.g. Hallway — Unit 204" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Manufacturer</Label>
+                <Input value={editManufacturer} onChange={(e) => setEditManufacturer(e.target.value)} placeholder="e.g. Kidde" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Model</Label>
+                <Input value={editModel} onChange={(e) => setEditModel(e.target.value)} placeholder="e.g. i4618" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Serial Number</Label>
+                <Input value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} placeholder="S/N" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Barcode</Label>
+                <Input value={editBarcode} onChange={(e) => setEditBarcode(e.target.value)} placeholder="Barcode" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={editIsActive ? "active" : "inactive"} onValueChange={(v) => setEditIsActive(v === "active")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Internal notes..." rows={2} />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setEditDevice(null)} disabled={updateDevice.isPending}>
+                Cancel
+              </Button>
+              <Button
+                disabled={!editDeviceType.trim() || updateDevice.isPending}
+                onClick={() =>
+                  updateDevice.mutate({
+                    id: editDevice.id,
+                    deviceType: editDeviceType.trim(),
+                    location: editLocation || undefined,
+                    manufacturer: editManufacturer || undefined,
+                    model: editModel || undefined,
+                    serialNumber: editSerialNumber || undefined,
+                    barcode: editBarcode || undefined,
+                    notes: editNotes || undefined,
+                    isActive: editIsActive,
+                  })
+                }
+              >
+                {updateDevice.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+                ) : (
+                  <><Save className="h-4 w-4 mr-2" />Save Changes</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

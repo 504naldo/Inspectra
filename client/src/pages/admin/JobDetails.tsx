@@ -38,6 +38,7 @@ import {
   ClipboardList,
   Clock,
   Save,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -58,8 +59,38 @@ export default function AdminJobDetails() {
   const [selectedDeficiencyIds, setSelectedDeficiencyIds] = useState<number[]>([]);
   const [quoteNotes, setQuoteNotes] = useState("");
 
+  // Job edit state
+  const [jobEditOpen, setJobEditOpen] = useState(false);
+  const [jobEditTitle, setJobEditTitle] = useState("");
+  const [jobEditDescription, setJobEditDescription] = useState("");
+  const [jobEditNotes, setJobEditNotes] = useState("");
+  const [jobEditJobType, setJobEditJobType] = useState("");
+  const [jobEditPriority, setJobEditPriority] = useState("");
+  const [jobEditScheduledDate, setJobEditScheduledDate] = useState("");
+
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
+
+  const updateJobMutation = trpc.job.update.useMutation({
+    onSuccess: () => {
+      toast.success("Job updated");
+      setJobEditOpen(false);
+      utils.job.get.invalidate({ id: parseInt(jobId!) });
+    },
+    onError: (err) => toast.error(err.message || "Failed to update job"),
+  });
+
+  const handleJobEditOpen = (job: any) => {
+    setJobEditTitle(job.title ?? "");
+    setJobEditDescription(job.description ?? "");
+    setJobEditNotes(job.notes ?? "");
+    setJobEditJobType(job.jobType ?? "annual");
+    setJobEditPriority(job.priority ?? "medium");
+    setJobEditScheduledDate(
+      job.scheduledDate ? new Date(job.scheduledDate).toISOString().split("T")[0] : ""
+    );
+    setJobEditOpen(true);
+  };
 
   const handleExportCSV = () => {
     if (!deficiencies || deficiencies.length === 0) return;
@@ -512,29 +543,55 @@ export default function AdminJobDetails() {
               </div>
             )}
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                 <CardTitle>Job Information</CardTitle>
+                {!job.finalizedAt && (user?.role === "admin" || user?.role === "office") && (
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleJobEditOpen(job)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="text-sm font-medium">Type</p>
-                    <p className="text-sm text-muted-foreground">{job.jobType}</p>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Title</p>
+                    <p className="mt-0.5">{job.title}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Status</p>
-                    <p className="text-sm text-muted-foreground">{job.status}</p>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Status</p>
+                    <p className="mt-0.5 capitalize">{job.status?.replace(/_/g, " ")}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Scheduled Date</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Type</p>
+                    <p className="mt-0.5 capitalize">{job.jobType?.replace(/_/g, " ") ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Priority</p>
+                    <p className="mt-0.5 capitalize">{job.priority ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Scheduled Date</p>
+                    <p className="mt-0.5">
                       {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : "Not scheduled"}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Priority</p>
-                    <p className="text-sm text-muted-foreground">{job.priority}</p>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Job #</p>
+                    <p className="mt-0.5 font-mono text-xs">{job.jobNumber ?? "—"}</p>
                   </div>
+                  {job.description && (
+                    <div className="col-span-2">
+                      <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Description</p>
+                      <p className="mt-0.5 whitespace-pre-line">{job.description}</p>
+                    </div>
+                  )}
+                  {(job as any).notes && (
+                    <div className="col-span-2">
+                      <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Notes</p>
+                      <p className="mt-0.5 whitespace-pre-line">{(job as any).notes}</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1334,6 +1391,106 @@ export default function AdminJobDetails() {
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating...</>
                 ) : (
                   <><FileCheck className="h-4 w-4 mr-2" />Create Quote</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Job Edit Dialog */}
+      <Dialog open={jobEditOpen} onOpenChange={setJobEditOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4" />
+              Edit Job
+            </DialogTitle>
+            <DialogDescription>
+              Update job details. Status changes and finalization are managed separately.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Title <span className="text-destructive">*</span></Label>
+              <Input value={jobEditTitle} onChange={(e) => setJobEditTitle(e.target.value)} placeholder="Job title" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Job Type</Label>
+                <Select value={jobEditJobType} onValueChange={setJobEditJobType}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="annual">Annual</SelectItem>
+                    <SelectItem value="semi_annual">Semi-Annual</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="service_call">Service Call</SelectItem>
+                    <SelectItem value="repair">Repair</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Priority</Label>
+                <Select value={jobEditPriority} onValueChange={setJobEditPriority}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Scheduled Date</Label>
+              <Input
+                type="date"
+                value={jobEditScheduledDate}
+                onChange={(e) => setJobEditScheduledDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Textarea
+                value={jobEditDescription}
+                onChange={(e) => setJobEditDescription(e.target.value)}
+                placeholder="Job description..."
+                rows={2}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea
+                value={jobEditNotes}
+                onChange={(e) => setJobEditNotes(e.target.value)}
+                placeholder="Internal notes..."
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setJobEditOpen(false)} disabled={updateJobMutation.isPending}>
+                Cancel
+              </Button>
+              <Button
+                disabled={!jobEditTitle.trim() || updateJobMutation.isPending}
+                onClick={() =>
+                  updateJobMutation.mutate({
+                    id: parseInt(jobId!),
+                    title: jobEditTitle.trim(),
+                    description: jobEditDescription || undefined,
+                    notes: jobEditNotes || undefined,
+                    jobType: jobEditJobType as any,
+                    priority: jobEditPriority as any,
+                    scheduledDate: jobEditScheduledDate ? new Date(jobEditScheduledDate) : undefined,
+                  })
+                }
+              >
+                {updateJobMutation.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+                ) : (
+                  <><Save className="h-4 w-4 mr-2" />Save Changes</>
                 )}
               </Button>
             </div>

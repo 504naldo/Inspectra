@@ -104,18 +104,6 @@ export default function AdminJobs() {
     });
   }, [technicians]);
   
-  // Debug logging
-  React.useEffect(() => {
-    console.log('[DEBUG] Technicians query:', { 
-      companyId, 
-      techsLoading, 
-      techsError: techsError?.message, 
-      technicians,
-      count: technicians?.length,
-      uniqueCount: uniqueTechnicians.length
-    });
-  }, [companyId, techsLoading, techsError, technicians, uniqueTechnicians]);
-  
   const setAssignments = trpc.jobAssignment.setJobAssignments.useMutation({
     onSuccess: () => {
       toast.success('Job assignments updated');

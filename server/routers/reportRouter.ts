@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, customerProcedure, protectedProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertJobNotFinalized } from "../db";
 import { storagePut } from "../storage";
 import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
@@ -77,6 +78,10 @@ const reportRouter = router({
     fileKey: z.string().optional(),
     fileUrl: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
+    const report = await db.getReportById(input.id);
+    if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+    // Prevent editing reports whose parent job is finalized
+    await assertJobNotFinalized(report.jobId);
     const { id, status, ...data } = input;
     const updateData: any = { ...data };
     if (status) {
