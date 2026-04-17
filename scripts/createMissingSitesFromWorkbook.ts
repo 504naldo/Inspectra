@@ -6,9 +6,12 @@
  *
  * Customer org resolution (per row, in priority order):
  *   1. --customer-org <id>   Force every row to this org. Skips all inference.
- *   2. buildingId match      Existing DB site already has this FILE# as buildingId
+ *   2. --mapping-file <path> JSON file: { "#0032": 3, "#0330-1": 4 }
+ *                            Explicit per-FILE# org assignment. Takes priority
+ *                            over auto-inference for listed FILE#s.
+ *   3. buildingId match      Existing DB site already has this FILE# as buildingId
  *                            → reuse its customerOrgId. Deterministic.
- *   3. City inference        All existing DB sites in this city share one org
+ *   4. City inference        All existing DB sites in this city share one org
  *                            → use that org. Deterministic.
  *
  * If none of the above resolves confidently the row is SKIPPED:
@@ -18,13 +21,28 @@
  * There is no default-org fallback. Junk data under the wrong org is worse
  * than a skipped row that you fix manually.
  *
+ * Mapping file format (JSON):
+ *   {
+ *     "#0032":   3,
+ *     "#0330-1": 4,
+ *     "#509":    3
+ *   }
+ *   Keys are FILE# strings (as they appear in the workbook, case-insensitive,
+ *   leading-zero variations are normalised automatically). Values are org IDs.
+ *
  * Usage:
  *   # Dry-run — see what would be created and under which org
  *   pnpm exec tsx scripts/createMissingSitesFromWorkbook.ts \
  *     --file "./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx" \
  *     --company 1 --dry-run
  *
- *   # Force ALL rows into one known org (use when you know the batch belongs to one org)
+ *   # Supply a mapping file to assign specific FILE#s to specific orgs
+ *   pnpm exec tsx scripts/createMissingSitesFromWorkbook.ts \
+ *     --file "..." --company 1 --mapping-file ./mapping.json --dry-run
+ *   pnpm exec tsx scripts/createMissingSitesFromWorkbook.ts \
+ *     --file "..." --company 1 --mapping-file ./mapping.json
+ *
+ *   # Force ALL rows into one known org (use when the whole batch is one org)
  *   pnpm exec tsx scripts/createMissingSitesFromWorkbook.ts \
  *     --file "..." --company 1 --customer-org 3 --dry-run
  *   pnpm exec tsx scripts/createMissingSitesFromWorkbook.ts \
@@ -40,6 +58,7 @@
  */
 
 import XLSX from 'xlsx';
+import fs from 'fs';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq } from 'drizzle-orm';
 import * as schema from '../drizzle/schema.js';
@@ -94,8 +113,10 @@ function detectHeaderRow(rows: unknown[][]): number {
 interface CliArgs {
   file: string;
   companyId: number;
-  /** If set, ALL rows use this org. Disables per-row inference. */
+  /** If set, ALL rows use this org. Disables all inference. */
   customerOrgId: number;
+  /** Path to a JSON mapping file: { "#0032": 3, "#0330-1": 4 } */
+  mappingFile: string;
   dryRun: boolean;
   includeSpring: boolean;
 }
@@ -104,18 +125,80 @@ function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
   const a: CliArgs = {
     file: '', companyId: 1, customerOrgId: 0,
-    dryRun: false, includeSpring: false,
+    mappingFile: '', dryRun: false, includeSpring: false,
   };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case '--file':           a.file          = argv[++i]; break;
       case '--company':        a.companyId     = parseInt(argv[++i], 10); break;
       case '--customer-org':   a.customerOrgId = parseInt(argv[++i], 10); break;
+      case '--mapping-file':   a.mappingFile   = argv[++i]; break;
       case '--dry-run':        a.dryRun        = true; break;
       case '--include-spring': a.includeSpring = true; break;
     }
   }
   return a;
+}
+
+// ─── Mapping file ─────────────────────────────────────────────────────────────
+
+interface OrgRef { id: number; name: string }
+
+/**
+ * Load a JSON mapping file of the form { "#0032": 3, "#0330-1": 4 }.
+ * Returns a Map<normFile, OrgRef>.
+ * Warns and skips entries whose org ID doesn't exist under this company.
+ */
+function loadMappingFile(
+  mappingFilePath: string,
+  allOrgs: { id: number; name: string }[],
+): Map<string, OrgRef> {
+  const absPath = path.isAbsolute(mappingFilePath)
+    ? mappingFilePath
+    : path.resolve(process.cwd(), mappingFilePath);
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(absPath, 'utf8'));
+  } catch (err: any) {
+    console.error(`Cannot read mapping file "${absPath}": ${err.message}`);
+    process.exit(1);
+  }
+
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    console.error(
+      `Mapping file must be a JSON object like { "#0032": 3, "#0033": 4 }.\n` +
+      `Got: ${JSON.stringify(raw)?.slice(0, 80)}`
+    );
+    process.exit(1);
+  }
+
+  const orgById = new Map(allOrgs.map(o => [o.id, o]));
+  const result  = new Map<string, OrgRef>();
+  const warnings: string[] = [];
+
+  for (const [fileKey, orgIdRaw] of Object.entries(raw as Record<string, unknown>)) {
+    const orgId = typeof orgIdRaw === 'number' ? orgIdRaw : parseInt(String(orgIdRaw), 10);
+    if (isNaN(orgId)) {
+      warnings.push(`  "${fileKey}": value "${orgIdRaw}" is not a valid org ID — skipped`);
+      continue;
+    }
+    const org = orgById.get(orgId);
+    if (!org) {
+      warnings.push(`  "${fileKey}": org ID ${orgId} not found under this company — skipped`);
+      continue;
+    }
+    result.set(normBldg(fileKey), { id: org.id, name: org.name });
+  }
+
+  console.log(`Mapping file: ${absPath}`);
+  console.log(`  ${result.size} valid entries loaded`);
+  if (warnings.length > 0) {
+    console.log(`  ${warnings.length} entries skipped (invalid):`);
+    warnings.forEach(w => console.log(w));
+  }
+
+  return result;
 }
 
 // ─── Workbook extraction ──────────────────────────────────────────────────────
@@ -220,18 +303,18 @@ function extractAllFileNumbers(
 
 // ─── Per-row org resolution ───────────────────────────────────────────────────
 
-interface OrgRef { id: number; name: string }
-
 /**
  * Resolution result for a single workbook row.
  *
- * forced    — --customer-org override; all rows assigned unconditionally
- * auto      — deterministic inference from existing DB site data
- * ambiguous — city is present in DB but maps to multiple orgs; cannot guess
+ * forced     — --customer-org override; all rows assigned unconditionally
+ * mapped     — explicit entry in the --mapping-file JSON
+ * auto       — deterministic inference from existing DB site data
+ * ambiguous  — city is present in DB but maps to multiple orgs; cannot guess
  * unresolved — no city data, or city has no existing DB sites to infer from
  */
 type OrgResolution =
   | { type: 'forced';     org: OrgRef }
+  | { type: 'mapped';     org: OrgRef }
   | { type: 'auto';       org: OrgRef; reason: string }
   | { type: 'ambiguous';  reason: string }
   | { type: 'unresolved'; reason: string };
@@ -240,11 +323,7 @@ type OrgResolution =
  * Build lookup tables for per-row org resolution from existing DB site data.
  *
  * orgByBldgNorm  — normBldg(buildingId) → OrgRef
- *   Used when a DB site already has this FILE# as its buildingId.
- *
  * orgByNormCity  — normCity(city) → OrgRef | 'ambiguous'
- *   Built from existing sites that have both city and customerOrgId set.
- *   A city is 'ambiguous' when its sites span more than one org.
  */
 function buildOrgLookups(
   existingSites: { id: number; buildingId: string | null; city: string | null; customerOrgId: number }[],
@@ -285,13 +364,20 @@ function resolveOrg(
   orgByBldgNorm: Map<string, OrgRef>,
   orgByNormCity: Map<string, OrgRef | 'ambiguous'>,
   forcedOrg:  OrgRef | null,
+  mappedOrgs: Map<string, OrgRef>,
 ): OrgResolution {
   // Strategy 1: global --customer-org override
   if (forcedOrg) {
     return { type: 'forced', org: forcedOrg };
   }
 
-  // Strategy 2: existing DB site already has this buildingId → reuse its org
+  // Strategy 2: explicit mapping file entry
+  const mappedOrg = mappedOrgs.get(entry.normFile);
+  if (mappedOrg) {
+    return { type: 'mapped', org: mappedOrg };
+  }
+
+  // Strategy 3: existing DB site already has this buildingId → reuse its org
   const bldgOrg = orgByBldgNorm.get(entry.normFile);
   if (bldgOrg) {
     return {
@@ -301,12 +387,11 @@ function resolveOrg(
     };
   }
 
-  // Strategy 3: city present → look up existing DB sites in that city
+  // Strategy 4: city present → look up existing DB sites in that city
   if (entry.normCity) {
     const cityResult = orgByNormCity.get(entry.normCity);
 
     if (cityResult && cityResult !== 'ambiguous') {
-      // All existing DB sites in this city share one org — deterministic
       return {
         type: 'auto',
         org: cityResult,
@@ -315,24 +400,21 @@ function resolveOrg(
     }
 
     if (cityResult === 'ambiguous') {
-      // City maps to multiple orgs — cannot safely guess
       return {
         type: 'ambiguous',
-        reason: `city "${entry.city}" has existing sites in multiple orgs — manual assignment required`,
+        reason: `city "${entry.city}" has existing sites in multiple orgs — add to --mapping-file or use --customer-org`,
       };
     }
 
-    // City is not in any existing DB site → no inference basis
     return {
       type: 'unresolved',
-      reason: `no existing DB sites in "${entry.city}" — cannot infer org`,
+      reason: `no existing DB sites in "${entry.city}" — add to --mapping-file or use --customer-org`,
     };
   }
 
-  // No city data at all
   return {
     type: 'unresolved',
-    reason: 'workbook row has no CITY value — cannot infer org',
+    reason: 'workbook row has no CITY value — add to --mapping-file or use --customer-org',
   };
 }
 
@@ -345,11 +427,13 @@ async function main() {
     console.error([
       'Usage: tsx scripts/createMissingSitesFromWorkbook.ts',
       '  --file <path> --company <id>',
-      '  [--customer-org <id>]   force ALL rows into this org (use when the batch is one org)',
+      '  [--mapping-file <path>]   JSON: { "#0032": 3, "#0330-1": 4 }',
+      '                            Explicit per-FILE# org assignment (takes priority over auto-inference)',
+      '  [--customer-org <id>]     Force ALL rows into this org (overrides everything)',
       '  [--dry-run]',
       '  [--include-spring]',
       '',
-      'Org is resolved per row from existing DB site data (buildingId match or city inference).',
+      'Org is resolved per row (priority: --customer-org > mapping file > buildingId match > city inference).',
       'Rows that cannot be resolved confidently are skipped and logged for manual review.',
     ].join('\n'));
     process.exit(1);
@@ -384,7 +468,7 @@ async function main() {
   console.log(`Customer orgs for company ${args.companyId} (${allOrgs.length} total):`);
   allOrgs.forEach(o => console.log(`  id=${o.id}  "${o.name}"`));
 
-  // Resolve forced org (--customer-org)
+  // ── Resolve forced org (--customer-org) ──────────────────────────────────
   let forcedOrg: OrgRef | null = null;
   if (args.customerOrgId) {
     const o = allOrgs.find(x => x.id === args.customerOrgId);
@@ -393,7 +477,18 @@ async function main() {
       process.exit(1);
     }
     forcedOrg = { id: o.id, name: o.name };
-    console.log(`\n⚠  --customer-org set: ALL rows will be assigned to "${o.name}" (id=${o.id})`);
+    console.log(`\n--customer-org set: ALL rows will be assigned to "${o.name}" (id=${o.id})`);
+  }
+
+  // ── Load mapping file (--mapping-file) ──────────────────────────────────
+  let mappedOrgs = new Map<string, OrgRef>();
+  if (args.mappingFile) {
+    if (forcedOrg) {
+      console.log('\n--mapping-file is ignored when --customer-org is set (--customer-org takes priority).');
+    } else {
+      console.log('');
+      mappedOrgs = loadMappingFile(args.mappingFile, allOrgs);
+    }
   }
 
   // ── Load existing sites ──────────────────────────────────────────────────
@@ -421,9 +516,9 @@ async function main() {
     const uniqueCities    = cityEntries.filter(([, v]) => v !== 'ambiguous').length;
     const ambiguousCities = cityEntries.filter(([, v]) => v === 'ambiguous').length;
     console.log(`  City → org inference: ${uniqueCities} cities map to one org, ${ambiguousCities} cities are ambiguous`);
-    if (uniqueCities === 0 && !forcedOrg) {
-      console.log('  ℹ  No unambiguous city→org mappings found in existing sites.');
-      console.log('     Most rows will be unresolved unless you use --customer-org <id>.');
+    if (uniqueCities === 0 && mappedOrgs.size === 0) {
+      console.log('  No unambiguous city→org mappings and no --mapping-file supplied.');
+      console.log('  Most rows will be unresolved unless you use --customer-org <id> or --mapping-file.');
     }
   }
 
@@ -436,10 +531,19 @@ async function main() {
   if (junkSkipped > 0)     console.log(`  ${junkSkipped} junk/non-FILE# values skipped`);
   if (noCity.length > 0)   console.log(`  ${noCity.length} FILE#s have no CITY value`);
 
+  // Warn about mapping file entries that don't match any workbook FILE#
+  if (mappedOrgs.size > 0) {
+    const unmatchedMappings = [...mappedOrgs.keys()].filter(nf => !wbEntries.has(nf));
+    if (unmatchedMappings.length > 0) {
+      console.log(`\n  Mapping file entries not found in workbook (${unmatchedMappings.length}):`);
+      unmatchedMappings.forEach(nf => console.log(`    normFile="${nf}" — no matching workbook row`));
+    }
+  }
+
   // ── Classify and resolve orgs ────────────────────────────────────────────
   interface PendingCreate {
     entry:      WbSiteEntry;
-    resolution: Extract<OrgResolution, { type: 'forced' | 'auto' }>;
+    resolution: Extract<OrgResolution, { type: 'forced' | 'mapped' | 'auto' }>;
   }
 
   const alreadyExists: WbSiteEntry[]                        = [];
@@ -453,10 +557,11 @@ async function main() {
       continue;
     }
 
-    const resolution = resolveOrg(entry, orgByBldgNorm, orgByNormCity, forcedOrg);
+    const resolution = resolveOrg(entry, orgByBldgNorm, orgByNormCity, forcedOrg, mappedOrgs);
 
     switch (resolution.type) {
       case 'forced':
+      case 'mapped':
       case 'auto':
         toCreate.push({ entry, resolution });
         break;
@@ -480,6 +585,7 @@ async function main() {
   console.log(`  Already have site (skip)  : ${alreadyExists.length}`);
   console.log(`  Will create               : ${toCreate.length}`);
   console.log(`    forced (--customer-org) : ${toCreate.filter(x => x.resolution.type === 'forced').length}`);
+  console.log(`    mapped (--mapping-file) : ${toCreate.filter(x => x.resolution.type === 'mapped').length}`);
   console.log(`    auto-resolved           : ${toCreate.filter(x => x.resolution.type === 'auto').length}`);
   console.log(`  Ambiguous (skip)          : ${ambiguous.length}`);
   console.log(`  Unresolved (skip)         : ${unresolved.length}`);
@@ -494,9 +600,10 @@ async function main() {
     for (const { entry, resolution } of toCreate) {
       const cityLabel = entry.city || '(no city)';
       const orgLabel  = `org="${resolution.org.name}" (id=${resolution.org.id})`;
-      const stratLabel = resolution.type === 'auto'
-        ? `[auto: ${resolution.reason}]`
-        : '[--customer-org override]';
+      const stratLabel =
+        resolution.type === 'forced' ? '[--customer-org override]' :
+        resolution.type === 'mapped' ? '[--mapping-file]' :
+        `[auto: ${resolution.reason}]`;
       console.log(`  ${entry.fileNum.padEnd(12)} city="${cityLabel.padEnd(20)}" ${orgLabel}  ${stratLabel}`);
     }
   }
@@ -522,13 +629,34 @@ async function main() {
     console.log('  determined from the workbook data or existing site relationships.');
     console.log('');
     console.log('  Options:');
-    console.log('  a) If a batch of FILE#s belongs to a known org, rerun with:');
-    console.log('       --customer-org <id>   (forces all rows to that org)');
+    console.log('  a) Add them to a mapping file and rerun with --mapping-file <path>:');
+    console.log('       Create a JSON file: { "#0032": 3, "#0033-1": 4 }');
     console.log('     Available orgs:');
-    allOrgs.forEach(o => console.log(`       --customer-org ${o.id}   "${o.name}"`));
+    allOrgs.forEach(o => console.log(`       ${o.id}: "${o.name}"`));
     console.log('');
-    console.log('  b) Create the sites manually in the app with the correct org assigned.');
+    console.log('  b) If a whole batch belongs to one org, rerun with:');
+    console.log('       --customer-org <id>   (forces all rows to that org)');
+    console.log('');
+    console.log('  c) Create the sites manually in the app with the correct org assigned.');
     console.log('     Once created, rerun this script — it will skip sites that already exist.');
+
+    // Emit a ready-to-edit mapping file stub for the skipped rows
+    const stubPath = path.join(process.cwd(), 'mapping-stub.json');
+    if (!fs.existsSync(stubPath)) {
+      const stub: Record<string, string> = {};
+      [...ambiguous, ...unresolved].forEach(({ entry }) => {
+        stub[entry.fileNum] = '<orgId>';
+      });
+      console.log(`\n  Mapping file stub written to: ${stubPath}`);
+      console.log('  Edit it (replace <orgId> with actual numbers) then rerun with --mapping-file mapping-stub.json');
+      if (!args.dryRun) {
+        fs.writeFileSync(stubPath, JSON.stringify(stub, null, 2) + '\n', 'utf8');
+      } else {
+        console.log('  (dry-run: stub not written to disk)');
+      }
+    } else {
+      console.log(`\n  Tip: mapping-stub.json already exists — update it and rerun with --mapping-file mapping-stub.json`);
+    }
   }
 
   if (args.dryRun) {
@@ -590,13 +718,13 @@ async function main() {
       );
     }
     console.log('');
-    console.log('  Use --customer-org <id> if you know which org a group of FILE#s belongs to.');
+    console.log('  Add these to a mapping file and rerun with --mapping-file <path>.');
     console.log('  Available orgs:');
     allOrgs.forEach(o => console.log(`    id=${o.id}  "${o.name}"`));
   }
 
   if (created > 0) {
-    console.log('\n✓ Sites created. Now run the monthly tracking seed:');
+    console.log('\nSites created. Now run the monthly tracking seed:');
     console.log(`  pnpm exec tsx scripts/seedMonthlyTracking.ts \\`);
     console.log(`    --file "${args.file}" --company ${args.companyId} --all-sheets --dry-run`);
     console.log(`  pnpm exec tsx scripts/seedMonthlyTracking.ts \\`);
