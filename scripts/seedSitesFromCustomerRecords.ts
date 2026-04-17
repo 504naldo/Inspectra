@@ -26,6 +26,10 @@
  *   Provide EITHER --admin-user-id N (looks up stored Google token in DB)
  *   OR --access-token TOKEN (paste directly from browser DevTools).
  *
+ * Org-name overrides (when Drive folder names don't match DB org names):
+ *   --org-map "Drive Folder Name=DB Org Name"   (repeatable)
+ *   --org-map-file ./org-map.json               (JSON: {"Drive Name": "DB Org Name"})
+ *
  * Usage:
  *   # Dry-run report (no DB writes)
  *   pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts \
@@ -38,8 +42,19 @@
  *   # Live run with explicit token
  *   pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts \
  *     --company 1 --access-token "ya29.xxx..."
+ *
+ *   # Override a folder name that doesn't match any DB org
+ *   pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts \
+ *     --company 1 --admin-user-id 1 \
+ *     --org-map "Acme Property Mgmt=Acme Properties Inc." \
+ *     --org-map "Old Name Ltd=New Name Ltd"
+ *
+ *   # Same via JSON file
+ *   pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts \
+ *     --company 1 --admin-user-id 1 --org-map-file ./org-map.json
  */
 
+import { readFileSync } from "fs";
 import { drizzle } from "drizzle-orm/mysql2";
 import { eq, or } from "drizzle-orm";
 import * as schema from "../drizzle/schema.js";
@@ -222,6 +237,59 @@ function normBldg(s: string): string {
   return /^\d+$/.test(a) ? String(parseInt(a, 10)) : a;
 }
 
+interface AddressComponents {
+  streetAddress: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+}
+
+const RE_CA_POSTAL = /\b([A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d)\b/;
+const RE_US_POSTAL = /\b(\d{5}(?:-\d{4})?)\b/;
+
+/**
+ * Splits a siteName like "1407 E. Georgia St, Vancouver, BC V5L 2S4"
+ * into structured address components.  Handles Canadian and US postal codes.
+ * Falls back gracefully when components are absent.
+ */
+function parseAddressComponents(siteName: string): AddressComponents {
+  const parts = siteName.split(",").map((p) => p.trim());
+  const streetAddress = parts[0];
+  if (parts.length === 1) return { streetAddress };
+
+  let tail = parts.slice(1).join(", ");
+
+  // Extract postal code
+  let postalCode: string | undefined;
+  let m = RE_CA_POSTAL.exec(tail);
+  if (m) {
+    let raw = m[1].toUpperCase().replace(/\s/g, "");
+    postalCode = raw.slice(0, 3) + " " + raw.slice(3);
+    tail = (tail.slice(0, m.index) + tail.slice(m.index + m[0].length)).trim();
+  } else {
+    m = RE_US_POSTAL.exec(tail);
+    if (m) {
+      postalCode = m[1];
+      tail = (tail.slice(0, m.index) + tail.slice(m.index + m[0].length)).trim();
+    }
+  }
+
+  // Clean residual punctuation
+  tail = tail.replace(/^[,\s]+|[,\s]+$/g, "").replace(/\s{2,}/g, " ");
+
+  if (!tail) return { streetAddress, postalCode };
+
+  // Find 2-letter state/province at the end of tail
+  const stateMatch = /(?:^|[\s,])([A-Z]{2})(?:\s*,?\s*)$/i.exec(tail);
+  if (stateMatch) {
+    const state = stateMatch[1].toUpperCase();
+    const city = tail.slice(0, stateMatch.index).replace(/[,\s]+$/, "").trim() || undefined;
+    return { streetAddress, city, state, postalCode };
+  }
+
+  return { streetAddress, city: tail || undefined, postalCode };
+}
+
 // ─── CLI args ──────────────────────────────────────────────────────────────────
 
 interface CliArgs {
@@ -229,11 +297,13 @@ interface CliArgs {
   dryRun: boolean;
   adminUserId?: number;
   accessToken?: string;
+  /** normalized Drive folder name → exact DB org name */
+  orgMap: Record<string, string>;
 }
 
 function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
-  const a: CliArgs = { companyId: 1, dryRun: false };
+  const a: CliArgs = { companyId: 1, dryRun: false, orgMap: {} };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case "--company":
@@ -248,6 +318,30 @@ function parseArgs(): CliArgs {
       case "--access-token":
         a.accessToken = argv[++i];
         break;
+      case "--org-map": {
+        const raw = argv[++i];
+        const eq = raw.indexOf("=");
+        if (eq < 1) {
+          console.error(`--org-map value must be "Drive Folder Name=DB Org Name", got: ${raw}`);
+          process.exit(1);
+        }
+        a.orgMap[normName(raw.slice(0, eq))] = raw.slice(eq + 1).trim();
+        break;
+      }
+      case "--org-map-file": {
+        const filePath = argv[++i];
+        let raw: Record<string, string>;
+        try {
+          raw = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, string>;
+        } catch (e) {
+          console.error(`Failed to read --org-map-file "${filePath}": ${e}`);
+          process.exit(1);
+        }
+        for (const [k, v] of Object.entries(raw)) {
+          a.orgMap[normName(k)] = v;
+        }
+        break;
+      }
     }
   }
   return a;
@@ -275,10 +369,16 @@ async function main() {
         "  --company <id>",
         "  (--admin-user-id <id> | --access-token <token>)",
         "  [--dry-run]",
+        "  [--org-map \"Drive Folder Name=DB Org Name\"]  (repeatable)",
+        "  [--org-map-file ./org-map.json]",
         "",
         "Authentication:",
         "  --admin-user-id N   Looks up user N in the DB and uses their stored Google token.",
         "  --access-token T    Use an OAuth token you obtained manually (paste from app).",
+        "",
+        "Org-name overrides:",
+        "  --org-map           Map a Drive folder name to a DB org when fuzzy matching fails.",
+        "  --org-map-file      JSON file: {\"Drive Name\": \"DB Org Name\", ...}",
       ].join("\n")
     );
     process.exit(1);
@@ -349,28 +449,39 @@ async function main() {
   for (const orgFolder of orgFolders) {
     const normOrgFolder = normName(orgFolder.name);
 
-    // Try exact normalized match first, then partial
-    let matchedOrg = orgByNormName.get(normOrgFolder);
-    if (!matchedOrg) {
-      // Partial match: DB org name contains or is contained by folder name
-      for (const [normDbName, org] of orgByNormName) {
-        if (
-          normDbName.includes(normOrgFolder) ||
-          normOrgFolder.includes(normDbName)
-        ) {
-          matchedOrg = org;
-          break;
+    let matchedOrg: (typeof allOrgs)[0] | undefined;
+
+    // --org-map override takes highest priority
+    const orgMapTarget = args.orgMap[normOrgFolder];
+    if (orgMapTarget) {
+      matchedOrg = [...orgByNormName.values()].find(
+        (o) => normName(o.name) === normName(orgMapTarget) || o.name === orgMapTarget
+      );
+      if (!matchedOrg) {
+        const note = `${orgFolder.name} (mapped to "${orgMapTarget}" — not found in DB)`;
+        unmatchedOrgs.push(note);
+        console.log(`  [ORG MAP ERROR] "${orgFolder.name}" mapped to "${orgMapTarget}" but no matching DB org — skipping`);
+        continue;
+      }
+      console.log(`  [ORG MAP] "${orgFolder.name}" → org "${matchedOrg.name}" (id=${matchedOrg.id})`);
+    } else {
+      // Exact normalized match, then partial
+      matchedOrg = orgByNormName.get(normOrgFolder);
+      if (!matchedOrg) {
+        for (const [normDbName, org] of orgByNormName) {
+          if (normDbName.includes(normOrgFolder) || normOrgFolder.includes(normDbName)) {
+            matchedOrg = org;
+            break;
+          }
         }
       }
+      if (!matchedOrg) {
+        unmatchedOrgs.push(orgFolder.name);
+        console.log(`  [ORG UNMATCHED] "${orgFolder.name}" — skipping all sites under this folder`);
+        continue;
+      }
+      console.log(`  Processing: "${orgFolder.name}" → org "${matchedOrg.name}" (id=${matchedOrg.id})`);
     }
-
-    if (!matchedOrg) {
-      unmatchedOrgs.push(orgFolder.name);
-      console.log(`  [ORG UNMATCHED] "${orgFolder.name}" — skipping all sites under this folder`);
-      continue;
-    }
-
-    console.log(`  Processing: "${orgFolder.name}" → org "${matchedOrg.name}" (id=${matchedOrg.id})`);
 
     const siteFolders = await listFolders(orgFolder.id, accessToken);
 
@@ -383,6 +494,7 @@ async function main() {
 
       const { fileNumber, siteName } = parsed;
       const normFile = normBldg(fileNumber);
+      const addrParts = parseAddressComponents(siteName);
 
       const existingSite = siteByNormFile.get(normFile);
 
@@ -391,6 +503,11 @@ async function main() {
         const patch: Partial<schema.InsertSite> = {};
         if (!existingSite.fileNumber) patch.fileNumber = fileNumber;
         if (!existingSite.buildingId) patch.buildingId = fileNumber;
+        if (!existingSite.name) patch.name = addrParts.streetAddress;
+        if (!existingSite.address) patch.address = addrParts.streetAddress;
+        if (!existingSite.city && addrParts.city) patch.city = addrParts.city;
+        if (!existingSite.state && addrParts.state) patch.state = addrParts.state;
+        if (!existingSite.postalCode && addrParts.postalCode) patch.postalCode = addrParts.postalCode;
 
         if (Object.keys(patch).length === 0) {
           results.push({
@@ -428,8 +545,11 @@ async function main() {
           const [inserted] = await db.insert(schema.sites).values({
             companyId: args.companyId,
             customerOrgId: matchedOrg.id,
-            name: siteName,
-            address: siteName,
+            name: addrParts.streetAddress,
+            address: addrParts.streetAddress,
+            city: addrParts.city ?? null,
+            state: addrParts.state ?? null,
+            postalCode: addrParts.postalCode ?? null,
             fileNumber,
             buildingId: fileNumber,
           });
