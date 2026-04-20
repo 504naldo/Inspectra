@@ -1,24 +1,25 @@
 /**
  * scripts/importSitesFromSummarySheets.ts
  *
- * Import customer orgs and sites from a ZIP of building summary sheet PDFs.
- * Source of truth: the PDFs themselves — NOT the monthly workbook.
+ * Import customer orgs and sites from a ZIP or directory of building summary
+ * sheet PDFs.  Source of truth: the PDFs — NOT the monthly workbook.
  *
- * Usage:
- *   # Dry run (no writes)
+ * Usage (dry run):
  *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
  *     --company 1 \
- *     --zip "/path/to/Building Summary Sheets.zip" \
+ *     --zip "./client/src/data" \
  *     --dry-run \
  *     --create-missing-orgs \
  *     --json-report "./tmp/import-report.json"
  *
- *   # Live import
+ * Usage (live):
  *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
  *     --company 1 \
- *     --zip "/path/to/Building Summary Sheets.zip" \
+ *     --zip "./client/src/data" \
  *     --create-missing-orgs \
  *     --update-existing-sites
+ *
+ * The --zip flag accepts either a .zip file path or a directory of loose PDFs.
  *
  * Idempotent: matching uses file number → address → name in that order.
  * Conservative: unresolved > wrong; never moves a site between orgs.
@@ -30,9 +31,9 @@ config();
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq } from 'drizzle-orm';
 import * as schema from '../drizzle/schema.js';
-import { extractPdfsFromZip } from '../lib/import/zipExtractor.js';
-import { parseSummarySheet } from '../lib/import/pdfParser.js';
-import type { ParsedSheet } from '../lib/import/pdfParser.js';
+import { loadSummaryPdfs } from '../lib/import/buildingSummaryZip.js';
+import { parseSummarySheet } from '../lib/import/extractSummarySheet.js';
+import type { ParsedSheet } from '../lib/import/extractSummarySheet.js';
 import { resolveOrg } from '../lib/import/matchCustomerOrg.js';
 import type { OrgRecord } from '../lib/import/matchCustomerOrg.js';
 import { resolveSite } from '../lib/import/matchSite.js';
@@ -45,7 +46,7 @@ import { parseAddressComponents, normName } from '../lib/import/normalize.js';
 
 interface CliArgs {
   companyId: number;
-  zipPath: string;
+  source: string;
   dryRun: boolean;
   createMissingOrgs: boolean;
   updateExistingSites: boolean;
@@ -56,19 +57,20 @@ function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
   const args: CliArgs = {
     companyId: 1,
-    zipPath: '',
+    source: '',
     dryRun: false,
     createMissingOrgs: false,
     updateExistingSites: false,
   };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
-      case '--company':            args.companyId = parseInt(argv[++i], 10); break;
-      case '--zip':                args.zipPath = argv[++i]; break;
-      case '--dry-run':            args.dryRun = true; break;
-      case '--create-missing-orgs': args.createMissingOrgs = true; break;
+      case '--company':              args.companyId = parseInt(argv[++i], 10); break;
+      case '--zip':                  args.source = argv[++i]; break;
+      case '--dir':                  args.source = argv[++i]; break;
+      case '--dry-run':              args.dryRun = true; break;
+      case '--create-missing-orgs':  args.createMissingOrgs = true; break;
       case '--update-existing-sites': args.updateExistingSites = true; break;
-      case '--json-report':        args.jsonReport = argv[++i]; break;
+      case '--json-report':          args.jsonReport = argv[++i]; break;
     }
   }
   return args;
@@ -79,12 +81,12 @@ function parseArgs(): CliArgs {
 async function main() {
   const args = parseArgs();
 
-  if (!args.zipPath) {
+  if (!args.source) {
     console.error(
       [
         'Usage: pnpm exec tsx scripts/importSitesFromSummarySheets.ts',
         '  --company <id>',
-        '  --zip <path-to-zip>',
+        '  --zip <path-to-zip-or-directory>',
         '  [--dry-run]',
         '  [--create-missing-orgs]',
         '  [--update-existing-sites]',
@@ -103,29 +105,29 @@ async function main() {
 
   const db = drizzle(process.env.DATABASE_URL, { schema, mode: 'default' });
 
-  // ── 1. Extract PDFs ────────────────────────────────────────────────────────
-  console.log(`Extracting PDFs from: ${args.zipPath}`);
-  let zipEntries;
+  // ── 1. Load PDFs ───────────────────────────────────────────────────────────
+  console.log(`Loading PDFs from: ${args.source}`);
+  let pdfEntries;
   try {
-    zipEntries = extractPdfsFromZip(args.zipPath);
+    pdfEntries = loadSummaryPdfs(args.source);
   } catch (err: any) {
-    console.error(`Failed to open ZIP: ${err?.message ?? err}`);
+    console.error(`Failed to load source: ${err?.message ?? err}`);
     process.exit(1);
   }
-  console.log(`Found ${zipEntries.length} PDF(s)\n`);
+  console.log(`Found ${pdfEntries.length} PDF(s)\n`);
 
   // ── 2. Parse each PDF ──────────────────────────────────────────────────────
   console.log('Parsing PDFs...');
   const parsedSheets: ParsedSheet[] = [];
-  for (const entry of zipEntries) {
-    process.stdout.write(`  ${entry.filename.padEnd(50)} `);
+  for (const entry of pdfEntries) {
+    process.stdout.write(`  ${entry.filename.padEnd(55)} `);
     const sheet = await parseSummarySheet(entry.buffer, entry.filename);
     if (sheet.parseError) {
       process.stdout.write(`FAIL  ${sheet.parseError}\n`);
     } else {
-      const fn = (sheet.fileNumber ?? '?').padEnd(8);
-      const cl = (sheet.clientName ?? '?').slice(0, 30).padEnd(32);
-      const bn = (sheet.buildingName ?? '?').slice(0, 30);
+      const fn = (sheet.fileNumber ?? '?').padEnd(6);
+      const cl = (sheet.clientName ?? '?').slice(0, 28).padEnd(30);
+      const bn = (sheet.buildingName ?? '').slice(0, 25);
       process.stdout.write(`OK    fn=${fn} client=${cl} bldg=${bn}\n`);
     }
     parsedSheets.push(sheet);
@@ -153,8 +155,6 @@ async function main() {
   console.log(`  ${existingOrgs.length} orgs, ${existingSites.length} sites in DB\n`);
 
   // ── 4. Resolve each sheet ──────────────────────────────────────────────────
-  // We extend orgsInContext with placeholder entries for new orgs so that
-  // subsequent sheets from the same client resolve to the same pending org.
   const orgsInContext: OrgRecord[] = [...existingOrgs];
   let nextPlaceholderId = -1;
   const placeholderByNorm = new Map<string, OrgRecord>();
@@ -167,21 +167,17 @@ async function main() {
       continue;
     }
 
-    // Resolve org — may add a placeholder so the next sheet with the same
-    // client name maps to the same pending-create entry
     let orgRes = resolveOrg(parsed.clientName, orgsInContext, args.createMissingOrgs);
 
     if (orgRes.kind === 'create') {
       const key = normName(parsed.clientName!);
       const existing = placeholderByNorm.get(key);
       if (existing) {
-        // Already have a placeholder — reuse it as a match
         orgRes = { kind: 'matched', org: existing, confidence: 'exact' };
       } else {
         const placeholder: OrgRecord = { id: nextPlaceholderId--, name: parsed.clientName! };
         placeholderByNorm.set(key, placeholder);
         orgsInContext.push(placeholder);
-        // Keep orgRes as 'create' for the report
       }
     }
 
@@ -212,7 +208,6 @@ async function main() {
   // ── 6. Live writes ─────────────────────────────────────────────────────────
   let orgsCreated = 0, sitesCreated = 0, sitesUpdated = 0, errors = 0;
 
-  // Real org id lookup: normalized name → id (populated as we create orgs)
   const realOrgIdByNorm = new Map<string, number>(
     existingOrgs.map(o => [normName(o.name), o.id])
   );
@@ -229,11 +224,9 @@ async function main() {
       if (rec.orgResolution.kind === 'matched') {
         orgId = rec.orgResolution.org.id;
         if (orgId < 0) {
-          // Was a placeholder — check if we already created the real org
           const key = normName(rec.orgResolution.org.name);
           const realId = realOrgIdByNorm.get(key);
           if (!realId) {
-            // Create org now
             const [res] = await (db as any).insert(schema.customerOrgs).values({
               companyId: args.companyId,
               name: rec.orgResolution.org.name,
