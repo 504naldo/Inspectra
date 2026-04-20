@@ -1,23 +1,18 @@
 /**
  * scripts/importSitesFromSummarySheets.ts
  *
- * Import customer orgs and sites from a directory or ZIP of building summary
- * sheet PDFs.  Source of truth: the PDFs — NOT the monthly workbook.
+ * Import customer orgs and sites from a directory of building summary sheet PDFs.
  *
- * Default PDF source: ./client/src/data  (395 building summary PDFs)
+ * Default PDF source: ./client/src/data/Building Summary Sheets
  *
  * Usage (dry run):
  *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
  *     --company 1 --dry-run --create-missing-orgs \
- *     --json-report "./tmp/import-report.json"
+ *     --json-report ./tmp/import-report.json
  *
  * Usage (live):
  *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
  *     --company 1 --create-missing-orgs --update-existing-sites
- *
- * Optional overrides:
- *   --dir <path>   Use a different directory of loose PDFs
- *   --zip <path>   Use a ZIP archive instead
  *
  * Idempotent: matching uses file number → address → name in that order.
  * Conservative: unresolved > wrong; never moves a site between orgs.
@@ -26,9 +21,11 @@
 import { config } from 'dotenv';
 config();
 
+import { existsSync, statSync } from 'node:fs';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq } from 'drizzle-orm';
 import * as schema from '../drizzle/schema.js';
+import type { SiteSummary } from '../drizzle/schema.js';
 import { loadSummaryPdfs } from '../lib/import/buildingSummaryZip.js';
 import { parseSummarySheet } from '../lib/import/extractSummarySheet.js';
 import type { ParsedSheet } from '../lib/import/extractSummarySheet.js';
@@ -40,7 +37,10 @@ import { buildReport, printReport, writeJsonReport } from '../lib/import/report.
 import type { ImportRecord } from '../lib/import/report.js';
 import { parseAddressComponents, normName } from '../lib/import/normalize.js';
 
-// ─── CLI ───────────────────────────────────────────────────────────────────────
+// ─── CLI ────────────────────────────────────────────────────────────────────────
+
+const DEFAULT_SOURCE = './client/src/data/Building Summary Sheets';
+const FALLBACK_SOURCE = './client/src/data';
 
 interface CliArgs {
   companyId: number;
@@ -53,19 +53,30 @@ interface CliArgs {
 
 function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
-  const DEFAULT_SOURCE = './client/src/data';
+
+  // Resolve default source: prefer the named subdir if it's a real directory or
+  // non-empty file; otherwise fall back to the flat data root.
+  function isUsable(p: string): boolean {
+    try {
+      const s = statSync(p);
+      return s.isDirectory() || (s.isFile() && s.size > 0);
+    } catch { return false; }
+  }
+  const defaultSource = isUsable(DEFAULT_SOURCE) ? DEFAULT_SOURCE : FALLBACK_SOURCE;
+
   const args: CliArgs = {
     companyId: 1,
-    source: DEFAULT_SOURCE,
+    source: defaultSource,
     dryRun: false,
     createMissingOrgs: false,
     updateExistingSites: false,
   };
+
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case '--company':              args.companyId = parseInt(argv[++i], 10); break;
-      case '--zip':                  args.source = argv[++i]; break;
       case '--dir':                  args.source = argv[++i]; break;
+      case '--zip':                  args.source = argv[++i]; break;
       case '--dry-run':              args.dryRun = true; break;
       case '--create-missing-orgs':  args.createMissingOrgs = true; break;
       case '--update-existing-sites': args.updateExistingSites = true; break;
@@ -75,26 +86,10 @@ function parseArgs(): CliArgs {
   return args;
 }
 
-// ─── Main ──────────────────────────────────────────────────────────────────────
+// ─── Main ────────────────────────────────────────────────────────────────────────
 
 async function main() {
   const args = parseArgs();
-
-  if (!args.source) {
-    console.error(
-      [
-        'Usage: pnpm exec tsx scripts/importSitesFromSummarySheets.ts',
-        '  [--company <id>]          default: 1',
-        '  [--dir <path>]            default: ./client/src/data',
-        '  [--zip <path>]            use a ZIP archive instead of a directory',
-        '  [--dry-run]',
-        '  [--create-missing-orgs]',
-        '  [--update-existing-sites]',
-        '  [--json-report <path>]',
-      ].join('\n')
-    );
-    process.exit(1);
-  }
 
   if (!process.env.DATABASE_URL) {
     console.error('DATABASE_URL is not set');
@@ -105,7 +100,7 @@ async function main() {
 
   const db = drizzle(process.env.DATABASE_URL, { schema, mode: 'default' });
 
-  // ── 1. Load PDFs ───────────────────────────────────────────────────────────
+  // ── 1. Load PDFs ─────────────────────────────────────────────────────────────
   console.log(`Loading PDFs from: ${args.source}`);
   let pdfEntries;
   try {
@@ -116,24 +111,24 @@ async function main() {
   }
   console.log(`Found ${pdfEntries.length} PDF(s)\n`);
 
-  // ── 2. Parse each PDF ──────────────────────────────────────────────────────
+  // ── 2. Parse each PDF ────────────────────────────────────────────────────────
   console.log('Parsing PDFs...');
   const parsedSheets: ParsedSheet[] = [];
   for (const entry of pdfEntries) {
-    process.stdout.write(`  ${entry.filename.padEnd(55)} `);
+    process.stdout.write(`  ${entry.filename.padEnd(60)} `);
     const sheet = await parseSummarySheet(entry.buffer, entry.filename);
     if (sheet.parseError) {
       process.stdout.write(`FAIL  ${sheet.parseError}\n`);
     } else {
       const fn = (sheet.fileNumber ?? '?').padEnd(6);
       const cl = (sheet.clientName ?? '?').slice(0, 28).padEnd(30);
-      const bn = (sheet.buildingName ?? '').slice(0, 25);
+      const bn = (sheet.buildingName ?? '').slice(0, 20);
       process.stdout.write(`OK    fn=${fn} client=${cl} bldg=${bn}\n`);
     }
     parsedSheets.push(sheet);
   }
 
-  // ── 3. Load existing DB state ──────────────────────────────────────────────
+  // ── 3. Load existing DB state ────────────────────────────────────────────────
   console.log('\nLoading DB state...');
   const existingOrgs: OrgRecord[] = await (db as any)
     .select({ id: schema.customerOrgs.id, name: schema.customerOrgs.name })
@@ -154,11 +149,10 @@ async function main() {
 
   console.log(`  ${existingOrgs.length} orgs, ${existingSites.length} sites in DB\n`);
 
-  // ── 4. Resolve each sheet ──────────────────────────────────────────────────
+  // ── 4. Resolve each sheet ────────────────────────────────────────────────────
   const orgsInContext: OrgRecord[] = [...existingOrgs];
   let nextPlaceholderId = -1;
   const placeholderByNorm = new Map<string, OrgRecord>();
-
   const records: ImportRecord[] = [];
 
   for (const parsed of parsedSheets) {
@@ -187,14 +181,12 @@ async function main() {
       null;
 
     const siteRes =
-      orgId !== null
-        ? resolveSite(parsed, orgId, existingSites)
-        : null;
+      orgId !== null ? resolveSite(parsed, orgId, existingSites) : null;
 
     records.push({ filename: parsed.filename, parsed, orgResolution: orgRes, siteResolution: siteRes });
   }
 
-  // ── 5. Build & print report ────────────────────────────────────────────────
+  // ── 5. Build & print report ──────────────────────────────────────────────────
   const report = buildReport(records, args.dryRun);
   printReport(report);
 
@@ -205,7 +197,7 @@ async function main() {
     process.exit(0);
   }
 
-  // ── 6. Live writes ─────────────────────────────────────────────────────────
+  // ── 6. Live writes ───────────────────────────────────────────────────────────
   let orgsCreated = 0, sitesCreated = 0, sitesUpdated = 0, errors = 0;
 
   const realOrgIdByNorm = new Map<string, number>(
@@ -219,11 +211,12 @@ async function main() {
     if (rec.siteResolution.kind === 'unresolved' || rec.siteResolution.kind === 'conflict') continue;
 
     try {
-      // ── Ensure org exists ────────────────────────────────────────────────
+      // ── Ensure org exists ──────────────────────────────────────────────────
       let orgId: number;
       if (rec.orgResolution.kind === 'matched') {
         orgId = rec.orgResolution.org.id;
         if (orgId < 0) {
+          // Placeholder — create the org now
           const key = normName(rec.orgResolution.org.name);
           const realId = realOrgIdByNorm.get(key);
           if (!realId) {
@@ -257,7 +250,7 @@ async function main() {
         }
       }
 
-      // ── Create or update site ────────────────────────────────────────────
+      // ── Create or update site ──────────────────────────────────────────────
       if (rec.siteResolution.kind === 'create') {
         const addrComp = rec.parsed.siteAddress
           ? parseAddressComponents(rec.parsed.siteAddress)
@@ -266,7 +259,7 @@ async function main() {
           ? parseAddressComponents(rec.parsed.billingAddress)
           : {};
 
-        const summary: schema.SiteSummary = {
+        const summary: SiteSummary = {
           client: rec.parsed.clientName ? { name: rec.parsed.clientName } : undefined,
           building: rec.parsed.buildingName ? { name: rec.parsed.buildingName } : undefined,
           address: addrComp.streetAddress
@@ -317,8 +310,8 @@ async function main() {
         if (!site.address && rec.parsed.siteAddress) {
           updates.address = rec.parsed.siteAddress;
           const c = parseAddressComponents(rec.parsed.siteAddress);
-          if (c.city) updates.city = c.city;
-          if (c.state) updates.state = c.state;
+          if (c.city)       updates.city = c.city;
+          if (c.state)      updates.state = c.state;
           if (c.postalCode) updates.postalCode = c.postalCode;
         }
 
