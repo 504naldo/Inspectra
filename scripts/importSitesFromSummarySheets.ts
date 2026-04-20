@@ -21,12 +21,14 @@
 import { config } from 'dotenv';
 config();
 
-import { existsSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, basename } from 'node:path';
+import AdmZip from 'adm-zip';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq } from 'drizzle-orm';
 import * as schema from '../drizzle/schema.js';
 import type { SiteSummary } from '../drizzle/schema.js';
-import { loadSummaryPdfs } from '../lib/import/buildingSummaryZip.js';
+import type { PdfEntry } from '../lib/import/buildingSummaryZip.js';
 import { parseSummarySheet } from '../lib/import/extractSummarySheet.js';
 import type { ParsedSheet } from '../lib/import/extractSummarySheet.js';
 import { resolveOrg } from '../lib/import/matchCustomerOrg.js';
@@ -37,14 +39,40 @@ import { buildReport, printReport, writeJsonReport } from '../lib/import/report.
 import type { ImportRecord } from '../lib/import/report.js';
 import { parseAddressComponents, normName } from '../lib/import/normalize.js';
 
-// ─── CLI ────────────────────────────────────────────────────────────────────────
+// ─── PDF loaders ────────────────────────────────────────────────────────────────
 
-const DEFAULT_SOURCE = './client/src/data/Building Summary Sheets';
-const FALLBACK_SOURCE = './client/src/data';
+function loadFromDir(dirPath: string): PdfEntry[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(dirPath);
+  } catch (err: any) {
+    throw new Error(`Cannot read directory "${dirPath}": ${err?.message ?? err}`);
+  }
+  return entries
+    .filter(f => f.toLowerCase().endsWith('.pdf') && !f.startsWith('._'))
+    .sort()
+    .map(f => ({ filename: f, relativePath: f, buffer: readFileSync(join(dirPath, f)) }));
+}
+
+function loadFromZip(zipPath: string): PdfEntry[] {
+  const zip = new AdmZip(zipPath);
+  const results: PdfEntry[] = [];
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue;
+    const name = entry.entryName;
+    if (!name.toLowerCase().endsWith('.pdf')) continue;
+    if (name.includes('__MACOSX') || basename(name).startsWith('._')) continue;
+    results.push({ filename: basename(name), relativePath: name, buffer: entry.getData() });
+  }
+  return results.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+}
+
+// ─── CLI ────────────────────────────────────────────────────────────────────────
 
 interface CliArgs {
   companyId: number;
-  source: string;
+  dirPath: string | null;
+  zipPath: string | null;
   dryRun: boolean;
   createMissingOrgs: boolean;
   updateExistingSites: boolean;
@@ -53,35 +81,28 @@ interface CliArgs {
 
 function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
-
-  // Resolve default source: prefer the named subdir if it's a real directory or
-  // non-empty file; otherwise fall back to the flat data root.
-  function isUsable(p: string): boolean {
-    try {
-      const s = statSync(p);
-      return s.isDirectory() || (s.isFile() && s.size > 0);
-    } catch { return false; }
-  }
-  const defaultSource = isUsable(DEFAULT_SOURCE) ? DEFAULT_SOURCE : FALLBACK_SOURCE;
-
   const args: CliArgs = {
     companyId: 1,
-    source: defaultSource,
+    dirPath: null,
+    zipPath: null,
     dryRun: false,
     createMissingOrgs: false,
     updateExistingSites: false,
   };
-
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
-      case '--company':              args.companyId = parseInt(argv[++i], 10); break;
-      case '--dir':                  args.source = argv[++i]; break;
-      case '--zip':                  args.source = argv[++i]; break;
-      case '--dry-run':              args.dryRun = true; break;
-      case '--create-missing-orgs':  args.createMissingOrgs = true; break;
+      case '--company':               args.companyId = parseInt(argv[++i], 10); break;
+      case '--dir':                   args.dirPath = argv[++i]; break;
+      case '--zip':                   args.zipPath = argv[++i]; break;
+      case '--dry-run':               args.dryRun = true; break;
+      case '--create-missing-orgs':   args.createMissingOrgs = true; break;
       case '--update-existing-sites': args.updateExistingSites = true; break;
-      case '--json-report':          args.jsonReport = argv[++i]; break;
+      case '--json-report':           args.jsonReport = argv[++i]; break;
     }
+  }
+  // Default to directory mode if neither flag was given
+  if (!args.dirPath && !args.zipPath) {
+    args.dirPath = './client/src/data/Building Summary Sheets';
   }
   return args;
 }
@@ -101,10 +122,13 @@ async function main() {
   const db = drizzle(process.env.DATABASE_URL, { schema, mode: 'default' });
 
   // ── 1. Load PDFs ─────────────────────────────────────────────────────────────
-  console.log(`Loading PDFs from: ${args.source}`);
+  const sourceLabel = args.zipPath ?? args.dirPath!;
+  console.log(`Loading PDFs from: ${sourceLabel}`);
   let pdfEntries;
   try {
-    pdfEntries = loadSummaryPdfs(args.source);
+    pdfEntries = args.zipPath
+      ? loadFromZip(args.zipPath)
+      : loadFromDir(args.dirPath!);
   } catch (err: any) {
     console.error(`Failed to load source: ${err?.message ?? err}`);
     process.exit(1);
