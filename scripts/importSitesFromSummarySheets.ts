@@ -1,25 +1,23 @@
 /**
  * scripts/importSitesFromSummarySheets.ts
  *
- * Import customer orgs and sites from a ZIP or directory of building summary
+ * Import customer orgs and sites from a directory or ZIP of building summary
  * sheet PDFs.  Source of truth: the PDFs — NOT the monthly workbook.
+ *
+ * Default PDF source: ./client/src/data  (395 building summary PDFs)
  *
  * Usage (dry run):
  *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
- *     --company 1 \
- *     --zip "./client/src/data" \
- *     --dry-run \
- *     --create-missing-orgs \
+ *     --company 1 --dry-run --create-missing-orgs \
  *     --json-report "./tmp/import-report.json"
  *
  * Usage (live):
  *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
- *     --company 1 \
- *     --zip "./client/src/data" \
- *     --create-missing-orgs \
- *     --update-existing-sites
+ *     --company 1 --create-missing-orgs --update-existing-sites
  *
- * The --zip flag accepts either a .zip file path or a directory of loose PDFs.
+ * Optional overrides:
+ *   --dir <path>   Use a different directory of loose PDFs
+ *   --zip <path>   Use a ZIP archive instead
  *
  * Idempotent: matching uses file number → address → name in that order.
  * Conservative: unresolved > wrong; never moves a site between orgs.
@@ -55,9 +53,10 @@ interface CliArgs {
 
 function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
+  const DEFAULT_SOURCE = './client/src/data';
   const args: CliArgs = {
     companyId: 1,
-    source: '',
+    source: DEFAULT_SOURCE,
     dryRun: false,
     createMissingOrgs: false,
     updateExistingSites: false,
@@ -85,8 +84,9 @@ async function main() {
     console.error(
       [
         'Usage: pnpm exec tsx scripts/importSitesFromSummarySheets.ts',
-        '  --company <id>',
-        '  --zip <path-to-zip-or-directory>',
+        '  [--company <id>]          default: 1',
+        '  [--dir <path>]            default: ./client/src/data',
+        '  [--zip <path>]            use a ZIP archive instead of a directory',
         '  [--dry-run]',
         '  [--create-missing-orgs]',
         '  [--update-existing-sites]',
