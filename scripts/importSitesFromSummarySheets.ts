@@ -1,0 +1,356 @@
+/**
+ * scripts/importSitesFromSummarySheets.ts
+ *
+ * Import customer orgs and sites from a ZIP of building summary sheet PDFs.
+ * Source of truth: the PDFs themselves — NOT the monthly workbook.
+ *
+ * Usage:
+ *   # Dry run (no writes)
+ *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
+ *     --company 1 \
+ *     --zip "/path/to/Building Summary Sheets.zip" \
+ *     --dry-run \
+ *     --create-missing-orgs \
+ *     --json-report "./tmp/import-report.json"
+ *
+ *   # Live import
+ *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
+ *     --company 1 \
+ *     --zip "/path/to/Building Summary Sheets.zip" \
+ *     --create-missing-orgs \
+ *     --update-existing-sites
+ *
+ * Idempotent: matching uses file number → address → name in that order.
+ * Conservative: unresolved > wrong; never moves a site between orgs.
+ */
+
+import { config } from 'dotenv';
+config();
+
+import { drizzle } from 'drizzle-orm/mysql2';
+import { eq } from 'drizzle-orm';
+import * as schema from '../drizzle/schema.js';
+import { extractPdfsFromZip } from '../lib/import/zipExtractor.js';
+import { parseSummarySheet } from '../lib/import/pdfParser.js';
+import type { ParsedSheet } from '../lib/import/pdfParser.js';
+import { resolveOrg } from '../lib/import/matchCustomerOrg.js';
+import type { OrgRecord } from '../lib/import/matchCustomerOrg.js';
+import { resolveSite } from '../lib/import/matchSite.js';
+import type { SiteRecord } from '../lib/import/matchSite.js';
+import { buildReport, printReport, writeJsonReport } from '../lib/import/report.js';
+import type { ImportRecord } from '../lib/import/report.js';
+import { parseAddressComponents, normName } from '../lib/import/normalize.js';
+
+// ─── CLI ───────────────────────────────────────────────────────────────────────
+
+interface CliArgs {
+  companyId: number;
+  zipPath: string;
+  dryRun: boolean;
+  createMissingOrgs: boolean;
+  updateExistingSites: boolean;
+  jsonReport?: string;
+}
+
+function parseArgs(): CliArgs {
+  const argv = process.argv.slice(2);
+  const args: CliArgs = {
+    companyId: 1,
+    zipPath: '',
+    dryRun: false,
+    createMissingOrgs: false,
+    updateExistingSites: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case '--company':            args.companyId = parseInt(argv[++i], 10); break;
+      case '--zip':                args.zipPath = argv[++i]; break;
+      case '--dry-run':            args.dryRun = true; break;
+      case '--create-missing-orgs': args.createMissingOrgs = true; break;
+      case '--update-existing-sites': args.updateExistingSites = true; break;
+      case '--json-report':        args.jsonReport = argv[++i]; break;
+    }
+  }
+  return args;
+}
+
+// ─── Main ──────────────────────────────────────────────────────────────────────
+
+async function main() {
+  const args = parseArgs();
+
+  if (!args.zipPath) {
+    console.error(
+      [
+        'Usage: pnpm exec tsx scripts/importSitesFromSummarySheets.ts',
+        '  --company <id>',
+        '  --zip <path-to-zip>',
+        '  [--dry-run]',
+        '  [--create-missing-orgs]',
+        '  [--update-existing-sites]',
+        '  [--json-report <path>]',
+      ].join('\n')
+    );
+    process.exit(1);
+  }
+
+  if (!process.env.DATABASE_URL) {
+    console.error('DATABASE_URL is not set');
+    process.exit(1);
+  }
+
+  if (args.dryRun) console.log('\nDRY RUN — no DB writes\n');
+
+  const db = drizzle(process.env.DATABASE_URL, { schema, mode: 'default' });
+
+  // ── 1. Extract PDFs ────────────────────────────────────────────────────────
+  console.log(`Extracting PDFs from: ${args.zipPath}`);
+  let zipEntries;
+  try {
+    zipEntries = extractPdfsFromZip(args.zipPath);
+  } catch (err: any) {
+    console.error(`Failed to open ZIP: ${err?.message ?? err}`);
+    process.exit(1);
+  }
+  console.log(`Found ${zipEntries.length} PDF(s)\n`);
+
+  // ── 2. Parse each PDF ──────────────────────────────────────────────────────
+  console.log('Parsing PDFs...');
+  const parsedSheets: ParsedSheet[] = [];
+  for (const entry of zipEntries) {
+    process.stdout.write(`  ${entry.filename.padEnd(50)} `);
+    const sheet = await parseSummarySheet(entry.buffer, entry.filename);
+    if (sheet.parseError) {
+      process.stdout.write(`FAIL  ${sheet.parseError}\n`);
+    } else {
+      const fn = (sheet.fileNumber ?? '?').padEnd(8);
+      const cl = (sheet.clientName ?? '?').slice(0, 30).padEnd(32);
+      const bn = (sheet.buildingName ?? '?').slice(0, 30);
+      process.stdout.write(`OK    fn=${fn} client=${cl} bldg=${bn}\n`);
+    }
+    parsedSheets.push(sheet);
+  }
+
+  // ── 3. Load existing DB state ──────────────────────────────────────────────
+  console.log('\nLoading DB state...');
+  const existingOrgs: OrgRecord[] = await (db as any)
+    .select({ id: schema.customerOrgs.id, name: schema.customerOrgs.name })
+    .from(schema.customerOrgs)
+    .where(eq(schema.customerOrgs.companyId, args.companyId));
+
+  const existingSites: SiteRecord[] = await (db as any)
+    .select({
+      id: schema.sites.id,
+      name: schema.sites.name,
+      address: schema.sites.address,
+      fileNumber: schema.sites.fileNumber,
+      buildingId: schema.sites.buildingId,
+      customerOrgId: schema.sites.customerOrgId,
+    })
+    .from(schema.sites)
+    .where(eq(schema.sites.companyId, args.companyId));
+
+  console.log(`  ${existingOrgs.length} orgs, ${existingSites.length} sites in DB\n`);
+
+  // ── 4. Resolve each sheet ──────────────────────────────────────────────────
+  // We extend orgsInContext with placeholder entries for new orgs so that
+  // subsequent sheets from the same client resolve to the same pending org.
+  const orgsInContext: OrgRecord[] = [...existingOrgs];
+  let nextPlaceholderId = -1;
+  const placeholderByNorm = new Map<string, OrgRecord>();
+
+  const records: ImportRecord[] = [];
+
+  for (const parsed of parsedSheets) {
+    if (parsed.parseError) {
+      records.push({ filename: parsed.filename, parsed, orgResolution: null, siteResolution: null });
+      continue;
+    }
+
+    // Resolve org — may add a placeholder so the next sheet with the same
+    // client name maps to the same pending-create entry
+    let orgRes = resolveOrg(parsed.clientName, orgsInContext, args.createMissingOrgs);
+
+    if (orgRes.kind === 'create') {
+      const key = normName(parsed.clientName!);
+      const existing = placeholderByNorm.get(key);
+      if (existing) {
+        // Already have a placeholder — reuse it as a match
+        orgRes = { kind: 'matched', org: existing, confidence: 'exact' };
+      } else {
+        const placeholder: OrgRecord = { id: nextPlaceholderId--, name: parsed.clientName! };
+        placeholderByNorm.set(key, placeholder);
+        orgsInContext.push(placeholder);
+        // Keep orgRes as 'create' for the report
+      }
+    }
+
+    const orgId =
+      orgRes.kind === 'matched' ? orgRes.org.id :
+      orgRes.kind === 'create'  ? (placeholderByNorm.get(normName(parsed.clientName!))?.id ?? null) :
+      null;
+
+    const siteRes =
+      orgId !== null
+        ? resolveSite(parsed, orgId, existingSites)
+        : null;
+
+    records.push({ filename: parsed.filename, parsed, orgResolution: orgRes, siteResolution: siteRes });
+  }
+
+  // ── 5. Build & print report ────────────────────────────────────────────────
+  const report = buildReport(records, args.dryRun);
+  printReport(report);
+
+  if (args.jsonReport) writeJsonReport(report, args.jsonReport);
+
+  if (args.dryRun) {
+    console.log('Dry run complete. Re-run without --dry-run to apply changes.');
+    process.exit(0);
+  }
+
+  // ── 6. Live writes ─────────────────────────────────────────────────────────
+  let orgsCreated = 0, sitesCreated = 0, sitesUpdated = 0, errors = 0;
+
+  // Real org id lookup: normalized name → id (populated as we create orgs)
+  const realOrgIdByNorm = new Map<string, number>(
+    existingOrgs.map(o => [normName(o.name), o.id])
+  );
+
+  for (const rec of records) {
+    if (rec.parsed.parseError) continue;
+    if (!rec.orgResolution || rec.orgResolution.kind === 'unresolved') continue;
+    if (!rec.siteResolution) continue;
+    if (rec.siteResolution.kind === 'unresolved' || rec.siteResolution.kind === 'conflict') continue;
+
+    try {
+      // ── Ensure org exists ────────────────────────────────────────────────
+      let orgId: number;
+      if (rec.orgResolution.kind === 'matched') {
+        orgId = rec.orgResolution.org.id;
+        if (orgId < 0) {
+          // Was a placeholder — check if we already created the real org
+          const key = normName(rec.orgResolution.org.name);
+          const realId = realOrgIdByNorm.get(key);
+          if (!realId) {
+            // Create org now
+            const [res] = await (db as any).insert(schema.customerOrgs).values({
+              companyId: args.companyId,
+              name: rec.orgResolution.org.name,
+            });
+            orgId = (res as any).insertId;
+            realOrgIdByNorm.set(key, orgId);
+            orgsCreated++;
+            console.log(`  [ORG CREATED] "${rec.orgResolution.org.name}" (id=${orgId})`);
+          } else {
+            orgId = realId;
+          }
+        }
+      } else {
+        // kind === 'create'
+        const key = normName(rec.orgResolution.name);
+        const realId = realOrgIdByNorm.get(key);
+        if (realId) {
+          orgId = realId;
+        } else {
+          const [res] = await (db as any).insert(schema.customerOrgs).values({
+            companyId: args.companyId,
+            name: rec.orgResolution.name,
+          });
+          orgId = (res as any).insertId;
+          realOrgIdByNorm.set(key, orgId);
+          orgsCreated++;
+          console.log(`  [ORG CREATED] "${rec.orgResolution.name}" (id=${orgId})`);
+        }
+      }
+
+      // ── Create or update site ────────────────────────────────────────────
+      if (rec.siteResolution.kind === 'create') {
+        const addrComp = rec.parsed.siteAddress
+          ? parseAddressComponents(rec.parsed.siteAddress)
+          : {};
+        const billingAddrComp = rec.parsed.billingAddress
+          ? parseAddressComponents(rec.parsed.billingAddress)
+          : {};
+
+        const summary: schema.SiteSummary = {
+          client: rec.parsed.clientName ? { name: rec.parsed.clientName } : undefined,
+          building: rec.parsed.buildingName ? { name: rec.parsed.buildingName } : undefined,
+          address: addrComp.streetAddress
+            ? {
+                street: addrComp.streetAddress,
+                city: addrComp.city,
+                state: addrComp.state,
+                postalCode: addrComp.postalCode,
+              }
+            : undefined,
+          billing: rec.parsed.billingAddress
+            ? {
+                address: billingAddrComp.streetAddress ?? rec.parsed.billingAddress,
+                city: billingAddrComp.city,
+                state: billingAddrComp.state,
+                postalCode: billingAddrComp.postalCode,
+              }
+            : undefined,
+          contacts:
+            rec.parsed.contactName || rec.parsed.contactPhone
+              ? [{ name: rec.parsed.contactName, phone: rec.parsed.contactPhone }]
+              : undefined,
+        };
+
+        await (db as any).insert(schema.sites).values({
+          companyId: args.companyId,
+          customerOrgId: orgId,
+          name: rec.parsed.buildingName ?? rec.parsed.filename.replace(/\.pdf$/i, '').trim(),
+          address: rec.parsed.siteAddress ?? undefined,
+          city: addrComp.city ?? undefined,
+          state: addrComp.state ?? undefined,
+          postalCode: addrComp.postalCode ?? undefined,
+          contactName: rec.parsed.contactName ?? undefined,
+          contactPhone: rec.parsed.contactPhone ?? undefined,
+          fileNumber: rec.parsed.fileNumber ?? undefined,
+          buildingId: rec.parsed.fileNumber ?? undefined,
+          summary,
+        });
+        sitesCreated++;
+        process.stdout.write('.');
+
+      } else if (rec.siteResolution.kind === 'matched' && args.updateExistingSites) {
+        const site = rec.siteResolution.site;
+        const updates: Record<string, any> = {};
+
+        if (!site.fileNumber && rec.parsed.fileNumber) updates.fileNumber = rec.parsed.fileNumber;
+        if (!site.buildingId && rec.parsed.fileNumber) updates.buildingId = rec.parsed.fileNumber;
+        if (!site.address && rec.parsed.siteAddress) {
+          updates.address = rec.parsed.siteAddress;
+          const c = parseAddressComponents(rec.parsed.siteAddress);
+          if (c.city) updates.city = c.city;
+          if (c.state) updates.state = c.state;
+          if (c.postalCode) updates.postalCode = c.postalCode;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await (db as any)
+            .update(schema.sites)
+            .set(updates)
+            .where(eq(schema.sites.id, site.id));
+          sitesUpdated++;
+          process.stdout.write('u');
+        }
+      }
+    } catch (err: any) {
+      errors++;
+      console.error(`\n  ERROR: ${rec.filename}: ${err?.message ?? err}`);
+    }
+  }
+
+  if (sitesCreated > 0 || sitesUpdated > 0) console.log('');
+  console.log(
+    `\nDone: ${orgsCreated} orgs created, ${sitesCreated} sites created, ${sitesUpdated} sites updated, ${errors} errors`
+  );
+}
+
+main().catch(err => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});
