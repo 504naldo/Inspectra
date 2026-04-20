@@ -5,7 +5,7 @@
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { ParsedSheet } from './pdfParser.js';
+import type { ParsedSheet } from './extractSummarySheet.js';
 import type { OrgResolution } from './matchCustomerOrg.js';
 import type { SiteResolution } from './matchSite.js';
 

@@ -14,7 +14,7 @@
  */
 
 import { normBldg, normAddress, normName } from './normalize.js';
-import type { ParsedSheet } from './pdfParser.js';
+import type { ParsedSheet } from './extractSummarySheet.js';
 
 export interface SiteRecord {
   id: number;
