@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { Textarea } from "@/components/ui/textarea";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -423,8 +424,8 @@ export default function AdminSites() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => { setEditSite({...site}); setIsEditOpen(true); }}>
-                          <KeyRound className="h-4 w-4 mr-2" />
-                          Edit Key Info
+                          <Building2 className="h-4 w-4 mr-2" />
+                          Edit Site
                         </DropdownMenuItem>
                         <Link href={`/admin/sites/${site.id}/files`}>
                           <DropdownMenuItem>
@@ -454,17 +455,27 @@ export default function AdminSites() {
         )}
       </div>
 
-      {/* Edit Key Info Dialog */}
+      {/* Edit Site Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Key className="h-4 w-4" />
-              Key Information — {editSite?.name}
+              <Building2 className="h-4 w-4" />
+              Edit Site — {editSite?.name}
             </DialogTitle>
           </DialogHeader>
           {editSite && (
             <div className="space-y-4 py-2">
+
+              {/* Basic info */}
+              <div className="space-y-2">
+                <Label>Site Name *</Label>
+                <Input
+                  value={editSite.name ?? ""}
+                  onChange={(e) => setEditSite({ ...editSite, name: e.target.value })}
+                  placeholder="Site name"
+                />
+              </div>
               <div className="space-y-2">
                 <Label>Building ID <span className="text-muted-foreground text-xs">(file / account number)</span></Label>
                 <Input
@@ -473,42 +484,136 @@ export default function AdminSites() {
                   placeholder="e.g. EWF-1234"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Key Location</Label>
-                <Input
-                  value={editSite.keyLocation ?? ""}
-                  onChange={(e) => setEditSite({ ...editSite, keyLocation: e.target.value })}
-                  placeholder="e.g. Lockbox at front entrance"
+
+              {/* Address */}
+              <div className="border-t pt-4 space-y-3">
+                <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                  <MapPin className="h-3 w-3" /> Address
+                </p>
+                <div className="space-y-2">
+                  <Input
+                    value={editSite.address ?? ""}
+                    onChange={(e) => setEditSite({ ...editSite, address: e.target.value })}
+                    placeholder="Street address"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">City</Label>
+                    <Input
+                      value={editSite.city ?? ""}
+                      onChange={(e) => setEditSite({ ...editSite, city: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">State / Province</Label>
+                    <Input
+                      value={editSite.state ?? ""}
+                      onChange={(e) => setEditSite({ ...editSite, state: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Postal Code</Label>
+                    <Input
+                      value={editSite.postalCode ?? ""}
+                      onChange={(e) => setEditSite({ ...editSite, postalCode: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact */}
+              <div className="border-t pt-4 space-y-3">
+                <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                  <Phone className="h-3 w-3" /> Contact
+                </p>
+                <div className="space-y-2">
+                  <Input
+                    value={editSite.contactName ?? ""}
+                    onChange={(e) => setEditSite({ ...editSite, contactName: e.target.value })}
+                    placeholder="Contact name"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    value={editSite.contactPhone ?? ""}
+                    onChange={(e) => setEditSite({ ...editSite, contactPhone: e.target.value })}
+                    placeholder="Phone"
+                  />
+                  <Input
+                    value={editSite.contactEmail ?? ""}
+                    onChange={(e) => setEditSite({ ...editSite, contactEmail: e.target.value })}
+                    placeholder="Email"
+                    type="email"
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="border-t pt-4 space-y-2">
+                <Label>Notes</Label>
+                <Textarea
+                  value={editSite.notes ?? ""}
+                  onChange={(e) => setEditSite({ ...editSite, notes: e.target.value })}
+                  placeholder="Internal notes about this site"
+                  rows={3}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Key Number</Label>
-                <Input
-                  value={editSite.keyNumber ?? ""}
-                  onChange={(e) => setEditSite({ ...editSite, keyNumber: e.target.value })}
-                  placeholder="e.g. K-042"
-                />
+
+              {/* Key Tracking */}
+              <div className="border-t pt-4 space-y-3">
+                <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                  <Key className="h-3 w-3" /> Key Tracking
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Key Location</Label>
+                    <Input
+                      value={editSite.keyLocation ?? ""}
+                      onChange={(e) => setEditSite({ ...editSite, keyLocation: e.target.value })}
+                      placeholder="e.g. Lockbox at front"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Key Number</Label>
+                    <Input
+                      value={editSite.keyNumber ?? ""}
+                      onChange={(e) => setEditSite({ ...editSite, keyNumber: e.target.value })}
+                      placeholder="e.g. K-042"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Signed Out By <span className="text-muted-foreground">(leave blank to clear)</span></Label>
+                  <Input
+                    value={editSite.keySignedOutBy ?? ""}
+                    onChange={(e) => setEditSite({ ...editSite, keySignedOutBy: e.target.value })}
+                    placeholder="Technician name"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Signed Out By <span className="text-muted-foreground text-xs">(leave blank to clear)</span></Label>
-                <Input
-                  value={editSite.keySignedOutBy ?? ""}
-                  onChange={(e) => setEditSite({ ...editSite, keySignedOutBy: e.target.value })}
-                  placeholder="Technician name"
-                />
-              </div>
+
               <Button
                 className="w-full"
                 onClick={() => updateSite.mutate({
                   id: editSite.id,
+                  name: editSite.name || undefined,
                   buildingId: editSite.buildingId || undefined,
+                  address: editSite.address || undefined,
+                  city: editSite.city || undefined,
+                  state: editSite.state || undefined,
+                  postalCode: editSite.postalCode || undefined,
+                  contactName: editSite.contactName || undefined,
+                  contactPhone: editSite.contactPhone || undefined,
+                  contactEmail: editSite.contactEmail || undefined,
+                  notes: editSite.notes || undefined,
                   keyLocation: editSite.keyLocation || undefined,
                   keyNumber: editSite.keyNumber || undefined,
                   keySignedOutBy: editSite.keySignedOutBy || undefined,
                 })}
                 disabled={updateSite.isPending}
               >
-                {updateSite.isPending ? "Saving..." : "Save Key Info"}
+                {updateSite.isPending ? "Saving..." : "Save Changes"}
               </Button>
             </div>
           )}
