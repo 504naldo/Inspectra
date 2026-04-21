@@ -5,23 +5,28 @@
  *
  * Default PDF source: ./client/src/data/Building Summary Sheets
  *
- * Usage (dry run):
+ * Dry run (always safe — no DB writes):
  *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
  *     --company 1 --dry-run --create-missing-orgs \
  *     --json-report ./tmp/import-report.json
  *
- * Usage (live):
+ * Live (strict mode ON by default — hard-aborts if quality gates fail):
  *   pnpm exec tsx scripts/importSitesFromSummarySheets.ts \
  *     --company 1 --create-missing-orgs --update-existing-sites
  *
- * Idempotent: matching uses file number → address → name in that order.
- * Conservative: unresolved > wrong; never moves a site between orgs.
+ * Quality gates (enforced in strict mode):
+ *   orgs-to-create > 25  |  suspicious org names > 5
+ *   conflicts > 25       |  unresolved > 10
+ *
+ * Sidecar files written during every dry run (and on gate failure):
+ *   ./tmp/import-summary-suspicious.json
+ *   ./tmp/import-summary-review.json
  */
 
 import { config } from 'dotenv';
 config();
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import AdmZip from 'adm-zip';
 import { drizzle } from 'drizzle-orm/mysql2';
@@ -35,11 +40,11 @@ import { resolveOrg } from '../lib/import/matchCustomerOrg.js';
 import type { OrgRecord } from '../lib/import/matchCustomerOrg.js';
 import { resolveSite } from '../lib/import/matchSite.js';
 import type { SiteRecord } from '../lib/import/matchSite.js';
-import { buildReport, printReport, writeJsonReport } from '../lib/import/report.js';
-import type { ImportRecord } from '../lib/import/report.js';
+import { buildReport, writeJsonReport } from '../lib/import/report.js';
+import type { ImportRecord, ImportReport } from '../lib/import/report.js';
 import { parseAddressComponents, normName } from '../lib/import/normalize.js';
 
-// ─── PDF loaders ────────────────────────────────────────────────────────────────
+// ─── PDF loaders ──────────────────────────────────────────────────────────────
 
 function loadFromDir(dirPath: string): PdfEntry[] {
   let entries: string[];
@@ -67,7 +72,282 @@ function loadFromZip(zipPath: string): PdfEntry[] {
   return results.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
-// ─── CLI ────────────────────────────────────────────────────────────────────────
+// ─── Suspicious org detection ─────────────────────────────────────────────────
+
+const FIELD_LABELS = new Set([
+  'name of building or site', 'name of building or site:',
+  'client name', 'client name:', 'building name', 'building name:',
+  'contact name', 'contact name:', 'site name', 'site name:',
+  'customer name', 'customer name:', 'company name', 'company name:',
+  'property name', 'property name:', 'account name', 'account name:',
+  'owner name', 'owner name:', 'tenant name', 'tenant name:',
+]);
+
+const INVOICE_PATTERNS: RegExp[] = [
+  /\binvoice\b/i,
+  /\bbilling\b/i,
+  /\bplease\s+(send|remit|pay)\b/i,
+  /\bnet\s*\d+\b/i,
+  /\bdue\s+(?:upon\s+receipt|on)\b/i,
+  /\bpayable\s+to\b/i,
+  /\bpurchase\s+order\b/i,
+  /\bp\.?\s*o\.?\s*#/i,
+  /\bacct?\s*#/i,
+  /\bremit\s+to\b/i,
+];
+
+const STREET_SUFFIX_RE =
+  /\b(?:st(?:reet)?|ave(?:nue)?|blvd|boulevard|rd|road|dr(?:ive)?|ln|lane|way|ct|court|pl(?:ace)?|cir(?:cle)?|terr(?:ace)?|pkwy|parkway|hwy|highway)\b/i;
+
+function isSuspiciousOrgName(name: string): { suspicious: boolean; reason?: string } {
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (trimmed.length < 3) {
+    return { suspicious: true, reason: 'name too short' };
+  }
+
+  if (/^[\d\s\-.,#/()\[\]]+$/.test(trimmed)) {
+    return { suspicious: true, reason: 'only digits/punctuation — likely noise' };
+  }
+
+  if (FIELD_LABELS.has(lower)) {
+    return { suspicious: true, reason: 'matches a PDF field label' };
+  }
+
+  // House number + street suffix = address, not a company name
+  if (/^\d+\s+\w/.test(trimmed) && STREET_SUFFIX_RE.test(trimmed)) {
+    return { suspicious: true, reason: 'looks like a street address' };
+  }
+
+  // Postal codes don't belong in org names
+  if (/\b\d{5}(?:-\d{4})?\b/.test(trimmed) || /\b[A-Z]\d[A-Z]\s*\d[A-Z]\d\b/i.test(trimmed)) {
+    return { suspicious: true, reason: 'contains postal code — address data in name field' };
+  }
+
+  for (const re of INVOICE_PATTERNS) {
+    if (re.test(trimmed)) {
+      return { suspicious: true, reason: 'contains invoice/billing language' };
+    }
+  }
+
+  // Duplicated concatenated value: "Acme Corp" → "Acme CorpAcme Corp" or "Acme Corp Acme Corp"
+  for (let split = 4; split <= trimmed.length - 4; split++) {
+    const a = trimmed.slice(0, split).trim();
+    const b = trimmed.slice(split).trim();
+    if (a.length >= 4 && a === b) {
+      return { suspicious: true, reason: 'duplicated concatenated value' };
+    }
+  }
+
+  // High noise ratio: few alphabetic characters
+  const noSpace = trimmed.replace(/\s+/g, '');
+  const alphaCount = (noSpace.match(/[a-zA-Z]/g) ?? []).length;
+  if (noSpace.length > 0 && alphaCount / noSpace.length < 0.4) {
+    return { suspicious: true, reason: 'too noisy — low alphabetic character ratio' };
+  }
+
+  return { suspicious: false };
+}
+
+// ─── Record bucketing ─────────────────────────────────────────────────────────
+
+type RecordBucket = 'safe' | 'review' | 'blocked';
+
+interface ClassifiedRecord {
+  rec: ImportRecord;
+  bucket: RecordBucket;
+  blockReason?: string;
+}
+
+function classifyRecord(rec: ImportRecord): ClassifiedRecord {
+  if (rec.parsed.parseError) {
+    return { rec, bucket: 'blocked', blockReason: `parse error: ${rec.parsed.parseError}` };
+  }
+
+  const org = rec.orgResolution;
+  const site = rec.siteResolution;
+
+  if (org?.kind === 'unresolved') {
+    return { rec, bucket: 'blocked', blockReason: org.reason };
+  }
+
+  if (site?.kind === 'conflict') {
+    return {
+      rec,
+      bucket: 'blocked',
+      blockReason: `file# matches site id=${site.existingSite.id} ("${site.existingSite.name}") under org ${site.conflictOrgId}`,
+    };
+  }
+
+  if (site?.kind === 'unresolved') {
+    return { rec, bucket: 'blocked', blockReason: site.reason };
+  }
+
+  // Fuzzy org match or new org creation — human should verify before live run
+  if (org?.kind === 'create' || (org?.kind === 'matched' && org.confidence === 'fuzzy')) {
+    return { rec, bucket: 'review' };
+  }
+
+  return { rec, bucket: 'safe' };
+}
+
+// ─── Quality gates ─────────────────────────────────────────────────────────────
+
+interface QualityGateResult {
+  pass: boolean;
+  violations: string[];
+}
+
+const GATE_LIMITS = {
+  orgsToCreate: 25,
+  suspicious: 5,
+  conflicts: 25,
+  unresolved: 10,
+} as const;
+
+function checkQualityGates(report: ImportReport, suspiciousCount: number): QualityGateResult {
+  const violations: string[] = [];
+
+  if (report.orgsToCreate.length > GATE_LIMITS.orgsToCreate) {
+    violations.push(
+      `orgs-to-create = ${report.orgsToCreate.length} (limit ${GATE_LIMITS.orgsToCreate}) — inspect org list before proceeding`
+    );
+  }
+  if (suspiciousCount > GATE_LIMITS.suspicious) {
+    violations.push(
+      `suspicious org names = ${suspiciousCount} (limit ${GATE_LIMITS.suspicious}) — clean the dataset first`
+    );
+  }
+  if (report.conflicts.length > GATE_LIMITS.conflicts) {
+    violations.push(
+      `conflicts = ${report.conflicts.length} (limit ${GATE_LIMITS.conflicts}) — too many cross-org file-number conflicts`
+    );
+  }
+  if (report.unresolved.length > GATE_LIMITS.unresolved) {
+    violations.push(
+      `unresolved = ${report.unresolved.length} (limit ${GATE_LIMITS.unresolved}) — too many rows without a valid org`
+    );
+  }
+
+  return { pass: violations.length === 0, violations };
+}
+
+// ─── Bucketed report ──────────────────────────────────────────────────────────
+
+const SEP = '─'.repeat(66);
+
+function printBucketedReport(
+  classified: ClassifiedRecord[],
+  suspiciousCount: number,
+  gates: QualityGateResult,
+  strict: boolean,
+  dryRun: boolean,
+): void {
+  const safe    = classified.filter(c => c.bucket === 'safe');
+  const review  = classified.filter(c => c.bucket === 'review');
+  const blocked = classified.filter(c => c.bucket === 'blocked');
+  const mode    = dryRun ? 'DRY RUN' : 'LIVE RUN';
+
+  console.log(`\n${SEP}`);
+  console.log(`  Building Summary Import  [${mode}]`);
+  console.log(SEP);
+  console.log(`  Total records          : ${classified.length}`);
+  console.log(`  Suspicious org names   : ${suspiciousCount}`);
+  console.log(SEP);
+
+  console.log(`\n  [SAFE] ${safe.length} records — exact match, ready to apply`);
+  for (const c of safe.slice(0, 30)) {
+    const fn   = (c.rec.parsed.fileNumber ?? '?').padEnd(7);
+    const bldg = (c.rec.parsed.buildingName ?? c.rec.filename.replace(/\.pdf$/i, '')).slice(0, 30).padEnd(32);
+    const org  = c.rec.orgResolution?.kind === 'matched' ? `"${c.rec.orgResolution.org.name}"` : '?';
+    const site = c.rec.siteResolution?.kind === 'matched' ? 'match'
+      : c.rec.siteResolution?.kind === 'create' ? 'create' : '?';
+    console.log(`    ${fn} ${bldg} org=${org}  site=${site}`);
+  }
+  if (safe.length > 30) console.log(`    ... and ${safe.length - 30} more`);
+
+  console.log(`\n  [REVIEW] ${review.length} records — fuzzy org match or new org (verify before live run)`);
+  for (const c of review.slice(0, 50)) {
+    const fn   = (c.rec.parsed.fileNumber ?? '?').padEnd(7);
+    const bldg = (c.rec.parsed.buildingName ?? c.rec.filename.replace(/\.pdf$/i, '')).slice(0, 30).padEnd(32);
+    const orgLabel =
+      c.rec.orgResolution?.kind === 'create'
+        ? `[NEW] "${c.rec.orgResolution.name}"`
+        : c.rec.orgResolution?.kind === 'matched'
+        ? `[FUZZY] "${c.rec.orgResolution.org.name}"`
+        : '?';
+    console.log(`    ${fn} ${bldg} ${orgLabel}`);
+  }
+  if (review.length > 50) console.log(`    ... and ${review.length - 50} more`);
+
+  console.log(`\n  [BLOCKED] ${blocked.length} records — will not be imported`);
+  for (const c of blocked.slice(0, 50)) {
+    console.log(`    ${c.rec.filename}: ${c.blockReason}`);
+  }
+  if (blocked.length > 50) console.log(`    ... and ${blocked.length - 50} more`);
+
+  console.log(`\n${SEP}`);
+  if (gates.pass) {
+    console.log(`  Quality gates: PASS${strict ? ' (strict)' : ''}`);
+  } else {
+    const liveNote = dryRun
+      ? (strict ? ' — live run would be BLOCKED' : ' — live run would proceed (not strict)')
+      : (strict ? ' — ABORTING' : ' — proceeding (strict disabled)');
+    console.log(`  Quality gates: FAIL${liveNote}`);
+    for (const v of gates.violations) console.log(`    x ${v}`);
+  }
+  console.log(SEP);
+}
+
+// ─── Sidecar JSON exports ─────────────────────────────────────────────────────
+
+function exportSidecars(classified: ClassifiedRecord[]): void {
+  mkdirSync('./tmp', { recursive: true });
+
+  const suspicious = classified
+    .filter(c => c.bucket === 'blocked' && c.blockReason?.toLowerCase().includes('suspicious'))
+    .map(c => ({
+      filename:     c.rec.filename,
+      clientName:   c.rec.parsed.clientName,
+      fileNumber:   c.rec.parsed.fileNumber,
+      buildingName: c.rec.parsed.buildingName,
+      reason:       c.blockReason,
+    }));
+
+  const reviewNeeded = classified
+    .filter(c => c.bucket === 'review')
+    .map(c => ({
+      filename:          c.rec.filename,
+      clientName:        c.rec.parsed.clientName,
+      fileNumber:        c.rec.parsed.fileNumber,
+      buildingName:      c.rec.parsed.buildingName,
+      orgResolutionKind: c.rec.orgResolution?.kind,
+      orgDetail:
+        c.rec.orgResolution?.kind === 'create'
+          ? c.rec.orgResolution.name
+          : c.rec.orgResolution?.kind === 'matched'
+          ? `${c.rec.orgResolution.org.name} (${c.rec.orgResolution.confidence})`
+          : 'unknown',
+    }));
+
+  writeFileSync(
+    './tmp/import-summary-suspicious.json',
+    JSON.stringify(suspicious, null, 2),
+    'utf8',
+  );
+  writeFileSync(
+    './tmp/import-summary-review.json',
+    JSON.stringify(reviewNeeded, null, 2),
+    'utf8',
+  );
+
+  console.log(`\nSidecar exports:`);
+  console.log(`  suspicious (${suspicious.length})  -> ./tmp/import-summary-suspicious.json`);
+  console.log(`  review     (${reviewNeeded.length})  -> ./tmp/import-summary-review.json`);
+}
+
+// ─── CLI ──────────────────────────────────────────────────────────────────────
 
 interface CliArgs {
   companyId: number;
@@ -77,6 +357,8 @@ interface CliArgs {
   createMissingOrgs: boolean;
   updateExistingSites: boolean;
   jsonReport?: string;
+  /** null = auto: true for live runs, false for dry runs */
+  strict: boolean | null;
 }
 
 function parseArgs(): CliArgs {
@@ -88,6 +370,7 @@ function parseArgs(): CliArgs {
     dryRun: false,
     createMissingOrgs: false,
     updateExistingSites: false,
+    strict: null,
   };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -98,44 +381,54 @@ function parseArgs(): CliArgs {
       case '--create-missing-orgs':   args.createMissingOrgs = true; break;
       case '--update-existing-sites': args.updateExistingSites = true; break;
       case '--json-report':           args.jsonReport = argv[++i]; break;
+      case '--strict':                args.strict = true; break;
+      case '--no-strict':             args.strict = false; break;
     }
   }
-  // Default to directory mode if neither flag was given
   if (!args.dirPath && !args.zipPath) {
     args.dirPath = './client/src/data/Building Summary Sheets';
   }
   return args;
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   const args = parseArgs();
+  // Strict defaults ON for live runs, OFF for dry runs
+  const strict = args.strict !== null ? args.strict : !args.dryRun;
 
   if (!process.env.DATABASE_URL) {
     console.error('DATABASE_URL is not set');
     process.exit(1);
   }
 
-  if (args.dryRun) console.log('\nDRY RUN — no DB writes\n');
+  if (args.dryRun) {
+    console.log(`\nDRY RUN — no DB writes${strict ? '  [--strict preview]' : ''}\n`);
+  } else {
+    console.log(
+      `\nLIVE RUN${strict
+        ? '  [strict — quality gates enforced]'
+        : '  [--no-strict — quality gates bypassed]'
+      }\n`
+    );
+  }
 
   const db = drizzle(process.env.DATABASE_URL, { schema, mode: 'default' });
 
-  // ── 1. Load PDFs ─────────────────────────────────────────────────────────────
+  // ── 1. Load PDFs ──────────────────────────────────────────────────────────────
   const sourceLabel = args.zipPath ?? args.dirPath!;
   console.log(`Loading PDFs from: ${sourceLabel}`);
-  let pdfEntries;
+  let pdfEntries: PdfEntry[];
   try {
-    pdfEntries = args.zipPath
-      ? loadFromZip(args.zipPath)
-      : loadFromDir(args.dirPath!);
+    pdfEntries = args.zipPath ? loadFromZip(args.zipPath) : loadFromDir(args.dirPath!);
   } catch (err: any) {
     console.error(`Failed to load source: ${err?.message ?? err}`);
     process.exit(1);
   }
   console.log(`Found ${pdfEntries.length} PDF(s)\n`);
 
-  // ── 2. Parse each PDF ────────────────────────────────────────────────────────
+  // ── 2. Parse each PDF ─────────────────────────────────────────────────────────
   console.log('Parsing PDFs...');
   const parsedSheets: ParsedSheet[] = [];
   for (const entry of pdfEntries) {
@@ -152,7 +445,7 @@ async function main() {
     parsedSheets.push(sheet);
   }
 
-  // ── 3. Load existing DB state ────────────────────────────────────────────────
+  // ── 3. Load existing DB state ─────────────────────────────────────────────────
   console.log('\nLoading DB state...');
   const existingOrgs: OrgRecord[] = await (db as any)
     .select({ id: schema.customerOrgs.id, name: schema.customerOrgs.name })
@@ -173,11 +466,12 @@ async function main() {
 
   console.log(`  ${existingOrgs.length} orgs, ${existingSites.length} sites in DB\n`);
 
-  // ── 4. Resolve each sheet ────────────────────────────────────────────────────
+  // ── 4. Resolve each sheet ─────────────────────────────────────────────────────
   const orgsInContext: OrgRecord[] = [...existingOrgs];
   let nextPlaceholderId = -1;
   const placeholderByNorm = new Map<string, OrgRecord>();
   const records: ImportRecord[] = [];
+  const suspiciousOrgNames: Array<{ name: string; reason: string }> = [];
 
   for (const parsed of parsedSheets) {
     if (parsed.parseError) {
@@ -188,14 +482,26 @@ async function main() {
     let orgRes = resolveOrg(parsed.clientName, orgsInContext, args.createMissingOrgs);
 
     if (orgRes.kind === 'create') {
-      const key = normName(parsed.clientName!);
-      const existing = placeholderByNorm.get(key);
-      if (existing) {
-        orgRes = { kind: 'matched', org: existing, confidence: 'exact' };
+      const nameToCreate = orgRes.name;
+      const suspCheck = isSuspiciousOrgName(nameToCreate);
+
+      if (suspCheck.suspicious) {
+        // Reject: don't add to context, don't create in live mode
+        suspiciousOrgNames.push({ name: nameToCreate, reason: suspCheck.reason! });
+        orgRes = {
+          kind: 'unresolved',
+          reason: `suspicious org name ("${nameToCreate}"): ${suspCheck.reason}`,
+        };
       } else {
-        const placeholder: OrgRecord = { id: nextPlaceholderId--, name: parsed.clientName! };
-        placeholderByNorm.set(key, placeholder);
-        orgsInContext.push(placeholder);
+        const key = normName(nameToCreate);
+        const existing = placeholderByNorm.get(key);
+        if (existing) {
+          orgRes = { kind: 'matched', org: existing, confidence: 'exact' };
+        } else {
+          const placeholder: OrgRecord = { id: nextPlaceholderId--, name: nameToCreate };
+          placeholderByNorm.set(key, placeholder);
+          orgsInContext.push(placeholder);
+        }
       }
     }
 
@@ -204,24 +510,45 @@ async function main() {
       orgRes.kind === 'create'  ? (placeholderByNorm.get(normName(parsed.clientName!))?.id ?? null) :
       null;
 
-    const siteRes =
-      orgId !== null ? resolveSite(parsed, orgId, existingSites) : null;
+    const siteRes = orgId !== null ? resolveSite(parsed, orgId, existingSites) : null;
 
     records.push({ filename: parsed.filename, parsed, orgResolution: orgRes, siteResolution: siteRes });
   }
 
-  // ── 5. Build & print report ──────────────────────────────────────────────────
-  const report = buildReport(records, args.dryRun);
-  printReport(report);
+  // ── 5. Build report, classify records, check quality gates ────────────────────
+  const report     = buildReport(records, args.dryRun);
+  const classified = records.map(rec => classifyRecord(rec));
+  const gates      = checkQualityGates(report, suspiciousOrgNames.length);
+
+  // ── 6. Print bucketed report ──────────────────────────────────────────────────
+  printBucketedReport(classified, suspiciousOrgNames.length, gates, strict, args.dryRun);
 
   if (args.jsonReport) writeJsonReport(report, args.jsonReport);
 
+  // ── 7. Export sidecars in dry run, or whenever gates fail ─────────────────────
+  if (args.dryRun || !gates.pass) {
+    exportSidecars(classified);
+  }
+
   if (args.dryRun) {
-    console.log('Dry run complete. Re-run without --dry-run to apply changes.');
+    console.log('\nDry run complete.');
+    if (!gates.pass) {
+      console.log('  Quality gates FAILED — fix the issues above before running live.');
+    }
     process.exit(0);
   }
 
-  // ── 6. Live writes ───────────────────────────────────────────────────────────
+  // ── 8. Hard-abort on quality gate failure (strict mode) ───────────────────────
+  if (strict && !gates.pass) {
+    console.error('\nABORTED — quality gates failed. Fix the issues or re-run with --no-strict.');
+    process.exit(1);
+  }
+
+  if (!gates.pass) {
+    console.warn('\nWARNING — quality gates failed but strict mode is off. Proceeding anyway.\n');
+  }
+
+  // ── 9. Live writes ─────────────────────────────────────────────────────────────
   let orgsCreated = 0, sitesCreated = 0, sitesUpdated = 0, errors = 0;
 
   const realOrgIdByNorm = new Map<string, number>(
@@ -235,12 +562,11 @@ async function main() {
     if (rec.siteResolution.kind === 'unresolved' || rec.siteResolution.kind === 'conflict') continue;
 
     try {
-      // ── Ensure org exists ──────────────────────────────────────────────────
+      // Ensure org exists (create placeholder orgs that passed suspicion checks)
       let orgId: number;
       if (rec.orgResolution.kind === 'matched') {
         orgId = rec.orgResolution.org.id;
         if (orgId < 0) {
-          // Placeholder — create the org now
           const key = normName(rec.orgResolution.org.name);
           const realId = realOrgIdByNorm.get(key);
           if (!realId) {
@@ -274,31 +600,27 @@ async function main() {
         }
       }
 
-      // ── Create or update site ──────────────────────────────────────────────
+      // Create or update site
       if (rec.siteResolution.kind === 'create') {
-        const addrComp = rec.parsed.siteAddress
-          ? parseAddressComponents(rec.parsed.siteAddress)
-          : {};
-        const billingAddrComp = rec.parsed.billingAddress
-          ? parseAddressComponents(rec.parsed.billingAddress)
-          : {};
+        const addrComp        = rec.parsed.siteAddress    ? parseAddressComponents(rec.parsed.siteAddress)    : {};
+        const billingAddrComp = rec.parsed.billingAddress ? parseAddressComponents(rec.parsed.billingAddress) : {};
 
         const summary: SiteSummary = {
-          client: rec.parsed.clientName ? { name: rec.parsed.clientName } : undefined,
+          client:   rec.parsed.clientName   ? { name: rec.parsed.clientName }   : undefined,
           building: rec.parsed.buildingName ? { name: rec.parsed.buildingName } : undefined,
-          address: addrComp.streetAddress
+          address:  addrComp.streetAddress
             ? {
-                street: addrComp.streetAddress,
-                city: addrComp.city,
-                state: addrComp.state,
+                street:     addrComp.streetAddress,
+                city:       addrComp.city,
+                state:      addrComp.state,
                 postalCode: addrComp.postalCode,
               }
             : undefined,
           billing: rec.parsed.billingAddress
             ? {
-                address: billingAddrComp.streetAddress ?? rec.parsed.billingAddress,
-                city: billingAddrComp.city,
-                state: billingAddrComp.state,
+                address:    billingAddrComp.streetAddress ?? rec.parsed.billingAddress,
+                city:       billingAddrComp.city,
+                state:      billingAddrComp.state,
                 postalCode: billingAddrComp.postalCode,
               }
             : undefined,
@@ -309,17 +631,17 @@ async function main() {
         };
 
         await (db as any).insert(schema.sites).values({
-          companyId: args.companyId,
+          companyId:    args.companyId,
           customerOrgId: orgId,
-          name: rec.parsed.buildingName ?? rec.parsed.filename.replace(/\.pdf$/i, '').trim(),
-          address: rec.parsed.siteAddress ?? undefined,
-          city: addrComp.city ?? undefined,
-          state: addrComp.state ?? undefined,
-          postalCode: addrComp.postalCode ?? undefined,
-          contactName: rec.parsed.contactName ?? undefined,
-          contactPhone: rec.parsed.contactPhone ?? undefined,
-          fileNumber: rec.parsed.fileNumber ?? undefined,
-          buildingId: rec.parsed.fileNumber ?? undefined,
+          name:         rec.parsed.buildingName ?? rec.parsed.filename.replace(/\.pdf$/i, '').trim(),
+          address:      rec.parsed.siteAddress  ?? undefined,
+          city:         addrComp.city           ?? undefined,
+          state:        addrComp.state          ?? undefined,
+          postalCode:   addrComp.postalCode      ?? undefined,
+          contactName:  rec.parsed.contactName   ?? undefined,
+          contactPhone: rec.parsed.contactPhone  ?? undefined,
+          fileNumber:   rec.parsed.fileNumber    ?? undefined,
+          buildingId:   rec.parsed.fileNumber    ?? undefined,
           summary,
         });
         sitesCreated++;
@@ -334,8 +656,8 @@ async function main() {
         if (!site.address && rec.parsed.siteAddress) {
           updates.address = rec.parsed.siteAddress;
           const c = parseAddressComponents(rec.parsed.siteAddress);
-          if (c.city)       updates.city = c.city;
-          if (c.state)      updates.state = c.state;
+          if (c.city)       updates.city       = c.city;
+          if (c.state)      updates.state      = c.state;
           if (c.postalCode) updates.postalCode = c.postalCode;
         }
 
@@ -356,7 +678,8 @@ async function main() {
 
   if (sitesCreated > 0 || sitesUpdated > 0) console.log('');
   console.log(
-    `\nDone: ${orgsCreated} orgs created, ${sitesCreated} sites created, ${sitesUpdated} sites updated, ${errors} errors`
+    `\nDone: ${orgsCreated} orgs created, ${sitesCreated} sites created, ` +
+    `${sitesUpdated} sites updated, ${errors} errors`
   );
 }
 
