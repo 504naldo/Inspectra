@@ -149,6 +149,20 @@ const deviceRouter = router({
     return { success: true, deviceId: device.id };
   }),
 
+  reorder: officeProcedure.input(z.object({
+    orderedIds: z.array(z.number()),
+  })).mutation(async ({ input }) => {
+    await db.reorderDevices(input.orderedIds);
+    return { success: true };
+  }),
+
+  clearSortOrder: officeProcedure.input(z.object({
+    siteId: z.number(),
+  })).mutation(async ({ input }) => {
+    await db.clearDeviceSortOrder(input.siteId);
+    return { success: true };
+  }),
+
   // Soft-delete a device (marks isActive = false) — only allowed while job is not finalized
   softDelete: technicianProcedure.input(z.object({
     deviceId: z.number(),

@@ -9,15 +9,137 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Search,
   AlertCircle,
   Pencil,
   Save,
   Loader2,
+  GripVertical,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+// ─── Floor sort helpers ───────────────────────────────────────────────────────
+
+function floorSortKey(floor: string | null | undefined): number {
+  if (!floor) return Number.NEGATIVE_INFINITY;
+  const s = floor.trim().toLowerCase();
+  if (s === "roof" || s.startsWith("penthouse") || s.startsWith("ph")) return Number.POSITIVE_INFINITY;
+  if (s === "basement") return -9999;
+  const bMatch = /^b(\d+)$/.exec(s);
+  if (bMatch) return -parseInt(bMatch[1], 10);
+  if (s === "b") return -1;
+  const numMatch = /^(\d+)/.exec(s);
+  if (numMatch) return parseInt(numMatch[1], 10);
+  return 0;
+}
+
+function defaultSort(items: any[]): any[] {
+  return [...items].sort((a, b) => floorSortKey(b.floor) - floorSortKey(a.floor));
+}
+
+function applySort(items: any[]): any[] {
+  const hasManualOrder = items.some((d) => d.sortOrder != null);
+  if (hasManualOrder) {
+    return [...items].sort((a, b) => {
+      if (a.sortOrder == null && b.sortOrder == null) return 0;
+      if (a.sortOrder == null) return 1;
+      if (b.sortOrder == null) return -1;
+      return a.sortOrder - b.sortOrder;
+    });
+  }
+  return defaultSort(items);
+}
+
+// ─── Sortable row ─────────────────────────────────────────────────────────────
+
+function SortableRow({
+  device,
+  onEdit,
+}: {
+  device: any;
+  onEdit: (d: any) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: device.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className="border-b last:border-0 hover:bg-muted/40 group"
+    >
+      <td className="pl-2 pr-1 py-2 w-8">
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground touch-none"
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </td>
+      <td className="px-3 py-2 text-sm font-mono text-muted-foreground w-16 shrink-0">
+        {device.floor ?? "—"}
+      </td>
+      <td className="px-3 py-2 text-sm font-medium">{device.deviceType}</td>
+      <td className="px-3 py-2 text-sm text-muted-foreground max-w-[220px] truncate">
+        {device.location ?? "—"}
+      </td>
+      <td className="px-3 py-2 text-sm text-muted-foreground hidden md:table-cell">
+        {device.manufacturer ?? "—"}
+      </td>
+      <td className="px-3 py-2 text-sm text-muted-foreground font-mono hidden lg:table-cell">
+        {device.serialNumber ?? "—"}
+      </td>
+      <td className="px-3 py-2 w-20">
+        <Badge
+          variant={device.isActive ? "default" : "destructive"}
+          className="text-xs"
+        >
+          {device.isActive ? "Active" : "Inactive"}
+        </Badge>
+      </td>
+      <td className="px-2 py-2 w-9">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={() => onEdit(device)}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminDevices() {
   const { user } = useAuth();
@@ -25,6 +147,8 @@ export default function AdminDevices() {
 
   const [selectedSiteId, setSelectedSiteId] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [localOrder, setLocalOrder] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
 
   // Edit state
   const [editDevice, setEditDevice] = useState<any>(null);
@@ -44,6 +168,22 @@ export default function AdminDevices() {
     { enabled: selectedSiteId !== "all" && selectedSiteId !== "" }
   );
 
+  const reorderMutation = trpc.device.reorder.useMutation({
+    onSuccess: () => {
+      setIsDirty(false);
+      refetch();
+    },
+    onError: () => toast.error("Failed to save order"),
+  });
+
+  const clearSortMutation = trpc.device.clearSortOrder.useMutation({
+    onSuccess: () => {
+      setIsDirty(false);
+      refetch();
+    },
+    onError: () => toast.error("Failed to reset order"),
+  });
+
   const updateDevice = trpc.device.update.useMutation({
     onSuccess: () => {
       toast.success("Device updated");
@@ -53,16 +193,51 @@ export default function AdminDevices() {
     onError: (err) => toast.error(err.message || "Failed to update device"),
   });
 
-  const filteredDevices = devices?.filter((device: any) => {
+  // Sync localOrder whenever fresh data arrives
+  useEffect(() => {
+    if (devices) {
+      setLocalOrder(applySort(devices));
+      setIsDirty(false);
+    }
+  }, [devices]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setLocalOrder((prev) => {
+      const oldIndex = prev.findIndex((d) => d.id === active.id);
+      const newIndex = prev.findIndex((d) => d.id === over.id);
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+    setIsDirty(true);
+  }
+
+  function saveOrder() {
+    reorderMutation.mutate({ orderedIds: localOrder.map((d) => d.id) });
+  }
+
+  function resetOrder() {
+    clearSortMutation.mutate({ siteId: parseInt(selectedSiteId) });
+  }
+
+  const filteredDevices = localOrder.filter((device: any) => {
     if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
+    const q = searchQuery.toLowerCase();
     return (
-      device.deviceType.toLowerCase().includes(query) ||
-      device.location?.toLowerCase().includes(query) ||
-      device.manufacturer?.toLowerCase().includes(query) ||
-      device.serialNumber?.toLowerCase().includes(query)
+      device.deviceType.toLowerCase().includes(q) ||
+      device.location?.toLowerCase().includes(q) ||
+      device.manufacturer?.toLowerCase().includes(q) ||
+      device.serialNumber?.toLowerCase().includes(q) ||
+      device.floor?.toLowerCase().includes(q)
     );
-  }) || [];
+  });
+
+  const hasManualOrder = (devices ?? []).some((d: any) => d.sortOrder != null);
 
   function openEdit(device: any) {
     setEditDevice(device);
@@ -78,15 +253,15 @@ export default function AdminDevices() {
 
   return (
     <AdminLayout title="Devices">
-      <div className="space-y-6">
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <Select value={selectedSiteId} onValueChange={setSelectedSiteId}>
-            <SelectTrigger className="w-[250px]">
+      <div className="space-y-4">
+        {/* Filters + actions */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Select value={selectedSiteId} onValueChange={(v) => { setSelectedSiteId(v); setIsDirty(false); }}>
+            <SelectTrigger className="w-[260px]">
               <SelectValue placeholder="Select a site" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Select a site...</SelectItem>
+              <SelectItem value="all">Select a site…</SelectItem>
               {sites?.map((site: any) => (
                 <SelectItem key={site.id} value={site.id.toString()}>
                   {site.name}
@@ -98,13 +273,35 @@ export default function AdminDevices() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search devices..."
+              placeholder="Search devices…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
               disabled={selectedSiteId === "all"}
             />
           </div>
+
+          {isDirty && (
+            <Button onClick={saveOrder} disabled={reorderMutation.isPending} className="shrink-0">
+              {reorderMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</>
+              ) : (
+                <><Save className="h-4 w-4 mr-2" />Save Order</>
+              )}
+            </Button>
+          )}
+
+          {hasManualOrder && !isDirty && selectedSiteId !== "all" && (
+            <Button
+              variant="outline"
+              onClick={resetOrder}
+              disabled={clearSortMutation.isPending}
+              className="shrink-0"
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Reset Order
+            </Button>
+          )}
         </div>
 
         {/* Content */}
@@ -126,39 +323,49 @@ export default function AdminDevices() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {filteredDevices.map((device: any) => (
-              <Card key={device.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold truncate">{device.deviceType}</h3>
-                      {device.location && (
-                        <p className="text-sm text-muted-foreground truncate">{device.location}</p>
-                      )}
-                      <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                        {device.manufacturer && <p>Mfr: {device.manufacturer}</p>}
-                        {device.model && <p>Model: {device.model}</p>}
-                        {device.serialNumber && <p>S/N: {device.serialNumber}</p>}
-                      </div>
-                      <div className="mt-2">
-                        <Badge variant={device.isActive ? "default" : "destructive"} className="text-xs">
-                          {device.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-                      onClick={() => openEdit(device)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="rounded-lg border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50 border-b text-xs text-muted-foreground uppercase tracking-wide">
+                    <th className="pl-2 pr-1 py-2 w-8" />
+                    <th className="px-3 py-2 text-left w-16">Floor</th>
+                    <th className="px-3 py-2 text-left">Type</th>
+                    <th className="px-3 py-2 text-left">Location</th>
+                    <th className="px-3 py-2 text-left hidden md:table-cell">Manufacturer</th>
+                    <th className="px-3 py-2 text-left hidden lg:table-cell">Serial #</th>
+                    <th className="px-3 py-2 text-left w-20">Status</th>
+                    <th className="px-2 py-2 w-9" />
+                  </tr>
+                </thead>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={filteredDevices.map((d: any) => d.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <tbody>
+                      {filteredDevices.map((device: any) => (
+                        <SortableRow key={device.id} device={device} onEdit={openEdit} />
+                      ))}
+                    </tbody>
+                  </SortableContext>
+                </DndContext>
+              </table>
+            </div>
+            {isDirty && (
+              <div className="px-4 py-2 bg-amber-50 border-t text-xs text-amber-700 flex items-center gap-2">
+                <span>Order changed — click <strong>Save Order</strong> to persist.</span>
+              </div>
+            )}
+            {hasManualOrder && !isDirty && (
+              <div className="px-4 py-2 bg-muted/30 border-t text-xs text-muted-foreground">
+                Showing manual order — <button className="underline hover:text-foreground" onClick={resetOrder}>reset to floor sort</button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -214,7 +421,7 @@ export default function AdminDevices() {
             </div>
             <div className="space-y-1.5">
               <Label>Notes</Label>
-              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Internal notes..." rows={2} />
+              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Internal notes…" rows={2} />
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" onClick={() => setEditDevice(null)} disabled={updateDevice.isPending}>
@@ -237,7 +444,7 @@ export default function AdminDevices() {
                 }
               >
                 {updateDevice.isPending ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</>
                 ) : (
                   <><Save className="h-4 w-4 mr-2" />Save Changes</>
                 )}
