@@ -35,19 +35,9 @@ import { DriveImportPicker } from "@/components/DriveImportPicker";
 
 export default function AdminSites() {
   const { user } = useAuth();
-  
-  if (!user || !user.companyId) {
-    return (
-      <AdminLayout title="Sites">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <p className="text-muted-foreground">Loading session...</p>
-        </div>
-      </AdminLayout>
-    );
-  }
-  
-  const companyId = user.companyId;
-  
+  const companyId = user?.companyId ?? 0;
+
+  // All hooks must be declared before any conditional return (rules of hooks)
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -73,13 +63,29 @@ export default function AdminSites() {
     keyNumber: "",
   });
 
-  const { data: sites, isLoading, refetch } = trpc.site.listByCompany.useQuery({ companyId });
-  const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
+  const { data: sites, isLoading, refetch } = trpc.site.listByCompany.useQuery(
+    { companyId },
+    { enabled: !!companyId },
+  );
+  const { data: customers } = trpc.customerOrg.list.useQuery(
+    { companyId },
+    { enabled: !!companyId },
+  );
   // Pre-fetch the customer records Drive root so the import picker opens there directly
   const { data: driveRoot } = trpc.customerRecords.getRootFolderId.useQuery(undefined, {
     staleTime: Infinity,
     retry: false,
   });
+
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout title="Sites">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p className="text-muted-foreground">Loading session...</p>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   const createSite = trpc.site.create.useMutation({
     onSuccess: () => {
