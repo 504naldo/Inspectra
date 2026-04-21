@@ -37,7 +37,7 @@ export interface ParsedSheet {
 const CA_POSTAL_RE = /\b([A-Z]\d[A-Z]\s*\d[A-Z]\d)\b/;
 
 const STRONG_SUFFIX_RE =
-  /\b(limited\s*partnership|l\.p\.|ltd\.?|inc\.?|corp\.?|llc\.?|l\.l\.c\.?|limited)\s*/gi;
+  /\b(limited\s*partnership|l\.p\.|lp\.?|ltd\.?|inc\.?|corp\.?|llc\.?|l\.l\.c\.?|limited)\s*/gi;
 const WEAK_SUFFIX_RE =
   /\b(properties|holdings|management|services|realty|group|association|strata|club|ventures|enterprises)\s*/gi;
 
@@ -46,7 +46,7 @@ const WEAK_SUFFIX_RE =
 const SUFFIX_CONTINUATION_RE = /^(oration|orporation|orporated|imited|ncorporated)\b/i;
 
 const LABEL_RE =
-  /^(billing address|site address|contact name|email|fax|position|for office use|service schedule|service items|items|locations|estimate|building year|technician|scheduling|keys|credit status|special requests|agreement expires|acquired date|fire safety plan|monitoring|elevator|booster|repair budget|relay disconnect|signal disconnect|standpipe|quantity of low points|dry sprinkler|wet sprinkler|fire hydrant|kitchen systems|fire extinguishers|fire alarm|fire panel|number of in-suites|cross connections)\b/i;
+  /^(name of client|name of building or site|billing address|site address|contact name|email|fax|position|for office use|service schedule|service items|items|locations|estimate|building year|technician|scheduling|keys|credit status|special requests|agreement expires|acquired date|fire safety plan|monitoring|elevator|booster|repair budget|relay disconnect|signal disconnect|standpipe|quantity of low points|dry sprinkler|wet sprinkler|fire hydrant|kitchen systems|fire extinguishers|fire alarm|fire panel|number of in-suites|cross connections)\b/i;
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
@@ -94,12 +94,21 @@ function extractBldgId(text: string): string | undefined {
  * Split a potentially concatenated "ClientNameBuildingName" string.
  * Returns [clientName, buildingName | undefined].
  */
+/** Position-by-position similarity ratio between two equal-length strings. */
+function charSimilarity(a: string, b: string): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let same = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] === b[i]) same++;
+  return same / a.length;
+}
+
 function splitClientBuilding(raw: string): [string, string | undefined] {
   const s = raw.trim();
   if (!s) return [s, undefined];
 
-  // Deduplication: "FOO BAR FOO BAR" (two-column PDF reads same value twice)
   const cl = s.toLowerCase().replace(/\s+/g, ' ');
+
+  // Exact midpoint dedup: "FOO BAR FOO BAR" (two-column PDF reads same value twice)
   for (let delta = -3; delta <= 3; delta++) {
     const cut = Math.floor(cl.length / 2) + delta;
     if (cut <= 4 || cut >= cl.length - 1) continue;
@@ -107,6 +116,33 @@ function splitClientBuilding(raw: string): [string, string | undefined] {
     const b = cl.slice(cut).trim();
     if (a.length >= 5 && a === b) {
       return [s.slice(0, cut).trim(), undefined];
+    }
+  }
+
+  // Fuzzy midpoint dedup: handles OCR/typo variation between the two halves
+  // e.g. "GLOTMAN SUMPSON & SOG INVESTMENTGLOTMAN SIMPSON & SOG INVESTMENT"
+  for (let delta = -3; delta <= 3; delta++) {
+    const cut = Math.floor(cl.length / 2) + delta;
+    if (cut <= 8 || cut >= cl.length - 1) continue;
+    const a = cl.slice(0, cut).trim();
+    const b = cl.slice(cut).trim();
+    if (a.length >= 8 && a.length === b.length && charSimilarity(a, b) >= 0.85) {
+      return [s.slice(0, cut).trim(), undefined];
+    }
+  }
+
+  // Prefix dedup: client name appears twice before the building name
+  // e.g. "TERRA BREADSTERRA BREADS - OLYMPIC VILLAGE" → ["TERRA BREADS", "TERRA BREADS - OLYMPIC VILLAGE"]
+  // e.g. "BCS 4051BCS 4051 - THE NINE"               → ["BCS 4051", "BCS 4051 - THE NINE"]
+  for (let n = 8; n <= Math.floor(cl.length / 2); n++) {
+    const prefix = cl.slice(0, n);
+    if (cl.slice(n).startsWith(prefix)) {
+      const client = s.slice(0, n).trim();
+      const building = s.slice(n).trim();
+      if (!building || building.toLowerCase().replace(/\s+/g, ' ') === prefix.trim()) {
+        return [client, undefined];
+      }
+      return [client, building];
     }
   }
 
