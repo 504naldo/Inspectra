@@ -108,72 +108,103 @@ function splitClientBuilding(raw: string): [string, string | undefined] {
 
   const cl = s.toLowerCase().replace(/\s+/g, ' ');
 
-  // Exact midpoint dedup: "FOO BAR FOO BAR" (two-column PDF reads same value twice)
+  // 1. Exact midpoint dedup: "FOO BAR FOO BAR"
   for (let delta = -3; delta <= 3; delta++) {
     const cut = Math.floor(cl.length / 2) + delta;
     if (cut <= 4 || cut >= cl.length - 1) continue;
-    const a = cl.slice(0, cut).trim();
-    const b = cl.slice(cut).trim();
-    if (a.length >= 5 && a === b) {
-      return [s.slice(0, cut).trim(), undefined];
-    }
+    const a = cl.slice(0, cut).trim(), b = cl.slice(cut).trim();
+    if (a.length >= 5 && a === b) return [s.slice(0, cut).trim(), undefined];
   }
 
-  // Fuzzy midpoint dedup: handles OCR/typo variation between the two halves
-  // e.g. "GLOTMAN SUMPSON & SOG INVESTMENTGLOTMAN SIMPSON & SOG INVESTMENT"
+  // 2. Fuzzy midpoint dedup (OCR/typo variation between halves)
   for (let delta = -3; delta <= 3; delta++) {
     const cut = Math.floor(cl.length / 2) + delta;
     if (cut <= 8 || cut >= cl.length - 1) continue;
-    const a = cl.slice(0, cut).trim();
-    const b = cl.slice(cut).trim();
-    if (a.length >= 8 && a.length === b.length && charSimilarity(a, b) >= 0.85) {
+    const a = cl.slice(0, cut).trim(), b = cl.slice(cut).trim();
+    if (a.length >= 8 && a.length === b.length && charSimilarity(a, b) >= 0.85)
       return [s.slice(0, cut).trim(), undefined];
-    }
   }
 
-  // Prefix dedup: client name appears twice before the building name
-  // e.g. "TERRA BREADSTERRA BREADS - OLYMPIC VILLAGE" → ["TERRA BREADS", "TERRA BREADS - OLYMPIC VILLAGE"]
-  // e.g. "BCS 4051BCS 4051 - THE NINE"               → ["BCS 4051", "BCS 4051 - THE NINE"]
+  // 3. Prefix dedup: prefix reappears at or just after position n (allows 1 space gap)
+  // e.g. "TERRA BREADS TERRA BREADS - OLYMPIC VILLAGE" or "TERRA BREADSTERRA BREADS..."
   for (let n = 8; n <= Math.floor(cl.length / 2); n++) {
     const prefix = cl.slice(0, n);
-    if (cl.slice(n).startsWith(prefix)) {
-      const client = s.slice(0, n).trim();
-      const building = s.slice(n).trim();
-      if (!building || building.toLowerCase().replace(/\s+/g, ' ') === prefix.trim()) {
-        return [client, undefined];
-      }
-      return [client, building];
-    }
+    const idx = cl.indexOf(prefix, n);
+    if (idx < 0 || idx > n + 1) continue;
+    const client = s.slice(0, n).trim();
+    const building = s.slice(idx).trim();
+    const blNorm = building.toLowerCase().replace(/\s+/g, ' ');
+    if (!building || blNorm === prefix.trim()) return [client, undefined];
+    return [client, building];
   }
 
-  // Strong corporate suffixes — find last occurrence not at end of string
+  // 4. Glued "THE " split: uppercase letter immediately followed by "THE [A-Z]" (no space)
+  // e.g. "604 REAL ESTATETHE VISTA" → ["604 REAL ESTATE", "THE VISTA"]
+  const theGlue = /[A-Z0-9](THE [A-Z])/.exec(s);
+  if (theGlue && theGlue.index > 0) {
+    const cut = theGlue.index + 1;
+    return [s.slice(0, cut).trim(), s.slice(cut).trim() || undefined];
+  }
+
+  // 5. Common client-name word endings glued directly to next word (no space)
+  // e.g. "FIRSTSERVICE RESIDENTIALBUCHANAN" → ["FIRSTSERVICE RESIDENTIAL", "BUCHANAN..."]
+  const GLUED_END_RE = /(?:HOUSING|RESIDENTIAL|COMMERCIAL|MANAGEMENT|SERVICES|PROPERTIES|HOLDINGS|REALTY|CENTRE|CENTER|LEAGUE|COOPERATIVE)(?=[A-Z])/i;
+  const gluedEnd = GLUED_END_RE.exec(s);
+  if (gluedEnd) {
+    const cut = gluedEnd.index + gluedEnd[0].length;
+    if (cut > 4 && cut < s.length - 2)
+      return [s.slice(0, cut).trim(), s.slice(cut).trim() || undefined];
+  }
+
+  // 6. Digit immediately followed by 3+ uppercase letters (no space): "VR 1590SIGNATURE PLACE"
+  const digitUpper = /\d(?=[A-Z]{3})/.exec(s);
+  if (digitUpper && digitUpper.index > 3) {
+    const cut = digitUpper.index + 1;
+    const client = s.slice(0, cut).trim(), building = s.slice(cut).trim();
+    if (client.length >= 4 && building.length >= 4) return [client, building];
+  }
+
+  // 7. Strong corporate suffixes — find last occurrence not at end of string
   let best: number | null = null;
   STRONG_SUFFIX_RE.lastIndex = 0;
   for (const m of s.matchAll(STRONG_SUFFIX_RE)) {
     const end = m.index! + m[0].length;
     if (end >= s.length - 2) continue;
     const remainder = s.slice(end).trim();
-    // Skip if remainder looks like a suffix word-continuation (e.g. "oration" in "Corporation")
     if (SUFFIX_CONTINUATION_RE.test(remainder)) continue;
     best = end;
   }
-  if (best !== null) {
-    return [s.slice(0, best).trim(), s.slice(best).trim() || undefined];
-  }
+  if (best !== null) return [s.slice(0, best).trim(), s.slice(best).trim() || undefined];
 
-  // Weak suffixes — find first occurrence not at end of string
+  // 8. Weak suffixes — find first occurrence not at end of string
   WEAK_SUFFIX_RE.lastIndex = 0;
   for (const m of s.matchAll(WEAK_SUFFIX_RE)) {
     const end = m.index! + m[0].length;
     if (end < s.length - 2) {
       const remainder = s.slice(end).trim();
-      // Don't split if remainder is just another company suffix (e.g. "Holdings Ltd.")
       if (/^(ltd|inc|corp|llc|limited)\.?\s*$/i.test(remainder)) continue;
       return [s.slice(0, end).trim(), remainder || undefined];
     }
   }
 
   return [s, undefined];
+}
+
+// ─── Client name post-processing ─────────────────────────────────────────────
+
+function cleanClientName(s: string | undefined): string | undefined {
+  if (!s) return undefined;
+  s = s.trim();
+  // Strip "Bill to:" / "INVOICE:" prefixes
+  s = s.replace(/^(Bill\s+to|INVOICE)\s*:\s*/i, '').trim();
+  // Strip "SEE BLDG ID#..." tails (office notes)
+  s = s.replace(/\bSEE\s+BLDG\s+ID\b.*/i, '').trim();
+  // Strip long parenthetical notes like "(MUST DO ASRL EVERY ANNUAL)"
+  s = s.replace(/\s*\([^)]{20,}\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  // Discard if it IS a label or looks like an address
+  if (/^(name of (client|building or site)|for office use|spec sheet)/i.test(s)) return undefined;
+  if (/^#?\d{1,5}\s*[-–]\s*\d/.test(s)) return undefined; // "#204 - 6935 ..."
+  return s || undefined;
 }
 
 // ─── Address helpers ──────────────────────────────────────────────────────────
@@ -249,13 +280,13 @@ function parseStructured(text: string, _filename: string): Partial<ParsedSheet> 
 
     if (blockLines.length === 1) {
       const [client, building] = splitClientBuilding(blockLines[0]);
-      result.clientName = client || undefined;
+      result.clientName = cleanClientName(client);
       result.buildingName = building;
     } else if (blockLines.length >= 2) {
-      result.clientName = blockLines[0];
+      result.clientName = cleanClientName(blockLines[0]);
       result.buildingName = blockLines.slice(1).join(' ') || undefined;
     } else if (blockLines.length === 0 && block.trim()) {
-      result.clientName = block.trim().replace(/\n/g, ' ').slice(0, 120);
+      result.clientName = cleanClientName(block.trim().replace(/\n/g, ' ').slice(0, 120));
     }
   }
 
@@ -324,7 +355,7 @@ function parseLegacy(text: string, _filename: string): Partial<ParsedSheet> {
 
     if (valueLine) {
       const [client, building] = splitClientBuilding(valueLine);
-      result.clientName = client || undefined;
+      result.clientName = cleanClientName(client);
       result.buildingName = building;
     }
   }
