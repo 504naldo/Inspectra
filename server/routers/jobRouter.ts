@@ -536,6 +536,33 @@ const jobRouter = router({
     return { newJobId: newJob.id, jobNumber };
   }),
 
+  delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+    const job = await db.getJobById(input.id);
+    if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
+    if (job.finalizedAt) throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
+
+    // Best-effort: remove Google Calendar event
+    if (job.googleCalendarEventId && ctx.user) {
+      try {
+        const { getValidGoogleToken } = await import("../_core/googleAuth");
+        const accessToken = await getValidGoogleToken(ctx.user.id);
+        if (accessToken) {
+          await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events/${job.googleCalendarEventId}?sendUpdates=all`,
+            { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+        }
+      } catch (err) {
+        console.warn('[Calendar] Failed to delete event for job', input.id, err);
+      }
+    }
+
+    await withAudit(ctx, 'job.delete', async () => {
+      await db.deleteJobCascade(input.id);
+    });
+    return { success: true };
+  }),
+
   getScheduleSummary: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
     const jobs = await db.getJobsByCompany(input.companyId);
     const now = new Date();

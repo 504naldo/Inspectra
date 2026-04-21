@@ -1780,3 +1780,17 @@ export async function updateWorkOrder(id: number, data: Partial<InsertWorkOrder>
   if (!db) throw new Error("Database not available");
   await db.update(workOrders).set(data).where(eq(workOrders.id, id));
 }
+
+export async function deleteJobCascade(jobId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(schema.inspectionChecklistResponses).where(eq(schema.inspectionChecklistResponses.jobId, jobId));
+  await db.delete(jobAssignments).where(eq(jobAssignments.jobId, jobId));
+  await db.delete(inspectionResults).where(eq(inspectionResults.jobId, jobId));
+  await db.delete(deficiencies).where(eq(deficiencies.jobId, jobId));
+  await db.delete(schema.fireAlarmInspectionResults).where(eq(schema.fireAlarmInspectionResults.jobId, jobId));
+  await db.delete(schema.fireAlarmFormHeader).where(eq(schema.fireAlarmFormHeader.jobId, jobId));
+  await db.delete(workOrders).where(eq(workOrders.jobId, jobId));
+  await db.delete(reports).where(eq(reports.jobId, jobId));
+  await db.delete(jobs).where(eq(jobs.id, jobId));
+}

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -27,8 +28,10 @@ import {
   Briefcase,
   CheckCircle2,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { Link } from "wouter";
+import { toast } from "sonner";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -795,11 +798,23 @@ function CalendarTab({ companyId }: { companyId: number }) {
   const today = new Date();
   const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDay, setSelectedDay] = useState<number | null>(today.getDate());
+  const [deleteJobId, setDeleteJobId] = useState<number | null>(null);
+
+  const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.job.getScheduleSummary.useQuery(
     { companyId },
     { enabled: !!companyId }
   );
+
+  const deleteJob = trpc.job.delete.useMutation({
+    onSuccess: () => {
+      toast.success('Job deleted');
+      setDeleteJobId(null);
+      utils.job.getScheduleSummary.invalidate({ companyId });
+    },
+    onError: (err: any) => toast.error(err?.message ?? 'Failed to delete job'),
+  });
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -927,15 +942,46 @@ function CalendarTab({ companyId }: { companyId: number }) {
                     <Badge variant="outline" className="text-xs capitalize">{job.status?.replace("_"," ")}</Badge>
                     {job.jobType && <span className="text-xs text-gray-500">{job.jobType}</span>}
                   </div>
-                  <Link href={`/admin/jobs/${job.id}`}>
-                    <Button size="sm" variant="outline" className="w-full mt-1 text-xs">Open Job</Button>
-                  </Link>
+                  <div className="flex gap-2 mt-1">
+                    <Link href={`/admin/jobs/${job.id}`} className="flex-1">
+                      <Button size="sm" variant="outline" className="w-full text-xs">Open Job</Button>
+                    </Link>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setDeleteJobId(job.id)}
+                      aria-label="Delete job"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={deleteJobId !== null} onOpenChange={open => { if (!open) setDeleteJobId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete job?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the job and all its inspection data, deficiencies, and reports. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteJobId !== null && deleteJob.mutate({ id: deleteJobId })}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

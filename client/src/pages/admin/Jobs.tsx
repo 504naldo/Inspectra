@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -21,7 +22,8 @@ import {
   X,
   Star,
   UserPlus,
-  Info
+  Info,
+  Trash2
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -66,6 +68,9 @@ export default function AdminJobs() {
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
   const [selectedAssistantIds, setSelectedAssistantIds] = useState<number[]>([]);
+
+  // Delete confirmation state
+  const [deleteJobId, setDeleteJobId] = useState<number | null>(null);
   
   const { data: jobs, isLoading, refetch } = trpc.jobAssignment.listJobsWithAssignees.useQuery({
     companyId,
@@ -110,6 +115,15 @@ export default function AdminJobs() {
       refetch();
     },
     onError: () => toast.error('Failed to update assignments')
+  });
+
+  const deleteJob = trpc.job.delete.useMutation({
+    onSuccess: () => {
+      toast.success('Job deleted');
+      setDeleteJobId(null);
+      refetch();
+    },
+    onError: (err: any) => toast.error(err?.message ?? 'Failed to delete job'),
   });
 
   const createJob = trpc.job.create.useMutation({
@@ -480,6 +494,13 @@ export default function AdminJobs() {
                           </Button>
                         )}
                         <button
+                          onClick={() => setDeleteJobId(job.id)}
+                          className="p-2 hover:bg-destructive/10 rounded-full transition-colors text-muted-foreground hover:text-destructive"
+                          aria-label="Delete job"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        <button
                           onClick={() => window.location.href = `/tech/jobs/${job.id}`}
                           className="p-2 hover:bg-accent rounded-full transition-colors"
                           aria-label="View job details"
@@ -589,6 +610,26 @@ export default function AdminJobs() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteJobId !== null} onOpenChange={open => { if (!open) setDeleteJobId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete job?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the job and all its inspection data, deficiencies, and reports. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteJobId !== null && deleteJob.mutate({ id: deleteJobId })}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }
