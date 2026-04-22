@@ -309,10 +309,10 @@ export function SmokeAlarmGrid({
     if (!editing) return;
     const { deviceId, field, value } = editing;
     const payload: Record<string, any> = { id: deviceId };
-    if (field === "battType")  payload.batterySize  = value || undefined;
+    if (field === "battType")  payload.batterySize  = value;
     if (field === "battQty")   payload.batteryCount = value ? Number(value) || undefined : undefined;
-    if (field === "inService") payload.batteryYear  = value || undefined;
-    if (field === "remarks")   payload.notes        = value || undefined;
+    if (field === "inService") payload.batteryYear  = value;
+    if (field === "remarks")   payload.notes        = value;
     updateDevice.mutate(payload as Parameters<typeof updateDevice.mutate>[0]);
     setEditing(null);
   };
@@ -545,7 +545,7 @@ export function SmokeAlarmGrid({
                       className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
                       defaultValue={remarksVal}
                       disabled={isFinalized}
-                      onBlur={(e) => updateDevice.mutate({ id: device.id, notes: e.target.value || undefined })}
+                      onBlur={(e) => updateDevice.mutate({ id: device.id, notes: e.target.value })}
                     />
                   </div>
                 </div>

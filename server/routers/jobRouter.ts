@@ -231,6 +231,32 @@ const jobRouter = router({
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Technician signature is required before completing the job.' });
     }
     await db.updateJob(input.id, { status: 'completed', completedAt: new Date() });
+
+    // Best-effort sync to monthly_service_tracking.
+    // Never fail job completion if tracker sync has an unexpected issue.
+    try {
+      const trackerRow = await db.getMonthlyTrackingByLinkedJobId(job.id);
+      if (trackerRow) {
+        const site = await db.getSiteById(job.siteId);
+        const existingBuildingId = trackerRow.buildingId?.trim();
+        const siteBuildingId = site?.buildingId?.trim();
+
+        const trackerUpdate: Partial<schema.InsertMonthlyServiceTracking> = {
+          status: 'completed',
+          reportStatus: 'pending',
+        };
+
+        // Preserve tracker buildingId if already populated.
+        if (!existingBuildingId && siteBuildingId) {
+          trackerUpdate.buildingId = siteBuildingId;
+        }
+
+        await db.updateMonthlyTrackingByLinkedJobId(job.id, trackerUpdate);
+      }
+    } catch (trackerErr) {
+      console.warn(`[MonthlyTracking] Failed to sync completion for job ${job.id}:`, trackerErr);
+    }
+
     return { success: true };
   }),
 

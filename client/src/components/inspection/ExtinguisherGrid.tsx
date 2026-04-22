@@ -116,7 +116,8 @@ export function ExtinguisherGrid({
   const handleEditBlur = () => {
     if (!editing) return;
     const { deviceId, field, value } = editing;
-    updateDevice.mutate({ id: deviceId, [field]: value || undefined });
+    // Send explicit empty string when cleared so backend can persist clearing.
+    updateDevice.mutate({ id: deviceId, [field]: value } as Parameters<typeof updateDevice.mutate>[0]);
     setEditing(null);
   };
 

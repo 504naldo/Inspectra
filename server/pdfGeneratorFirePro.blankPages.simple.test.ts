@@ -203,4 +203,49 @@ describe('Deficiency Report PDF - Blank Pages Fix (Simplified)', () => {
     expect(pdfBuffer).toBeInstanceOf(Buffer);
     expect(pdfBuffer.length).toBeGreaterThan(0);
   });
+
+  it('should generate PDF when AI summary narrative is provided', async () => {
+    const reportData = {
+      ...baseReportData,
+      summary: [
+        'Inspection completed for all required systems.',
+        '',
+        'System Status: Deficiencies identified requiring corrective action.',
+        '',
+        'Priority Items:',
+        '• Replace failed smoke detector in corridor.',
+        '• Service sprinkler supervisory switch in electrical room.',
+      ].join('\n'),
+      deficiencies: [
+        {
+          id: 1,
+          title: 'Smoke detector failed',
+          severity: 'major',
+          status: 'open',
+          description: 'Detector did not alarm during functional test.',
+          correctiveAction: 'Replace detector and re-test circuit.',
+          deviceType: 'Smoke Detector',
+          location: 'Main Corridor',
+          estimatedCost: 180,
+          systemCategory: 'FIRE_ALARM' as const,
+        },
+      ],
+    };
+
+    const pdfBuffer = await generateInspectionReportPDF(reportData);
+    expect(pdfBuffer).toBeInstanceOf(Buffer);
+    expect(pdfBuffer.length).toBeGreaterThan(0);
+  });
+
+  it('should generate PDF with AI summary even when there are no deficiencies', async () => {
+    const reportData = {
+      ...baseReportData,
+      summary: 'Executive Summary:\n• All inspected devices passed.\nSystem Status: Satisfactory.',
+      deficiencies: [],
+    };
+
+    const pdfBuffer = await generateInspectionReportPDF(reportData);
+    expect(pdfBuffer).toBeInstanceOf(Buffer);
+    expect(pdfBuffer.length).toBeGreaterThan(0);
+  });
 });

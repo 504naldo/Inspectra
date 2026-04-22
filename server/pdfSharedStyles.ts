@@ -573,6 +573,65 @@ export function drawDeficiencySummaryPage(
   return currentY + 40;
 }
 
+/**
+ * Draw AI-generated executive summary narrative content.
+ * Supports page continuation via an optional callback.
+ */
+export function drawAiExecutiveSummaryPage(
+  doc: PDFKit.PDFDocument,
+  summaryText: string,
+  startY: number = PDF_SIZES.margin + 80,
+  opts?: {
+    maxY?: number;
+    onPageBreak?: () => number;
+  }
+): number {
+  let y = startY;
+  const maxY = opts?.maxY ?? 720;
+  const textWidth = PDF_SIZES.pageWidth - PDF_SIZES.margin * 2;
+
+  doc.rect(PDF_SIZES.margin, y, textWidth, 30).fill(PDF_COLORS.brandNavy);
+  doc.fontSize(16)
+     .font(PDF_FONTS.bold)
+     .fillColor(PDF_COLORS.white)
+     .text('AI-Generated Executive Summary', PDF_SIZES.margin + 10, y + 8);
+  y += 42;
+
+  const normalized = summaryText.replace(/\r/g, "").trim();
+  const lines = (normalized.length > 0
+    ? normalized.split("\n").map((line) => line.trim()).filter(Boolean)
+    : ["No AI summary content was provided for this report."]
+  );
+
+  const pageBreakIfNeeded = () => {
+    if (y <= maxY) return;
+    if (opts?.onPageBreak) {
+      y = opts.onPageBreak();
+      return;
+    }
+    y = maxY;
+  };
+
+  for (const line of lines) {
+    pageBreakIfNeeded();
+    const isBullet = /^[-•*]\s+/.test(line);
+    const content = line.replace(/^[-•*]\s+/, "");
+
+    doc.fontSize(10)
+       .font(PDF_FONTS.regular)
+       .fillColor(PDF_COLORS.black)
+       .text(isBullet ? `• ${content}` : content, PDF_SIZES.margin, y, {
+         width: textWidth,
+         lineGap: 3,
+         align: 'left',
+       });
+
+    y = doc.y + 6;
+  }
+
+  return y;
+}
+
 
 /**
  * Render text with proper spacing and readability

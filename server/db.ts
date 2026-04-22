@@ -1624,10 +1624,33 @@ export async function getMonthlyTrackingBySite(siteId: number, trackingMonth?: s
   return db.select().from(monthlyServiceTracking).where(and(...conditions));
 }
 
+export async function getMonthlyTrackingByLinkedJobId(jobId: number): Promise<MonthlyServiceTracking | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(monthlyServiceTracking)
+    .where(eq(monthlyServiceTracking.linkedJobId, jobId))
+    .limit(1);
+  return result[0];
+}
+
 export async function updateMonthlyTracking(id: number, data: Partial<InsertMonthlyServiceTracking>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(monthlyServiceTracking).set(data).where(eq(monthlyServiceTracking.id, id));
+}
+
+export async function updateMonthlyTrackingByLinkedJobId(
+  jobId: number,
+  data: Partial<InsertMonthlyServiceTracking>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(monthlyServiceTracking)
+    .set(data)
+    .where(eq(monthlyServiceTracking.linkedJobId, jobId));
 }
 
 // ── Repair Letter Tracking ────────────────────────────────────────────────────

@@ -120,7 +120,11 @@ export function EmergencyLightGrid({
     if (!editing) return;
     const { deviceId, field, value } = editing;
     const numericFields = ["batteryCount", "lampCount"];
-    const fieldValue = value === "" ? undefined : numericFields.includes(field) ? Number(value) || undefined : value;
+    // For text fields, keep empty string so clears are explicit and persisted.
+    // For numeric fields, preserve prior behavior (empty => undefined/no-op).
+    const fieldValue = numericFields.includes(field)
+      ? (value === "" ? undefined : Number(value) || undefined)
+      : value;
     updateDevice.mutate({ id: deviceId, [field]: fieldValue } as Parameters<typeof updateDevice.mutate>[0]);
     setEditing(null);
   };
