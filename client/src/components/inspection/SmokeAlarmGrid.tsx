@@ -9,6 +9,7 @@ import { DndContext, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
+import { useSectionPendingChanges } from "./useSectionPendingChanges";
 
 // ─── Legend data ────────────────────────────────────────────────────────────
 
@@ -269,11 +270,13 @@ export function SmokeAlarmGrid({
     hasUnsavedChanges: hasPendingResultChanges,
     pendingChanges: pendingResultChanges,
   } = useSectionPendingChanges();
+  const hasPending = hasPendingDeviceChanges || hasPendingResultChanges;
   const [legendOpen, setLegendOpen] = useState(false);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ suiteNumber: "", location: "", powerType: "" as "" | "hardwired" | "battery" | "sealed" | "unknown" });
+  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<SmokeAlarmRow>>>({});
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -344,10 +347,6 @@ export function SmokeAlarmGrid({
     [queuePendingResultChange, onResultChange]
   );
 
-  const updateLocalRow = (id: number, updates: Partial<SmokeAlarmRow>) => {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
-  };
-
   const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
     if (isFinalized) return;
     setEditing({ deviceId, field, value: currentValue });
@@ -368,10 +367,10 @@ export function SmokeAlarmGrid({
 
   const handleSaveSection = useCallback(async () => {
     try {
-      const deviceSaveTasks = Object.entries(pendingDeviceChanges).map(([id, changeSet]) =>
-        updateDevice.mutateAsync({ id: Number(id), ...(changeSet as Record<string, unknown>) })
+      const deviceSaveTasks = (Object.entries(pendingDeviceChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
+        updateDevice.mutateAsync({ id: Number(id), ...changeSet } as Parameters<typeof updateDevice.mutate>[0])
       );
-      const resultSaveTasks = Object.entries(pendingResultChanges).map(([id, changeSet]) =>
+      const resultSaveTasks = (Object.entries(pendingResultChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
         upsertResult.mutateAsync({
           jobId,
           deviceId: Number(id),
@@ -447,6 +446,15 @@ export function SmokeAlarmGrid({
           <span className="text-xs text-muted-foreground">
             {completed} / {rows.length} tested
           </span>
+          {!isFinalized && hasPending && (
+            <button
+              onClick={handleSaveSection}
+              disabled={updateDevice.isPending || upsertResult.isPending}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+          )}
           {!isFinalized && devices.length > 1 && (
             <div className="flex items-center gap-1">
               <button

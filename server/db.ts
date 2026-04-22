@@ -1420,9 +1420,11 @@ export async function getDeviceSummariesByJob(jobId: number) {
  */
 export async function assertJobNotFinalized(
   jobId: number,
-  db: ReturnType<typeof drizzle>
+  db?: ReturnType<typeof drizzle>
 ): Promise<void> {
-  const rows = await db
+  const resolvedDb = db ?? await getDb();
+  if (!resolvedDb) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  const rows = await resolvedDb
     .select({ finalizedAt: schema.jobs.finalizedAt })
     .from(schema.jobs)
     .where(eq(schema.jobs.id, jobId));

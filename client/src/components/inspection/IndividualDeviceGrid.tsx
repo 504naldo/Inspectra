@@ -487,6 +487,15 @@ export function IndividualDeviceGrid({
       <div className="flex items-center justify-between mb-1">
         <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
         <div className="flex items-center gap-2">
+          {!isFinalized && hasUnsavedChanges && (
+            <button
+              onClick={handleSaveSection}
+              disabled={upsertResult.isPending}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+          )}
           {!isFinalized && rows.length > 1 && (
             <div className="flex gap-1">
               <button

@@ -8,6 +8,7 @@ import { DndContext, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
+import { useSectionPendingChanges } from "./useSectionPendingChanges";
 
 interface ExtinguisherRow {
   id: number;
@@ -77,6 +78,20 @@ export function ExtinguisherGrid({
   const [addForm, setAddForm] = useState<AddForm>({ location: "", deviceType: "Fire Extinguisher" });
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
   const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
+  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<ExtinguisherRow>>>({});
+  const {
+    pendingChanges: pendingDeviceChanges,
+    queueChange: queuePendingDeviceChange,
+    clearChanges: clearPendingDeviceChanges,
+    hasUnsavedChanges: hasPendingDeviceChanges,
+  } = useSectionPendingChanges();
+  const {
+    pendingChanges: pendingResultChanges,
+    queueChange: queuePendingResultChange,
+    clearChanges: clearPendingResultChanges,
+    hasUnsavedChanges: hasPendingResultChanges,
+  } = useSectionPendingChanges();
+  const hasPending = hasPendingDeviceChanges || hasPendingResultChanges;
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -122,17 +137,17 @@ export function ExtinguisherGrid({
   const handleEditBlur = () => {
     if (!editing) return;
     const { deviceId, field, value } = editing;
-    // Send explicit empty string when cleared so backend can persist clearing.
-    updateDevice.mutate({ id: deviceId, [field]: value } as Parameters<typeof updateDevice.mutate>[0]);
+    setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), [field]: value } }));
+    queuePendingDeviceChange(deviceId, field, value);
     setEditing(null);
   };
 
   const handleSaveSection = useCallback(async () => {
     try {
-      const deviceSaveTasks = Object.entries(pendingDeviceChanges).map(([id, changeSet]) =>
-        updateDevice.mutateAsync({ id: Number(id), ...(changeSet as Record<string, unknown>) })
+      const deviceSaveTasks = (Object.entries(pendingDeviceChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
+        updateDevice.mutateAsync({ id: Number(id), ...changeSet } as Parameters<typeof updateDevice.mutate>[0])
       );
-      const resultSaveTasks = Object.entries(pendingResultChanges).map(([id, changeSet]) =>
+      const resultSaveTasks = (Object.entries(pendingResultChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
         upsertResult.mutateAsync({
           jobId,
           deviceId: Number(id),
@@ -203,6 +218,15 @@ export function ExtinguisherGrid({
     <div>
       {!isFinalized && devices.length > 0 && (
         <div className="flex items-center justify-end gap-2 mb-2">
+          {hasPending && (
+            <button
+              onClick={handleSaveSection}
+              disabled={updateDevice.isPending || upsertResult.isPending}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+          )}
           {devices.length > 1 && (
             <div className="flex gap-1">
               <button

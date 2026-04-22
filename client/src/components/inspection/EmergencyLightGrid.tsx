@@ -8,6 +8,7 @@ import { DndContext, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
+import { useSectionPendingChanges } from "./useSectionPendingChanges";
 
 interface EmergencyLightRow {
   id: number;
@@ -80,6 +81,20 @@ export function EmergencyLightGrid({
   const [addForm, setAddForm] = useState({ location: "", deviceType: "Emergency Light" });
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
   const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
+  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<EmergencyLightRow>>>({});
+  const {
+    pendingChanges: pendingDeviceChanges,
+    queueChange: queuePendingDeviceChange,
+    clearChanges: clearPendingDeviceChanges,
+    hasUnsavedChanges: hasPendingDeviceChanges,
+  } = useSectionPendingChanges();
+  const {
+    pendingChanges: pendingResultChanges,
+    queueChange: queuePendingResultChange,
+    clearChanges: clearPendingResultChanges,
+    hasUnsavedChanges: hasPendingResultChanges,
+  } = useSectionPendingChanges();
+  const hasPending = hasPendingDeviceChanges || hasPendingResultChanges;
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -126,21 +141,20 @@ export function EmergencyLightGrid({
     if (!editing) return;
     const { deviceId, field, value } = editing;
     const numericFields = ["batteryCount", "lampCount"];
-    // For text fields, keep empty string so clears are explicit and persisted.
-    // For numeric fields, preserve prior behavior (empty => undefined/no-op).
     const fieldValue = numericFields.includes(field)
       ? (value === "" ? undefined : Number(value) || undefined)
       : value;
-    updateDevice.mutate({ id: deviceId, [field]: fieldValue } as Parameters<typeof updateDevice.mutate>[0]);
+    setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), [field]: fieldValue } }));
+    queuePendingDeviceChange(deviceId, field, fieldValue);
     setEditing(null);
   };
 
   const handleSaveSection = useCallback(async () => {
     try {
-      const deviceSaveTasks = Object.entries(pendingDeviceChanges).map(([id, changeSet]) =>
-        updateDevice.mutateAsync({ id: Number(id), ...(changeSet as Record<string, unknown>) })
+      const deviceSaveTasks = (Object.entries(pendingDeviceChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
+        updateDevice.mutateAsync({ id: Number(id), ...changeSet } as Parameters<typeof updateDevice.mutate>[0])
       );
-      const resultSaveTasks = Object.entries(pendingResultChanges).map(([id, changeSet]) =>
+      const resultSaveTasks = (Object.entries(pendingResultChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
         upsertResult.mutateAsync({
           jobId,
           deviceId: Number(id),
@@ -211,6 +225,15 @@ export function EmergencyLightGrid({
     <div>
       {!isFinalized && devices.length > 0 && (
         <div className="flex items-center justify-end gap-2 mb-2">
+          {hasPending && (
+            <button
+              onClick={handleSaveSection}
+              disabled={updateDevice.isPending || upsertResult.isPending}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+          )}
           {devices.length > 1 && (
             <div className="flex gap-1">
               <button
