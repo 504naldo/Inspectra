@@ -297,7 +297,8 @@ export function IndividualDeviceGrid({
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ location: "", deviceType: "Smoke Detector" });
-  const { rows, onDragEnd, sensors } = useDeviceReorder(devices, !!isFinalized);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+  const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save"),
@@ -389,6 +390,18 @@ export function IndividualDeviceGrid({
     },
     [jobId, upsertResult, onResultChange]
   );
+
+  const handleSort = (dir: "asc" | "desc") => {
+    setSortDir(dir);
+    const sorted = [...rows].sort((a, b) => {
+      const aKey = (a.location || "").toLowerCase();
+      const bKey = (b.location || "").toLowerCase();
+      const cmp = aKey.localeCompare(bKey, undefined, { numeric: true });
+      return dir === "asc" ? cmp : -cmp;
+    });
+    setRows(sorted);
+    reorder.mutate({ orderedIds: sorted.map((r) => r.id) });
+  };
 
   const handleAllPass = useCallback(() => {
     if (isFinalized) return;
@@ -484,14 +497,30 @@ export function IndividualDeviceGrid({
     <div>
       <div className="flex items-center justify-between mb-1">
         <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
-        {!isFinalized && rows.length > 0 && (
-          <button
-            onClick={handleAllPass}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-          >
-            <CheckCheck className="h-3.5 w-3.5" /> All Pass
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!isFinalized && rows.length > 1 && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleSort("asc")}
+                className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "asc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                title="Sort A→Z by location"
+              >A→Z</button>
+              <button
+                onClick={() => handleSort("desc")}
+                className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "desc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                title="Sort Z→A by location"
+              >Z→A</button>
+            </div>
+          )}
+          {!isFinalized && rows.length > 0 && (
+            <button
+              onClick={handleAllPass}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+            >
+              <CheckCheck className="h-3.5 w-3.5" /> All Pass
+            </button>
+          )}
+        </div>
       </div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <div className="overflow-x-auto rounded-lg border">

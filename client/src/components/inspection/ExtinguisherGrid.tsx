@@ -75,7 +75,8 @@ export function ExtinguisherGrid({
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState<AddForm>({ location: "", deviceType: "Fire Extinguisher" });
-  const { rows, onDragEnd, sensors } = useDeviceReorder(devices, !!isFinalized);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+  const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -141,6 +142,18 @@ export function ExtinguisherGrid({
     toast.success(`Marked ${devices.length} extinguisher${devices.length !== 1 ? "s" : ""} as pass`);
   }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
 
+  const handleSort = (dir: "asc" | "desc") => {
+    setSortDir(dir);
+    const sorted = [...rows].sort((a, b) => {
+      const aKey = (a.location || "").toLowerCase();
+      const bKey = (b.location || "").toLowerCase();
+      const cmp = aKey.localeCompare(bKey, undefined, { numeric: true });
+      return dir === "asc" ? cmp : -cmp;
+    });
+    setRows(sorted);
+    reorder.mutate({ orderedIds: sorted.map((r) => r.id) });
+  };
+
   const handleAddSubmit = () => {
     if (!addForm.location.trim() && !addForm.deviceType.trim()) {
       toast.error("Location or device type required");
@@ -159,7 +172,21 @@ export function ExtinguisherGrid({
   return (
     <div>
       {!isFinalized && devices.length > 0 && (
-        <div className="flex justify-end mb-2">
+        <div className="flex items-center justify-end gap-2 mb-2">
+          {devices.length > 1 && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleSort("asc")}
+                className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "asc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                title="Sort A→Z by location"
+              >A→Z</button>
+              <button
+                onClick={() => handleSort("desc")}
+                className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "desc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                title="Sort Z→A by location"
+              >Z→A</button>
+            </div>
+          )}
           <button
             onClick={handleAllPass}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
