@@ -110,6 +110,10 @@ const deviceRouter = router({
     model: z.string().optional(),
     serialNumber: z.string().optional(),
     notes: z.string().optional(),
+    // Smoke alarm fields
+    deviceType: z.string().optional(),
+    powerType: z.enum(['hardwired', 'battery', 'sealed', 'unknown']).optional(),
+    suiteNumber: z.string().optional(),
     // Extinguisher fields
     mfgDate: z.string().optional(),
     lastHST: z.string().optional(),

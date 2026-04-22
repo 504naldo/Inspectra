@@ -31,5 +31,5 @@ export function useDeviceReorder<T extends { id: number }>(devices: T[], disable
     });
   };
 
-  return { rows, onDragEnd, sensors };
+  return { rows, setRows, onDragEnd, sensors, reorder };
 }
