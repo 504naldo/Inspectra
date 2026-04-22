@@ -352,7 +352,7 @@ export async function createDevice(data: InsertDevice) {
 export async function getDevicesBySite(siteId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true)));
+  return db.select().from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true))).orderBy(asc(devices.sortOrder), asc(devices.id));
 }
 
 export async function reorderDevices(orderedIds: number[]) {

@@ -1,9 +1,9 @@
 import { useState, useRef } from "react";
-import { Textarea } from "@/components/ui/textarea";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -38,7 +38,6 @@ export default function AdminSites() {
   const { user } = useAuth();
   const companyId = user?.companyId ?? 0;
 
-  // All hooks must be declared before any conditional return (rules of hooks)
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -66,27 +65,17 @@ export default function AdminSites() {
 
   const { data: sites, isLoading, refetch } = trpc.site.listByCompany.useQuery(
     { companyId },
-    { enabled: !!companyId },
+    { enabled: !!companyId }
   );
   const { data: customers } = trpc.customerOrg.list.useQuery(
     { companyId },
-    { enabled: !!companyId },
+    { enabled: !!companyId }
   );
   // Pre-fetch the customer records Drive root so the import picker opens there directly
   const { data: driveRoot } = trpc.customerRecords.getRootFolderId.useQuery(undefined, {
     staleTime: Infinity,
     retry: false,
   });
-
-  if (!user || !user.companyId) {
-    return (
-      <AdminLayout title="Sites">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <p className="text-muted-foreground">Loading session...</p>
-        </div>
-      </AdminLayout>
-    );
-  }
 
   const createSite = trpc.site.create.useMutation({
     onSuccess: () => {
@@ -131,6 +120,16 @@ export default function AdminSites() {
       toast.error(err.message || "Failed to extract data from PDF");
     },
   });
+
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout title="Sites">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p className="text-muted-foreground">Loading session...</p>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -424,7 +423,7 @@ export default function AdminSites() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => { setEditSite({...site}); setIsEditOpen(true); }}>
-                          <Building2 className="h-4 w-4 mr-2" />
+                          <KeyRound className="h-4 w-4 mr-2" />
                           Edit Site
                         </DropdownMenuItem>
                         <Link href={`/admin/sites/${site.id}/files`}>
@@ -466,130 +465,64 @@ export default function AdminSites() {
           </DialogHeader>
           {editSite && (
             <div className="space-y-4 py-2">
-
-              {/* Basic info */}
+              {/* Basic Info */}
               <div className="space-y-2">
                 <Label>Site Name *</Label>
-                <Input
-                  value={editSite.name ?? ""}
-                  onChange={(e) => setEditSite({ ...editSite, name: e.target.value })}
-                  placeholder="Site name"
-                />
+                <Input value={editSite.name ?? ""} onChange={(e) => setEditSite({ ...editSite, name: e.target.value })} placeholder="Site name" />
               </div>
               <div className="space-y-2">
                 <Label>Building ID <span className="text-muted-foreground text-xs">(file / account number)</span></Label>
-                <Input
-                  value={editSite.buildingId ?? ""}
-                  onChange={(e) => setEditSite({ ...editSite, buildingId: e.target.value })}
-                  placeholder="e.g. EWF-1234"
-                />
+                <Input value={editSite.buildingId ?? ""} onChange={(e) => setEditSite({ ...editSite, buildingId: e.target.value })} placeholder="e.g. EWF-1234" />
               </div>
 
               {/* Address */}
-              <div className="border-t pt-4 space-y-3">
-                <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <div className="border-t pt-3">
+                <p className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1">
                   <MapPin className="h-3 w-3" /> Address
                 </p>
                 <div className="space-y-2">
-                  <Input
-                    value={editSite.address ?? ""}
-                    onChange={(e) => setEditSite({ ...editSite, address: e.target.value })}
-                    placeholder="Street address"
-                  />
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">City</Label>
-                    <Input
-                      value={editSite.city ?? ""}
-                      onChange={(e) => setEditSite({ ...editSite, city: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">State / Province</Label>
-                    <Input
-                      value={editSite.state ?? ""}
-                      onChange={(e) => setEditSite({ ...editSite, state: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Postal Code</Label>
-                    <Input
-                      value={editSite.postalCode ?? ""}
-                      onChange={(e) => setEditSite({ ...editSite, postalCode: e.target.value })}
-                    />
+                  <Input value={editSite.address ?? ""} onChange={(e) => setEditSite({ ...editSite, address: e.target.value })} placeholder="Street address" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <Input value={editSite.city ?? ""} onChange={(e) => setEditSite({ ...editSite, city: e.target.value })} placeholder="City" />
+                    <Input value={editSite.state ?? ""} onChange={(e) => setEditSite({ ...editSite, state: e.target.value })} placeholder="Province" />
+                    <Input value={editSite.postalCode ?? ""} onChange={(e) => setEditSite({ ...editSite, postalCode: e.target.value })} placeholder="Postal Code" />
                   </div>
                 </div>
               </div>
 
               {/* Contact */}
-              <div className="border-t pt-4 space-y-3">
-                <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <div className="border-t pt-3">
+                <p className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1">
                   <Phone className="h-3 w-3" /> Contact
                 </p>
                 <div className="space-y-2">
-                  <Input
-                    value={editSite.contactName ?? ""}
-                    onChange={(e) => setEditSite({ ...editSite, contactName: e.target.value })}
-                    placeholder="Contact name"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    value={editSite.contactPhone ?? ""}
-                    onChange={(e) => setEditSite({ ...editSite, contactPhone: e.target.value })}
-                    placeholder="Phone"
-                  />
-                  <Input
-                    value={editSite.contactEmail ?? ""}
-                    onChange={(e) => setEditSite({ ...editSite, contactEmail: e.target.value })}
-                    placeholder="Email"
-                    type="email"
-                  />
+                  <Input value={editSite.contactName ?? ""} onChange={(e) => setEditSite({ ...editSite, contactName: e.target.value })} placeholder="Contact name" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input value={editSite.contactPhone ?? ""} onChange={(e) => setEditSite({ ...editSite, contactPhone: e.target.value })} placeholder="Phone" />
+                    <Input type="email" value={editSite.contactEmail ?? ""} onChange={(e) => setEditSite({ ...editSite, contactEmail: e.target.value })} placeholder="Email" />
+                  </div>
                 </div>
               </div>
 
               {/* Notes */}
-              <div className="border-t pt-4 space-y-2">
-                <Label>Notes</Label>
-                <Textarea
-                  value={editSite.notes ?? ""}
-                  onChange={(e) => setEditSite({ ...editSite, notes: e.target.value })}
-                  placeholder="Internal notes about this site"
-                  rows={3}
-                />
+              <div className="border-t pt-3">
+                <p className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                  <FileText className="h-3 w-3" /> Notes
+                </p>
+                <Textarea value={editSite.notes ?? ""} onChange={(e) => setEditSite({ ...editSite, notes: e.target.value })} placeholder="Internal notes…" rows={2} />
               </div>
 
               {/* Key Tracking */}
-              <div className="border-t pt-4 space-y-3">
-                <p className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+              <div className="border-t pt-3">
+                <p className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1">
                   <Key className="h-3 w-3" /> Key Tracking
                 </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Key Location</Label>
-                    <Input
-                      value={editSite.keyLocation ?? ""}
-                      onChange={(e) => setEditSite({ ...editSite, keyLocation: e.target.value })}
-                      placeholder="e.g. Lockbox at front"
-                    />
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input value={editSite.keyLocation ?? ""} onChange={(e) => setEditSite({ ...editSite, keyLocation: e.target.value })} placeholder="Key location" />
+                    <Input value={editSite.keyNumber ?? ""} onChange={(e) => setEditSite({ ...editSite, keyNumber: e.target.value })} placeholder="Key number" />
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Key Number</Label>
-                    <Input
-                      value={editSite.keyNumber ?? ""}
-                      onChange={(e) => setEditSite({ ...editSite, keyNumber: e.target.value })}
-                      placeholder="e.g. K-042"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Signed Out By <span className="text-muted-foreground">(leave blank to clear)</span></Label>
-                  <Input
-                    value={editSite.keySignedOutBy ?? ""}
-                    onChange={(e) => setEditSite({ ...editSite, keySignedOutBy: e.target.value })}
-                    placeholder="Technician name"
-                  />
+                  <Input value={editSite.keySignedOutBy ?? ""} onChange={(e) => setEditSite({ ...editSite, keySignedOutBy: e.target.value })} placeholder="Signed out by (leave blank to clear)" />
                 </div>
               </div>
 
@@ -611,9 +544,9 @@ export default function AdminSites() {
                   keyNumber: editSite.keyNumber || undefined,
                   keySignedOutBy: editSite.keySignedOutBy || undefined,
                 })}
-                disabled={updateSite.isPending}
+                disabled={updateSite.isPending || !editSite.name?.trim()}
               >
-                {updateSite.isPending ? "Saving..." : "Save Changes"}
+                {updateSite.isPending ? "Saving..." : "Save Site"}
               </Button>
             </div>
           )}

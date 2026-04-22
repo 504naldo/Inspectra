@@ -2,8 +2,12 @@ import { useState, useCallback, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronUp, CheckCheck, Trash2, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, CheckCheck, Trash2, Plus, GripVertical } from "lucide-react";
 import { useIsMobile } from "@/hooks/useMobile";
+import { DndContext, closestCenter } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useDeviceReorder } from "./useDeviceReorder";
+import { SortableRow } from "./SortableRow";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -293,6 +297,7 @@ export function IndividualDeviceGrid({
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ location: "", deviceType: "Smoke Detector" });
+  const { rows, onDragEnd, sensors } = useDeviceReorder(devices, !!isFinalized);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save"),
@@ -479,7 +484,7 @@ export function IndividualDeviceGrid({
     <div>
       <div className="flex items-center justify-between mb-1">
         <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
-        {!isFinalized && devices.length > 0 && (
+        {!isFinalized && rows.length > 0 && (
           <button
             onClick={handleAllPass}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
@@ -488,6 +493,7 @@ export function IndividualDeviceGrid({
           </button>
         )}
       </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-xs border-collapse">
           <thead>
@@ -509,7 +515,8 @@ export function IndividualDeviceGrid({
             </tr>
           </thead>
           <tbody>
-            {devices.map((device, idx) => {
+            <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+            {rows.map((device, idx) => {
               const checks = getChecks(device);
               const result = computeResult(checks);
               const rowBg =
@@ -520,9 +527,15 @@ export function IndividualDeviceGrid({
                   : "";
 
               return (
-                <tr key={device.id} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+                <SortableRow key={device.id} id={device.id} disabled={!!isFinalized} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+                  {(dragHandleProps) => (<>
                   {/* # + delete */}
                   <td className="px-1 py-1 text-center text-muted-foreground border-r font-mono">
+                    {!isFinalized && (
+                      <button {...dragHandleProps} className="block mx-auto text-muted-foreground/30 hover:text-muted-foreground cursor-grab active:cursor-grabbing" title="Drag to reorder">
+                        <GripVertical className="h-3 w-3" />
+                      </button>
+                    )}
                     <span className="block leading-none">{idx + 1}</span>
                     {carriedForwardDeviceIds?.has(device.id) && (
                       <span className="block text-[9px] font-semibold uppercase tracking-wide text-blue-600 leading-none mt-0.5">carried</span>
@@ -601,9 +614,11 @@ export function IndividualDeviceGrid({
                       placeholder="—"
                     />
                   </td>
-                </tr>
+                </>)}
+                </SortableRow>
               );
             })}
+            </SortableContext>
 
             {/* Add row */}
             {!isFinalized && showAddRow && (
@@ -630,6 +645,7 @@ export function IndividualDeviceGrid({
           </tbody>
         </table>
       </div>
+      </DndContext>
 
       {!isFinalized && (
         <div className="mt-2">

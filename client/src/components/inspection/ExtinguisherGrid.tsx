@@ -3,7 +3,11 @@ import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { CheckCheck, Trash2, Plus } from "lucide-react";
+import { CheckCheck, Trash2, Plus, GripVertical } from "lucide-react";
+import { DndContext, closestCenter } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useDeviceReorder } from "./useDeviceReorder";
+import { SortableRow } from "./SortableRow";
 
 interface ExtinguisherRow {
   id: number;
@@ -71,6 +75,7 @@ export function ExtinguisherGrid({
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState<AddForm>({ location: "", deviceType: "Fire Extinguisher" });
+  const { rows, onDragEnd, sensors } = useDeviceReorder(devices, !!isFinalized);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -163,6 +168,7 @@ export function ExtinguisherGrid({
           </button>
         </div>
       )}
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full text-xs border-collapse">
         <thead>
@@ -183,7 +189,8 @@ export function ExtinguisherGrid({
           </tr>
         </thead>
         <tbody>
-          {devices.map((device, idx) => {
+          <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+          {rows.map((device, idx) => {
             const result = getEffectiveResult(device);
             const rowBg =
               result === "pass"
@@ -193,9 +200,15 @@ export function ExtinguisherGrid({
                 : "";
 
             return (
-              <tr key={device.id} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+              <SortableRow key={device.id} id={device.id} disabled={!!isFinalized} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+                {(dragHandleProps) => (<>
                 {/* # + delete */}
                 <td className="sticky left-0 bg-inherit px-1 py-1 text-center text-muted-foreground border-r font-mono w-10">
+                  {!isFinalized && (
+                    <button {...dragHandleProps} className="block mx-auto text-muted-foreground/30 hover:text-muted-foreground cursor-grab active:cursor-grabbing" title="Drag to reorder">
+                      <GripVertical className="h-3 w-3" />
+                    </button>
+                  )}
                   <span className="block leading-none">{idx + 1}</span>
                   {carriedForwardDeviceIds?.has(device.id) && (
                     <span className="block text-[9px] font-semibold uppercase tracking-wide text-blue-600 leading-none mt-0.5">carried</span>
@@ -263,9 +276,11 @@ export function ExtinguisherGrid({
                     size="sm"
                   />
                 </td>
-              </tr>
+              </>)}
+              </SortableRow>
             );
           })}
+          </SortableContext>
 
           {/* Add row */}
           {!isFinalized && showAddRow && (
@@ -299,6 +314,7 @@ export function ExtinguisherGrid({
         </tbody>
       </table>
     </div>
+    </DndContext>
 
     {/* Add Device button */}
     {!isFinalized && (
