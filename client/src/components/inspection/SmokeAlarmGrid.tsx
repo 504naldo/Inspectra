@@ -257,6 +257,18 @@ export function SmokeAlarmGrid({
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
   const [localMeta, setLocalMeta] = useState<Record<number, LocalMeta>>({});
+  const {
+    queueChange: queuePendingDeviceChange,
+    clearChanges: clearPendingDeviceChanges,
+    hasUnsavedChanges: hasPendingDeviceChanges,
+    pendingChanges: pendingDeviceChanges,
+  } = useSectionPendingChanges();
+  const {
+    queueChange: queuePendingResultChange,
+    clearChanges: clearPendingResultChanges,
+    hasUnsavedChanges: hasPendingResultChanges,
+    pendingChanges: pendingResultChanges,
+  } = useSectionPendingChanges();
   const [legendOpen, setLegendOpen] = useState(false);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -326,10 +338,10 @@ export function SmokeAlarmGrid({
   const handleResultChange = useCallback(
     (deviceId: number, result: InspectionResult) => {
       setLocalResults((prev) => ({ ...prev, [deviceId]: result }));
-      upsertResult.mutate({ jobId, deviceId, result });
+      queuePendingResultChange(deviceId, "result", result);
       onResultChange?.(deviceId, result);
     },
-    [jobId, upsertResult, onResultChange]
+    [queuePendingResultChange, onResultChange]
   );
 
   const updateLocalRow = (id: number, updates: Partial<SmokeAlarmRow>) => {
@@ -353,6 +365,35 @@ export function SmokeAlarmGrid({
     updateDevice.mutate(payload as Parameters<typeof updateDevice.mutate>[0]);
     setEditing(null);
   };
+
+  const handleSaveSection = useCallback(async () => {
+    try {
+      const deviceSaveTasks = Object.entries(pendingDeviceChanges).map(([id, changeSet]) =>
+        updateDevice.mutateAsync({ id: Number(id), ...(changeSet as Record<string, unknown>) })
+      );
+      const resultSaveTasks = Object.entries(pendingResultChanges).map(([id, changeSet]) =>
+        upsertResult.mutateAsync({
+          jobId,
+          deviceId: Number(id),
+          result: changeSet.result as InspectionResult,
+        })
+      );
+      await Promise.all([...deviceSaveTasks, ...resultSaveTasks]);
+      clearPendingDeviceChanges();
+      clearPendingResultChanges();
+      toast.success("Smoke alarm changes saved");
+    } catch {
+      toast.error("Failed to save smoke alarm changes");
+    }
+  }, [
+    pendingDeviceChanges,
+    pendingResultChanges,
+    updateDevice,
+    upsertResult,
+    jobId,
+    clearPendingDeviceChanges,
+    clearPendingResultChanges,
+  ]);
 
   const handleBatteryReplacedToggle = (device: SmokeAlarmRow) => {
     if (isFinalized) return;
@@ -586,7 +627,10 @@ export function SmokeAlarmGrid({
                         value={battTypeVal}
                         disabled={isFinalized}
                         onChange={(e) => {
-                          updateDevice.mutate({ id: device.id, batterySize: e.target.value || undefined });
+                          const nextVal = e.target.value || undefined;
+                          updateLocalRow(device.id, { batterySize: e.target.value });
+                          setLocalDeviceEdits((prev) => ({ ...prev, [device.id]: { ...(prev[device.id] ?? {}), batterySize: nextVal } }));
+                          queuePendingDeviceChange(device.id, "batterySize", nextVal);
                         }}
                       >
                         <option value="">—</option>
@@ -604,7 +648,12 @@ export function SmokeAlarmGrid({
                         className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
                         defaultValue={device.batteryCount ?? ""}
                         disabled={isFinalized}
-                        onBlur={(e) => updateDevice.mutate({ id: device.id, batteryCount: e.target.value ? Number(e.target.value) : undefined })}
+                        onBlur={(e) => {
+                          const nextVal = e.target.value ? Number(e.target.value) : undefined;
+                          updateLocalRow(device.id, { batteryCount: nextVal });
+                          setLocalDeviceEdits((prev) => ({ ...prev, [device.id]: { ...(prev[device.id] ?? {}), batteryCount: nextVal } }));
+                          queuePendingDeviceChange(device.id, "batteryCount", nextVal);
+                        }}
                       />
                     </div>
                   </div>
@@ -631,7 +680,12 @@ export function SmokeAlarmGrid({
                         className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
                         defaultValue={inServiceVal}
                         disabled={isFinalized}
-                        onBlur={(e) => updateDevice.mutate({ id: device.id, batteryYear: e.target.value || undefined })}
+                        onBlur={(e) => {
+                          const nextVal = e.target.value || undefined;
+                          updateLocalRow(device.id, { batteryYear: e.target.value });
+                          setLocalDeviceEdits((prev) => ({ ...prev, [device.id]: { ...(prev[device.id] ?? {}), batteryYear: nextVal } }));
+                          queuePendingDeviceChange(device.id, "batteryYear", nextVal);
+                        }}
                       />
                     </div>
                   </div>

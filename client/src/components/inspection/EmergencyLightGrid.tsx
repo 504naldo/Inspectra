@@ -111,10 +111,10 @@ export function EmergencyLightGrid({
   const handleResultChange = useCallback(
     (deviceId: number, result: InspectionResult) => {
       setLocalResults((prev) => ({ ...prev, [deviceId]: result }));
-      upsertResult.mutate({ jobId, deviceId, result });
+      queuePendingResultChange(deviceId, "result", result);
       onResultChange?.(deviceId, result);
     },
-    [jobId, upsertResult, onResultChange]
+    [queuePendingResultChange, onResultChange]
   );
 
   const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
@@ -135,6 +135,35 @@ export function EmergencyLightGrid({
     setEditing(null);
   };
 
+  const handleSaveSection = useCallback(async () => {
+    try {
+      const deviceSaveTasks = Object.entries(pendingDeviceChanges).map(([id, changeSet]) =>
+        updateDevice.mutateAsync({ id: Number(id), ...(changeSet as Record<string, unknown>) })
+      );
+      const resultSaveTasks = Object.entries(pendingResultChanges).map(([id, changeSet]) =>
+        upsertResult.mutateAsync({
+          jobId,
+          deviceId: Number(id),
+          result: changeSet.result as InspectionResult,
+        })
+      );
+      await Promise.all([...deviceSaveTasks, ...resultSaveTasks]);
+      clearPendingDeviceChanges();
+      clearPendingResultChanges();
+      toast.success("Emergency light changes saved");
+    } catch {
+      toast.error("Failed to save emergency light changes");
+    }
+  }, [
+    pendingDeviceChanges,
+    pendingResultChanges,
+    updateDevice,
+    upsertResult,
+    jobId,
+    clearPendingDeviceChanges,
+    clearPendingResultChanges,
+  ]);
+
   const getEffectiveResult = (device: EmergencyLightRow): InspectionResult => {
     return localResults[device.id] ?? device.result ?? "not_tested";
   };
@@ -145,11 +174,11 @@ export function EmergencyLightGrid({
     devices.forEach((d) => { updates[d.id] = "pass"; });
     setLocalResults((prev) => ({ ...prev, ...updates }));
     devices.forEach((d) => {
-      upsertResult.mutate({ jobId, deviceId: d.id, result: "pass" });
+      queuePendingResultChange(d.id, "result", "pass");
       onResultChange?.(d.id, "pass");
     });
     toast.success(`Marked ${devices.length} emergency light${devices.length !== 1 ? "s" : ""} as pass`);
-  }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
+  }, [devices, isFinalized, queuePendingResultChange, onResultChange]);
 
   const handleSort = (dir: "asc" | "desc") => {
     setSortDir(dir);
@@ -266,7 +295,7 @@ export function EmergencyLightGrid({
                 {(["location", "deviceType", "manufacturer", "model", "supplyVoltage", "modelWattage", "batteryYear", "batterySize", "batteryCount", "lampCount"] as const).map(
                   (field) => {
                     const isEditing = editing?.deviceId === device.id && editing?.field === field;
-                    const raw = (device as any)[field];
+                    const raw = localDeviceEdits[device.id]?.[field as keyof EmergencyLightRow] ?? (device as any)[field];
                     const value = raw != null ? String(raw) : "";
                     const isReadOnly = field === "deviceType";
 
