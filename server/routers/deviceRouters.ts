@@ -127,8 +127,22 @@ const deviceRouter = router({
     batteryCount: z.number().optional(),
     lampCount: z.number().optional(),
   })).mutation(async ({ input }) => {
-    const { id, ...data } = input;
-    await db.updateDevice(id, data);
+    const { id, ...rawData } = input;
+
+    // Normalize payload so cleared text fields (empty string) persist as NULL.
+    // Also drop undefined keys so we don't generate no-op/invalid updates.
+    const data: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rawData)) {
+      if (value === undefined) continue;
+      data[key] = typeof value === "string" && value === "" ? null : value;
+    }
+
+    // If nothing was provided (or all values were undefined), treat as no-op.
+    if (Object.keys(data).length === 0) {
+      return { success: true };
+    }
+
+    await db.updateDevice(id, data as any);
     return { success: true };
   }),
 
