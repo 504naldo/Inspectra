@@ -3,8 +3,12 @@ import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Info, CheckCheck, Trash2, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, CheckCheck, Trash2, Plus, GripVertical } from "lucide-react";
 import { useIsMobile } from "@/hooks/useMobile";
+import { DndContext, closestCenter } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useDeviceReorder } from "./useDeviceReorder";
+import { SortableRow } from "./SortableRow";
 
 // ─── Legend data ────────────────────────────────────────────────────────────
 
@@ -59,6 +63,16 @@ function powerTypeToCode(powerType?: string | null): string {
     case "sealed":
     case "unknown":   return "DU";
     default:          return "";
+  }
+}
+
+// Power Source code → powerType
+function codeToPowerType(code: string): "hardwired" | "battery" | "sealed" | undefined {
+  switch (code) {
+    case "AC": return "hardwired";
+    case "BA": return "battery";
+    case "DU": return "sealed";
+    default:   return undefined;
   }
 }
 
