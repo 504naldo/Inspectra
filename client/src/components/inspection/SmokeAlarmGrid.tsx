@@ -253,6 +253,7 @@ export function SmokeAlarmGrid({
 }: SmokeAlarmGridProps) {
   const isMobile = useIsMobile();
   const [editing, setEditing] = useState<EditState | null>(null);
+  const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
   const [localMeta, setLocalMeta] = useState<Record<number, LocalMeta>>({});
   const [legendOpen, setLegendOpen] = useState(false);
@@ -314,6 +315,10 @@ export function SmokeAlarmGrid({
     [jobId, upsertResult, onResultChange]
   );
 
+  const updateLocalRow = (id: number, updates: Partial<SmokeAlarmRow>) => {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
+  };
+
   const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
     if (isFinalized) return;
     setEditing({ deviceId, field, value: currentValue });
@@ -358,19 +363,19 @@ export function SmokeAlarmGrid({
     return "";
   };
 
-  const completed = devices.filter((d) => getEffectiveResult(d) !== "not_tested").length;
+  const completed = rows.filter((d) => getEffectiveResult(d) !== "not_tested").length;
 
   const handleAllPass = useCallback(() => {
     if (isFinalized) return;
     const updates: Record<number, InspectionResult> = {};
-    devices.forEach((d) => { updates[d.id] = "pass"; });
+    rows.forEach((d) => { updates[d.id] = "pass"; });
     setLocalResults((prev) => ({ ...prev, ...updates }));
-    devices.forEach((d) => {
+    rows.forEach((d) => {
       upsertResult.mutate({ jobId, deviceId: d.id, result: "pass" });
       onResultChange?.(d.id, "pass");
     });
-    toast.success(`Marked ${devices.length} smoke alarm${devices.length !== 1 ? "s" : ""} as pass`);
-  }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
+    toast.success(`Marked ${rows.length} smoke alarm${rows.length !== 1 ? "s" : ""} as pass`);
+  }, [rows, isFinalized, jobId, upsertResult, onResultChange]);
 
   // ── Header bar ─────────────────────────────────────────────────────────────
   const header = (
@@ -381,9 +386,9 @@ export function SmokeAlarmGrid({
         </p>
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground">
-            {completed} / {devices.length} tested
+            {completed} / {rows.length} tested
           </span>
-          {!isFinalized && devices.length > 0 && (
+          {!isFinalized && rows.length > 0 && (
             <button
               onClick={handleAllPass}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
@@ -402,10 +407,10 @@ export function SmokeAlarmGrid({
     return (
       <div className="space-y-3">
         {header}
-        {devices.length === 0 && !showAddRow && (
+        {rows.length === 0 && !showAddRow && (
           <p className="text-center py-6 text-sm text-muted-foreground">No smoke alarms for this site</p>
         )}
-        {devices.map((device) => {
+        {rows.map((device) => {
           const result = getEffectiveResult(device);
           const meta = localMeta[device.id] ?? {};
           const isExpanded = expandedRow === device.id;
