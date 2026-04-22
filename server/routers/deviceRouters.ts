@@ -106,6 +106,9 @@ const deviceRouter = router({
     circuitAddress: z.string().optional(),
     zone: z.string().optional(),
     location: z.string().optional(),
+    manufacturer: z.string().optional(),
+    model: z.string().optional(),
+    serialNumber: z.string().optional(),
     notes: z.string().optional(),
     // Extinguisher fields
     mfgDate: z.string().optional(),
