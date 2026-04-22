@@ -3,8 +3,11 @@ import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { CheckCheck, Trash2, Plus } from "lucide-react";
-import { useSectionPendingChanges } from "./useSectionPendingChanges";
+import { CheckCheck, Trash2, Plus, GripVertical } from "lucide-react";
+import { DndContext, closestCenter } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useDeviceReorder } from "./useDeviceReorder";
+import { SortableRow } from "./SortableRow";
 
 interface EmergencyLightRow {
   id: number;
@@ -75,19 +78,8 @@ export function EmergencyLightGrid({
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ location: "", deviceType: "Emergency Light" });
-  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<EmergencyLightRow>>>({});
-  const {
-    queueChange: queuePendingDeviceChange,
-    clearChanges: clearPendingDeviceChanges,
-    hasUnsavedChanges: hasPendingDeviceChanges,
-    pendingChanges: pendingDeviceChanges,
-  } = useSectionPendingChanges();
-  const {
-    queueChange: queuePendingResultChange,
-    clearChanges: clearPendingResultChanges,
-    hasUnsavedChanges: hasPendingResultChanges,
-    pendingChanges: pendingResultChanges,
-  } = useSectionPendingChanges();
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+  const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -134,12 +126,12 @@ export function EmergencyLightGrid({
     if (!editing) return;
     const { deviceId, field, value } = editing;
     const numericFields = ["batteryCount", "lampCount"];
-    const fieldValue = numericFields.includes(field) ? (value === "" ? undefined : Number(value) || undefined) : value;
-    setLocalDeviceEdits((prev) => ({
-      ...prev,
-      [deviceId]: { ...(prev[deviceId] ?? {}), [field]: fieldValue },
-    }));
-    queuePendingDeviceChange(deviceId, field, fieldValue);
+    // For text fields, keep empty string so clears are explicit and persisted.
+    // For numeric fields, preserve prior behavior (empty => undefined/no-op).
+    const fieldValue = numericFields.includes(field)
+      ? (value === "" ? undefined : Number(value) || undefined)
+      : value;
+    updateDevice.mutate({ id: deviceId, [field]: fieldValue } as Parameters<typeof updateDevice.mutate>[0]);
     setEditing(null);
   };
 
@@ -188,6 +180,18 @@ export function EmergencyLightGrid({
     toast.success(`Marked ${devices.length} emergency light${devices.length !== 1 ? "s" : ""} as pass`);
   }, [devices, isFinalized, queuePendingResultChange, onResultChange]);
 
+  const handleSort = (dir: "asc" | "desc") => {
+    setSortDir(dir);
+    const sorted = [...rows].sort((a, b) => {
+      const aKey = (a.location || "").toLowerCase();
+      const bKey = (b.location || "").toLowerCase();
+      const cmp = aKey.localeCompare(bKey, undefined, { numeric: true });
+      return dir === "asc" ? cmp : -cmp;
+    });
+    setRows(sorted);
+    reorder.mutate({ orderedIds: sorted.map((r) => r.id) });
+  };
+
   const handleAddSubmit = () => {
     if (!addForm.location.trim() && !addForm.deviceType.trim()) {
       toast.error("Location or device type required");
@@ -206,14 +210,21 @@ export function EmergencyLightGrid({
   return (
     <div>
       {!isFinalized && devices.length > 0 && (
-        <div className="flex justify-end gap-2 mb-2">
-          <button
-            onClick={handleSaveSection}
-            disabled={!hasPendingDeviceChanges && !hasPendingResultChanges}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Save
-          </button>
+        <div className="flex items-center justify-end gap-2 mb-2">
+          {devices.length > 1 && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleSort("asc")}
+                className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "asc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                title="Sort A→Z by location"
+              >A→Z</button>
+              <button
+                onClick={() => handleSort("desc")}
+                className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "desc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                title="Sort Z→A by location"
+              >Z→A</button>
+            </div>
+          )}
           <button
             onClick={handleAllPass}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
@@ -222,6 +233,7 @@ export function EmergencyLightGrid({
           </button>
         </div>
       )}
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full text-xs border-collapse">
         <thead>
@@ -242,7 +254,8 @@ export function EmergencyLightGrid({
           </tr>
         </thead>
         <tbody>
-          {devices.map((device, idx) => {
+          <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+          {rows.map((device, idx) => {
             const result = getEffectiveResult(device);
             const rowBg =
               result === "pass"
@@ -252,9 +265,15 @@ export function EmergencyLightGrid({
                 : "";
 
             return (
-              <tr key={device.id} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+              <SortableRow key={device.id} id={device.id} disabled={!!isFinalized} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+                {(dragHandleProps) => (<>
                 {/* # + delete */}
                 <td className="sticky left-0 bg-inherit px-1 py-1 text-center text-muted-foreground border-r font-mono w-10">
+                  {!isFinalized && (
+                    <button {...dragHandleProps} className="block mx-auto text-muted-foreground/30 hover:text-muted-foreground cursor-grab active:cursor-grabbing" title="Drag to reorder">
+                      <GripVertical className="h-3 w-3" />
+                    </button>
+                  )}
                   <span className="block leading-none">{idx + 1}</span>
                   {carriedForwardDeviceIds?.has(device.id) && (
                     <span className="block text-[9px] font-semibold uppercase tracking-wide text-blue-600 leading-none mt-0.5">carried</span>
@@ -324,9 +343,11 @@ export function EmergencyLightGrid({
                     size="sm"
                   />
                 </td>
-              </tr>
+              </>)}
+              </SortableRow>
             );
           })}
+          </SortableContext>
 
           {/* Add row */}
           {!isFinalized && showAddRow && (
@@ -354,6 +375,7 @@ export function EmergencyLightGrid({
         </tbody>
       </table>
     </div>
+    </DndContext>
 
     {/* Add Device button */}
     {!isFinalized && (

@@ -129,17 +129,24 @@ const repairRouter = router({
     description: z.string().optional(),
     partsUsed: z.string().optional(),
     laborHours: z.number().optional(),
-  })).mutation(async ({ input }) => {
-    const { id, status, ...data } = input;
-    const updateData: any = { ...data };
-    if (status) {
-      updateData.status = status;
-      if (status === 'completed') {
-        updateData.completedAt = new Date();
+  })).mutation(async ({ input, ctx }) => {
+    const repair = await db.getRepairById(input.id);
+    if (!repair) throw new TRPCError({ code: 'NOT_FOUND', message: 'Repair not found' });
+    const deficiency = await db.getDeficiencyById(repair.deficiencyId);
+    if (!deficiency) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deficiency not found' });
+    return withAudit(ctx, 'repair.update', async (_tx) => {
+      await assertJobNotFinalized(deficiency.jobId, _tx);
+      const { id, status, ...data } = input;
+      const updateData: any = { ...data };
+      if (status) {
+        updateData.status = status;
+        if (status === 'completed') {
+          updateData.completedAt = new Date();
+        }
       }
-    }
-    await db.updateRepair(id, updateData);
-    return { success: true };
+      await db.updateRepair(id, updateData);
+      return { success: true };
+    });
   }),
 });
 

@@ -1,303 +1,450 @@
-#!/usr/bin/env tsx
-import fs from "fs";
-import path from "path";
-import * as XLSX from "xlsx";
-import * as db from "../server/db.js";
+/**
+ * scripts/seedMonthlyTracking.ts
+ *
+ * Bulk seed monthly_service_tracking from the monthly service list workbook.
+ *
+ * Prerequisites:
+ *   1. Run scripts/backfillSiteBuildingIds.ts first to populate sites.buildingId.
+ *   2. Then run this script to seed tracking rows.
+ *
+ * Site matching: FILE # column → sites.buildingId  (normalized, e.g. "#0007" → "7")
+ * This uses the same normBldg() logic as serviceScheduleRouter.ts.
+ *
+ * Usage:
+ *   # Dry run all monthly sheets
+ *   pnpm exec tsx scripts/seedMonthlyTracking.ts \
+ *     --file "./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx" \
+ *     --company 1 --all-sheets --dry-run
+ *
+ *   # Live run
+ *   pnpm exec tsx scripts/seedMonthlyTracking.ts \
+ *     --file "./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx" \
+ *     --company 1 --all-sheets
+ *
+ *   # Single month
+ *   pnpm exec tsx scripts/seedMonthlyTracking.ts \
+ *     --file "..." --company 1 --month 2026-04
+ *
+ *   # Override seeding year (default 2026)
+ *   pnpm exec tsx scripts/seedMonthlyTracking.ts \
+ *     --file "..." --company 1 --all-sheets --year 2026
+ *
+ * Sheet → month mapping (for --year 2026):
+ *   JAN→2026-01, FEB→2026-02, ..., DEC→2026-12
+ *   SPRING → skipped (seasonal, not a fixed calendar month)
+ *   WINTER → skipped (empty in workbook)
+ *
+ * Duplicate prevention:
+ *   Skips any row where (siteId, serviceType, trackingMonth) already exists.
+ *   Safe to rerun.
+ *
+ * Each sheet is processed in its own try/catch — one bad sheet does not abort others.
+ * All unmatched FILE # values are logged at the end.
+ */
 
-const SUPPORTED_EXTS = new Set([".xlsx", ".xls", ".xlsm", ".csv"]);
+import XLSX from 'xlsx';
+import { drizzle } from 'drizzle-orm/mysql2';
+import { eq, and } from 'drizzle-orm';
+import * as schema from '../drizzle/schema.js';
+import { config } from 'dotenv';
+import path from 'path';
 
-type CliArgs = {
-  file?: string;
-  dir?: string;
-  month?: string;
-  company?: number;
-  dryRun: boolean;
-  headerRow: number;
-};
+config();
 
-type SeedSummary = {
-  created: number;
-  skippedDuplicates: number;
-  unmatched: number;
-  errors: number;
-  processedRows: number;
-};
+// ─── Normalization ────────────────────────────────────────────────────────────
 
-const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
-const normBldg = (s: string): string => {
-  const cleaned = norm(s);
-  return /^\d+$/.test(cleaned) ? String(parseInt(cleaned, 10)) : cleaned;
-};
-
-function usageAndExit(message?: string): never {
-  if (message) console.error(`\nError: ${message}\n`);
-  console.log(`Usage:
-  tsx scripts/seedMonthlyTracking.ts --file path/to/file.xlsx --month 2026-04 --company 1 --dry-run
-  tsx scripts/seedMonthlyTracking.ts --file path/to/file.xlsx --month 2026-04 --company 1
-  tsx scripts/seedMonthlyTracking.ts --dir path/to/folder --month 2026-04 --company 1
-
-Options:
-  --file <path>       Single source file (.xlsx/.xls/.xlsm/.csv)
-  --dir <path>        Folder containing source files
-  --month <YYYY-MM>   Target tracking month
-  --company <id>      Company ID
-  --dry-run           Parse + match + duplicate-check without inserts
-  --header-row <n>    Header row index (0-based, default: 0)
-`);
-  process.exit(1);
+/**
+ * Normalize a building/file ID — mirrors serviceScheduleRouter.normBldg().
+ * "#0007" → "7", "#0330-1" → "3301" ... no: keep as-is after stripping non-alnum.
+ * Actually: strip non-alnum, lowercase; if purely numeric strip leading zeros.
+ */
+function normBldg(s: string): string {
+  const a = s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return /^\d+$/.test(a) ? String(parseInt(a, 10)) : a;
 }
 
-function parseArgs(argv: string[]): CliArgs {
-  const out: CliArgs = { dryRun: false, headerRow: 0 };
-
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--dry-run") {
-      out.dryRun = true;
-      continue;
-    }
-    if (a === "--file") out.file = argv[++i];
-    else if (a === "--dir") out.dir = argv[++i];
-    else if (a === "--month") out.month = argv[++i];
-    else if (a === "--company") out.company = Number(argv[++i]);
-    else if (a === "--header-row") out.headerRow = Number(argv[++i]);
-    else usageAndExit(`Unknown argument: ${a}`);
-  }
-
-  if (!out.file && !out.dir) usageAndExit("Provide either --file or --dir");
-  if (out.file && out.dir) usageAndExit("Use either --file or --dir, not both");
-  if (!out.month || !/^\d{4}-\d{2}$/.test(out.month)) usageAndExit("--month must be YYYY-MM");
-  if (!out.company || !Number.isInteger(out.company) || out.company <= 0) usageAndExit("--company must be a positive integer");
-  if (!Number.isInteger(out.headerRow) || out.headerRow < 0) usageAndExit("--header-row must be a non-negative integer");
-
-  return out;
+/** Normalize a header string for column detection */
+function normHeader(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-function resolveFiles(args: CliArgs): string[] {
-  if (args.file) {
-    const full = path.resolve(args.file);
-    if (!fs.existsSync(full)) usageAndExit(`File not found: ${full}`);
-    const ext = path.extname(full).toLowerCase();
-    if (!SUPPORTED_EXTS.has(ext)) usageAndExit(`Unsupported file extension: ${ext}`);
-    return [full];
-  }
-
-  const dir = path.resolve(args.dir!);
-  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) usageAndExit(`Directory not found: ${dir}`);
-
-  const files = fs
-    .readdirSync(dir)
-    .map((n) => path.join(dir, n))
-    .filter((p) => fs.statSync(p).isFile())
-    .filter((p) => SUPPORTED_EXTS.has(path.extname(p).toLowerCase()));
-
-  if (files.length === 0) usageAndExit(`No supported files found in ${dir}`);
-  return files.sort((a, b) => a.localeCompare(b));
-}
+// ─── Column detection ─────────────────────────────────────────────────────────
 
 function findCol(headers: string[], ...keywords: string[]): number {
-  const normalizedHeaders = headers.map((h) => norm(h));
-  const normalizedKeywords = keywords.map((k) => norm(k));
-  return normalizedHeaders.findIndex((h) => normalizedKeywords.some((k) => h.includes(k)));
+  return headers.findIndex(h => keywords.some(k => normHeader(h).includes(normHeader(k))));
 }
 
-function parseCellDate(value: unknown): Date | undefined {
-  if (value == null || value === "") return undefined;
+// ─── Sheet/month config ───────────────────────────────────────────────────────
 
-  if (value instanceof Date && !isNaN(value.getTime())) return value;
+const SKIP_SHEETS = new Set(['SPRING', 'WINTER']);
 
-  if (typeof value === "number") {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (!parsed) return undefined;
-    return new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d));
+function buildSheetMonthMap(year: number): Record<string, string> {
+  return {
+    JAN: `${year}-01`, FEB: `${year}-02`, MAR: `${year}-03`, APR: `${year}-04`,
+    MAY: `${year}-05`, JUN: `${year}-06`, JUL: `${year}-07`, AUG: `${year}-08`,
+    SEP: `${year}-09`, OCT: `${year}-10`, NOV: `${year}-11`, DEC: `${year}-12`,
+  };
+}
+
+// ─── Value helpers ────────────────────────────────────────────────────────────
+
+function toBoolean(val: unknown): boolean | null {
+  if (val == null || val === '') return null;
+  const s = String(val).trim().toLowerCase();
+  if (s === 'yes' || s === 'y' || s === '1' || s === 'true') return true;
+  if (s === 'no'  || s === 'n' || s === '0' || s === 'false') return false;
+  return null;
+}
+
+function toDecimal(val: unknown): string | null {
+  if (val == null || val === '') return null;
+  const n = parseFloat(String(val));
+  return isNaN(n) ? null : String(n);
+}
+
+function toInt(val: unknown): number | null {
+  if (val == null || val === '') return null;
+  const n = parseInt(String(val), 10);
+  return isNaN(n) ? null : n;
+}
+
+function cellToString(val: unknown): string | null {
+  if (val == null || val === '') return null;
+  if (val instanceof Date) {
+    const mon = val.toLocaleString('en-US', { month: 'short' });
+    const day = String(val.getDate()).padStart(2, '0');
+    const yr  = String(val.getFullYear()).slice(-2);
+    return `${mon}.${day}/${yr}`;
+  }
+  const s = String(val).trim();
+  return s || null;
+}
+
+/**
+ * Detect the header row index within the first 5 rows.
+ * Returns the first row that contains "file" in any cell.
+ * Defaults to index 1 (second row) — the "title + header" pattern.
+ */
+function detectHeaderRow(rows: unknown[][]): number {
+  for (let i = 0; i < Math.min(5, rows.length); i++) {
+    const cells = (rows[i] as unknown[]).map(c => String(c ?? '').toLowerCase());
+    if (cells.some(c => c.includes('file'))) return i;
+  }
+  return 1;
+}
+
+// ─── CLI args ─────────────────────────────────────────────────────────────────
+
+interface CliArgs {
+  file: string;
+  companyId: number;
+  year: number;
+  month: string;
+  allSheets: boolean;
+  dryRun: boolean;
+}
+
+function parseArgs(): CliArgs {
+  const argv = process.argv.slice(2);
+  const args: CliArgs = { file: '', companyId: 1, year: 2026, month: '', allSheets: false, dryRun: false };
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case '--file':      args.file      = argv[++i]; break;
+      case '--company':   args.companyId = parseInt(argv[++i], 10); break;
+      case '--year':      args.year      = parseInt(argv[++i], 10); break;
+      case '--month':     args.month     = argv[++i]; break;
+      case '--all-sheets': args.allSheets = true; break;
+      case '--dry-run':   args.dryRun    = true; break;
+    }
+  }
+  return args;
+}
+
+// ─── Per-sheet processing ─────────────────────────────────────────────────────
+
+interface SheetResult {
+  sheetName: string;
+  month: string;
+  totalRows: number;
+  created: number;
+  skipped: number;
+  unmatched: number;
+  errors: number;
+  unmatchedValues: string[];
+}
+
+async function processSheet(
+  db: ReturnType<typeof drizzle>,
+  workbook: XLSX.WorkBook,
+  sheetName: string,
+  trackingMonth: string,
+  companyId: number,
+  siteByBuildingId: Map<string, { id: number; customerOrgId: number }>,
+  dryRun: boolean,
+): Promise<SheetResult> {
+  const result: SheetResult = {
+    sheetName, month: trackingMonth,
+    totalRows: 0, created: 0, skipped: 0, unmatched: 0, errors: 0,
+    unmatchedValues: [],
+  };
+
+  const ws = workbook.Sheets[sheetName];
+  if (!ws) return result;
+
+  const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  if (rows.length < 2) return result;
+
+  const hi = detectHeaderRow(rows);
+  const headers = (rows[hi] as unknown[]).map(c => String(c ?? '').trim());
+
+  // Column detection — must find FILE # and SERVICE TYPE at minimum
+  const fileColIdx        = findCol(headers, 'file #', 'file#', 'file number', 'file no', 'file');
+  const serviceTypeColIdx = findCol(headers, 'service type', 'servicetype', 'service', 'type');
+  const hoursColIdx       = findCol(headers, '# of hrs', 'hrs req', 'hours req', 'hours');
+  const techsColIdx       = findCol(headers, '# of techs', 'techs', 'technicians');
+  const stampsColIdx      = findCol(headers, 'stamp/s', 'stamps', 'stamp');
+  const contractorColIdx  = findCol(headers, 'contractor');
+  const keysColIdx        = findCol(headers, 'keys');
+  const lastCompletedIdx  = findCol(headers, 'last completed', 'last comp');
+  const agreementColIdx   = findCol(headers, 'annual agreement', 'agreement', 'signed');
+
+  if (fileColIdx === -1) {
+    console.warn(`  [${sheetName}] Cannot find FILE # column — headers: ${JSON.stringify(headers)}`);
+    return result;
   }
 
-  const str = String(value).trim();
-  if (!str) return undefined;
+  // Pre-load existing rows for this month to detect duplicates
+  const existingRows = await db
+    .select({
+      siteId: schema.monthlyServiceTracking.siteId,
+      serviceType: schema.monthlyServiceTracking.serviceType,
+    })
+    .from(schema.monthlyServiceTracking)
+    .where(
+      and(
+        eq(schema.monthlyServiceTracking.companyId, companyId),
+        eq(schema.monthlyServiceTracking.trackingMonth, trackingMonth),
+      ),
+    );
 
-  // Try common date-like strings first
-  const dt = new Date(str);
-  if (!isNaN(dt.getTime())) return dt;
+  const existingSet = new Set(existingRows.map(r => `${r.siteId}|${r.serviceType}`));
 
-  // Fallback for YYYY-MM-DD specifically
-  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) {
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const d = Number(m[3]);
-    const fallback = new Date(Date.UTC(y, mo - 1, d));
-    if (!isNaN(fallback.getTime())) return fallback;
+  const inserts: schema.InsertMonthlyServiceTracking[] = [];
+
+  for (let r = hi + 1; r < rows.length; r++) {
+    const row = rows[r] as unknown[];
+    if (row.every(c => c == null || c === '')) continue;
+
+    const rawFile = String(row[fileColIdx] ?? '').trim();
+    if (!rawFile) continue;
+
+    const serviceType = serviceTypeColIdx >= 0
+      ? (cellToString(row[serviceTypeColIdx]) ?? 'Annual Inspection')
+      : 'Annual Inspection';
+
+    result.totalRows++;
+
+    // Match site by normalized buildingId
+    const nFile = normBldg(rawFile);
+    const site  = siteByBuildingId.get(nFile);
+
+    if (!site) {
+      result.unmatched++;
+      result.unmatchedValues.push(rawFile);
+      continue;
+    }
+
+    // Duplicate check
+    const dupeKey = `${site.id}|${serviceType}`;
+    if (existingSet.has(dupeKey)) {
+      result.skipped++;
+      continue;
+    }
+
+    const row_: schema.InsertMonthlyServiceTracking = {
+      siteId:          site.id,
+      buildingId:      rawFile,
+      customerOrgId:   site.customerOrgId,
+      companyId,
+      trackingMonth,
+      serviceType,
+      status:          'not_scheduled',
+      reportStatus:    'none',
+      hoursRequired:   hoursColIdx >= 0      ? (toDecimal(row[hoursColIdx]) ?? undefined) : undefined,
+      techsRequired:   techsColIdx >= 0      ? (toInt(row[techsColIdx]) ?? undefined) : undefined,
+      stampsRequired:  stampsColIdx >= 0     ? (cellToString(row[stampsColIdx]) ?? undefined) : undefined,
+      hasContractor:   contractorColIdx >= 0 ? (toBoolean(row[contractorColIdx]) ?? undefined) : undefined,
+      hasKeys:         keysColIdx >= 0       ? (toBoolean(row[keysColIdx]) ?? undefined) : undefined,
+      lastCompleted:   lastCompletedIdx >= 0 ? (cellToString(row[lastCompletedIdx]) ?? undefined) : undefined,
+      agreementSigned: agreementColIdx >= 0  ? (toBoolean(row[agreementColIdx]) ?? undefined) : undefined,
+    } as schema.InsertMonthlyServiceTracking;
+
+    inserts.push(row_);
+    existingSet.add(dupeKey); // prevent intra-batch duplicates
   }
 
-  return undefined;
+  if (!dryRun && inserts.length > 0) {
+    try {
+      // @ts-ignore — drizzle transaction typing varies by driver
+      await (db as any).transaction(async (tx: any) => {
+        for (const ins of inserts) {
+          await tx.insert(schema.monthlyServiceTracking).values(ins);
+        }
+      });
+      result.created = inserts.length;
+    } catch (err: any) {
+      result.errors = inserts.length;
+      console.error(`  [${sheetName}] Transaction failed: ${err?.message ?? err}`);
+    }
+  } else {
+    result.created = inserts.length; // dry run: report what would be created
+  }
+
+  return result;
 }
 
-function serviceKey(siteId: number, serviceType: string, trackingMonth: string): string {
-  return `${siteId}::${serviceType.trim().toLowerCase()}::${trackingMonth}`;
-}
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
-async function run() {
-  const args = parseArgs(process.argv.slice(2));
-  const files = resolveFiles(args);
+async function main() {
+  const args = parseArgs();
 
-  const allSites = await db.getSitesByCompany(args.company!);
-  if (allSites.length === 0) {
-    console.error(`No sites found for company ${args.company}`);
+  if (!args.file) {
+    console.error('Usage: tsx scripts/seedMonthlyTracking.ts --file <path> --company <id> [--all-sheets | --month YYYY-MM] [--year YYYY] [--dry-run]');
+    process.exit(1);
+  }
+  if (!args.allSheets && !args.month) {
+    console.error('Specify either --all-sheets or --month YYYY-MM');
+    process.exit(1);
+  }
+  if (!process.env.DATABASE_URL) {
+    console.error('DATABASE_URL is not set');
     process.exit(1);
   }
 
-  const buildingMap = new Map<string, (typeof allSites)[number]>();
-  for (const site of allSites) {
-    if (!site.buildingId) continue;
-    buildingMap.set(normBldg(site.buildingId), site);
+  const filePath = path.isAbsolute(args.file)
+    ? args.file
+    : path.resolve(process.cwd(), args.file);
+
+  console.log(`\nLoading workbook: ${filePath}`);
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.readFile(filePath, { cellDates: true });
+  } catch (err: any) {
+    console.error(`Cannot open file: ${err.message}`);
+    process.exit(1);
   }
 
-  // Site name fallback is strict-only: exact normalized match and unique.
-  const siteNameBuckets = new Map<string, (typeof allSites)>();
-  for (const site of allSites) {
-    const key = norm(site.name);
-    const arr = siteNameBuckets.get(key) ?? [];
-    arr.push(site);
-    siteNameBuckets.set(key, arr);
-  }
+  console.log(`Sheets: ${workbook.SheetNames.join(', ')}`);
+  if (args.dryRun) console.log('DRY RUN — nothing will be written\n');
 
-  const existingForMonth = await db.getMonthlyTrackingByCompany(args.company!, args.month);
-  const existingKeys = new Set(existingForMonth.map((r) => serviceKey(r.siteId, r.serviceType, r.trackingMonth)));
+  const db = drizzle(process.env.DATABASE_URL, { schema, mode: 'default' });
+  const SHEET_MONTH_MAP = buildSheetMonthMap(args.year);
 
-  const summary: SeedSummary = {
-    created: 0,
-    skippedDuplicates: 0,
-    unmatched: 0,
-    errors: 0,
-    processedRows: 0,
-  };
+  // Build site lookup: normBldg(buildingId) → {id, customerOrgId}
+  const allSites = await db
+    .select({ id: schema.sites.id, buildingId: schema.sites.buildingId, customerOrgId: schema.sites.customerOrgId })
+    .from(schema.sites)
+    .where(eq(schema.sites.companyId, args.companyId));
 
-  const unmatchedRows: Array<{ file: string; row: number; buildingId: string; siteName: string; serviceType: string }> = [];
-
-  console.log(`\n[seedMonthlyTracking] Starting ${args.dryRun ? "DRY RUN" : "SEED"}`);
-  console.log(`[seedMonthlyTracking] Company: ${args.company} | Month: ${args.month}`);
-  console.log(`[seedMonthlyTracking] Files: ${files.length}`);
-
-  for (const filePath of files) {
-    const workbook = XLSX.readFile(filePath, { cellDates: true, raw: true });
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: "" }) as unknown[][];
-
-    if (rows.length <= args.headerRow + 1) {
-      console.warn(`[seedMonthlyTracking] Skipping ${filePath}: no data rows found`);
-      continue;
+  const siteByBuildingId = new Map<string, { id: number; customerOrgId: number }>();
+  for (const s of allSites) {
+    if (s.buildingId) {
+      siteByBuildingId.set(normBldg(s.buildingId), { id: s.id, customerOrgId: s.customerOrgId });
     }
+  }
 
-    const headers = rows[args.headerRow].map((c) => String(c ?? "").trim());
+  const populated = allSites.filter(s => s.buildingId).length;
+  console.log(`Sites loaded: ${allSites.length} total, ${populated} with buildingId set`);
+  if (populated === 0) {
+    console.error('\nNo sites have buildingId set. Run backfillSiteBuildingIds.ts first.');
+    process.exit(1);
+  }
+  console.log('');
 
-    const colBuildingId = findCol(headers, "file#", "file #", "buildingid", "building id", "accountno", "account", "fileno", "file no", "file number", "bldg", "building", "acct", "file", "id");
-    const colSiteName = findCol(headers, "sitename", "site name", "building name", "location", "address", "property", "site", "building", "name");
-    const colServiceType = findCol(headers, "service type", "servicetype", "service", "type", "inspection");
-    const colTargetDate = findCol(headers, "targetdate", "target date", "due date", "scheduled", "date");
-    const colNotes = findCol(headers, "notes", "comments", "remarks");
+  // Build list of sheets to process
+  let sheetsToProcess: Array<{ sheetName: string; month: string }> = [];
 
-    console.log(`\n[seedMonthlyTracking] Processing ${filePath}`);
-    console.log(`[seedMonthlyTracking] Columns: buildingId=${colBuildingId}, siteName=${colSiteName}, serviceType=${colServiceType}, targetDate=${colTargetDate}, notes=${colNotes}`);
-
-    for (let i = args.headerRow + 1; i < rows.length; i++) {
-      const row = rows[i];
-      const rawBuildingId = colBuildingId >= 0 ? String(row[colBuildingId] ?? "").trim() : "";
-      const rawSiteName = colSiteName >= 0 ? String(row[colSiteName] ?? "").trim() : "";
-      const serviceType = colServiceType >= 0 ? String(row[colServiceType] ?? "").trim() : "Annual Inspection";
-      const notes = colNotes >= 0 ? String(row[colNotes] ?? "").trim() : "";
-      const targetDate = colTargetDate >= 0 ? parseCellDate(row[colTargetDate]) : undefined;
-
-      if (!rawBuildingId && !rawSiteName && !serviceType) continue;
-      summary.processedRows++;
-
-      let matchedSite: (typeof allSites)[number] | undefined;
-
-      if (rawBuildingId) {
-        matchedSite = buildingMap.get(normBldg(rawBuildingId));
-      }
-
-      if (!matchedSite && rawSiteName) {
-        const exactNameMatches = siteNameBuckets.get(norm(rawSiteName)) ?? [];
-        if (exactNameMatches.length === 1) {
-          matchedSite = exactNameMatches[0];
-        }
-      }
-
-      if (!matchedSite) {
-        summary.unmatched++;
-        unmatchedRows.push({
-          file: path.basename(filePath),
-          row: i + 1,
-          buildingId: rawBuildingId,
-          siteName: rawSiteName,
-          serviceType,
-        });
+  if (args.allSheets) {
+    for (const sheetName of workbook.SheetNames) {
+      const upper = sheetName.toUpperCase();
+      if (SKIP_SHEETS.has(upper)) {
+        console.log(`  Skipping ${sheetName} (seasonal/empty)`);
         continue;
       }
-
-      const key = serviceKey(matchedSite.id, serviceType, args.month!);
-      if (existingKeys.has(key)) {
-        summary.skippedDuplicates++;
+      const month = SHEET_MONTH_MAP[upper];
+      if (!month) {
+        console.log(`  Skipping ${sheetName} (no month mapping)`);
         continue;
       }
+      sheetsToProcess.push({ sheetName, month });
+    }
+  } else {
+    const targetMonth = args.month;
+    const entry = Object.entries(SHEET_MONTH_MAP).find(([, m]) => m === targetMonth);
+    if (!entry) {
+      console.error(`No sheet mapping for month ${targetMonth}`);
+      process.exit(1);
+    }
+    const sheetName = workbook.SheetNames.find(s => s.toUpperCase() === entry[0]);
+    if (!sheetName) {
+      console.error(`Sheet "${entry[0]}" not found. Available: ${workbook.SheetNames.join(', ')}`);
+      process.exit(1);
+    }
+    sheetsToProcess = [{ sheetName, month: targetMonth }];
+  }
 
-      const rowToInsert: Parameters<typeof db.createMonthlyTracking>[0] = {
-        siteId: matchedSite.id,
-        customerOrgId: matchedSite.customerOrgId,
-        companyId: matchedSite.companyId,
-        buildingId: rawBuildingId || matchedSite.buildingId || undefined,
-        trackingMonth: args.month!,
-        serviceType,
-        ...(targetDate ? { targetDate } : {}),
-        notes: notes || undefined,
-        status: "not_scheduled",
-        reportStatus: "none",
-        linkedJobId: null,
-        deficiencyCount: 0,
-      };
+  // Process
+  const results: SheetResult[] = [];
+  let totalCreated = 0, totalSkipped = 0, totalUnmatched = 0, totalErrors = 0, grandTotal = 0;
+  const allUnmatched: string[] = [];
 
-      if (args.dryRun) {
-        summary.created++;
-        existingKeys.add(key);
-        continue;
-      }
-
-      try {
-        await db.createMonthlyTracking(rowToInsert);
-        summary.created++;
-        existingKeys.add(key);
-      } catch (err) {
-        summary.errors++;
-        console.error(`[seedMonthlyTracking] Insert failed: ${path.basename(filePath)} row ${i + 1} ->`, err);
-      }
+  for (const { sheetName, month } of sheetsToProcess) {
+    process.stdout.write(`Processing ${sheetName.padEnd(4)} (${month}) ... `);
+    try {
+      const r = await processSheet(db, workbook, sheetName, month, args.companyId, siteByBuildingId, args.dryRun);
+      results.push(r);
+      process.stdout.write(`${r.totalRows} rows → ${r.created} created, ${r.skipped} skipped (dup), ${r.unmatched} unmatched${r.errors ? `, ${r.errors} errors` : ''}\n`);
+      totalCreated   += r.created;
+      totalSkipped   += r.skipped;
+      totalUnmatched += r.unmatched;
+      totalErrors    += r.errors;
+      grandTotal     += r.totalRows;
+      allUnmatched.push(...r.unmatchedValues);
+    } catch (err: any) {
+      process.stdout.write(`ERROR: ${err?.message ?? err}\n`);
     }
   }
 
-  console.log("\n[seedMonthlyTracking] Summary");
-  console.log(`  processed rows      : ${summary.processedRows}`);
-  console.log(`  ${args.dryRun ? "would create" : "created"}         : ${summary.created}`);
-  console.log(`  skipped duplicates  : ${summary.skippedDuplicates}`);
-  console.log(`  unmatched           : ${summary.unmatched}`);
-  console.log(`  errors              : ${summary.errors}`);
+  // Summary
+  console.log('\n── Summary ───────────────────────────────────────────────────────');
+  for (const r of results) {
+    const line = `  ${r.sheetName.padEnd(4)} (${r.month}): ${String(r.totalRows).padStart(3)} rows → ${r.created} created, ${r.skipped} skipped, ${r.unmatched} unmatched`;
+    console.log(r.errors ? `${line}, ${r.errors} errors` : line);
+  }
+  console.log('─────────────────────────────────────────────────────────────────');
+  console.log(`  Total: ${grandTotal} rows — ${totalCreated} created, ${totalSkipped} skipped, ${totalUnmatched} unmatched${totalErrors ? `, ${totalErrors} errors` : ''}`);
 
-  if (unmatchedRows.length > 0) {
-    console.log("\n[seedMonthlyTracking] Unmatched rows:");
-    for (const r of unmatchedRows.slice(0, 200)) {
-      console.log(
-        `  - file=${r.file} row=${r.row} buildingId="${r.buildingId}" siteName="${r.siteName}" serviceType="${r.serviceType}"`
-      );
-    }
-    if (unmatchedRows.length > 200) {
-      console.log(`  ... and ${unmatchedRows.length - 200} more`);
-    }
+  if (allUnmatched.length > 0) {
+    const unique = [...new Set(allUnmatched)].sort();
+    console.log(`\n── Unmatched FILE # values (${unique.length} unique) ──────────────────`);
+    unique.forEach(v => console.log(`  ${v}`));
+    console.log('\nThese FILE# values have no matching site in the DB.');
+    console.log('The site records do not exist yet — backfill cannot help here.');
+    console.log('\nRun createMissingSitesFromWorkbook.ts to create stub sites for all of them:');
+    console.log('  pnpm sites:create-missing:dry   # preview');
+    console.log('  pnpm sites:create-missing       # create');
+    console.log('\nThen re-run this seed:');
+    console.log('  pnpm seed:monthly-tracking:dry');
+    console.log('  pnpm seed:monthly-tracking:all');
   }
 
-  if (summary.errors > 0) {
-    process.exitCode = 1;
-  }
+  if (args.dryRun) console.log('\nDRY RUN — rerun without --dry-run to write rows.');
+  console.log('');
 }
 
-run().catch((err) => {
-  console.error("[seedMonthlyTracking] Fatal error:", err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch(err => {
+    console.error('Fatal:', err);
+    process.exit(1);
+  });

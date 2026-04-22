@@ -6,7 +6,7 @@ import { FIRE_ALARM_CHECKLIST_TEMPLATE } from './seeds/fireAlarmChecklist';
 
 // Convert seed format to DB row format (mirrors what 0020_seed_fire_alarm_checklist_template.sql inserts)
 let _itemId = 1;
-export const TEMPLATE_FIXTURE = (FIRE_ALARM_CHECKLIST_TEMPLATE as any[]).flatMap((section: any) =>
+export const TEMPLATE_FIXTURE = (FIRE_ALARM_CHECKLIST_TEMPLATE as unknown as any[]).flatMap((section: any) =>
   section.items.map((item: any) => ({
     id: _itemId++,
     sectionName: section.section,

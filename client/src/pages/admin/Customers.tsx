@@ -3,23 +3,26 @@ import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { 
-  Search, 
+import {
+  Search,
   Plus,
   Building2,
   Mail,
   Phone,
-  User
+  User,
+  Pencil,
+  Save,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AdminCustomers() {
   const { user } = useAuth();
-  
+
   if (!user || !user.companyId) {
     return (
       <AdminLayout title="Customers">
@@ -29,9 +32,9 @@ export default function AdminCustomers() {
       </AdminLayout>
     );
   }
-  
+
   const companyId = user.companyId;
-  
+
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState({
@@ -42,22 +45,33 @@ export default function AdminCustomers() {
     address: "",
   });
 
+  // Edit state
+  const [editCustomer, setEditCustomer] = useState<any>(null);
+  const [editName, setEditName] = useState("");
+  const [editContactName, setEditContactName] = useState("");
+  const [editContactEmail, setEditContactEmail] = useState("");
+  const [editContactPhone, setEditContactPhone] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+
   const { data: customers, isLoading, refetch } = trpc.customerOrg.list.useQuery({ companyId });
 
   const createCustomer = trpc.customerOrg.create.useMutation({
     onSuccess: () => {
-      toast.success('Customer created');
+      toast.success("Customer created");
       setIsCreateOpen(false);
-      setNewCustomer({
-        name: "",
-        contactName: "",
-        contactEmail: "",
-        contactPhone: "",
-        address: "",
-      });
+      setNewCustomer({ name: "", contactName: "", contactEmail: "", contactPhone: "", address: "" });
       refetch();
     },
-    onError: () => toast.error('Failed to create customer')
+    onError: () => toast.error("Failed to create customer"),
+  });
+
+  const updateCustomer = trpc.customerOrg.update.useMutation({
+    onSuccess: () => {
+      toast.success("Customer updated");
+      setEditCustomer(null);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message || "Failed to update customer"),
   });
 
   const filteredCustomers = customers?.filter((customer: any) => {
@@ -70,9 +84,18 @@ export default function AdminCustomers() {
     );
   }) || [];
 
+  function openEdit(customer: any) {
+    setEditCustomer(customer);
+    setEditName(customer.name ?? "");
+    setEditContactName(customer.contactName ?? "");
+    setEditContactEmail(customer.contactEmail ?? "");
+    setEditContactPhone(customer.contactPhone ?? "");
+    setEditAddress(customer.address ?? "");
+  }
+
   const handleCreateCustomer = () => {
     if (!newCustomer.name) {
-      toast.error('Please enter a customer name');
+      toast.error("Please enter a customer name");
       return;
     }
     createCustomer.mutate({
@@ -99,7 +122,7 @@ export default function AdminCustomers() {
               className="pl-10"
             />
           </div>
-          
+
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -113,14 +136,13 @@ export default function AdminCustomers() {
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>Company Name *</Label>
+                  <Label>Company Name <span className="text-destructive">*</span></Label>
                   <Input
                     value={newCustomer.name}
                     onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
                     placeholder="Customer company name"
                   />
                 </div>
-                
                 <div className="space-y-2">
                   <Label>Contact Name</Label>
                   <Input
@@ -129,7 +151,6 @@ export default function AdminCustomers() {
                     placeholder="Primary contact name"
                   />
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Contact Email</Label>
@@ -149,7 +170,6 @@ export default function AdminCustomers() {
                     />
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   <Label>Address</Label>
                   <Input
@@ -158,13 +178,8 @@ export default function AdminCustomers() {
                     placeholder="Business address"
                   />
                 </div>
-
-                <Button 
-                  className="w-full" 
-                  onClick={handleCreateCustomer}
-                  disabled={createCustomer.isPending}
-                >
-                  {createCustomer.isPending ? 'Creating...' : 'Create Customer'}
+                <Button className="w-full" onClick={handleCreateCustomer} disabled={createCustomer.isPending}>
+                  {createCustomer.isPending ? "Creating..." : "Create Customer"}
                 </Button>
               </div>
             </DialogContent>
@@ -193,7 +208,7 @@ export default function AdminCustomers() {
               <Card key={customer.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
+                    <div className="p-2 bg-primary/10 rounded-lg shrink-0">
                       <Building2 className="h-5 w-5 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -217,6 +232,14 @@ export default function AdminCustomers() {
                         </p>
                       )}
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                      onClick={() => openEdit(customer)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -224,6 +247,76 @@ export default function AdminCustomers() {
           </div>
         )}
       </div>
+
+      {/* Edit Customer Dialog */}
+      <Dialog open={!!editCustomer} onOpenChange={(open) => { if (!open) setEditCustomer(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4" />
+              Edit Customer
+            </DialogTitle>
+            <DialogDescription>Update customer organisation details.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Company Name <span className="text-destructive">*</span></Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Customer company name" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Contact Name</Label>
+              <Input value={editContactName} onChange={(e) => setEditContactName(e.target.value)} placeholder="Primary contact name" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Contact Email</Label>
+                <Input
+                  type="email"
+                  value={editContactEmail}
+                  onChange={(e) => setEditContactEmail(e.target.value)}
+                  placeholder="email@example.com"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Contact Phone</Label>
+                <Input
+                  value={editContactPhone}
+                  onChange={(e) => setEditContactPhone(e.target.value)}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Address</Label>
+              <Input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} placeholder="Business address" />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setEditCustomer(null)} disabled={updateCustomer.isPending}>
+                Cancel
+              </Button>
+              <Button
+                disabled={!editName.trim() || updateCustomer.isPending}
+                onClick={() =>
+                  updateCustomer.mutate({
+                    id: editCustomer.id,
+                    name: editName.trim(),
+                    contactName: editContactName || undefined,
+                    contactEmail: editContactEmail || undefined,
+                    contactPhone: editContactPhone || undefined,
+                    address: editAddress || undefined,
+                  })
+                }
+              >
+                {updateCustomer.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+                ) : (
+                  <><Save className="h-4 w-4 mr-2" />Save Changes</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

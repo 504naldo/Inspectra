@@ -3,10 +3,12 @@ import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Info, CheckCheck, Trash2, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, CheckCheck, Trash2, Plus, GripVertical } from "lucide-react";
 import { useIsMobile } from "@/hooks/useMobile";
+import { DndContext, closestCenter } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDeviceReorder } from "./useDeviceReorder";
-import { useSectionPendingChanges } from "./useSectionPendingChanges";
+import { SortableRow } from "./SortableRow";
 
 // ─── Legend data ────────────────────────────────────────────────────────────
 
@@ -251,8 +253,8 @@ export function SmokeAlarmGrid({
 }: SmokeAlarmGridProps) {
   const isMobile = useIsMobile();
   const [editing, setEditing] = useState<EditState | null>(null);
-  const { rows, setRows } = useDeviceReorder(devices, !!isFinalized);
-  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<SmokeAlarmRow>>>({});
+  const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
   const [localMeta, setLocalMeta] = useState<Record<number, LocalMeta>>({});
   const {
@@ -317,6 +319,22 @@ export function SmokeAlarmGrid({
     });
   };
 
+  const updateLocalRow = (id: number, updates: Partial<SmokeAlarmRow>) => {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
+  };
+
+  const handleSort = (dir: "asc" | "desc") => {
+    setSortDir(dir);
+    const sorted = [...rows].sort((a, b) => {
+      const aKey = (a.suiteNumber || a.location || "").toLowerCase();
+      const bKey = (b.suiteNumber || b.location || "").toLowerCase();
+      const cmp = aKey.localeCompare(bKey, undefined, { numeric: true });
+      return dir === "asc" ? cmp : -cmp;
+    });
+    setRows(sorted);
+    reorder.mutate({ orderedIds: sorted.map((r) => r.id) });
+  };
+
   const handleResultChange = useCallback(
     (deviceId: number, result: InspectionResult) => {
       setLocalResults((prev) => ({ ...prev, [deviceId]: result }));
@@ -338,30 +356,13 @@ export function SmokeAlarmGrid({
   const handleEditBlur = () => {
     if (!editing) return;
     const { deviceId, field, value } = editing;
-    const fieldValue =
-      field === "battQty"
-        ? (value ? Number(value) || undefined : undefined)
-        : value;
-    if (field === "battType") {
-      updateLocalRow(deviceId, { batterySize: String(fieldValue ?? "") });
-      setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), batterySize: fieldValue as string | undefined } }));
-      queuePendingDeviceChange(deviceId, "batterySize", fieldValue);
-    }
-    if (field === "battQty") {
-      updateLocalRow(deviceId, { batteryCount: fieldValue as number | undefined });
-      setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), batteryCount: fieldValue as number | undefined } }));
-      queuePendingDeviceChange(deviceId, "batteryCount", fieldValue);
-    }
-    if (field === "inService") {
-      updateLocalRow(deviceId, { batteryYear: String(fieldValue ?? "") });
-      setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), batteryYear: fieldValue as string | undefined } }));
-      queuePendingDeviceChange(deviceId, "batteryYear", fieldValue);
-    }
-    if (field === "remarks") {
-      updateLocalRow(deviceId, { notes: String(fieldValue ?? "") });
-      setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), notes: fieldValue as string | undefined } }));
-      queuePendingDeviceChange(deviceId, "notes", fieldValue);
-    }
+    const payload: Record<string, any> = { id: deviceId };
+    if (field === "suite")     { payload.suiteNumber  = value || undefined; updateLocalRow(deviceId, { suiteNumber: value || undefined }); }
+    if (field === "battType")  payload.batterySize  = value || undefined;
+    if (field === "battQty")   payload.batteryCount = value ? Number(value) || undefined : undefined;
+    if (field === "inService") payload.batteryYear  = value;
+    if (field === "remarks")   payload.notes        = value;
+    updateDevice.mutate(payload as Parameters<typeof updateDevice.mutate>[0]);
     setEditing(null);
   };
 
@@ -429,33 +430,52 @@ export function SmokeAlarmGrid({
     rows.forEach((d) => { updates[d.id] = "pass"; });
     setLocalResults((prev) => ({ ...prev, ...updates }));
     rows.forEach((d) => {
-      queuePendingResultChange(d.id, "result", "pass");
+      upsertResult.mutate({ jobId, deviceId: d.id, result: "pass" });
       onResultChange?.(d.id, "pass");
     });
     toast.success(`Marked ${rows.length} smoke alarm${rows.length !== 1 ? "s" : ""} as pass`);
-  }, [rows, isFinalized, queuePendingResultChange, onResultChange]);
+  }, [rows, isFinalized, jobId, upsertResult, onResultChange]);
 
   // ── Header bar ─────────────────────────────────────────────────────────────
   const header = (
     <div className="space-y-2 mb-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
           CAN/ULC-S552 · Smoke Alarm Inspection &amp; Testing
         </p>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-muted-foreground">
             {completed} / {rows.length} tested
           </span>
-          {!isFinalized && rows.length > 0 && (
-            <button
-              onClick={handleSaveSection}
-              disabled={!hasPendingDeviceChanges && !hasPendingResultChanges}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Save
-            </button>
+          {!isFinalized && devices.length > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleSort("asc")}
+                className={cn(
+                  "text-xs px-2 py-1 rounded transition-colors",
+                  sortDir === "asc"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
+                title="Sort A→Z by suite number"
+              >
+                A→Z
+              </button>
+              <button
+                onClick={() => handleSort("desc")}
+                className={cn(
+                  "text-xs px-2 py-1 rounded transition-colors",
+                  sortDir === "desc"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
+                title="Sort Z→A by suite number"
+              >
+                Z→A
+              </button>
+            </div>
           )}
-          {!isFinalized && rows.length > 0 && (
+          {!isFinalized && devices.length > 0 && (
             <button
               onClick={handleAllPass}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
@@ -536,6 +556,66 @@ export function SmokeAlarmGrid({
               {/* Expanded fields */}
               {isExpanded && (
                 <div className="border-t px-3 py-3 space-y-3 bg-background/60">
+                  {/* Row 0: Suite + Type + Power */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
+                        Suite #
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
+                        defaultValue={device.suiteNumber ?? ""}
+                        disabled={isFinalized}
+                        onBlur={(e) => {
+                          const val = e.target.value || undefined;
+                          updateLocalRow(device.id, { suiteNumber: val });
+                          updateDevice.mutate({ id: device.id, suiteNumber: val });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
+                        Type
+                      </label>
+                      <select
+                        className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
+                        value={device.deviceType ?? ""}
+                        disabled={isFinalized}
+                        onChange={(e) => {
+                          const val = e.target.value || undefined;
+                          updateLocalRow(device.id, { deviceType: val });
+                          updateDevice.mutate({ id: device.id, deviceType: val });
+                        }}
+                      >
+                        <option value="">—</option>
+                        {DEVICE_TYPE_OPTIONS.map((o) => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
+                        Power
+                      </label>
+                      <select
+                        className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
+                        value={powerTypeToCode(device.powerType)}
+                        disabled={isFinalized}
+                        onChange={(e) => {
+                          const pt = codeToPowerType(e.target.value);
+                          updateLocalRow(device.id, { powerType: pt });
+                          updateDevice.mutate({ id: device.id, powerType: pt });
+                        }}
+                      >
+                        <option value="">—</option>
+                        {POWER_SOURCE_OPTIONS.map((o) => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
                   {/* Row 1: Battery Type + # Batts */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -644,12 +724,7 @@ export function SmokeAlarmGrid({
                       className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
                       defaultValue={remarksVal}
                       disabled={isFinalized}
-                      onBlur={(e) => {
-                        const nextVal = e.target.value;
-                        updateLocalRow(device.id, { notes: nextVal });
-                        setLocalDeviceEdits((prev) => ({ ...prev, [device.id]: { ...(prev[device.id] ?? {}), notes: nextVal } }));
-                        queuePendingDeviceChange(device.id, "notes", nextVal);
-                      }}
+                      onBlur={(e) => updateDevice.mutate({ id: device.id, notes: e.target.value })}
                     />
                   </div>
                 </div>
@@ -708,6 +783,7 @@ export function SmokeAlarmGrid({
   return (
     <div className="space-y-3">
       {header}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-xs border-collapse">
           <thead>
@@ -727,6 +803,7 @@ export function SmokeAlarmGrid({
             </tr>
           </thead>
           <tbody>
+            <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
             {rows.map((device, idx) => {
               const result = getEffectiveResult(device);
               const meta = localMeta[device.id] ?? {};
@@ -734,25 +811,46 @@ export function SmokeAlarmGrid({
 
               const cellValue = (field: string): string => {
                 if (editing?.deviceId === device.id && editing.field === field) return editing.value;
-                if (field === "battType")  return (localDeviceEdits[device.id]?.batterySize as string | undefined) ?? device.batterySize ?? "";
-                if (field === "battQty") {
-                  const qty = localDeviceEdits[device.id]?.batteryCount ?? device.batteryCount;
-                  return qty != null ? String(qty) : "";
-                }
-                if (field === "inService") return (localDeviceEdits[device.id]?.batteryYear as string | undefined) ?? device.batteryYear ?? "";
-                if (field === "remarks")   return (localDeviceEdits[device.id]?.notes as string | undefined) ?? device.notes ?? "";
+                if (field === "suite")     return device.suiteNumber ?? "";
+                if (field === "battType")  return device.batterySize ?? "";
+                if (field === "battQty")   return device.batteryCount != null ? String(device.batteryCount) : "";
+                if (field === "inService") return device.batteryYear ?? "";
+                if (field === "remarks")   return device.notes ?? "";
                 return "";
               };
 
               return (
-                <tr
-                  key={device.id}
-                  className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}
-                >
+                <SortableRow key={device.id} id={device.id} disabled={!!isFinalized} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+                  {(dragHandleProps) => (<>
                   {/* A — Suite / Location (sticky) + delete */}
                   <td className="sticky left-0 bg-inherit px-2 py-1.5 border-r font-mono font-medium whitespace-nowrap">
-                    {device.suiteNumber || device.location || (
-                      <span className="text-muted-foreground/40">—</span>
+                    {!isFinalized && (
+                      <button {...dragHandleProps} className="block text-muted-foreground/30 hover:text-muted-foreground cursor-grab active:cursor-grabbing mb-0.5" title="Drag to reorder">
+                        <GripVertical className="h-3 w-3" />
+                      </button>
+                    )}
+                    {editing?.deviceId === device.id && editing.field === "suite" ? (
+                      <input
+                        autoFocus
+                        className="w-20 bg-transparent outline-none border-b border-primary text-xs font-mono"
+                        value={editing.value}
+                        onChange={(e) => setEditing((p) => p && { ...p, value: e.target.value })}
+                        onBlur={handleEditBlur}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); handleEditBlur(); }
+                          if (e.key === "Escape") setEditing(null);
+                        }}
+                      />
+                    ) : (
+                      <span
+                        className={cn(!isFinalized && "cursor-pointer hover:text-primary")}
+                        onClick={() => !isFinalized && handleCellClick(device.id, "suite", cellValue("suite"))}
+                        title={!isFinalized ? "Click to edit suite number" : undefined}
+                      >
+                        {device.suiteNumber || device.location || (
+                          <span className="text-muted-foreground/40">—</span>
+                        )}
+                      </span>
                     )}
                     {carriedForwardDeviceIds?.has(device.id) && (
                       <span className="block text-[9px] font-semibold uppercase tracking-wide text-blue-600 leading-none mt-0.5">carried</span>
@@ -773,7 +871,22 @@ export function SmokeAlarmGrid({
 
                   {/* B — Type */}
                   <td className="px-2 py-1.5 border-r">
-                    {device.deviceType ? (
+                    {!isFinalized ? (
+                      <select
+                        className="w-full bg-transparent outline-none border-b border-primary/30 hover:border-primary text-xs font-mono focus:border-primary"
+                        value={device.deviceType ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value || undefined;
+                          updateLocalRow(device.id, { deviceType: val });
+                          updateDevice.mutate({ id: device.id, deviceType: val });
+                        }}
+                      >
+                        <option value="">—</option>
+                        {DEVICE_TYPE_OPTIONS.map((o) => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    ) : device.deviceType ? (
                       <span className="font-mono px-1 py-0.5 rounded bg-[#16324F]/8 text-[#16324F] dark:text-blue-300">
                         {device.deviceType}
                       </span>
@@ -782,9 +895,26 @@ export function SmokeAlarmGrid({
                     )}
                   </td>
 
-                  {/* C — Power Source (derived, read-only) */}
+                  {/* C — Power Source */}
                   <td className="px-2 py-1.5 border-r text-muted-foreground">
-                    {powerTypeToCode(device.powerType) || <span className="text-muted-foreground/40">—</span>}
+                    {!isFinalized ? (
+                      <select
+                        className="w-full bg-transparent outline-none border-b border-primary/30 hover:border-primary text-xs font-mono focus:border-primary"
+                        value={powerTypeToCode(device.powerType)}
+                        onChange={(e) => {
+                          const pt = codeToPowerType(e.target.value);
+                          updateLocalRow(device.id, { powerType: pt });
+                          updateDevice.mutate({ id: device.id, powerType: pt });
+                        }}
+                      >
+                        <option value="">—</option>
+                        {POWER_SOURCE_OPTIONS.map((o) => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      powerTypeToCode(device.powerType) || <span className="text-muted-foreground/40">—</span>
+                    )}
                   </td>
 
                   {/* D — Battery Type */}
@@ -909,9 +1039,11 @@ export function SmokeAlarmGrid({
                     )}
                   </td>
 
-                </tr>
+                </>)}
+                </SortableRow>
               );
             })}
+            </SortableContext>
 
             {/* Add row */}
             {!isFinalized && showAddRow && (
@@ -950,6 +1082,7 @@ export function SmokeAlarmGrid({
           </tbody>
         </table>
       </div>
+      </DndContext>
 
       {!isFinalized && (
         <div className="mt-2">

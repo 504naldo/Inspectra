@@ -32,6 +32,7 @@ import { customerRecordsRouter } from "./routers/customerRecordsRouter";
 import { quoteRouter } from "./routers/quoteRouter";
 import { serviceScheduleRouter } from "./routers/serviceScheduleRouter";
 import { repairLetterRouter } from "./routers/repairLetterRouter";
+import { workOrderRouter } from "./routers/workOrderRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -89,6 +90,7 @@ export const appRouter = router({
   quote: quoteRouter,
   serviceSchedule: serviceScheduleRouter,
   repairLetter: repairLetterRouter,
+  workOrder: workOrderRouter,
 });
 
 export type AppRouter = typeof appRouter;

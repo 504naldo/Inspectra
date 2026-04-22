@@ -106,7 +106,14 @@ const deviceRouter = router({
     circuitAddress: z.string().optional(),
     zone: z.string().optional(),
     location: z.string().optional(),
+    manufacturer: z.string().optional(),
+    model: z.string().optional(),
+    serialNumber: z.string().optional(),
     notes: z.string().optional(),
+    // Smoke alarm fields
+    deviceType: z.string().optional(),
+    powerType: z.enum(['hardwired', 'battery', 'sealed', 'unknown']).optional(),
+    suiteNumber: z.string().optional(),
     // Extinguisher fields
     mfgDate: z.string().optional(),
     lastHST: z.string().optional(),
@@ -161,6 +168,20 @@ const deviceRouter = router({
     if ((job as any).finalizedAt) throw new TRPCError({ code: 'FORBIDDEN', message: 'Job is finalized' });
     const device = await db.createDevice(deviceData as any);
     return { success: true, deviceId: device.id };
+  }),
+
+  reorder: officeProcedure.input(z.object({
+    orderedIds: z.array(z.number()),
+  })).mutation(async ({ input }) => {
+    await db.reorderDevices(input.orderedIds);
+    return { success: true };
+  }),
+
+  clearSortOrder: officeProcedure.input(z.object({
+    siteId: z.number(),
+  })).mutation(async ({ input }) => {
+    await db.clearDeviceSortOrder(input.siteId);
+    return { success: true };
   }),
 
   // Soft-delete a device (marks isActive = false) — only allowed while job is not finalized
