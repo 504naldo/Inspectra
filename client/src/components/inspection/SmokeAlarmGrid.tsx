@@ -332,10 +332,6 @@ export function SmokeAlarmGrid({
     [jobId, upsertResult, onResultChange]
   );
 
-  const updateLocalRow = (id: number, updates: Partial<SmokeAlarmRow>) => {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
-  };
-
   const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
     if (isFinalized) return;
     setEditing({ deviceId, field, value: currentValue });
@@ -348,8 +344,8 @@ export function SmokeAlarmGrid({
     if (field === "suite")     { payload.suiteNumber  = value || undefined; updateLocalRow(deviceId, { suiteNumber: value || undefined }); }
     if (field === "battType")  payload.batterySize  = value || undefined;
     if (field === "battQty")   payload.batteryCount = value ? Number(value) || undefined : undefined;
-    if (field === "inService") payload.batteryYear  = value;
-    if (field === "remarks")   payload.notes        = value;
+    if (field === "inService") payload.batteryYear  = value || undefined;
+    if (field === "remarks")   payload.notes        = value || undefined;
     updateDevice.mutate(payload as Parameters<typeof updateDevice.mutate>[0]);
     setEditing(null);
   };
@@ -381,19 +377,19 @@ export function SmokeAlarmGrid({
     return "";
   };
 
-  const completed = rows.filter((d) => getEffectiveResult(d) !== "not_tested").length;
+  const completed = devices.filter((d) => getEffectiveResult(d) !== "not_tested").length;
 
   const handleAllPass = useCallback(() => {
     if (isFinalized) return;
     const updates: Record<number, InspectionResult> = {};
-    rows.forEach((d) => { updates[d.id] = "pass"; });
+    devices.forEach((d) => { updates[d.id] = "pass"; });
     setLocalResults((prev) => ({ ...prev, ...updates }));
-    rows.forEach((d) => {
+    devices.forEach((d) => {
       upsertResult.mutate({ jobId, deviceId: d.id, result: "pass" });
       onResultChange?.(d.id, "pass");
     });
-    toast.success(`Marked ${rows.length} smoke alarm${rows.length !== 1 ? "s" : ""} as pass`);
-  }, [rows, isFinalized, jobId, upsertResult, onResultChange]);
+    toast.success(`Marked ${devices.length} smoke alarm${devices.length !== 1 ? "s" : ""} as pass`);
+  }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
 
   // ── Header bar ─────────────────────────────────────────────────────────────
   const header = (
@@ -404,7 +400,7 @@ export function SmokeAlarmGrid({
         </p>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-muted-foreground">
-            {completed} / {rows.length} tested
+            {completed} / {devices.length} tested
           </span>
           {!isFinalized && devices.length > 1 && (
             <div className="flex items-center gap-1">
@@ -453,10 +449,10 @@ export function SmokeAlarmGrid({
     return (
       <div className="space-y-3">
         {header}
-        {rows.length === 0 && !showAddRow && (
+        {devices.length === 0 && !showAddRow && (
           <p className="text-center py-6 text-sm text-muted-foreground">No smoke alarms for this site</p>
         )}
-        {rows.map((device) => {
+        {devices.map((device) => {
           const result = getEffectiveResult(device);
           const meta = localMeta[device.id] ?? {};
           const isExpanded = expandedRow === device.id;
@@ -670,7 +666,7 @@ export function SmokeAlarmGrid({
                       className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
                       defaultValue={remarksVal}
                       disabled={isFinalized}
-                      onBlur={(e) => updateDevice.mutate({ id: device.id, notes: e.target.value })}
+                      onBlur={(e) => updateDevice.mutate({ id: device.id, notes: e.target.value || undefined })}
                     />
                   </div>
                 </div>
