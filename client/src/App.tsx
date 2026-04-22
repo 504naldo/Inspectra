@@ -38,6 +38,7 @@ import SiteFiles from "./pages/admin/SiteFiles";
 import AssetImport from "./pages/admin/AssetImport";
 import AdminSchedule from "./pages/admin/Schedule";
 import CustomerRecordsPage from "./pages/admin/CustomerRecords";
+import AdminWorkOrders from "./pages/admin/WorkOrders";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -279,6 +280,11 @@ function Router() {
       <Route path="/admin/customer-records">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <CustomerRecordsPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/work-orders">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <AdminWorkOrders />
         </ProtectedRoute>
       </Route>
 

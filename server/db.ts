@@ -352,7 +352,21 @@ export async function createDevice(data: InsertDevice) {
 export async function getDevicesBySite(siteId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true))).orderBy(asc(devices.deviceType), asc(devices.location));
+  return db.select().from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true))).orderBy(asc(devices.sortOrder), asc(devices.id));
+}
+
+export async function reorderDevices(orderedIds: number[]) {
+  const db = await getDb();
+  if (!db) return;
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.update(devices).set({ sortOrder: i } as any).where(eq(devices.id, orderedIds[i]));
+  }
+}
+
+export async function clearDeviceSortOrder(siteId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(devices).set({ sortOrder: null } as any).where(eq(devices.siteId, siteId));
 }
 
 export async function getDevicesByArea(areaId: number) {
@@ -1731,4 +1745,66 @@ export async function updateAiReview(id: number, data: Partial<InsertAiReview>) 
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(aiReviews).set(data).where(eq(aiReviews.id, id));
+}
+
+// ============================================
+// WORK ORDER QUERIES
+// ============================================
+
+import { workOrders, InsertWorkOrder, WorkOrder } from "../drizzle/schema";
+
+export async function createWorkOrder(data: InsertWorkOrder): Promise<WorkOrder> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(workOrders).values(data);
+  const id = Number(result[0].insertId);
+  return { ...data, id } as WorkOrder;
+}
+
+export async function getWorkOrderById(id: number): Promise<WorkOrder | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(workOrders).where(eq(workOrders.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getWorkOrdersByCompany(companyId: number, status?: string): Promise<WorkOrder[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(workOrders.companyId, companyId)];
+  if (status) conditions.push(eq(workOrders.status, status as WorkOrder["status"]));
+  return db.select().from(workOrders).where(and(...conditions)).orderBy(desc(workOrders.createdAt));
+}
+
+export async function getWorkOrdersBySite(siteId: number): Promise<WorkOrder[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(workOrders).where(eq(workOrders.siteId, siteId)).orderBy(desc(workOrders.createdAt));
+}
+
+export async function getWorkOrderByJob(jobId: number): Promise<WorkOrder | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(workOrders).where(eq(workOrders.jobId, jobId)).limit(1);
+  return result[0];
+}
+
+export async function updateWorkOrder(id: number, data: Partial<InsertWorkOrder>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(workOrders).set(data).where(eq(workOrders.id, id));
+}
+
+export async function deleteJobCascade(jobId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(schema.inspectionChecklistResponses).where(eq(schema.inspectionChecklistResponses.jobId, jobId));
+  await db.delete(jobAssignments).where(eq(jobAssignments.jobId, jobId));
+  await db.delete(inspectionResults).where(eq(inspectionResults.jobId, jobId));
+  await db.delete(deficiencies).where(eq(deficiencies.jobId, jobId));
+  await db.delete(schema.fireAlarmInspectionResults).where(eq(schema.fireAlarmInspectionResults.jobId, jobId));
+  await db.delete(schema.fireAlarmFormHeader).where(eq(schema.fireAlarmFormHeader.jobId, jobId));
+  await db.delete(workOrders).where(eq(workOrders.jobId, jobId));
+  await db.delete(reports).where(eq(reports.jobId, jobId));
+  await db.delete(jobs).where(eq(jobs.id, jobId));
 }

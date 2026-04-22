@@ -12,6 +12,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import FinalizeJobDialog from "@/components/FinalizeJobDialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ArrowLeft,
   Upload,
@@ -33,11 +35,13 @@ import {
   CalendarCheck,
   CalendarX,
   FileCheck,
-  Send,
+  ClipboardList,
+  Clock,
+  Save,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-// S3 upload is handled server-side via tRPC
 
 export default function AdminJobDetails() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -55,13 +59,38 @@ export default function AdminJobDetails() {
   const [selectedDeficiencyIds, setSelectedDeficiencyIds] = useState<number[]>([]);
   const [quoteNotes, setQuoteNotes] = useState("");
 
+  // Job edit state
+  const [jobEditOpen, setJobEditOpen] = useState(false);
+  const [jobEditTitle, setJobEditTitle] = useState("");
+  const [jobEditDescription, setJobEditDescription] = useState("");
+  const [jobEditNotes, setJobEditNotes] = useState("");
+  const [jobEditJobType, setJobEditJobType] = useState("");
+  const [jobEditPriority, setJobEditPriority] = useState("");
+  const [jobEditScheduledDate, setJobEditScheduledDate] = useState("");
+
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
 
-  const verifyHashQuery = trpc.compliance.verifyJobHash.useQuery(
-    { jobId: parseInt(jobId!) },
-    { enabled: false }
-  );
+  const updateJobMutation = trpc.job.update.useMutation({
+    onSuccess: () => {
+      toast.success("Job updated");
+      setJobEditOpen(false);
+      utils.job.get.invalidate({ id: parseInt(jobId!) });
+    },
+    onError: (err) => toast.error(err.message || "Failed to update job"),
+  });
+
+  const handleJobEditOpen = (job: any) => {
+    setJobEditTitle(job.title ?? "");
+    setJobEditDescription(job.description ?? "");
+    setJobEditNotes(job.notes ?? "");
+    setJobEditJobType(job.jobType ?? "annual");
+    setJobEditPriority(job.priority ?? "medium");
+    setJobEditScheduledDate(
+      job.scheduledDate ? new Date(job.scheduledDate).toISOString().split("T")[0] : ""
+    );
+    setJobEditOpen(true);
+  };
 
   const handleExportCSV = () => {
     if (!deficiencies || deficiencies.length === 0) return;
@@ -165,6 +194,27 @@ export default function AdminJobDetails() {
     { enabled: !!jobId }
   );
 
+  const { data: workOrder, refetch: refetchWorkOrder } = trpc.workOrder.listByJob.useQuery(
+    { jobId: parseInt(jobId!) },
+    { enabled: !!jobId }
+  );
+
+  // Work order edit state
+  const [woOfficeNotes, setWoOfficeNotes] = useState("");
+  const [woPriority, setWoPriority] = useState<string>("");
+  const [woWorkType, setWoWorkType] = useState<string>("");
+  const [woEstimatedHours, setWoEstimatedHours] = useState("");
+  const [woEditMode, setWoEditMode] = useState(false);
+
+  const updateWorkOrderMutation = trpc.workOrder.update.useMutation({
+    onSuccess: () => {
+      toast.success("Work order updated");
+      setWoEditMode(false);
+      refetchWorkOrder();
+    },
+    onError: (err) => toast.error(err.message || "Failed to update work order"),
+  });
+
   const createQuoteMutation = trpc.quote.create.useMutation({
     onSuccess: (data) => {
       toast.success("Quote created — navigate to Quotes to send it");
@@ -234,8 +284,6 @@ export default function AdminJobDetails() {
     setSelectedFile(file);
     toast.success(`Selected: ${file.name}`);
   };
-
-  const uploadToS3Mutation = trpc.files.uploadToS3.useMutation();
 
   const handleUpload = async () => {
     if (!selectedFile || !job || !user || !user.companyId) return;
@@ -470,6 +518,10 @@ export default function AdminJobDetails() {
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="work-order">
+              <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+              Work Order
+            </TabsTrigger>
             <TabsTrigger value="files">Files</TabsTrigger>
           </TabsList>
 
@@ -491,29 +543,55 @@ export default function AdminJobDetails() {
               </div>
             )}
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                 <CardTitle>Job Information</CardTitle>
+                {!job.finalizedAt && (user?.role === "admin" || user?.role === "office") && (
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleJobEditOpen(job)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="text-sm font-medium">Type</p>
-                    <p className="text-sm text-muted-foreground">{job.jobType}</p>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Title</p>
+                    <p className="mt-0.5">{job.title}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Status</p>
-                    <p className="text-sm text-muted-foreground">{job.status}</p>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Status</p>
+                    <p className="mt-0.5 capitalize">{job.status?.replace(/_/g, " ")}</p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Scheduled Date</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Type</p>
+                    <p className="mt-0.5 capitalize">{job.jobType?.replace(/_/g, " ") ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Priority</p>
+                    <p className="mt-0.5 capitalize">{job.priority ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Scheduled Date</p>
+                    <p className="mt-0.5">
                       {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : "Not scheduled"}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Priority</p>
-                    <p className="text-sm text-muted-foreground">{job.priority}</p>
+                    <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Job #</p>
+                    <p className="mt-0.5 font-mono text-xs">{job.jobNumber ?? "—"}</p>
                   </div>
+                  {job.description && (
+                    <div className="col-span-2">
+                      <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Description</p>
+                      <p className="mt-0.5 whitespace-pre-line">{job.description}</p>
+                    </div>
+                  )}
+                  {(job as any).notes && (
+                    <div className="col-span-2">
+                      <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Notes</p>
+                      <p className="mt-0.5 whitespace-pre-line">{(job as any).notes}</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -697,6 +775,262 @@ export default function AdminJobDetails() {
                 </>
               );
             })()}
+          </TabsContent>
+
+          <TabsContent value="work-order" className="space-y-4">
+            {!workOrder ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <ClipboardList className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-40" />
+                  <p className="text-muted-foreground">No work order linked to this job.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                {/* Header info */}
+                <Card>
+                  <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <ClipboardList className="h-4 w-4" />
+                        {workOrder.workOrderNumber}
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground mt-0.5">{workOrder.title}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {workOrder.finalizedAt ? (
+                        <Badge variant="secondary" className="text-xs">Finalized</Badge>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => {
+                            if (woEditMode) {
+                              setWoEditMode(false);
+                            } else {
+                              setWoOfficeNotes(workOrder.officeNotes ?? "");
+                              setWoPriority(workOrder.priority);
+                              setWoWorkType(workOrder.workType);
+                              setWoEstimatedHours(workOrder.estimatedHours ?? "");
+                              setWoEditMode(true);
+                            }
+                          }}
+                        >
+                          {woEditMode ? "Cancel" : "Edit"}
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Status row */}
+                    <div className="flex flex-wrap gap-2">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        workOrder.status === "completed" ? "status-pass" :
+                        workOrder.status === "in_progress" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :
+                        workOrder.status === "cancelled" ? "status-fail" :
+                        "bg-muted text-muted-foreground"
+                      }`}>{workOrder.status.replace(/_/g, " ")}</span>
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        workOrder.priority === "urgent" ? "severity-critical" :
+                        workOrder.priority === "high" ? "severity-major" :
+                        workOrder.priority === "medium" ? "severity-minor" :
+                        "bg-muted text-muted-foreground"
+                      }`}>{workOrder.priority}</span>
+                      <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-accent/10 text-accent">
+                        {workOrder.workType.replace(/_/g, " ")}
+                      </span>
+                    </div>
+
+                    {/* Edit form or read view */}
+                    {woEditMode ? (
+                      <div className="space-y-4 pt-1">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <Label>Priority</Label>
+                            <Select value={woPriority} onValueChange={setWoPriority}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="low">Low</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="high">High</SelectItem>
+                                <SelectItem value="urgent">Urgent</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Work Type</Label>
+                            <Select value={woWorkType} onValueChange={setWoWorkType}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="inspection">Inspection</SelectItem>
+                                <SelectItem value="repair">Repair</SelectItem>
+                                <SelectItem value="service_call">Service Call</SelectItem>
+                                <SelectItem value="maintenance">Maintenance</SelectItem>
+                                <SelectItem value="emergency">Emergency</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Estimated Hours</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={woEstimatedHours}
+                            onChange={(e) => setWoEstimatedHours(e.target.value)}
+                            placeholder="e.g. 2.5"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Office Notes</Label>
+                          <Textarea
+                            value={woOfficeNotes}
+                            onChange={(e) => setWoOfficeNotes(e.target.value)}
+                            placeholder="Internal notes for the office..."
+                            rows={3}
+                          />
+                        </div>
+                        <Button
+                          className="gap-1.5"
+                          disabled={updateWorkOrderMutation.isPending}
+                          onClick={() =>
+                            updateWorkOrderMutation.mutate({
+                              id: workOrder.id,
+                              priority: woPriority as any,
+                              workType: woWorkType as any,
+                              estimatedHours: woEstimatedHours ? parseFloat(woEstimatedHours) : null,
+                              officeNotes: woOfficeNotes,
+                            })
+                          }
+                        >
+                          {updateWorkOrderMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4" />
+                          )}
+                          Save Changes
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Scheduled</p>
+                          <p className="mt-0.5">{workOrder.scheduledDate ? new Date(workOrder.scheduledDate).toLocaleDateString() : "—"}</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Estimated Hours</p>
+                          <p className="mt-0.5 flex items-center gap-1">
+                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                            {workOrder.estimatedHours ? `${parseFloat(workOrder.estimatedHours).toFixed(1)} h` : "—"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Actual Hours</p>
+                          <p className="mt-0.5 flex items-center gap-1">
+                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                            {workOrder.actualHours ? `${parseFloat(workOrder.actualHours).toFixed(1)} h` : "—"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Total</p>
+                          <p className="mt-0.5 font-mono">
+                            {parseFloat(workOrder.total) > 0
+                              ? `$${parseFloat(workOrder.total).toLocaleString("en-CA", { minimumFractionDigits: 2 })}`
+                              : "—"}
+                          </p>
+                        </div>
+                        {workOrder.officeNotes && (
+                          <div className="col-span-2">
+                            <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Office Notes</p>
+                            <p className="mt-0.5 text-sm whitespace-pre-line">{workOrder.officeNotes}</p>
+                          </div>
+                        )}
+                        {workOrder.techNotes && (
+                          <div className="col-span-2">
+                            <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Tech Notes</p>
+                            <p className="mt-0.5 text-sm whitespace-pre-line text-muted-foreground">{workOrder.techNotes}</p>
+                          </div>
+                        )}
+                        {workOrder.completionSummary && (
+                          <div className="col-span-2">
+                            <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Completion Summary</p>
+                            <p className="mt-0.5 text-sm whitespace-pre-line">{workOrder.completionSummary}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Line Items — repair WOs with accepted quote */}
+                {workOrder.lineItems && (workOrder.lineItems as any[]).length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Line Items</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50">
+                            <th className="text-left px-4 py-2 font-medium">Description</th>
+                            <th className="text-right px-4 py-2 font-medium">Qty</th>
+                            <th className="text-right px-4 py-2 font-medium">Unit Cost</th>
+                            <th className="text-right px-4 py-2 font-medium">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(workOrder.lineItems as any[]).map((item: any, i: number) => (
+                            <tr key={i} className="border-b last:border-0">
+                              <td className="px-4 py-2">{item.description}</td>
+                              <td className="px-4 py-2 text-right font-mono">{item.qty}</td>
+                              <td className="px-4 py-2 text-right font-mono">${parseFloat(item.unitCost).toFixed(2)}</td>
+                              <td className="px-4 py-2 text-right font-mono">${(item.qty * item.unitCost).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t bg-muted/50 font-semibold">
+                            <td colSpan={3} className="px-4 py-2 text-right">Total</td>
+                            <td className="px-4 py-2 text-right font-mono">${parseFloat(workOrder.total).toFixed(2)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Materials used by tech */}
+                {workOrder.materialsUsed && (workOrder.materialsUsed as any[]).length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Materials Used</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50">
+                            <th className="text-left px-4 py-2 font-medium">Description</th>
+                            <th className="text-right px-4 py-2 font-medium">Qty</th>
+                            <th className="text-right px-4 py-2 font-medium">Unit Cost</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(workOrder.materialsUsed as any[]).map((m: any, i: number) => (
+                            <tr key={i} className="border-b last:border-0">
+                              <td className="px-4 py-2">{m.description}</td>
+                              <td className="px-4 py-2 text-right font-mono">{m.qty}</td>
+                              <td className="px-4 py-2 text-right font-mono">${parseFloat(m.unitCost).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            )}
           </TabsContent>
 
           <TabsContent value="files" className="space-y-4">
@@ -1057,6 +1391,106 @@ export default function AdminJobDetails() {
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating...</>
                 ) : (
                   <><FileCheck className="h-4 w-4 mr-2" />Create Quote</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Job Edit Dialog */}
+      <Dialog open={jobEditOpen} onOpenChange={setJobEditOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4" />
+              Edit Job
+            </DialogTitle>
+            <DialogDescription>
+              Update job details. Status changes and finalization are managed separately.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Title <span className="text-destructive">*</span></Label>
+              <Input value={jobEditTitle} onChange={(e) => setJobEditTitle(e.target.value)} placeholder="Job title" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Job Type</Label>
+                <Select value={jobEditJobType} onValueChange={setJobEditJobType}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="annual">Annual</SelectItem>
+                    <SelectItem value="semi_annual">Semi-Annual</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="service_call">Service Call</SelectItem>
+                    <SelectItem value="repair">Repair</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Priority</Label>
+                <Select value={jobEditPriority} onValueChange={setJobEditPriority}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Scheduled Date</Label>
+              <Input
+                type="date"
+                value={jobEditScheduledDate}
+                onChange={(e) => setJobEditScheduledDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Textarea
+                value={jobEditDescription}
+                onChange={(e) => setJobEditDescription(e.target.value)}
+                placeholder="Job description..."
+                rows={2}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea
+                value={jobEditNotes}
+                onChange={(e) => setJobEditNotes(e.target.value)}
+                placeholder="Internal notes..."
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setJobEditOpen(false)} disabled={updateJobMutation.isPending}>
+                Cancel
+              </Button>
+              <Button
+                disabled={!jobEditTitle.trim() || updateJobMutation.isPending}
+                onClick={() =>
+                  updateJobMutation.mutate({
+                    id: parseInt(jobId!),
+                    title: jobEditTitle.trim(),
+                    description: jobEditDescription || undefined,
+                    notes: jobEditNotes || undefined,
+                    jobType: jobEditJobType as any,
+                    priority: jobEditPriority as any,
+                    scheduledDate: jobEditScheduledDate ? new Date(jobEditScheduledDate) : undefined,
+                  })
+                }
+              >
+                {updateJobMutation.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+                ) : (
+                  <><Save className="h-4 w-4 mr-2" />Save Changes</>
                 )}
               </Button>
             </div>

@@ -11,7 +11,15 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
-    "seed:monthly-tracking": "tsx scripts/seedMonthlyTracking.ts"
+    "backfill:building-ids:dry": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --dry-run",
+    "backfill:building-ids": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1",
+    "backfill:building-ids:headers": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --dump-headers",
+    "sites:create-missing:dry": "tsx scripts/createMissingSitesFromWorkbook.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --dry-run",
+    "sites:create-missing": "tsx scripts/createMissingSitesFromWorkbook.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1",
+    "seed:monthly-tracking:all": "tsx scripts/seedMonthlyTracking.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --all-sheets",
+    "seed:monthly-tracking:dry": "tsx scripts/seedMonthlyTracking.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --all-sheets --dry-run",
+    "import:summary-sheets:dry": "tsx scripts/importSitesFromSummarySheets.ts --company 1 --dry-run --create-missing-orgs --json-report ./tmp/import-report.json",
+    "import:summary-sheets": "tsx scripts/importSitesFromSummarySheets.ts --company 1 --create-missing-orgs --update-existing-sites"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
@@ -54,6 +62,7 @@
     "@types/node-fetch": "^2.6.13",
     "@types/pdfkit": "^0.17.4",
     "@types/react-signature-canvas": "^1.0.7",
+    "adm-zip": "^0.5.17",
     "axios": "^1.12.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -98,6 +107,7 @@
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.3",
+    "@types/adm-zip": "^0.5.8",
     "@types/cors": "^2.8.19",
     "@types/express": "4.17.21",
     "@types/google.maps": "^3.58.1",

@@ -151,6 +151,8 @@ export const sites = mysqlTable("sites", {
   contactPhone: varchar("contactPhone", { length: 50 }),
   notes: text("notes"),
   summary: json("summary").$type<SiteSummary>(),
+  // File number (matches FILE # column in service tracking spreadsheets, e.g. "#0007")
+  fileNumber: varchar("fileNumber", { length: 20 }),
   // Key tracking (mirrors AppSheet portal KeyLocation / KeyNumber / KeySignOutDate)
   buildingId: varchar("buildingId", { length: 50 }),
   keyLocation: text("keyLocation"),
@@ -221,6 +223,7 @@ export const devices = mysqlTable("devices", {
   batteryCount: int("batteryCount"),
   lampCount: int("lampCount"),
   isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -349,6 +352,8 @@ export const deficiencies = mysqlTable("deficiencies", {
   resolvedAt: timestamp("resolvedAt"),
   resolvedById: int("resolvedById"),
   resolutionNotes: text("resolutionNotes"),
+  // Linked work order — set when a repair work order is created for this deficiency
+  workOrderId: int("workOrderId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
@@ -1051,6 +1056,14 @@ export const monthlyServiceTracking = mysqlTable("monthly_service_tracking", {
   rescheduleReason: text("rescheduleReason"),
   notes: text("notes"),
   sourceImportId: int("sourceImportId"),
+  // Fields seeded from service tracking spreadsheet (FILE_MONTHLY_SERVICE_LIST.xlsx)
+  hoursRequired: decimal("hoursRequired", { precision: 5, scale: 2 }),
+  techsRequired: int("techsRequired"),
+  stampsRequired: varchar("stampsRequired", { length: 100 }),
+  hasContractor: boolean("hasContractor"),
+  hasKeys: boolean("hasKeys"),
+  lastCompleted: varchar("lastCompleted", { length: 50 }),
+  agreementSigned: boolean("agreementSigned"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
@@ -1134,4 +1147,52 @@ export const aiReviews = mysqlTable("ai_reviews", {
 }));
 
 export type AiReview = typeof aiReviews.$inferSelect;
+
+// ============================================
+// WORK ORDERS
+// Field-execution record tied 1-to-1 with a job.
+// Created automatically when a job is created.
+// ============================================
+
+export type WorkOrderMaterial = {
+  description: string;
+  qty: number;
+  unitCost: number;
+};
+
+export const workOrders = mysqlTable("work_orders", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  siteId: int("siteId").notNull(),
+  customerOrgId: int("customerOrgId").notNull(),
+  jobId: int("jobId").notNull(),
+  quoteId: int("quoteId"),
+  assignedTechnicianIds: json("assignedTechnicianIds").$type<number[]>().notNull().default([]),
+  workOrderNumber: varchar("workOrderNumber", { length: 50 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  workType: mysqlEnum("workType", ["inspection", "repair", "service_call", "maintenance", "emergency"]).notNull().default("inspection"),
+  status: mysqlEnum("status", ["pending", "scheduled", "in_progress", "completed", "cancelled"]).notNull().default("pending"),
+  priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).notNull().default("medium"),
+  scheduledDate: timestamp("scheduledDate"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  estimatedHours: decimal("estimatedHours", { precision: 5, scale: 2 }),
+  actualHours: decimal("actualHours", { precision: 5, scale: 2 }),
+  materialsUsed: json("materialsUsed").$type<WorkOrderMaterial[]>(),
+  techNotes: text("techNotes"),
+  officeNotes: text("officeNotes"),
+  completionSummary: text("completionSummary"),
+  lineItems: json("lineItems").$type<QuoteLineItem[]>(),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull().default("0"),
+  finalizedAt: timestamp("finalizedAt"),
+  finalizedById: int("finalizedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  jobIdIdx: index("work_orders_jobId_idx").on(table.jobId),
+  companyIdIdx: index("work_orders_companyId_idx").on(table.companyId),
+}));
+
+export type WorkOrder = typeof workOrders.$inferSelect;
+export type InsertWorkOrder = typeof workOrders.$inferInsert;
 export type InsertAiReview = typeof aiReviews.$inferInsert;

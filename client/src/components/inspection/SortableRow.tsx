@@ -1,33 +1,25 @@
-import type { ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-type RenderChildren = (dragHandleProps: Record<string, unknown>) => ReactNode;
-
-export function SortableRow({
-  id,
-  disabled,
-  className,
-  children,
-}: {
+interface SortableRowProps {
   id: number;
   disabled?: boolean;
   className?: string;
-  children: RenderChildren;
-}) {
-  const sortable = useSortable({ id, disabled });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  children: (dragHandleProps: any) => ReactNode;
+}
 
-  const style = {
-    transform: CSS.Transform.toString(sortable.transform),
-    transition: sortable.transition,
-  };
+export function SortableRow({ id, disabled, className, children }: SortableRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
 
   return (
-    <tr ref={sortable.setNodeRef} style={style} className={className}>
-      {children({
-        ...sortable.attributes,
-        ...sortable.listeners,
-      })}
+    <tr
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
+      className={className}
+    >
+      {children({ ...attributes, ...listeners })}
     </tr>
   );
 }
