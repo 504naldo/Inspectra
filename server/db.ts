@@ -352,7 +352,21 @@ export async function createDevice(data: InsertDevice) {
 export async function getDevicesBySite(siteId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true))).orderBy(asc(devices.deviceType), asc(devices.location));
+  return db.select().from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true))).orderBy(asc(devices.sortOrder), asc(devices.id));
+}
+
+export async function reorderDevices(orderedIds: number[]) {
+  const db = await getDb();
+  if (!db) return;
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.update(devices).set({ sortOrder: i } as any).where(eq(devices.id, orderedIds[i]));
+  }
+}
+
+export async function clearDeviceSortOrder(siteId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(devices).set({ sortOrder: null } as any).where(eq(devices.siteId, siteId));
 }
 
 export async function getDevicesByArea(areaId: number) {

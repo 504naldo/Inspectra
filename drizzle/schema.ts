@@ -223,6 +223,7 @@ export const devices = mysqlTable("devices", {
   batteryCount: int("batteryCount"),
   lampCount: int("lampCount"),
   isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

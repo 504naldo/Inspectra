@@ -160,6 +160,20 @@ const deviceRouter = router({
     await db.updateDevice(input.deviceId, { isActive: false } as any);
     return { success: true };
   }),
+
+  reorder: officeProcedure.input(z.object({
+    orderedIds: z.array(z.number()),
+  })).mutation(async ({ input }) => {
+    await db.reorderDevices(input.orderedIds);
+    return { success: true };
+  }),
+
+  clearSortOrder: officeProcedure.input(z.object({
+    siteId: z.number(),
+  })).mutation(async ({ input }) => {
+    await db.clearDeviceSortOrder(input.siteId);
+    return { success: true };
+  }),
 });
 
 // Smoke Alarm router

@@ -3,8 +3,12 @@ import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Info, CheckCheck, Trash2, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, CheckCheck, Trash2, Plus, GripVertical } from "lucide-react";
 import { useIsMobile } from "@/hooks/useMobile";
+import { DndContext, closestCenter } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useDeviceReorder } from "./useDeviceReorder";
+import { SortableRow } from "./SortableRow";
 
 // ─── Legend data ────────────────────────────────────────────────────────────
 
@@ -239,6 +243,7 @@ export function SmokeAlarmGrid({
 }: SmokeAlarmGridProps) {
   const isMobile = useIsMobile();
   const [editing, setEditing] = useState<EditState | null>(null);
+  const { rows, onDragEnd, sensors } = useDeviceReorder(devices, !!isFinalized);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
   const [localMeta, setLocalMeta] = useState<Record<number, LocalMeta>>({});
   const [legendOpen, setLegendOpen] = useState(false);
@@ -604,6 +609,7 @@ export function SmokeAlarmGrid({
   return (
     <div className="space-y-3">
       {header}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-xs border-collapse">
           <thead>
@@ -623,7 +629,8 @@ export function SmokeAlarmGrid({
             </tr>
           </thead>
           <tbody>
-            {devices.map((device, idx) => {
+            <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+            {rows.map((device, idx) => {
               const result = getEffectiveResult(device);
               const meta = localMeta[device.id] ?? {};
               const rowBg = getRowBg(device);
@@ -638,12 +645,15 @@ export function SmokeAlarmGrid({
               };
 
               return (
-                <tr
-                  key={device.id}
-                  className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}
-                >
+                <SortableRow key={device.id} id={device.id} disabled={!!isFinalized} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+                  {(dragHandleProps) => (<>
                   {/* A — Suite / Location (sticky) + delete */}
                   <td className="sticky left-0 bg-inherit px-2 py-1.5 border-r font-mono font-medium whitespace-nowrap">
+                    {!isFinalized && (
+                      <button {...dragHandleProps} className="block text-muted-foreground/30 hover:text-muted-foreground cursor-grab active:cursor-grabbing mb-0.5" title="Drag to reorder">
+                        <GripVertical className="h-3 w-3" />
+                      </button>
+                    )}
                     {device.suiteNumber || device.location || (
                       <span className="text-muted-foreground/40">—</span>
                     )}
@@ -802,9 +812,11 @@ export function SmokeAlarmGrid({
                     )}
                   </td>
 
-                </tr>
+                </>)}
+                </SortableRow>
               );
             })}
+            </SortableContext>
 
             {/* Add row */}
             {!isFinalized && showAddRow && (
@@ -843,6 +855,7 @@ export function SmokeAlarmGrid({
           </tbody>
         </table>
       </div>
+      </DndContext>
 
       {!isFinalized && (
         <div className="mt-2">
