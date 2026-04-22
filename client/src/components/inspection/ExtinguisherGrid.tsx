@@ -4,6 +4,7 @@ import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CheckCheck, Trash2, Plus } from "lucide-react";
+import { useSectionPendingChanges } from "./useSectionPendingChanges";
 
 interface ExtinguisherRow {
   id: number;
@@ -71,6 +72,19 @@ export function ExtinguisherGrid({
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState<AddForm>({ location: "", deviceType: "Fire Extinguisher" });
+  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<ExtinguisherRow>>>({});
+  const {
+    queueChange: queuePendingDeviceChange,
+    clearChanges: clearPendingDeviceChanges,
+    hasUnsavedChanges: hasPendingDeviceChanges,
+    pendingChanges: pendingDeviceChanges,
+  } = useSectionPendingChanges();
+  const {
+    queueChange: queuePendingResultChange,
+    clearChanges: clearPendingResultChanges,
+    hasUnsavedChanges: hasPendingResultChanges,
+    pendingChanges: pendingResultChanges,
+  } = useSectionPendingChanges();
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -102,10 +116,10 @@ export function ExtinguisherGrid({
   const handleResultChange = useCallback(
     (deviceId: number, result: InspectionResult) => {
       setLocalResults((prev) => ({ ...prev, [deviceId]: result }));
-      upsertResult.mutate({ jobId, deviceId, result });
+      queuePendingResultChange(deviceId, "result", result);
       onResultChange?.(deviceId, result);
     },
-    [jobId, upsertResult, onResultChange]
+    [queuePendingResultChange, onResultChange]
   );
 
   const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
@@ -116,9 +130,42 @@ export function ExtinguisherGrid({
   const handleEditBlur = () => {
     if (!editing) return;
     const { deviceId, field, value } = editing;
-    updateDevice.mutate({ id: deviceId, [field]: value || undefined });
+    setLocalDeviceEdits((prev) => ({
+      ...prev,
+      [deviceId]: { ...(prev[deviceId] ?? {}), [field]: value },
+    }));
+    queuePendingDeviceChange(deviceId, field, value);
     setEditing(null);
   };
+
+  const handleSaveSection = useCallback(async () => {
+    try {
+      const deviceSaveTasks = Object.entries(pendingDeviceChanges).map(([id, changeSet]) =>
+        updateDevice.mutateAsync({ id: Number(id), ...(changeSet as Record<string, unknown>) })
+      );
+      const resultSaveTasks = Object.entries(pendingResultChanges).map(([id, changeSet]) =>
+        upsertResult.mutateAsync({
+          jobId,
+          deviceId: Number(id),
+          result: changeSet.result as InspectionResult,
+        })
+      );
+      await Promise.all([...deviceSaveTasks, ...resultSaveTasks]);
+      clearPendingDeviceChanges();
+      clearPendingResultChanges();
+      toast.success("Fire extinguisher changes saved");
+    } catch {
+      toast.error("Failed to save fire extinguisher changes");
+    }
+  }, [
+    pendingDeviceChanges,
+    pendingResultChanges,
+    updateDevice,
+    upsertResult,
+    jobId,
+    clearPendingDeviceChanges,
+    clearPendingResultChanges,
+  ]);
 
   const getEffectiveResult = (device: ExtinguisherRow): InspectionResult => {
     return localResults[device.id] ?? device.result ?? "not_tested";
@@ -130,11 +177,11 @@ export function ExtinguisherGrid({
     devices.forEach((d) => { updates[d.id] = "pass"; });
     setLocalResults((prev) => ({ ...prev, ...updates }));
     devices.forEach((d) => {
-      upsertResult.mutate({ jobId, deviceId: d.id, result: "pass" });
+      queuePendingResultChange(d.id, "result", "pass");
       onResultChange?.(d.id, "pass");
     });
     toast.success(`Marked ${devices.length} extinguisher${devices.length !== 1 ? "s" : ""} as pass`);
-  }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
+  }, [devices, isFinalized, queuePendingResultChange, onResultChange]);
 
   const handleAddSubmit = () => {
     if (!addForm.location.trim() && !addForm.deviceType.trim()) {
@@ -154,7 +201,14 @@ export function ExtinguisherGrid({
   return (
     <div>
       {!isFinalized && devices.length > 0 && (
-        <div className="flex justify-end mb-2">
+        <div className="flex justify-end gap-2 mb-2">
+          <button
+            onClick={handleSaveSection}
+            disabled={!hasPendingDeviceChanges && !hasPendingResultChanges}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Save
+          </button>
           <button
             onClick={handleAllPass}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
@@ -217,7 +271,7 @@ export function ExtinguisherGrid({
                 {(["location", "deviceType", "manufacturer", "model", "serialNumber", "mfgDate", "lastHST", "last6yr"] as const).map(
                   (field) => {
                     const isEditing = editing?.deviceId === device.id && editing?.field === field;
-                    const value = (device as any)[field] ?? "";
+                    const value = (localDeviceEdits[device.id]?.[field as keyof ExtinguisherRow] ?? (device as any)[field] ?? "") as string;
                     const isReadOnly = field === "deviceType";
 
                     return (

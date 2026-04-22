@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -170,8 +170,6 @@ function MobileCard({
   onCheckChange,
   onFChange,
   onRemarksChange,
-  onRemarksBlur,
-  onFBlur,
   isFinalized,
   isCarriedForward,
 }: {
@@ -181,8 +179,6 @@ function MobileCard({
   onCheckChange: (key: keyof CheckData, value: CheckState) => void;
   onFChange: (val: string) => void;
   onRemarksChange: (val: string) => void;
-  onRemarksBlur: () => void;
-  onFBlur: () => void;
   isFinalized?: boolean;
   isCarriedForward?: boolean;
 }) {
@@ -250,7 +246,6 @@ function MobileCard({
               className="flex-1 text-xs border rounded px-2 py-1 bg-background"
               value={checks.f}
               onChange={(e) => onFChange(e.target.value)}
-              onBlur={onFBlur}
               disabled={isFinalized}
               placeholder="e.g. 2.1kΩ"
             />
@@ -263,7 +258,6 @@ function MobileCard({
               className="flex-1 text-xs border rounded px-2 py-1 bg-background"
               value={checks.remarks}
               onChange={(e) => onRemarksChange(e.target.value)}
-              onBlur={onRemarksBlur}
               disabled={isFinalized}
               placeholder="Additional notes…"
             />
@@ -288,7 +282,7 @@ export function IndividualDeviceGrid({
 }: IndividualDeviceGridProps) {
   const [legendOpen, setLegendOpen] = useState(false);
   const [localChecks, setLocalChecks] = useState<Record<number, CheckData>>({});
-  const pendingSave = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const [pendingChecks, setPendingChecks] = useState<Record<number, CheckData>>({});
   const isMobile = useIsMobile();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
@@ -339,51 +333,39 @@ export function IndividualDeviceGrid({
     [localChecks]
   );
 
-  const saveChecks = useCallback(
-    (deviceId: number, data: CheckData) => {
-      // Debounce saves by 400ms to avoid thrashing on rapid text input
-      if (pendingSave.current[deviceId]) clearTimeout(pendingSave.current[deviceId]);
-      pendingSave.current[deviceId] = setTimeout(() => {
-        const result = computeResult(data);
-        const notes = serializeChecks(data);
-        upsertResult.mutate({ jobId, deviceId, result, notes });
-        onResultChange?.(deviceId, result);
-        delete pendingSave.current[deviceId];
-      }, 400);
-    },
-    [jobId, upsertResult, onResultChange]
-  );
-
   const handleCheckChange = useCallback(
     (deviceId: number, key: keyof CheckData, value: CheckState | string) => {
       setLocalChecks((prev) => {
         const current = prev[deviceId] ?? parseChecks(devices.find((d) => d.id === deviceId)?.inspectionNotes);
         const updated = { ...current, [key]: value };
-        saveChecks(deviceId, updated);
+        setPendingChecks((pending) => ({ ...pending, [deviceId]: updated }));
         return { ...prev, [deviceId]: updated };
       });
     },
-    [devices, saveChecks]
+    [devices]
   );
 
-  const handleTextBlur = useCallback(
-    (deviceId: number) => {
-      setLocalChecks((prev) => {
-        const current = prev[deviceId];
-        if (!current) return prev;
-        // Flush the debounced save immediately
-        if (pendingSave.current[deviceId]) {
-          clearTimeout(pendingSave.current[deviceId]);
-          delete pendingSave.current[deviceId];
-        }
-        const result = computeResult(current);
-        upsertResult.mutate({ jobId, deviceId, result, notes: serializeChecks(current) });
-        onResultChange?.(deviceId, result);
-        return prev;
-      });
-    },
-    [jobId, upsertResult, onResultChange]
-  );
+  const hasUnsavedChanges = Object.keys(pendingChecks).length > 0;
+
+  const handleSaveSection = useCallback(async () => {
+    try {
+      await Promise.all(
+        Object.entries(pendingChecks).map(([deviceId, checks]) => {
+          const result = computeResult(checks);
+          return upsertResult.mutateAsync({
+            jobId,
+            deviceId: Number(deviceId),
+            result,
+            notes: serializeChecks(checks),
+          });
+        })
+      );
+      setPendingChecks({});
+      toast.success("Fire alarm device changes saved");
+    } catch {
+      toast.error("Failed to save fire alarm device changes");
+    }
+  }, [pendingChecks, upsertResult, jobId]);
 
   const handleAllPass = useCallback(() => {
     if (isFinalized) return;
@@ -392,11 +374,11 @@ export function IndividualDeviceGrid({
     devices.forEach((device) => { updates[device.id] = allPass; });
     setLocalChecks((prev) => ({ ...prev, ...updates }));
     devices.forEach((device) => {
-      upsertResult.mutate({ jobId, deviceId: device.id, result: "pass", notes: serializeChecks(allPass) });
+      setPendingChecks((prev) => ({ ...prev, [device.id]: allPass }));
       onResultChange?.(device.id, "pass");
     });
     toast.success(`Marked ${devices.length} device${devices.length !== 1 ? "s" : ""} as all pass`);
-  }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
+  }, [devices, isFinalized, onResultChange]);
 
   if (devices.length === 0 && isFinalized) {
     return (
@@ -409,12 +391,21 @@ export function IndividualDeviceGrid({
       <div>
         <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
         {!isFinalized && devices.length > 0 && (
-          <button
-            onClick={handleAllPass}
-            className="mb-2 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-          >
-            <CheckCheck className="h-3.5 w-3.5" /> All Pass
-          </button>
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              onClick={handleSaveSection}
+              disabled={!hasUnsavedChanges}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+            <button
+              onClick={handleAllPass}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+            >
+              <CheckCheck className="h-3.5 w-3.5" /> All Pass
+            </button>
+          </div>
         )}
         {devices.map((device, idx) => {
           const checks = getChecks(device);
@@ -427,8 +418,6 @@ export function IndividualDeviceGrid({
                 onCheckChange={(key, val) => handleCheckChange(device.id, key, val)}
                 onFChange={(val) => handleCheckChange(device.id, "f", val)}
                 onRemarksChange={(val) => handleCheckChange(device.id, "remarks", val)}
-                onFBlur={() => handleTextBlur(device.id)}
-                onRemarksBlur={() => handleTextBlur(device.id)}
                 isFinalized={isFinalized}
                 isCarriedForward={carriedForwardDeviceIds?.has(device.id)}
               />
@@ -480,12 +469,21 @@ export function IndividualDeviceGrid({
       <div className="flex items-center justify-between mb-1">
         <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
         {!isFinalized && devices.length > 0 && (
-          <button
-            onClick={handleAllPass}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-          >
-            <CheckCheck className="h-3.5 w-3.5" /> All Pass
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSaveSection}
+              disabled={!hasUnsavedChanges}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+            <button
+              onClick={handleAllPass}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+            >
+              <CheckCheck className="h-3.5 w-3.5" /> All Pass
+            </button>
+          </div>
         )}
       </div>
       <div className="overflow-x-auto rounded-lg border">
@@ -575,7 +573,6 @@ export function IndividualDeviceGrid({
                       className="w-full bg-transparent outline-none border-b border-transparent focus:border-primary text-xs px-1"
                       value={checks.f}
                       onChange={(e) => handleCheckChange(device.id, "f", e.target.value)}
-                      onBlur={() => handleTextBlur(device.id)}
                       disabled={isFinalized}
                       placeholder="—"
                     />
@@ -596,7 +593,6 @@ export function IndividualDeviceGrid({
                       className="w-full bg-transparent outline-none border-b border-transparent focus:border-primary text-xs px-1"
                       value={checks.remarks}
                       onChange={(e) => handleCheckChange(device.id, "remarks", e.target.value)}
-                      onBlur={() => handleTextBlur(device.id)}
                       disabled={isFinalized}
                       placeholder="—"
                     />

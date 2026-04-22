@@ -11,6 +11,7 @@ import {
   drawCheckbox,
   drawEnhancedCoverPage,
   drawDeficiencySummaryPage,
+  drawAiExecutiveSummaryPage,
   drawSignatureTable,
   drawInspectionSummaryPage,
   drawClientAuthorizationBlock,
@@ -566,6 +567,21 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
       });
 
       // ════════════════════════════════════════════════════════════════════
+      // AI EXECUTIVE SUMMARY NARRATIVE (optional for all report types)
+      // ════════════════════════════════════════════════════════════════════
+      if (data.summary && data.summary.trim().length > 0) {
+        doc.addPage();
+        const aiSummaryY = drawPageHeader(doc, data);
+        drawAiExecutiveSummaryPage(doc, data.summary, aiSummaryY, {
+          maxY: 700,
+          onPageBreak: () => {
+            doc.addPage();
+            return drawPageHeader(doc, data);
+          },
+        });
+      }
+
+      // ════════════════════════════════════════════════════════════════════
       // FIRE ALARM CHECKLIST (CAN/ULC-S536) — only in reports that opt in
       // ════════════════════════════════════════════════════════════════════
       if (data.includeFireAlarmChecklist === true && data.fireAlarmChecklist && data.fireAlarmChecklist.length > 0) {
@@ -584,11 +600,11 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
         const execY = drawPageHeader(doc, data);
         drawDeficiencySummaryPage(doc, data.deficiencies, execY);
 
-        // ── PAGE 4: After Service Deficiency Letter ─────────────────────
+        // ── After Service Deficiency Letter ──────────────────────────────
         doc.addPage();
         drawAfterServiceLetter(doc, data, true);
 
-        // ── PAGE 5+: Deficiency tables ──────────────────────────────────
+        // ── Deficiency tables ────────────────────────────────────────────
         doc.addPage();
         let defY = drawPageHeader(doc, data);
 

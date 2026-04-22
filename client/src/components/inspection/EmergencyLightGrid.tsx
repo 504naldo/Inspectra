@@ -4,6 +4,7 @@ import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CheckCheck, Trash2, Plus } from "lucide-react";
+import { useSectionPendingChanges } from "./useSectionPendingChanges";
 
 interface EmergencyLightRow {
   id: number;
@@ -74,6 +75,19 @@ export function EmergencyLightGrid({
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ location: "", deviceType: "Emergency Light" });
+  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<EmergencyLightRow>>>({});
+  const {
+    queueChange: queuePendingDeviceChange,
+    clearChanges: clearPendingDeviceChanges,
+    hasUnsavedChanges: hasPendingDeviceChanges,
+    pendingChanges: pendingDeviceChanges,
+  } = useSectionPendingChanges();
+  const {
+    queueChange: queuePendingResultChange,
+    clearChanges: clearPendingResultChanges,
+    hasUnsavedChanges: hasPendingResultChanges,
+    pendingChanges: pendingResultChanges,
+  } = useSectionPendingChanges();
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -105,10 +119,10 @@ export function EmergencyLightGrid({
   const handleResultChange = useCallback(
     (deviceId: number, result: InspectionResult) => {
       setLocalResults((prev) => ({ ...prev, [deviceId]: result }));
-      upsertResult.mutate({ jobId, deviceId, result });
+      queuePendingResultChange(deviceId, "result", result);
       onResultChange?.(deviceId, result);
     },
-    [jobId, upsertResult, onResultChange]
+    [queuePendingResultChange, onResultChange]
   );
 
   const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
@@ -120,10 +134,43 @@ export function EmergencyLightGrid({
     if (!editing) return;
     const { deviceId, field, value } = editing;
     const numericFields = ["batteryCount", "lampCount"];
-    const fieldValue = value === "" ? undefined : numericFields.includes(field) ? Number(value) || undefined : value;
-    updateDevice.mutate({ id: deviceId, [field]: fieldValue } as Parameters<typeof updateDevice.mutate>[0]);
+    const fieldValue = numericFields.includes(field) ? (value === "" ? undefined : Number(value) || undefined) : value;
+    setLocalDeviceEdits((prev) => ({
+      ...prev,
+      [deviceId]: { ...(prev[deviceId] ?? {}), [field]: fieldValue },
+    }));
+    queuePendingDeviceChange(deviceId, field, fieldValue);
     setEditing(null);
   };
+
+  const handleSaveSection = useCallback(async () => {
+    try {
+      const deviceSaveTasks = Object.entries(pendingDeviceChanges).map(([id, changeSet]) =>
+        updateDevice.mutateAsync({ id: Number(id), ...(changeSet as Record<string, unknown>) })
+      );
+      const resultSaveTasks = Object.entries(pendingResultChanges).map(([id, changeSet]) =>
+        upsertResult.mutateAsync({
+          jobId,
+          deviceId: Number(id),
+          result: changeSet.result as InspectionResult,
+        })
+      );
+      await Promise.all([...deviceSaveTasks, ...resultSaveTasks]);
+      clearPendingDeviceChanges();
+      clearPendingResultChanges();
+      toast.success("Emergency light changes saved");
+    } catch {
+      toast.error("Failed to save emergency light changes");
+    }
+  }, [
+    pendingDeviceChanges,
+    pendingResultChanges,
+    updateDevice,
+    upsertResult,
+    jobId,
+    clearPendingDeviceChanges,
+    clearPendingResultChanges,
+  ]);
 
   const getEffectiveResult = (device: EmergencyLightRow): InspectionResult => {
     return localResults[device.id] ?? device.result ?? "not_tested";
@@ -135,11 +182,11 @@ export function EmergencyLightGrid({
     devices.forEach((d) => { updates[d.id] = "pass"; });
     setLocalResults((prev) => ({ ...prev, ...updates }));
     devices.forEach((d) => {
-      upsertResult.mutate({ jobId, deviceId: d.id, result: "pass" });
+      queuePendingResultChange(d.id, "result", "pass");
       onResultChange?.(d.id, "pass");
     });
     toast.success(`Marked ${devices.length} emergency light${devices.length !== 1 ? "s" : ""} as pass`);
-  }, [devices, isFinalized, jobId, upsertResult, onResultChange]);
+  }, [devices, isFinalized, queuePendingResultChange, onResultChange]);
 
   const handleAddSubmit = () => {
     if (!addForm.location.trim() && !addForm.deviceType.trim()) {
@@ -159,7 +206,14 @@ export function EmergencyLightGrid({
   return (
     <div>
       {!isFinalized && devices.length > 0 && (
-        <div className="flex justify-end mb-2">
+        <div className="flex justify-end gap-2 mb-2">
+          <button
+            onClick={handleSaveSection}
+            disabled={!hasPendingDeviceChanges && !hasPendingResultChanges}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Save
+          </button>
           <button
             onClick={handleAllPass}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
@@ -222,7 +276,7 @@ export function EmergencyLightGrid({
                 {(["location", "deviceType", "manufacturer", "model", "supplyVoltage", "modelWattage", "batteryYear", "batterySize", "batteryCount", "lampCount"] as const).map(
                   (field) => {
                     const isEditing = editing?.deviceId === device.id && editing?.field === field;
-                    const raw = (device as any)[field];
+                    const raw = localDeviceEdits[device.id]?.[field as keyof EmergencyLightRow] ?? (device as any)[field];
                     const value = raw != null ? String(raw) : "";
                     const isReadOnly = field === "deviceType";
 
