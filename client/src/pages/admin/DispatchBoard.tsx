@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, ExternalLink, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Users, X } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -110,14 +110,20 @@ function JobCard({
   technicians,
   onAssign,
   onStatus,
+  onAddAssist,
+  onRemoveAssist,
 }: {
   job: DispatchJob;
   technicians: Tech[];
   onAssign: (jobId: number, techId: number | null) => void;
   onStatus: (jobId: number, status: string) => void;
+  onAddAssist: (jobId: number, techId: number) => void;
+  onRemoveAssist: (jobId: number, techId: number) => void;
 }) {
   const lead = job.assignedTechnicians.find((t) => t.role === "LEAD");
   const assists = job.assignedTechnicians.filter((t) => t.role !== "LEAD");
+  const assignedIds = new Set(job.assignedTechnicians.map((t) => t.id));
+  const availableForAssist = technicians.filter((t) => !assignedIds.has(t.id));
 
   return (
     <div
@@ -159,20 +165,10 @@ function JobCard({
         )}
       </div>
 
-      {/* Assists */}
-      {assists.length > 0 && (
-        <p className="text-[10px] text-muted-foreground mt-0.5">
-          + {assists.map((a) => a.name ?? a.email ?? "?").join(", ")}
-        </p>
-      )}
-
       {/* Actions */}
       <div className="mt-2 space-y-1">
         {/* Status select */}
-        <Select
-          value={job.status}
-          onValueChange={(v) => onStatus(job.id, v)}
-        >
+        <Select value={job.status} onValueChange={(v) => onStatus(job.id, v)}>
           <SelectTrigger className="h-6 text-[11px] px-2 py-0">
             <span className={cn("rounded px-1 text-[10px]", JOB_STATUS_COLORS[job.status])}>
               {JOB_STATUS_LABELS[job.status] ?? job.status}
@@ -180,27 +176,24 @@ function JobCard({
           </SelectTrigger>
           <SelectContent>
             {Object.entries(JOB_STATUS_LABELS).map(([v, l]) => (
-              <SelectItem key={v} value={v} className="text-xs">
-                {l}
-              </SelectItem>
+              <SelectItem key={v} value={v} className="text-xs">{l}</SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        {/* Assign select */}
+        {/* Lead assign select */}
         <Select
           value={lead ? String(lead.id) : "none"}
           onValueChange={(v) => onAssign(job.id, v === "none" ? null : Number(v))}
         >
           <SelectTrigger className="h-6 text-[11px] px-2 py-0">
+            <span className="truncate text-[10px] text-muted-foreground mr-1">Lead:</span>
             <span className="truncate">
               {lead ? (lead.name ?? lead.email ?? "Tech") : <span className="text-muted-foreground">Unassigned</span>}
             </span>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="none" className="text-xs text-muted-foreground">
-              Unassigned
-            </SelectItem>
+            <SelectItem value="none" className="text-xs text-muted-foreground">Unassigned</SelectItem>
             {technicians.map((t) => (
               <SelectItem key={t.id} value={String(t.id)} className="text-xs">
                 {t.name ?? t.email ?? `Tech #${t.id}`}
@@ -208,6 +201,49 @@ function JobCard({
             ))}
           </SelectContent>
         </Select>
+
+        {/* Assist chips + add assist */}
+        {(assists.length > 0 || availableForAssist.length > 0) && (
+          <div className="space-y-0.5">
+            {assists.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {assists.map((a) => (
+                  <span
+                    key={a.id}
+                    className="inline-flex items-center gap-0.5 text-[10px] bg-muted rounded px-1 py-0.5 leading-none"
+                  >
+                    <span className="text-[9px] text-muted-foreground mr-0.5">+</span>
+                    {a.name ?? a.email ?? "?"}
+                    <button
+                      onClick={() => onRemoveAssist(job.id, a.id)}
+                      className="ml-0.5 text-muted-foreground/60 hover:text-red-500 transition-colors"
+                      title={`Remove ${a.name ?? a.email ?? "tech"}`}
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {availableForAssist.length > 0 && (
+              <Select
+                value=""
+                onValueChange={(v) => onAddAssist(job.id, Number(v))}
+              >
+                <SelectTrigger className="h-6 text-[11px] px-2 py-0 text-muted-foreground">
+                  <span>+ Add assist</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {availableForAssist.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)} className="text-xs">
+                      {t.name ?? t.email ?? `Tech #${t.id}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Open link */}
@@ -230,12 +266,16 @@ function TechColumn({
   technicians,
   onAssign,
   onStatus,
+  onAddAssist,
+  onRemoveAssist,
 }: {
   label: string;
   jobs: DispatchJob[];
   technicians: Tech[];
   onAssign: (jobId: number, techId: number | null) => void;
   onStatus: (jobId: number, status: string) => void;
+  onAddAssist: (jobId: number, techId: number) => void;
+  onRemoveAssist: (jobId: number, techId: number) => void;
 }) {
   return (
     <div className="flex-shrink-0 w-56">
@@ -247,7 +287,7 @@ function TechColumn({
       </div>
       <div className="min-h-[4rem]">
         {jobs.map((job) => (
-          <JobCard key={job.id} job={job} technicians={technicians} onAssign={onAssign} onStatus={onStatus} />
+          <JobCard key={job.id} job={job} technicians={technicians} onAssign={onAssign} onStatus={onStatus} onAddAssist={onAddAssist} onRemoveAssist={onRemoveAssist} />
         ))}
         {jobs.length === 0 && (
           <div className="rounded border border-dashed border-muted-foreground/25 h-16 flex items-center justify-center">
@@ -295,6 +335,16 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
     onError: (e) => toast.error(e.message || "Failed to update assignment"),
   });
 
+  const addAssistMutation = trpc.jobAssignment.addJobAssignments.useMutation({
+    onSuccess: () => { refetch(); },
+    onError: (e) => toast.error(e.message || "Failed to add assist technician"),
+  });
+
+  const removeAssistMutation = trpc.jobAssignment.removeJobAssignment.useMutation({
+    onSuccess: () => { refetch(); },
+    onError: (e) => toast.error(e.message || "Failed to remove assist technician"),
+  });
+
   const updateJob = trpc.job.update.useMutation({
     onSuccess: () => { refetch(); },
     onError: (e) => toast.error(e.message || "Failed to update job"),
@@ -338,8 +388,21 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
     if (techId === null) {
       setAssignments.mutate({ jobId, technicianIds: [], leadId: 0 });
     } else {
-      setAssignments.mutate({ jobId, technicianIds: [techId], leadId: techId });
+      // When changing lead, keep existing assists and add the new lead
+      const job = jobs.find((j) => j.id === jobId);
+      const assistIds = (job?.assignedTechnicians ?? [])
+        .filter((t) => t.role !== "LEAD" && t.id !== techId)
+        .map((t) => t.id);
+      setAssignments.mutate({ jobId, technicianIds: [techId, ...assistIds], leadId: techId });
     }
+  }
+
+  function handleAddAssist(jobId: number, techId: number) {
+    addAssistMutation.mutate({ jobId, technicianIds: [techId] });
+  }
+
+  function handleRemoveAssist(jobId: number, techId: number) {
+    removeAssistMutation.mutate({ jobId, technicianId: techId });
   }
 
   function handleStatus(jobId: number, status: string) {
@@ -374,11 +437,13 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
         <div className="flex gap-3 min-w-max">
           {/* Unassigned column */}
           <TechColumn
-            label={`Unassigned`}
+            label="Unassigned"
             jobs={unassigned}
             technicians={technicians}
             onAssign={handleAssign}
             onStatus={handleStatus}
+            onAddAssist={handleAddAssist}
+            onRemoveAssist={handleRemoveAssist}
           />
 
           {/* Divider */}
@@ -395,6 +460,8 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
                 technicians={technicians}
                 onAssign={handleAssign}
                 onStatus={handleStatus}
+                onAddAssist={handleAddAssist}
+                onRemoveAssist={handleRemoveAssist}
               />
             );
           })}
@@ -437,7 +504,7 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
               {unscheduledJobs.map((job) => (
-                <JobCard key={job.id} job={job} technicians={technicians} onAssign={handleAssign} onStatus={handleStatus} />
+                <JobCard key={job.id} job={job} technicians={technicians} onAssign={handleAssign} onStatus={handleStatus} onAddAssist={handleAddAssist} onRemoveAssist={handleRemoveAssist} />
               ))}
             </div>
           </div>
@@ -463,7 +530,7 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
               {dayJobs.length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                   {dayJobs.map((job) => (
-                    <JobCard key={job.id} job={job} technicians={technicians} onAssign={handleAssign} onStatus={handleStatus} />
+                    <JobCard key={job.id} job={job} technicians={technicians} onAssign={handleAssign} onStatus={handleStatus} onAddAssist={handleAddAssist} onRemoveAssist={handleRemoveAssist} />
                   ))}
                 </div>
               ) : (
