@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
+import { formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -237,7 +238,7 @@ export default function JobAssignments() {
                         <td className="p-3">{getPriorityBadge(job.priority)}</td>
                         <td className="p-3 text-sm">
                           {job.scheduledDate
-                            ? new Date(job.scheduledDate).toLocaleDateString()
+                            ? formatDate(job.scheduledDate)
                             : 'Not scheduled'}
                         </td>
                         <td className="p-3">

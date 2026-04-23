@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { formatDate } from "@/lib/utils";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link } from "wouter";
 import {
@@ -134,7 +135,7 @@ export default function AdminWorkOrders() {
                         <p className="font-medium mt-0.5 truncate">{wo.title}</p>
                         <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
                           {wo.scheduledDate && (
-                            <span>{new Date(wo.scheduledDate).toLocaleDateString()}</span>
+                            <span>{formatDate(wo.scheduledDate)}</span>
                           )}
                           {wo.estimatedHours && (
                             <span className="flex items-center gap-0.5">

@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
+import { formatDate } from "@/lib/utils";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { 
   ArrowLeft, 
@@ -256,7 +257,7 @@ export default function JobsList() {
                             {job.scheduledDate && (
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
-                                {new Date(job.scheduledDate).toLocaleDateString()}
+                                {formatDate(job.scheduledDate)}
                               </span>
                             )}
                           </div>

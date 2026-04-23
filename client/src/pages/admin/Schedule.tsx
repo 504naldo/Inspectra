@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { formatDate } from "@/lib/utils";
 import { DispatchBoard } from "./DispatchBoard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -302,7 +303,7 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
                   {row.targetDate ? new Date(row.targetDate).toLocaleDateString() : "—"}
                 </td>
                 <td className="px-3 py-2 text-gray-500">
-                  {row.scheduledDate ? new Date(row.scheduledDate).toLocaleDateString() : "—"}
+                  {formatDate(row.scheduledDate)}
                 </td>
                 <td className="px-3 py-2">
                   {editingRow === row.id ? (
@@ -857,7 +858,7 @@ function CalendarTab({ companyId }: { companyId: number }) {
                   <div>
                     <p className="font-medium text-sm">{job.title}</p>
                     <p className="text-xs text-gray-500">
-                      Scheduled: {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : "—"}
+                      Scheduled: {formatDate(job.scheduledDate)}
                     </p>
                   </div>
                   <Link href={`/admin/jobs/${job.id}`}>
