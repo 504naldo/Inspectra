@@ -221,6 +221,8 @@ export const devices = mysqlTable("devices", {
   batteryYear: varchar("batteryYear", { length: 20 }),
   batterySize: varchar("batterySize", { length: 50 }),
   batteryCount: int("batteryCount"),
+  batteryReplaced: varchar("batteryReplaced", { length: 10 }),
+  maintenanceRequired: varchar("maintenanceRequired", { length: 20 }),
   lampCount: int("lampCount"),
   isActive: boolean("isActive").default(true).notNull(),
   sortOrder: int("sortOrder"),

@@ -86,10 +86,12 @@ export interface SmokeAlarmRow {
   location?: string | null;
   deviceType?: string | null;
   powerType?: string | null;
-  batterySize?: string | null;   // Battery Type (col D)
-  batteryCount?: number | null;  // # Batts (col F)
-  batteryYear?: string | null;   // In Service Date (col H)
-  notes?: string | null;         // Remarks (col J)
+  batterySize?: string | null;        // Battery Type (col D)
+  batteryReplaced?: string | null;    // Batt Replaced (col E)
+  batteryCount?: number | null;       // # Batts (col F)
+  batteryYear?: string | null;        // In Service Date (col H)
+  maintenanceRequired?: string | null; // Maint. Required (col I)
+  notes?: string | null;              // Remarks (col J)
   result?: InspectionResult;
 }
 
@@ -258,7 +260,16 @@ export function SmokeAlarmGrid({
   const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
-  const [localMeta, setLocalMeta] = useState<Record<number, LocalMeta>>({});
+  const [localMeta, setLocalMeta] = useState<Record<number, LocalMeta>>(() => {
+    const init: Record<number, LocalMeta> = {};
+    devices.forEach((d) => {
+      init[d.id] = {
+        batteryReplaced: d.batteryReplaced ?? "",
+        maintenanceRequired: (d.maintenanceRequired as MaintenanceValue) ?? "",
+      };
+    });
+    return init;
+  });
   const {
     queueChange: queuePendingDeviceChange,
     clearChanges: clearPendingDeviceChanges,
@@ -277,7 +288,6 @@ export function SmokeAlarmGrid({
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ suiteNumber: "", location: "", powerType: "" as "" | "hardwired" | "battery" | "sealed" | "unknown" });
-  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<SmokeAlarmRow>>>({});
   const [searchQuery, setSearchQuery] = useState("");
 
   const rowIdxMap = useMemo(() => {
@@ -416,6 +426,7 @@ export function SmokeAlarmGrid({
     const current = localMeta[device.id]?.batteryReplaced ?? "";
     const next = current === "Y" ? "N" : current === "N" ? "" : "Y";
     setLocalMeta((prev) => ({ ...prev, [device.id]: { ...prev[device.id], batteryReplaced: next } }));
+    updateDevice.mutate({ id: device.id, batteryReplaced: next || undefined });
   };
 
   const handleMaintenanceToggle = (device: SmokeAlarmRow) => {
@@ -424,6 +435,7 @@ export function SmokeAlarmGrid({
     const idx = MAINTENANCE_OPTIONS.indexOf(current as MaintenanceValue);
     const next = MAINTENANCE_OPTIONS[(idx + 1) % MAINTENANCE_OPTIONS.length];
     setLocalMeta((prev) => ({ ...prev, [device.id]: { ...prev[device.id], maintenanceRequired: next } }));
+    updateDevice.mutate({ id: device.id, maintenanceRequired: next || undefined });
   };
 
   const getEffectiveResult = (device: SmokeAlarmRow): InspectionResult =>
@@ -660,8 +672,7 @@ export function SmokeAlarmGrid({
                         onChange={(e) => {
                           const nextVal = e.target.value || undefined;
                           updateLocalRow(device.id, { batterySize: e.target.value });
-                          setLocalDeviceEdits((prev) => ({ ...prev, [device.id]: { ...(prev[device.id] ?? {}), batterySize: nextVal } }));
-                          queuePendingDeviceChange(device.id, "batterySize", nextVal);
+                          updateDevice.mutate({ id: device.id, batterySize: nextVal });
                         }}
                       >
                         <option value="">—</option>
@@ -682,8 +693,7 @@ export function SmokeAlarmGrid({
                         onBlur={(e) => {
                           const nextVal = e.target.value ? Number(e.target.value) : undefined;
                           updateLocalRow(device.id, { batteryCount: nextVal });
-                          setLocalDeviceEdits((prev) => ({ ...prev, [device.id]: { ...(prev[device.id] ?? {}), batteryCount: nextVal } }));
-                          queuePendingDeviceChange(device.id, "batteryCount", nextVal);
+                          updateDevice.mutate({ id: device.id, batteryCount: nextVal });
                         }}
                       />
                     </div>
@@ -714,8 +724,7 @@ export function SmokeAlarmGrid({
                         onBlur={(e) => {
                           const nextVal = e.target.value || undefined;
                           updateLocalRow(device.id, { batteryYear: e.target.value });
-                          setLocalDeviceEdits((prev) => ({ ...prev, [device.id]: { ...(prev[device.id] ?? {}), batteryYear: nextVal } }));
-                          queuePendingDeviceChange(device.id, "batteryYear", nextVal);
+                          updateDevice.mutate({ id: device.id, batteryYear: nextVal });
                         }}
                       />
                     </div>

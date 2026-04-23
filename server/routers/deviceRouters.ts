@@ -125,6 +125,8 @@ const deviceRouter = router({
     batteryYear: z.string().optional(),
     batterySize: z.string().optional(),
     batteryCount: z.number().optional(),
+    batteryReplaced: z.string().optional(),
+    maintenanceRequired: z.string().optional(),
     lampCount: z.number().optional(),
   })).mutation(async ({ input }) => {
     const { id, ...rawData } = input;
