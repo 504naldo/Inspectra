@@ -150,6 +150,32 @@ export const userRouter = router({
     }),
 
   // Merge duplicate users (admin only)
+  deleteUser: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+
+      if (input.userId === ctx.user.id) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot delete your own account' });
+      }
+
+      const [target] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      if (target.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete users from another company' });
+      }
+
+      // Remove job assignments
+      await db.execute(sql`DELETE FROM job_assignments WHERE userId = ${input.userId}`);
+      // Nullify legacy assignedTechnicianId and leadTechnicianId references
+      await db.execute(sql`UPDATE jobs SET assignedTechnicianId = NULL WHERE assignedTechnicianId = ${input.userId}`);
+      await db.execute(sql`UPDATE jobs SET leadTechnicianId = NULL WHERE leadTechnicianId = ${input.userId}`);
+
+      await db.delete(users).where(eq(users.id, input.userId));
+      return { success: true };
+    }),
+
   mergeUsers: adminProcedure
     .input(z.object({
       keepUserId: z.number(),
