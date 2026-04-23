@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { DispatchBoard } from "./DispatchBoard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -121,13 +122,18 @@ export default function AdminSchedule() {
         <h1 className="text-2xl font-bold">Scheduling</h1>
       </div>
 
-      <Tabs defaultValue="tracking">
+      <Tabs defaultValue="dispatch">
         <TabsList className="mb-4">
+          <TabsTrigger value="dispatch">Dispatch Board</TabsTrigger>
           <TabsTrigger value="tracking">Monthly Tracking</TabsTrigger>
           <TabsTrigger value="repair">Repair Letter Tracking</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="schedules">Service Schedules</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="dispatch">
+          <DispatchBoard companyId={companyId} />
+        </TabsContent>
 
         <TabsContent value="tracking">
           <MonthlyTrackingTab companyId={companyId} utils={utils} />
