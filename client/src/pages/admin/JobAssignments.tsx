@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AdminLayout from '@/components/AdminLayout';
 import { trpc } from '@/lib/trpc';
 import { formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -137,7 +138,7 @@ export default function JobAssignments() {
   }
 
   return (
-    <div className="container py-6">
+    <AdminLayout title="Job Assignments">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -286,6 +287,6 @@ export default function JobAssignments() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </AdminLayout>
   );
 }

@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { formatDate } from "@/lib/utils";
+import AdminLayout from "@/components/AdminLayout";
 import { DispatchBoard } from "./DispatchBoard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +21,6 @@ import {
 } from "@/components/ui/select";
 import {
   AlertTriangle,
-  CalendarDays,
   CalendarCheck,
   ChevronLeft,
   ChevronRight,
@@ -117,12 +117,7 @@ export default function AdminSchedule() {
   const utils = trpc.useUtils();
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-4">
-      <div className="flex items-center gap-3 mb-2">
-        <CalendarDays className="h-6 w-6 text-destructive" />
-        <h1 className="text-2xl font-bold">Scheduling</h1>
-      </div>
-
+    <AdminLayout>
       <Tabs defaultValue="dispatch">
         <TabsList className="mb-4">
           <TabsTrigger value="dispatch">Dispatch Board</TabsTrigger>
@@ -152,7 +147,7 @@ export default function AdminSchedule() {
           <ServiceSchedulesTab companyId={companyId} utils={utils} />
         </TabsContent>
       </Tabs>
-    </div>
+    </AdminLayout>
   );
 }
 
