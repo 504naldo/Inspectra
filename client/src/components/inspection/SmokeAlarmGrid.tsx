@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
 import { useSectionPendingChanges } from "./useSectionPendingChanges";
+import { SearchInput } from "./SearchInput";
 
 // ─── Legend data ────────────────────────────────────────────────────────────
 
@@ -277,6 +278,22 @@ export function SmokeAlarmGrid({
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ suiteNumber: "", location: "", powerType: "" as "" | "hardwired" | "battery" | "sealed" | "unknown" });
   const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<SmokeAlarmRow>>>({});
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const rowIdxMap = useMemo(() => {
+    const m = new Map<number, number>();
+    rows.forEach((r, i) => m.set(r.id, i));
+    return m;
+  }, [rows]);
+
+  const visibleRows = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return rows;
+    return rows.filter((d) =>
+      [d.suiteNumber, d.location, d.deviceType]
+        .some((v) => v?.toLowerCase().includes(q))
+    );
+  }, [rows, searchQuery]);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -443,6 +460,9 @@ export function SmokeAlarmGrid({
           CAN/ULC-S552 · Smoke Alarm Inspection &amp; Testing
         </p>
         <div className="flex items-center gap-2 flex-wrap">
+          {devices.length > 1 && (
+            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter alarms…" />
+          )}
           <span className="text-xs text-muted-foreground">
             {completed} / {rows.length} tested
           </span>
@@ -505,7 +525,10 @@ export function SmokeAlarmGrid({
         {rows.length === 0 && !showAddRow && (
           <p className="text-center py-6 text-sm text-muted-foreground">No smoke alarms for this site</p>
         )}
-        {rows.map((device) => {
+        {visibleRows.length === 0 && searchQuery && rows.length > 0 && (
+          <p className="text-center py-6 text-xs text-muted-foreground">No alarms match &ldquo;{searchQuery}&rdquo;</p>
+        )}
+        {visibleRows.map((device) => {
           const result = getEffectiveResult(device);
           const meta = localMeta[device.id] ?? {};
           const isExpanded = expandedRow === device.id;
@@ -811,8 +834,9 @@ export function SmokeAlarmGrid({
             </tr>
           </thead>
           <tbody>
-            <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
-            {rows.map((device, idx) => {
+            <SortableContext items={visibleRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+            {visibleRows.map((device) => {
+              const idx = rowIdxMap.get(device.id)!;
               const result = getEffectiveResult(device);
               const meta = localMeta[device.id] ?? {};
               const rowBg = getRowBg(device);
@@ -828,7 +852,7 @@ export function SmokeAlarmGrid({
               };
 
               return (
-                <SortableRow key={device.id} id={device.id} disabled={!!isFinalized} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+                <SortableRow key={device.id} id={device.id} disabled={!!isFinalized || !!searchQuery} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
                   {(dragHandleProps) => (<>
                   {/* A — Suite / Location (sticky) + delete */}
                   <td className="sticky left-0 bg-inherit px-2 py-1.5 border-r font-mono font-medium whitespace-nowrap">
@@ -1084,6 +1108,13 @@ export function SmokeAlarmGrid({
               <tr>
                 <td colSpan={COL_HEADERS.length} className="text-center py-8 text-muted-foreground">
                   No smoke alarms for this site
+                </td>
+              </tr>
+            )}
+            {visibleRows.length === 0 && searchQuery && devices.length > 0 && (
+              <tr>
+                <td colSpan={COL_HEADERS.length} className="text-center py-6 text-muted-foreground text-xs">
+                  No alarms match &ldquo;{searchQuery}&rdquo;
                 </td>
               </tr>
             )}

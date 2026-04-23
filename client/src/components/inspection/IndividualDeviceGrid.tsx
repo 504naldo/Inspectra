@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { DndContext, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
+import { SearchInput } from "./SearchInput";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -292,7 +293,23 @@ export function IndividualDeviceGrid({
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ location: "", deviceType: "Smoke Detector" });
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
+
+  const rowIdxMap = useMemo(() => {
+    const m = new Map<number, number>();
+    rows.forEach((r, i) => m.set(r.id, i));
+    return m;
+  }, [rows]);
+
+  const visibleRows = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return rows;
+    return rows.filter((d) =>
+      [d.location, d.label, d.deviceType, d.circuitAddress, d.zone]
+        .some((v) => v?.toLowerCase().includes(q))
+    );
+  }, [rows, searchQuery]);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save"),
@@ -408,6 +425,11 @@ export function IndividualDeviceGrid({
     return (
       <div>
         <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
+        {devices.length > 1 && (
+          <div className="mb-2">
+            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" />
+          </div>
+        )}
         {!isFinalized && devices.length > 0 && (
           <div className="mb-2 flex items-center gap-2">
             <button
@@ -425,7 +447,11 @@ export function IndividualDeviceGrid({
             </button>
           </div>
         )}
-        {devices.map((device, idx) => {
+        {visibleRows.length === 0 && searchQuery && devices.length > 0 && (
+          <p className="text-center py-4 text-xs text-muted-foreground">No devices match &ldquo;{searchQuery}&rdquo;</p>
+        )}
+        {visibleRows.map((device) => {
+          const idx = rowIdxMap.get(device.id)!;
           const checks = getChecks(device);
           return (
             <div key={device.id}>
@@ -484,8 +510,13 @@ export function IndividualDeviceGrid({
   // ── Desktop table ─────────────────────────────────────────────────────────
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
+      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
+          {devices.length > 1 && (
+            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" />
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {!isFinalized && hasUnsavedChanges && (
             <button
@@ -542,8 +573,9 @@ export function IndividualDeviceGrid({
             </tr>
           </thead>
           <tbody>
-            <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
-            {rows.map((device, idx) => {
+            <SortableContext items={visibleRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+            {visibleRows.map((device) => {
+              const idx = rowIdxMap.get(device.id)!;
               const checks = getChecks(device);
               const result = computeResult(checks);
               const rowBg =
@@ -554,7 +586,7 @@ export function IndividualDeviceGrid({
                   : "";
 
               return (
-                <SortableRow key={device.id} id={device.id} disabled={!!isFinalized} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+                <SortableRow key={device.id} id={device.id} disabled={!!isFinalized || !!searchQuery} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
                   {(dragHandleProps) => (<>
                   {/* # + delete */}
                   <td className="px-1 py-1 text-center text-muted-foreground border-r font-mono">
@@ -665,6 +697,13 @@ export function IndividualDeviceGrid({
             {devices.length === 0 && !showAddRow && (
               <tr>
                 <td colSpan={13} className="text-center py-8 text-muted-foreground">No devices in this category</td>
+              </tr>
+            )}
+            {visibleRows.length === 0 && searchQuery && devices.length > 0 && (
+              <tr>
+                <td colSpan={13} className="text-center py-6 text-muted-foreground text-xs">
+                  No devices match &ldquo;{searchQuery}&rdquo;
+                </td>
               </tr>
             )}
           </tbody>
