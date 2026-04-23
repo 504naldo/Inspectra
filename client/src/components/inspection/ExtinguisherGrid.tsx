@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
 import { useSectionPendingChanges } from "./useSectionPendingChanges";
+import { SearchInput } from "./SearchInput";
 
 interface ExtinguisherRow {
   id: number;
@@ -79,6 +80,22 @@ export function ExtinguisherGrid({
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
   const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
   const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<ExtinguisherRow>>>({});
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const rowIdxMap = useMemo(() => {
+    const m = new Map<number, number>();
+    rows.forEach((r, i) => m.set(r.id, i));
+    return m;
+  }, [rows]);
+
+  const visibleRows = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return rows;
+    return rows.filter((d) =>
+      [d.location, d.deviceType, d.manufacturer, d.model, d.serialNumber]
+        .some((v) => v?.toLowerCase().includes(q))
+    );
+  }, [rows, searchQuery]);
   const {
     pendingChanges: pendingDeviceChanges,
     queueChange: queuePendingDeviceChange,
@@ -216,37 +233,44 @@ export function ExtinguisherGrid({
 
   return (
     <div>
-      {!isFinalized && devices.length > 0 && (
-        <div className="flex items-center justify-end gap-2 mb-2">
-          {hasPending && (
-            <button
-              onClick={handleSaveSection}
-              disabled={updateDevice.isPending || upsertResult.isPending}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Save
-            </button>
-          )}
+      {devices.length > 0 && (
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           {devices.length > 1 && (
-            <div className="flex gap-1">
+            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" />
+          )}
+          {!isFinalized && (
+            <div className="flex items-center gap-2 ml-auto">
+              {hasPending && (
+                <button
+                  onClick={handleSaveSection}
+                  disabled={updateDevice.isPending || upsertResult.isPending}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Save
+                </button>
+              )}
+              {devices.length > 1 && (
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => handleSort("asc")}
+                    className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "asc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                    title="Sort A→Z by location"
+                  >A→Z</button>
+                  <button
+                    onClick={() => handleSort("desc")}
+                    className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "desc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                    title="Sort Z→A by location"
+                  >Z→A</button>
+                </div>
+              )}
               <button
-                onClick={() => handleSort("asc")}
-                className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "asc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
-                title="Sort A→Z by location"
-              >A→Z</button>
-              <button
-                onClick={() => handleSort("desc")}
-                className={cn("text-xs px-2 py-1 rounded transition-colors", sortDir === "desc" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
-                title="Sort Z→A by location"
-              >Z→A</button>
+                onClick={handleAllPass}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+              >
+                <CheckCheck className="h-3.5 w-3.5" /> All Pass
+              </button>
             </div>
           )}
-          <button
-            onClick={handleAllPass}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-          >
-            <CheckCheck className="h-3.5 w-3.5" /> All Pass
-          </button>
         </div>
       )}
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
@@ -270,8 +294,9 @@ export function ExtinguisherGrid({
           </tr>
         </thead>
         <tbody>
-          <SortableContext items={rows.map(r => r.id)} strategy={verticalListSortingStrategy}>
-          {rows.map((device, idx) => {
+          <SortableContext items={visibleRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
+          {visibleRows.map((device) => {
+            const idx = rowIdxMap.get(device.id)!;
             const result = getEffectiveResult(device);
             const rowBg =
               result === "pass"
@@ -281,7 +306,7 @@ export function ExtinguisherGrid({
                 : "";
 
             return (
-              <SortableRow key={device.id} id={device.id} disabled={!!isFinalized} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+              <SortableRow key={device.id} id={device.id} disabled={!!isFinalized || !!searchQuery} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
                 {(dragHandleProps) => (<>
                 {/* # + delete */}
                 <td className="sticky left-0 bg-inherit px-1 py-1 text-center text-muted-foreground border-r font-mono w-10">
@@ -389,6 +414,13 @@ export function ExtinguisherGrid({
             <tr>
               <td colSpan={COL_HEADERS.length} className="text-center py-8 text-muted-foreground">
                 No fire extinguishers for this site
+              </td>
+            </tr>
+          )}
+          {visibleRows.length === 0 && searchQuery && devices.length > 0 && (
+            <tr>
+              <td colSpan={COL_HEADERS.length} className="text-center py-6 text-muted-foreground text-xs">
+                No devices match &ldquo;{searchQuery}&rdquo;
               </td>
             </tr>
           )}
