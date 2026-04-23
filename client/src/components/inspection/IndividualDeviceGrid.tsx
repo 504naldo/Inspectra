@@ -8,6 +8,7 @@ import { DndContext, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
+import { useSectionPendingChanges } from "./useSectionPendingChanges";
 import { SearchInput } from "./SearchInput";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -26,6 +27,33 @@ interface CheckData {
 }
 
 const DEFAULT_CHECKS: CheckData = { a: null, b: null, c: null, d: null, e: null, f: "", g: null, remarks: "" };
+
+const FIRE_ALARM_DEVICE_TYPES = [
+  "Smoke Detector",
+  "Heat Detector",
+  "Pull Station",
+  "Strobe",
+  "Horn/Strobe",
+  "Horn",
+  "Duct Detector",
+  "Flow Switch",
+  "Tamper Switch",
+  "Beam Detector",
+  "CO Detector",
+  "Multi-Criteria Detector",
+  "Sounder Base",
+  "Control Module",
+  "Monitor Module",
+  "Other",
+];
+
+interface EditState {
+  deviceId: number;
+  field: string;
+  value: string;
+}
+
+const TEXT_EDITABLE_FIELDS = ["location", "label", "circuitAddress", "zone"];
 
 const LEGEND_ITEMS = [
   { letter: "A", desc: "Correctly installed" },
@@ -172,22 +200,32 @@ function MobileCard({
   device,
   idx,
   checks,
+  localEdits,
   onCheckChange,
   onFChange,
   onRemarksChange,
+  onFieldChange,
   isFinalized,
   isCarriedForward,
 }: {
   device: DeviceRow;
   idx: number;
   checks: CheckData;
+  localEdits: Partial<DeviceRow>;
   onCheckChange: (key: keyof CheckData, value: CheckState) => void;
   onFChange: (val: string) => void;
   onRemarksChange: (val: string) => void;
+  onFieldChange: (field: keyof DeviceRow, value: string) => void;
   isFinalized?: boolean;
   isCarriedForward?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+
+  const location = (localEdits.location ?? device.location) || "";
+  const label = (localEdits.label ?? device.label) || "";
+  const deviceType = (localEdits.deviceType ?? device.deviceType) || "";
+  const circuitAddress = (localEdits.circuitAddress ?? device.circuitAddress) || "";
+  const zone = (localEdits.zone ?? device.zone) || "";
 
   return (
     <div className="border rounded-lg mb-2 overflow-hidden">
@@ -200,9 +238,9 @@ function MobileCard({
           {isCarriedForward && (
             <span className="text-[9px] font-semibold uppercase tracking-wide text-blue-600 border border-blue-300 rounded px-1 shrink-0">carried</span>
           )}
-          <span className="text-sm font-medium truncate">{device.location || "—"}</span>
-          {device.label && <span className="text-xs text-muted-foreground shrink-0">[{device.label}]</span>}
-          <span className="text-xs text-muted-foreground shrink-0">{device.deviceType}</span>
+          <span className="text-sm font-medium truncate">{location || "—"}</span>
+          {label && <span className="text-xs text-muted-foreground shrink-0">[{label}]</span>}
+          <span className="text-xs text-muted-foreground shrink-0">{deviceType}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0 ml-2">
           {(() => {
@@ -217,12 +255,39 @@ function MobileCard({
 
       {expanded && (
         <div className="px-3 py-2 space-y-2">
-          {/* Device info */}
-          <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
-            {device.circuitAddress && <span><span className="font-medium">Address:</span> {device.circuitAddress}</span>}
-            {device.zone && <span><span className="font-medium">Zone:</span> {device.zone}</span>}
-            {device.floor && <span><span className="font-medium">Floor:</span> {device.floor}</span>}
-          </div>
+          {/* Editable device fields */}
+          {!isFinalized ? (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-medium text-muted-foreground">Location</span>
+                <input className="text-xs border rounded px-2 py-1 bg-background" value={location} onChange={(e) => onFieldChange("location", e.target.value)} placeholder="—" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-medium text-muted-foreground">Label/LCD</span>
+                <input className="text-xs border rounded px-2 py-1 bg-background" value={label} onChange={(e) => onFieldChange("label", e.target.value)} placeholder="—" />
+              </div>
+              <div className="flex flex-col gap-0.5 col-span-2">
+                <span className="text-[10px] font-medium text-muted-foreground">Device Type</span>
+                <select className="text-xs border rounded px-2 py-1 bg-background" value={deviceType} onChange={(e) => onFieldChange("deviceType", e.target.value)}>
+                  {FIRE_ALARM_DEVICE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-medium text-muted-foreground">Address</span>
+                <input className="text-xs border rounded px-2 py-1 bg-background" value={circuitAddress} onChange={(e) => onFieldChange("circuitAddress", e.target.value)} placeholder="—" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-medium text-muted-foreground">Zone</span>
+                <input className="text-xs border rounded px-2 py-1 bg-background" value={zone} onChange={(e) => onFieldChange("zone", e.target.value)} placeholder="—" />
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+              {circuitAddress && <span><span className="font-medium">Address:</span> {circuitAddress}</span>}
+              {zone && <span><span className="font-medium">Zone:</span> {zone}</span>}
+              {device.floor && <span><span className="font-medium">Floor:</span> {device.floor}</span>}
+            </div>
+          )}
 
           {/* Checks A–E, G */}
           <div className="space-y-1.5">
@@ -288,6 +353,8 @@ export function IndividualDeviceGrid({
   const [legendOpen, setLegendOpen] = useState(false);
   const [localChecks, setLocalChecks] = useState<Record<number, CheckData>>({});
   const [pendingChecks, setPendingChecks] = useState<Record<number, CheckData>>({});
+  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<DeviceRow>>>({});
+  const [editing, setEditing] = useState<EditState | null>(null);
   const isMobile = useIsMobile();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
@@ -295,6 +362,13 @@ export function IndividualDeviceGrid({
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
+
+  const {
+    pendingChanges: pendingDeviceChanges,
+    queueChange: queuePendingDeviceChange,
+    clearChanges: clearPendingDeviceChanges,
+    hasUnsavedChanges: hasPendingDeviceChanges,
+  } = useSectionPendingChanges();
 
   const rowIdxMap = useMemo(() => {
     const m = new Map<number, number>();
@@ -313,6 +387,10 @@ export function IndividualDeviceGrid({
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save"),
+  });
+
+  const updateDevice = trpc.device.technicianUpdate.useMutation({
+    onError: () => toast.error("Failed to save field"),
   });
 
   const addDevice = trpc.device.addDuringInspection.useMutation({
@@ -349,6 +427,31 @@ export function IndividualDeviceGrid({
     });
   };
 
+  const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
+    if (isFinalized || !TEXT_EDITABLE_FIELDS.includes(field)) return;
+    setEditing({ deviceId, field, value: currentValue ?? "" });
+  };
+
+  const handleEditBlur = () => {
+    if (!editing) return;
+    const { deviceId, field, value } = editing;
+    setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), [field]: value } }));
+    queuePendingDeviceChange(deviceId, field, value);
+    setEditing(null);
+  };
+
+  const handleDeviceTypeChange = (deviceId: number, value: string) => {
+    if (isFinalized) return;
+    setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), deviceType: value } }));
+    queuePendingDeviceChange(deviceId, "deviceType", value);
+  };
+
+  const handleMobileFieldChange = useCallback((deviceId: number, field: keyof DeviceRow, value: string) => {
+    if (isFinalized) return;
+    setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), [field]: value } }));
+    queuePendingDeviceChange(deviceId, field as string, value);
+  }, [isFinalized, queuePendingDeviceChange]);
+
   const getChecks = useCallback(
     (device: DeviceRow): CheckData => {
       return localChecks[device.id] ?? parseChecks(device.inspectionNotes);
@@ -368,27 +471,30 @@ export function IndividualDeviceGrid({
     [devices]
   );
 
-  const hasUnsavedChanges = Object.keys(pendingChecks).length > 0;
+  const hasUnsavedChanges = Object.keys(pendingChecks).length > 0 || hasPendingDeviceChanges;
 
   const handleSaveSection = useCallback(async () => {
     try {
-      await Promise.all(
-        Object.entries(pendingChecks).map(([deviceId, checks]) => {
-          const result = computeResult(checks);
-          return upsertResult.mutateAsync({
-            jobId,
-            deviceId: Number(deviceId),
-            result,
-            notes: serializeChecks(checks),
-          });
-        })
+      const checkTasks = Object.entries(pendingChecks).map(([deviceId, checks]) => {
+        const result = computeResult(checks);
+        return upsertResult.mutateAsync({
+          jobId,
+          deviceId: Number(deviceId),
+          result,
+          notes: serializeChecks(checks),
+        });
+      });
+      const deviceTasks = (Object.entries(pendingDeviceChanges) as [string, Record<string, unknown>][]).map(
+        ([id, changeSet]) => updateDevice.mutateAsync({ id: Number(id), ...changeSet } as Parameters<typeof updateDevice.mutate>[0])
       );
+      await Promise.all([...checkTasks, ...deviceTasks]);
       setPendingChecks({});
+      clearPendingDeviceChanges();
       toast.success("Fire alarm device changes saved");
     } catch {
       toast.error("Failed to save fire alarm device changes");
     }
-  }, [pendingChecks, upsertResult, jobId]);
+  }, [pendingChecks, pendingDeviceChanges, upsertResult, updateDevice, jobId, clearPendingDeviceChanges]);
 
   const handleSort = (dir: "asc" | "desc") => {
     setSortDir(dir);
@@ -459,9 +565,11 @@ export function IndividualDeviceGrid({
                 device={device}
                 idx={idx}
                 checks={checks}
+                localEdits={localDeviceEdits[device.id] ?? {}}
                 onCheckChange={(key, val) => handleCheckChange(device.id, key, val)}
                 onFChange={(val) => handleCheckChange(device.id, "f", val)}
                 onRemarksChange={(val) => handleCheckChange(device.id, "remarks", val)}
+                onFieldChange={(field, val) => handleMobileFieldChange(device.id, field, val)}
                 isFinalized={isFinalized}
                 isCarriedForward={carriedForwardDeviceIds?.has(device.id)}
               />
@@ -613,22 +721,78 @@ export function IndividualDeviceGrid({
                     )}
                   </td>
 
-                  {/* Read-only device fields */}
-                  <td className="px-2 py-1.5 border-r max-w-[8rem]">
-                    <span className="truncate block">{device.location || <span className="text-muted-foreground/40">—</span>}</span>
+                  {/* Editable device fields */}
+                  {(["location", "label"] as const).map((field) => {
+                    const isEditing = editing?.deviceId === device.id && editing?.field === field;
+                    const value = ((localDeviceEdits[device.id]?.[field] ?? device[field]) ?? "") as string;
+                    return (
+                      <td
+                        key={field}
+                        className={cn("px-2 py-1.5 border-r max-w-[8rem]", !isFinalized && "cursor-text hover:bg-primary/5")}
+                        onClick={() => handleCellClick(device.id, field, value)}
+                      >
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            className="w-full bg-transparent outline-none border-b border-primary text-xs"
+                            value={editing.value}
+                            onChange={(e) => setEditing((prev) => prev && { ...prev, value: e.target.value })}
+                            onBlur={handleEditBlur}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); handleEditBlur(); }
+                              if (e.key === "Escape") setEditing(null);
+                            }}
+                          />
+                        ) : (
+                          <span className="truncate block">{value || <span className="text-muted-foreground/40">—</span>}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+
+                  {/* Device type dropdown */}
+                  <td className="px-1 py-1 border-r max-w-[5rem]">
+                    {isFinalized ? (
+                      <span className="truncate block px-1 text-xs">{(localDeviceEdits[device.id]?.deviceType ?? device.deviceType) || <span className="text-muted-foreground/40">—</span>}</span>
+                    ) : (
+                      <select
+                        className="w-full bg-transparent text-xs outline-none cursor-pointer hover:bg-primary/5 rounded"
+                        value={(localDeviceEdits[device.id]?.deviceType ?? device.deviceType) || ""}
+                        onChange={(e) => handleDeviceTypeChange(device.id, e.target.value)}
+                      >
+                        {FIRE_ALARM_DEVICE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    )}
                   </td>
-                  <td className="px-2 py-1.5 border-r max-w-[6rem]">
-                    <span className="truncate block">{device.label || <span className="text-muted-foreground/40">—</span>}</span>
-                  </td>
-                  <td className="px-2 py-1.5 border-r max-w-[5rem]">
-                    <span className="truncate block">{device.deviceType || <span className="text-muted-foreground/40">—</span>}</span>
-                  </td>
-                  <td className="px-2 py-1.5 border-r max-w-[4rem]">
-                    <span className="truncate block">{device.circuitAddress || <span className="text-muted-foreground/40">—</span>}</span>
-                  </td>
-                  <td className="px-2 py-1.5 border-r max-w-[3.5rem]">
-                    <span className="truncate block">{device.zone || <span className="text-muted-foreground/40">—</span>}</span>
-                  </td>
+
+                  {/* Address & Zone — click to edit */}
+                  {(["circuitAddress", "zone"] as const).map((field) => {
+                    const isEditing = editing?.deviceId === device.id && editing?.field === field;
+                    const value = ((localDeviceEdits[device.id]?.[field] ?? device[field]) ?? "") as string;
+                    return (
+                      <td
+                        key={field}
+                        className={cn("px-2 py-1.5 border-r", field === "circuitAddress" ? "max-w-[4rem]" : "max-w-[3.5rem]", !isFinalized && "cursor-text hover:bg-primary/5")}
+                        onClick={() => handleCellClick(device.id, field, value)}
+                      >
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            className="w-full bg-transparent outline-none border-b border-primary text-xs"
+                            value={editing.value}
+                            onChange={(e) => setEditing((prev) => prev && { ...prev, value: e.target.value })}
+                            onBlur={handleEditBlur}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); handleEditBlur(); }
+                              if (e.key === "Escape") setEditing(null);
+                            }}
+                          />
+                        ) : (
+                          <span className="truncate block">{value || <span className="text-muted-foreground/40">—</span>}</span>
+                        )}
+                      </td>
+                    );
+                  })}
 
                   {/* Checks A–E */}
                   {(["a", "b", "c", "d", "e"] as const).map((key) => (
