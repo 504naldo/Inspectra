@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Save, Copy, ChevronDown, ChevronUp } from "lucide-react";
+import { Save, Copy, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -85,14 +85,7 @@ const emptySystem = (systemNumber: number): SystemData => ({
 });
 
 export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProps) {
-  const [systems, setSystems] = useState<SystemData[]>([
-    emptySystem(1),
-    emptySystem(2),
-    emptySystem(3),
-    emptySystem(4),
-    emptySystem(5),
-    emptySystem(6),
-  ]);
+  const [systems, setSystems] = useState<SystemData[]>([emptySystem(1)]);
   const [expandedSystems, setExpandedSystems] = useState<Set<number>>(new Set([1]));
 
   // Load existing systems
@@ -103,11 +96,8 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
 
   useEffect(() => {
     if (existingSystems && existingSystems.length > 0) {
-      const loadedSystems = [1, 2, 3, 4, 5, 6].map(num => {
-        const existing = existingSystems.find((s: any) => s.systemNumber === num);
-        return existing ? { ...emptySystem(num), ...existing } : emptySystem(num);
-      });
-      setSystems(loadedSystems);
+      const sorted = [...existingSystems].sort((a: any, b: any) => a.systemNumber - b.systemNumber);
+      setSystems(sorted.map((s: any, i: number) => ({ ...emptySystem(i + 1), ...s, systemNumber: i + 1 })));
     }
   }, [existingSystems]);
 
@@ -172,10 +162,29 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
     }
     setSystems(prev => {
       const updated = [...prev];
-      updated[index] = { ...prev[index - 1], systemNumber: index + 1 };
+      updated[index] = { ...prev[index - 1], systemNumber: index + 1, id: prev[index].id };
       return updated;
     });
     toast.success(`Copied values from System #${index}`);
+  };
+
+  const addSystem = () => {
+    const nextNumber = systems.length + 1;
+    setSystems(prev => [...prev, emptySystem(nextNumber)]);
+    setExpandedSystems(prev => new Set([...prev, nextNumber]));
+  };
+
+  const removeSystem = (index: number) => {
+    setSystems(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      // Re-number remaining systems sequentially
+      return updated.map((s, i) => ({ ...s, systemNumber: i + 1 }));
+    });
+    setExpandedSystems(prev => {
+      // Rebuild expanded set with renumbered system numbers
+      const asList = [...prev].filter(n => n !== index + 1).map(n => n > index + 1 ? n - 1 : n);
+      return new Set(asList);
+    });
   };
 
   const toggleExpanded = (systemNumber: number) => {
@@ -190,7 +199,7 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
     });
   };
 
-  const isDrySystem = (system: SystemData) => 
+  const isDrySystem = (system: SystemData) =>
     system.isDryPipePartialTest || system.isDryPipeFullFlowTest || system.isPreaction;
 
   if (isLoading) {
@@ -201,7 +210,7 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Configure up to 6 sprinkler systems with NFPA 25 measurements
+          {systems.length} sprinkler system{systems.length !== 1 ? "s" : ""} — NFPA 25 measurements
         </p>
         <Button onClick={handleSave} disabled={isFinalized || saveSystems.isPending}>
           <Save className="h-4 w-4 mr-2" />
@@ -210,7 +219,7 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
       </div>
 
       {systems.map((system, index) => (
-        <Card key={system.systemNumber}>
+        <Card key={index}>
           <Collapsible
             open={expandedSystems.has(system.systemNumber)}
             onOpenChange={() => toggleExpanded(system.systemNumber)}
@@ -230,6 +239,19 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                     >
                       <Copy className="h-4 w-4 mr-1" />
                       Copy Previous
+                    </Button>
+                  )}
+                  {systems.length > 1 && !isFinalized && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeSystem(index);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   )}
                   <CollapsibleTrigger asChild>
@@ -261,12 +283,12 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                     ].map(({ key, label }) => (
                       <div key={key} className="flex items-center space-x-2">
                         <Checkbox
-                          id={`${system.systemNumber}-${key}`}
+                          id={`${index}-${key}`}
                           checked={system[key as keyof SystemData] as boolean}
                           onCheckedChange={(checked) => updateSystem(index, key as keyof SystemData, checked)}
                           disabled={isFinalized}
                         />
-                        <Label htmlFor={`${system.systemNumber}-${key}`} className="cursor-pointer">
+                        <Label htmlFor={`${index}-${key}`} className="cursor-pointer">
                           {label}
                         </Label>
                       </div>
@@ -286,9 +308,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                 {/* General Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor={`${system.systemNumber}-area`}>Area of Coverage</Label>
+                    <Label htmlFor={`${index}-area`}>Area of Coverage</Label>
                     <Input
-                      id={`${system.systemNumber}-area`}
+                      id={`${index}-area`}
                       value={system.areaOfCoverage || ''}
                       onChange={(e) => updateSystem(index, 'areaOfCoverage', e.target.value)}
                       disabled={isFinalized}
@@ -296,9 +318,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                     />
                   </div>
                   <div>
-                    <Label htmlFor={`${system.systemNumber}-size`}>System Size</Label>
+                    <Label htmlFor={`${index}-size`}>System Size</Label>
                     <Input
-                      id={`${system.systemNumber}-size`}
+                      id={`${index}-size`}
                       value={system.size || ''}
                       onChange={(e) => updateSystem(index, 'size', e.target.value)}
                       disabled={isFinalized}
@@ -306,18 +328,18 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                     />
                   </div>
                   <div>
-                    <Label htmlFor={`${system.systemNumber}-manufacturer`}>Manufacturer</Label>
+                    <Label htmlFor={`${index}-manufacturer`}>Manufacturer</Label>
                     <Input
-                      id={`${system.systemNumber}-manufacturer`}
+                      id={`${index}-manufacturer`}
                       value={system.manufacturer || ''}
                       onChange={(e) => updateSystem(index, 'manufacturer', e.target.value)}
                       disabled={isFinalized}
                     />
                   </div>
                   <div>
-                    <Label htmlFor={`${system.systemNumber}-model`}>Model</Label>
+                    <Label htmlFor={`${index}-model`}>Model</Label>
                     <Input
-                      id={`${system.systemNumber}-model`}
+                      id={`${index}-model`}
                       value={system.model || ''}
                       onChange={(e) => updateSystem(index, 'model', e.target.value)}
                       disabled={isFinalized}
@@ -330,9 +352,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                   <Label className="text-base font-semibold mb-3 block">Water Supply & Hydraulic Measurements</Label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor={`${system.systemNumber}-supplyPressure`}>Supply Water Pressure (psi)</Label>
+                      <Label htmlFor={`${index}-supplyPressure`}>Supply Water Pressure (psi)</Label>
                       <Input
-                        id={`${system.systemNumber}-supplyPressure`}
+                        id={`${index}-supplyPressure`}
                         type="number"
                         inputMode="numeric"
                         value={system.supplyWaterPressure ?? ''}
@@ -342,9 +364,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`${system.systemNumber}-systemPressure`}>System Water Pressure (psi)</Label>
+                      <Label htmlFor={`${index}-systemPressure`}>System Water Pressure (psi)</Label>
                       <Input
-                        id={`${system.systemNumber}-systemPressure`}
+                        id={`${index}-systemPressure`}
                         type="number"
                         inputMode="numeric"
                         value={system.systemWaterPressure ?? ''}
@@ -354,9 +376,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`${system.systemNumber}-residualPressure`}>Residual Pressure (psi)</Label>
+                      <Label htmlFor={`${index}-residualPressure`}>Residual Pressure (psi)</Label>
                       <Input
-                        id={`${system.systemNumber}-residualPressure`}
+                        id={`${index}-residualPressure`}
                         type="number"
                         inputMode="numeric"
                         value={system.residualPressure ?? ''}
@@ -366,9 +388,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`${system.systemNumber}-riserPressure`}>Water Pressure at Base of Riser (psi)</Label>
+                      <Label htmlFor={`${index}-riserPressure`}>Water Pressure at Base of Riser (psi)</Label>
                       <Input
-                        id={`${system.systemNumber}-riserPressure`}
+                        id={`${index}-riserPressure`}
                         type="number"
                         inputMode="numeric"
                         value={system.waterPressureAtBaseOfRiser ?? ''}
@@ -387,9 +409,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                       <Label className="text-base font-semibold mb-3 block">Air & Dry System Measurements</Label>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <Label htmlFor={`${system.systemNumber}-airPressure`}>System Air Pressure (psi)</Label>
+                          <Label htmlFor={`${index}-airPressure`}>System Air Pressure (psi)</Label>
                           <Input
-                            id={`${system.systemNumber}-airPressure`}
+                            id={`${index}-airPressure`}
                             type="number"
                             inputMode="numeric"
                             value={system.systemAirPressure ?? ''}
@@ -399,9 +421,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                           />
                         </div>
                         <div>
-                          <Label htmlFor={`${system.systemNumber}-lowAirCutIn`}>Low Air Switch Cut-In (psi)</Label>
+                          <Label htmlFor={`${index}-lowAirCutIn`}>Low Air Switch Cut-In (psi)</Label>
                           <Input
-                            id={`${system.systemNumber}-lowAirCutIn`}
+                            id={`${index}-lowAirCutIn`}
                             type="number"
                             inputMode="numeric"
                             value={system.lowAirSwitchCutIn ?? ''}
@@ -411,9 +433,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                           />
                         </div>
                         <div>
-                          <Label htmlFor={`${system.systemNumber}-tripPressure`}>Trip Pressure (psi)</Label>
+                          <Label htmlFor={`${index}-tripPressure`}>Trip Pressure (psi)</Label>
                           <Input
-                            id={`${system.systemNumber}-tripPressure`}
+                            id={`${index}-tripPressure`}
                             type="number"
                             inputMode="numeric"
                             value={system.tripPressure ?? ''}
@@ -423,9 +445,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                           />
                         </div>
                         <div>
-                          <Label htmlFor={`${system.systemNumber}-tripTime`}>Trip Time (seconds)</Label>
+                          <Label htmlFor={`${index}-tripTime`}>Trip Time (seconds)</Label>
                           <Input
-                            id={`${system.systemNumber}-tripTime`}
+                            id={`${index}-tripTime`}
                             type="number"
                             inputMode="numeric"
                             value={system.tripTime ?? ''}
@@ -435,9 +457,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                           />
                         </div>
                         <div>
-                          <Label htmlFor={`${system.systemNumber}-waterDelivery`}>Water Delivery to End Device (seconds)</Label>
+                          <Label htmlFor={`${index}-waterDelivery`}>Water Delivery to End Device (seconds)</Label>
                           <Input
-                            id={`${system.systemNumber}-waterDelivery`}
+                            id={`${index}-waterDelivery`}
                             type="number"
                             inputMode="numeric"
                             value={system.waterDeliveryTime ?? ''}
@@ -453,18 +475,18 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                       <Label className="text-base font-semibold mb-3 block">Compressor Information</Label>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="md:col-span-2">
-                          <Label htmlFor={`${system.systemNumber}-compressorMake`}>Compressor Make/Model</Label>
+                          <Label htmlFor={`${index}-compressorMake`}>Compressor Make/Model</Label>
                           <Input
-                            id={`${system.systemNumber}-compressorMake`}
+                            id={`${index}-compressorMake`}
                             value={system.compressorMakeModel || ''}
                             onChange={(e) => updateSystem(index, 'compressorMakeModel', e.target.value)}
                             disabled={isFinalized}
                           />
                         </div>
                         <div>
-                          <Label htmlFor={`${system.systemNumber}-compressorCutIn`}>Cut-In Pressure (psi)</Label>
+                          <Label htmlFor={`${index}-compressorCutIn`}>Cut-In Pressure (psi)</Label>
                           <Input
-                            id={`${system.systemNumber}-compressorCutIn`}
+                            id={`${index}-compressorCutIn`}
                             type="number"
                             inputMode="numeric"
                             value={system.compressorCutInPressure ?? ''}
@@ -474,9 +496,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                           />
                         </div>
                         <div>
-                          <Label htmlFor={`${system.systemNumber}-compressorCutOut`}>Cut-Out Pressure (psi)</Label>
+                          <Label htmlFor={`${index}-compressorCutOut`}>Cut-Out Pressure (psi)</Label>
                           <Input
-                            id={`${system.systemNumber}-compressorCutOut`}
+                            id={`${index}-compressorCutOut`}
                             type="number"
                             inputMode="numeric"
                             value={system.compressorCutOutPressure ?? ''}
@@ -495,9 +517,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                   <Label className="text-base font-semibold mb-3 block">Gauge Information</Label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor={`${system.systemNumber}-gaugeYear`}>Year of Gauge Manufacture/Installation</Label>
+                      <Label htmlFor={`${index}-gaugeYear`}>Year of Gauge Manufacture/Installation</Label>
                       <Input
-                        id={`${system.systemNumber}-gaugeYear`}
+                        id={`${index}-gaugeYear`}
                         type="number"
                         inputMode="numeric"
                         value={system.gaugeYear ?? ''}
@@ -507,9 +529,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`${system.systemNumber}-gaugeCondition`}>Gauge Condition</Label>
+                      <Label htmlFor={`${index}-gaugeCondition`}>Gauge Condition</Label>
                       <Input
-                        id={`${system.systemNumber}-gaugeCondition`}
+                        id={`${index}-gaugeCondition`}
                         value={system.gaugeCondition || ''}
                         onChange={(e) => updateSystem(index, 'gaugeCondition', e.target.value)}
                         disabled={isFinalized}
@@ -524,9 +546,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                   <Label className="text-base font-semibold mb-3 block">Test Dates</Label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor={`${system.systemNumber}-lastFullFlow`}>Date of Last Full Flow Test</Label>
+                      <Label htmlFor={`${index}-lastFullFlow`}>Date of Last Full Flow Test</Label>
                       <Input
-                        id={`${system.systemNumber}-lastFullFlow`}
+                        id={`${index}-lastFullFlow`}
                         type="date"
                         value={system.dateOfLastFullFlowTest ? new Date(system.dateOfLastFullFlowTest).toISOString().split('T')[0] : ''}
                         onChange={(e) => updateSystem(index, 'dateOfLastFullFlowTest', e.target.value ? new Date(e.target.value) : null)}
@@ -534,9 +556,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`${system.systemNumber}-last5Year`}>Date of Last 5 Year Internal</Label>
+                      <Label htmlFor={`${index}-last5Year`}>Date of Last 5 Year Internal</Label>
                       <Input
-                        id={`${system.systemNumber}-last5Year`}
+                        id={`${index}-last5Year`}
                         type="date"
                         value={system.dateOfLast5YearInternal ? new Date(system.dateOfLast5YearInternal).toISOString().split('T')[0] : ''}
                         onChange={(e) => updateSystem(index, 'dateOfLast5YearInternal', e.target.value ? new Date(e.target.value) : null)}
@@ -548,9 +570,9 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
 
                 {/* Notes */}
                 <div>
-                  <Label htmlFor={`${system.systemNumber}-notes`}>Notes</Label>
+                  <Label htmlFor={`${index}-notes`}>Notes</Label>
                   <Textarea
-                    id={`${system.systemNumber}-notes`}
+                    id={`${index}-notes`}
                     value={system.notes || ''}
                     onChange={(e) => updateSystem(index, 'notes', e.target.value)}
                     disabled={isFinalized}
@@ -563,6 +585,17 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
           </Collapsible>
         </Card>
       ))}
+
+      {!isFinalized && (
+        <Button
+          variant="outline"
+          className="w-full border-dashed"
+          onClick={addSystem}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add System
+        </Button>
+      )}
     </div>
   );
 }
