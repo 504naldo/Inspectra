@@ -8,7 +8,6 @@ import { DndContext, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
-import { useSectionPendingChanges } from "./useSectionPendingChanges";
 import { SearchInput } from "./SearchInput";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -205,6 +204,7 @@ function MobileCard({
   onFChange,
   onRemarksChange,
   onFieldChange,
+  onFieldBlur,
   isFinalized,
   isCarriedForward,
 }: {
@@ -216,6 +216,7 @@ function MobileCard({
   onFChange: (val: string) => void;
   onRemarksChange: (val: string) => void;
   onFieldChange: (field: keyof DeviceRow, value: string) => void;
+  onFieldBlur?: (field: keyof DeviceRow, value: string) => void;
   isFinalized?: boolean;
   isCarriedForward?: boolean;
 }) {
@@ -260,11 +261,11 @@ function MobileCard({
             <div className="grid grid-cols-2 gap-2">
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-muted-foreground">Location</span>
-                <input className="text-xs border rounded px-2 py-1 bg-background" value={location} onChange={(e) => onFieldChange("location", e.target.value)} placeholder="—" />
+                <input className="text-xs border rounded px-2 py-1 bg-background" value={location} onChange={(e) => onFieldChange("location", e.target.value)} onBlur={(e) => onFieldBlur?.("location", e.target.value)} placeholder="—" />
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-muted-foreground">Label/LCD</span>
-                <input className="text-xs border rounded px-2 py-1 bg-background" value={label} onChange={(e) => onFieldChange("label", e.target.value)} placeholder="—" />
+                <input className="text-xs border rounded px-2 py-1 bg-background" value={label} onChange={(e) => onFieldChange("label", e.target.value)} onBlur={(e) => onFieldBlur?.("label", e.target.value)} placeholder="—" />
               </div>
               <div className="flex flex-col gap-0.5 col-span-2">
                 <span className="text-[10px] font-medium text-muted-foreground">Device Type</span>
@@ -274,11 +275,11 @@ function MobileCard({
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-muted-foreground">Address</span>
-                <input className="text-xs border rounded px-2 py-1 bg-background" value={circuitAddress} onChange={(e) => onFieldChange("circuitAddress", e.target.value)} placeholder="—" />
+                <input className="text-xs border rounded px-2 py-1 bg-background" value={circuitAddress} onChange={(e) => onFieldChange("circuitAddress", e.target.value)} onBlur={(e) => onFieldBlur?.("circuitAddress", e.target.value)} placeholder="—" />
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-muted-foreground">Zone</span>
-                <input className="text-xs border rounded px-2 py-1 bg-background" value={zone} onChange={(e) => onFieldChange("zone", e.target.value)} placeholder="—" />
+                <input className="text-xs border rounded px-2 py-1 bg-background" value={zone} onChange={(e) => onFieldChange("zone", e.target.value)} onBlur={(e) => onFieldBlur?.("zone", e.target.value)} placeholder="—" />
               </div>
             </div>
           ) : (
@@ -363,13 +364,6 @@ export function IndividualDeviceGrid({
   const [searchQuery, setSearchQuery] = useState("");
   const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
 
-  const {
-    pendingChanges: pendingDeviceChanges,
-    queueChange: queuePendingDeviceChange,
-    clearChanges: clearPendingDeviceChanges,
-    hasUnsavedChanges: hasPendingDeviceChanges,
-  } = useSectionPendingChanges();
-
   const rowIdxMap = useMemo(() => {
     const m = new Map<number, number>();
     rows.forEach((r, i) => m.set(r.id, i));
@@ -436,21 +430,28 @@ export function IndividualDeviceGrid({
     if (!editing) return;
     const { deviceId, field, value } = editing;
     setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), [field]: value } }));
-    queuePendingDeviceChange(deviceId, field, value);
+    updateDevice.mutate({ id: deviceId, [field]: value || undefined } as Parameters<typeof updateDevice.mutate>[0]);
     setEditing(null);
   };
 
   const handleDeviceTypeChange = (deviceId: number, value: string) => {
     if (isFinalized) return;
     setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), deviceType: value } }));
-    queuePendingDeviceChange(deviceId, "deviceType", value);
+    updateDevice.mutate({ id: deviceId, deviceType: value } as Parameters<typeof updateDevice.mutate>[0]);
   };
 
   const handleMobileFieldChange = useCallback((deviceId: number, field: keyof DeviceRow, value: string) => {
     if (isFinalized) return;
     setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), [field]: value } }));
-    queuePendingDeviceChange(deviceId, field as string, value);
-  }, [isFinalized, queuePendingDeviceChange]);
+    if (field === "deviceType") {
+      updateDevice.mutate({ id: deviceId, deviceType: value } as Parameters<typeof updateDevice.mutate>[0]);
+    }
+  }, [isFinalized, updateDevice]);
+
+  const handleMobileFieldBlur = useCallback((deviceId: number, field: keyof DeviceRow, value: string) => {
+    if (isFinalized || field === "deviceType") return;
+    updateDevice.mutate({ id: deviceId, [field]: value || undefined } as Parameters<typeof updateDevice.mutate>[0]);
+  }, [isFinalized, updateDevice]);
 
   const getChecks = useCallback(
     (device: DeviceRow): CheckData => {
@@ -471,7 +472,7 @@ export function IndividualDeviceGrid({
     [devices]
   );
 
-  const hasUnsavedChanges = Object.keys(pendingChecks).length > 0 || hasPendingDeviceChanges;
+  const hasUnsavedChanges = Object.keys(pendingChecks).length > 0;
 
   const handleSaveSection = useCallback(async () => {
     try {
@@ -484,17 +485,13 @@ export function IndividualDeviceGrid({
           notes: serializeChecks(checks),
         });
       });
-      const deviceTasks = (Object.entries(pendingDeviceChanges) as [string, Record<string, unknown>][]).map(
-        ([id, changeSet]) => updateDevice.mutateAsync({ id: Number(id), ...changeSet } as Parameters<typeof updateDevice.mutate>[0])
-      );
-      await Promise.all([...checkTasks, ...deviceTasks]);
+      await Promise.all(checkTasks);
       setPendingChecks({});
-      clearPendingDeviceChanges();
       toast.success("Fire alarm device changes saved");
     } catch {
       toast.error("Failed to save fire alarm device changes");
     }
-  }, [pendingChecks, pendingDeviceChanges, upsertResult, updateDevice, jobId, clearPendingDeviceChanges]);
+  }, [pendingChecks, upsertResult, jobId]);
 
   const handleSort = (dir: "asc" | "desc") => {
     setSortDir(dir);
@@ -570,6 +567,7 @@ export function IndividualDeviceGrid({
                 onFChange={(val) => handleCheckChange(device.id, "f", val)}
                 onRemarksChange={(val) => handleCheckChange(device.id, "remarks", val)}
                 onFieldChange={(field, val) => handleMobileFieldChange(device.id, field, val)}
+                onFieldBlur={(field, val) => handleMobileFieldBlur(device.id, field, val)}
                 isFinalized={isFinalized}
                 isCarriedForward={carriedForwardDeviceIds?.has(device.id)}
               />
@@ -626,10 +624,10 @@ export function IndividualDeviceGrid({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {!isFinalized && hasUnsavedChanges && (
+          {!isFinalized && (
             <button
               onClick={handleSaveSection}
-              disabled={upsertResult.isPending}
+              disabled={!hasUnsavedChanges || upsertResult.isPending}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save
