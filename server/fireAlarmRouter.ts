@@ -218,13 +218,20 @@ export const fireAlarmRouter = router({
         )
         .limit(1);
 
+      // Only store numeric-parseable values in the DECIMAL column; raw string always goes to numericValueRaw
+      const numericValueDecimal = (() => {
+        if (!input.numericValue) return null;
+        const parsed = parseFloat(input.numericValue);
+        return isNaN(parsed) ? null : input.numericValue;
+      })();
+
       if (existing.length > 0) {
         await database
           .update(fireAlarmInspectionResults)
           .set({
             result: input.result,
             notes: input.notes || null,
-            numericValue: input.numericValue || null,
+            numericValue: numericValueDecimal,
             numericValueRaw: input.numericValue || null,
             textValue: input.textValue || null,
             testedById: ctx.user.id,
@@ -241,7 +248,7 @@ export const fireAlarmRouter = router({
           checklistItemId: input.checklistItemId,
           result: input.result,
           notes: input.notes || null,
-          numericValue: input.numericValue || null,
+          numericValue: numericValueDecimal,
           numericValueRaw: input.numericValue || null,
           textValue: input.textValue || null,
           testedById: ctx.user.id,
