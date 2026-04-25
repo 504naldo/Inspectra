@@ -2,8 +2,8 @@ import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "./db";
-import { jobs, users, jobAssignments } from "../drizzle/schema";
-import { eq, inArray, and, sql } from "drizzle-orm";
+import { jobs, users, jobAssignments, sites, customerOrgs } from "../drizzle/schema";
+import { eq, inArray, and, or, isNull, gte, lte, sql } from "drizzle-orm";
 
 /**
  * Job Assignment Router
@@ -539,6 +539,77 @@ export const jobAssignmentRouter = router({
         await db.insert(jobAssignments).values(newAssignments);
         return { success: true, added: newAssignments.length, total: newAssignments.length };
       }
+    }),
+
+  /**
+   * List jobs for the dispatch board — date range + unscheduled pending/scheduled jobs
+   * Joins sites and customerOrgs for display names
+   */
+  listDispatch: protectedProcedure
+    .input(z.object({
+      companyId: z.number(),
+      startDate: z.string(), // YYYY-MM-DD
+      endDate: z.string(),   // YYYY-MM-DD
+    }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Admin or office only" });
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const start = new Date(input.startDate + "T00:00:00");
+      const end = new Date(input.endDate + "T23:59:59");
+
+      const jobRows = await db
+        .select({
+          id: jobs.id,
+          jobNumber: jobs.jobNumber,
+          title: jobs.title,
+          jobType: jobs.jobType,
+          status: jobs.status,
+          priority: jobs.priority,
+          scheduledDate: jobs.scheduledDate,
+          siteId: jobs.siteId,
+          siteName: sites.name,
+          customerOrgId: jobs.customerOrgId,
+          customerName: customerOrgs.name,
+          companyId: jobs.companyId,
+        })
+        .from(jobs)
+        .leftJoin(sites, eq(jobs.siteId, sites.id))
+        .leftJoin(customerOrgs, eq(jobs.customerOrgId, customerOrgs.id))
+        .where(and(
+          eq(jobs.companyId, input.companyId),
+          or(
+            and(gte(jobs.scheduledDate, start), lte(jobs.scheduledDate, end)),
+            and(isNull(jobs.scheduledDate), or(eq(jobs.status, "pending"), eq(jobs.status, "scheduled")))
+          )
+        ))
+        .orderBy(jobs.scheduledDate);
+
+      const jobIds = jobRows.map(j => j.id);
+      if (jobIds.length === 0) return [];
+
+      const assignments = await db
+        .select({
+          jobId: jobAssignments.jobId,
+          userId: jobAssignments.userId,
+          role: jobAssignments.role,
+          technicianName: users.name,
+          technicianEmail: users.email,
+        })
+        .from(jobAssignments)
+        .innerJoin(users, eq(jobAssignments.userId, users.id))
+        .where(inArray(jobAssignments.jobId, jobIds));
+
+      return jobRows.map(job => ({
+        ...job,
+        assignedTechnicians: assignments
+          .filter(a => a.jobId === job.id)
+          .map(a => ({ id: a.userId, name: a.technicianName, email: a.technicianEmail, role: a.role })),
+      }));
     }),
 
   /**

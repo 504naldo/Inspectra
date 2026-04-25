@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
+import { formatDate } from "@/lib/utils";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { 
   ClipboardList, 
@@ -190,7 +191,7 @@ export default function TechnicianDashboard() {
                         <p className="font-medium">{job.title}</p>
                         <p className="text-sm text-muted-foreground">
                           {job.scheduledDate 
-                            ? new Date(job.scheduledDate).toLocaleDateString()
+                            ? formatDate(job.scheduledDate)
                             : 'Not scheduled'}
                         </p>
                       </div>

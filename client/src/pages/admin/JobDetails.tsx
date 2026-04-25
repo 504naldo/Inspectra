@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+import { formatDate, parseDateInput } from "@/lib/utils";
 
 export default function AdminJobDetails() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -573,7 +574,7 @@ export default function AdminJobDetails() {
                   <div>
                     <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Scheduled Date</p>
                     <p className="mt-0.5">
-                      {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : "Not scheduled"}
+                      {formatDate(job.scheduledDate, "Not scheduled")}
                     </p>
                   </div>
                   <div>
@@ -917,7 +918,7 @@ export default function AdminJobDetails() {
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Scheduled</p>
-                          <p className="mt-0.5">{workOrder.scheduledDate ? new Date(workOrder.scheduledDate).toLocaleDateString() : "—"}</p>
+                          <p className="mt-0.5">{formatDate(workOrder.scheduledDate)}</p>
                         </div>
                         <div>
                           <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Estimated Hours</p>
@@ -1483,7 +1484,7 @@ export default function AdminJobDetails() {
                     notes: jobEditNotes || undefined,
                     jobType: jobEditJobType as any,
                     priority: jobEditPriority as any,
-                    scheduledDate: jobEditScheduledDate ? new Date(jobEditScheduledDate) : undefined,
+                    scheduledDate: jobEditScheduledDate ? parseDateInput(jobEditScheduledDate) : undefined,
                   })
                 }
               >

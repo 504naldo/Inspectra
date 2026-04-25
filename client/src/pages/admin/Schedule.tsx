@@ -1,6 +1,9 @@
 import { useState, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { formatDate } from "@/lib/utils";
+import AdminLayout from "@/components/AdminLayout";
+import { DispatchBoard } from "./DispatchBoard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +21,6 @@ import {
 } from "@/components/ui/select";
 import {
   AlertTriangle,
-  CalendarDays,
   CalendarCheck,
   ChevronLeft,
   ChevronRight,
@@ -115,19 +117,19 @@ export default function AdminSchedule() {
   const utils = trpc.useUtils();
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-4">
-      <div className="flex items-center gap-3 mb-2">
-        <CalendarDays className="h-6 w-6 text-destructive" />
-        <h1 className="text-2xl font-bold">Scheduling</h1>
-      </div>
-
-      <Tabs defaultValue="tracking">
+    <AdminLayout>
+      <Tabs defaultValue="dispatch">
         <TabsList className="mb-4">
+          <TabsTrigger value="dispatch">Dispatch Board</TabsTrigger>
           <TabsTrigger value="tracking">Monthly Tracking</TabsTrigger>
           <TabsTrigger value="repair">Repair Letter Tracking</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="schedules">Service Schedules</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="dispatch">
+          <DispatchBoard companyId={companyId} />
+        </TabsContent>
 
         <TabsContent value="tracking">
           <MonthlyTrackingTab companyId={companyId} utils={utils} />
@@ -145,7 +147,7 @@ export default function AdminSchedule() {
           <ServiceSchedulesTab companyId={companyId} utils={utils} />
         </TabsContent>
       </Tabs>
-    </div>
+    </AdminLayout>
   );
 }
 
@@ -296,7 +298,7 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
                   {row.targetDate ? new Date(row.targetDate).toLocaleDateString() : "—"}
                 </td>
                 <td className="px-3 py-2 text-gray-500">
-                  {row.scheduledDate ? new Date(row.scheduledDate).toLocaleDateString() : "—"}
+                  {formatDate(row.scheduledDate)}
                 </td>
                 <td className="px-3 py-2">
                   {editingRow === row.id ? (
@@ -851,7 +853,7 @@ function CalendarTab({ companyId }: { companyId: number }) {
                   <div>
                     <p className="font-medium text-sm">{job.title}</p>
                     <p className="text-xs text-gray-500">
-                      Scheduled: {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : "—"}
+                      Scheduled: {formatDate(job.scheduledDate)}
                     </p>
                   </div>
                   <Link href={`/admin/jobs/${job.id}`}>

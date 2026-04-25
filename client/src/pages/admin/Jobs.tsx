@@ -13,6 +13,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { formatDate, parseDateInput } from "@/lib/utils";
 import {
   Plus,
   Search,
@@ -175,7 +176,7 @@ export default function AdminJobs() {
       description: newJob.description || undefined,
       jobType: newJob.jobType as any,
       priority: newJob.priority as any,
-      scheduledDate: newJob.scheduledDate ? new Date(newJob.scheduledDate) : undefined,
+      scheduledDate: newJob.scheduledDate ? parseDateInput(newJob.scheduledDate) : undefined,
     });
   };
 
@@ -403,7 +404,7 @@ export default function AdminJobs() {
                           {job.scheduledDate && (
                             <span className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
-                              {new Date(job.scheduledDate).toLocaleDateString()}
+                              {formatDate(job.scheduledDate)}
                             </span>
                           )}
                           <span>{job.jobType}</span>

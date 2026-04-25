@@ -1,5 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import NotFound from "@/pages/NotFound";
 import Forbidden from "@/pages/Forbidden";
 import { Route, Switch, Redirect, useLocation } from "wouter";
@@ -321,6 +322,7 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
+          <OfflineBanner />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

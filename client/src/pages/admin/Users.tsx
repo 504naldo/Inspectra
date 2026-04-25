@@ -7,8 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
-import { Search, UserPlus, Edit, Users as UsersIcon, Award } from 'lucide-react';
+import { Search, UserPlus, Edit, Users as UsersIcon, Award, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
@@ -26,6 +27,8 @@ export default function AdminUsers() {
   const [editCertNumber, setEditCertNumber] = useState('');
   const [editCertLevel, setEditCertLevel] = useState('');
   const [editCertExpiry, setEditCertExpiry] = useState('');
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   // Add User dialog state
   const [addUserOpen, setAddUserOpen] = useState(false);
@@ -46,6 +49,17 @@ export default function AdminUsers() {
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to create user');
+    },
+  });
+
+  const deleteUserMutation = trpc.user.deleteUser.useMutation({
+    onSuccess: () => {
+      toast.success('User removed');
+      setConfirmDeleteId(null);
+      utils.user.listUsers.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to remove user');
     },
   });
 
@@ -225,13 +239,25 @@ export default function AdminUsers() {
                       {new Date(u.createdAt).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEditUser(u)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditUser(u)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        {u.id !== user?.id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => setConfirmDeleteId(u.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -297,6 +323,29 @@ export default function AdminUsers() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Delete User Confirm */}
+        <AlertDialog open={confirmDeleteId !== null} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove user?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete the user account and remove them from all job assignments.
+                Jobs they were assigned to will become unassigned. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => confirmDeleteId && deleteUserMutation.mutate({ userId: confirmDeleteId })}
+                disabled={deleteUserMutation.isPending}
+              >
+                {deleteUserMutation.isPending ? 'Removing…' : 'Remove'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Edit User Dialog */}
         <Dialog open={editingUser !== null} onOpenChange={(open) => !open && setEditingUser(null)}>
