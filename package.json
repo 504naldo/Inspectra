@@ -133,6 +133,13 @@
     "workbox-window": "^7.4.0"
   },
   "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
+  "optionalDependencies": {
+    "@tailwindcss/oxide-linux-x64-gnu": "4.2.4",
+    "@tailwindcss/oxide-linux-arm64-gnu": "4.2.4",
+    "@tailwindcss/oxide-darwin-x64": "4.2.4",
+    "@tailwindcss/oxide-darwin-arm64": "4.2.4",
+    "@tailwindcss/oxide-win32-x64-msvc": "4.2.4"
+  },
   "pnpm": {
     "patchedDependencies": {
       "wouter@3.7.1": "patches/wouter@3.7.1.patch"
