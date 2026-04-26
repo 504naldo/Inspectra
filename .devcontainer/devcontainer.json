@@ -1,0 +1,6 @@
+{
+  "name": "Inspectra",
+  "postCreateCommand": "rm -rf node_modules package-lock.json && npm install",
+  "postStartCommand": "node -e \"try{require('@tailwindcss/oxide')}catch(e){require('child_process').execSync('rm -rf node_modules package-lock.json && npm install',{stdio:'inherit'})}\"",
+  "forwardPorts": [5000, 5173]
+}
