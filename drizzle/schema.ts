@@ -963,6 +963,19 @@ export type QuoteLineItem = {
   description: string;
   unitPrice: number;
   qty: number;
+  // Extended for building quotes
+  type?: "service" | "labour";
+  hours?: number;
+  rate?: number;
+  lineNotes?: string;
+};
+
+export type BuildingQuoteInfo = {
+  city?: string;
+  backflowFeeCity?: string;
+  buildingId?: string;
+  buildingName?: string;
+  address?: string;
 };
 
 export const quotes = mysqlTable("quotes", {
@@ -983,6 +996,11 @@ export const quotes = mysqlTable("quotes", {
   acceptedAt: timestamp("acceptedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  // Building quote extensions
+  quoteType: varchar("quoteType", { length: 20 }).default("deficiency"),
+  discount: decimal("discount", { precision: 5, scale: 2 }).default("0"),
+  discountReason: varchar("discountReason", { length: 500 }),
+  buildingInfo: json("buildingInfo").$type<BuildingQuoteInfo>(),
 }, (table) => ({
   jobIdIdx: index("quotes_jobId_idx").on(table.jobId),
 }));

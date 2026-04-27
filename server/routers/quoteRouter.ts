@@ -31,6 +31,29 @@ const lineItemSchema = z.object({
   qty: z.number().int().positive(),
 });
 
+const serviceLineSchema = z.object({
+  serviceType: z.string().min(1),
+  description: z.string().min(1).max(500),
+  qty: z.number().positive(),
+  unitPrice: z.number().nonnegative(),
+  lineNotes: z.string().max(500).optional(),
+});
+
+const labourLineSchema = z.object({
+  labourType: z.string().min(1),
+  hours: z.number().nonnegative(),
+  rate: z.number().nonnegative(),
+  lineNotes: z.string().max(500).optional(),
+});
+
+const buildingInfoSchema = z.object({
+  city: z.string().optional(),
+  backflowFeeCity: z.string().optional(),
+  buildingId: z.string().optional(),
+  buildingName: z.string().optional(),
+  address: z.string().min(1, "Address is required"),
+});
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export const quoteRouter = router({
@@ -259,6 +282,165 @@ export const quoteRouter = router({
 
       return { success: true, pdfUrl };
     }),
+
+  /**
+   * Create a building quote (not tied to a specific job/deficiency).
+   * Office/admin only. Accepts service lines, labour lines, discount, and
+   * optional site/customer org links.
+   */
+  createBuilding: officeProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive().optional(),
+        customerOrgId: z.number().int().positive().optional(),
+        buildingInfo: buildingInfoSchema,
+        serviceLines: z.array(serviceLineSchema),
+        labourLines: z.array(labourLineSchema),
+        discount: z.number().min(0).max(100).default(0),
+        discountReason: z.string().max(500).optional(),
+        comments: z.string().max(2000).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      if (!input.serviceLines.length && !input.labourLines.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "At least one service or labour line is required.",
+        });
+      }
+
+      // Build unified line items from services and labour
+      const serviceItems: QuoteLineItem[] = input.serviceLines.map((s) => ({
+        deficiencyId: null,
+        description: s.description,
+        unitPrice: s.unitPrice,
+        qty: s.qty,
+        type: "service" as const,
+        lineNotes: s.lineNotes,
+      }));
+
+      const labourItems: QuoteLineItem[] = input.labourLines.map((l) => ({
+        deficiencyId: null,
+        description: l.labourType,
+        unitPrice: l.rate,
+        qty: 1,
+        type: "labour" as const,
+        hours: l.hours,
+        rate: l.rate,
+        lineNotes: l.lineNotes,
+      }));
+
+      const allItems = [...serviceItems, ...labourItems];
+
+      // Calculate subtotals
+      const servicesSubtotal = serviceItems.reduce(
+        (sum, i) => sum + i.unitPrice * i.qty,
+        0
+      );
+      const labourSubtotal = labourItems.reduce(
+        (sum, i) => sum + (i.hours ?? 0) * (i.rate ?? 0),
+        0
+      );
+      const subtotal = servicesSubtotal + labourSubtotal;
+      const discountAmount = subtotal * (input.discount / 100);
+      const total = subtotal - discountAmount;
+
+      const quote = await db.createQuote({
+        jobId: 0,
+        siteId: input.siteId ?? 0,
+        customerOrgId: input.customerOrgId ?? 0,
+        companyId: ctx.user.companyId!,
+        lineItems: allItems,
+        total: total.toFixed(2),
+        notes: input.comments ?? null,
+        status: "draft",
+        quoteType: "building",
+        discount: input.discount.toFixed(2),
+        discountReason: input.discountReason ?? null,
+        buildingInfo: input.buildingInfo,
+      });
+
+      return { quoteId: quote.id };
+    }),
+
+  /**
+   * Update a building quote (draft only).
+   */
+  updateBuilding: officeProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        siteId: z.number().int().positive().optional(),
+        customerOrgId: z.number().int().positive().optional(),
+        buildingInfo: buildingInfoSchema.optional(),
+        serviceLines: z.array(serviceLineSchema).optional(),
+        labourLines: z.array(labourLineSchema).optional(),
+        discount: z.number().min(0).max(100).optional(),
+        discountReason: z.string().max(500).optional(),
+        comments: z.string().max(2000).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (quote.status !== "draft") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only draft quotes can be edited." });
+      }
+
+      const serviceLines = input.serviceLines;
+      const labourLines = input.labourLines;
+
+      let allItems = quote.lineItems as QuoteLineItem[];
+      let total = parseFloat(String(quote.total));
+
+      if (serviceLines !== undefined && labourLines !== undefined) {
+        const serviceItems: QuoteLineItem[] = serviceLines.map((s) => ({
+          deficiencyId: null,
+          description: s.description,
+          unitPrice: s.unitPrice,
+          qty: s.qty,
+          type: "service" as const,
+          lineNotes: s.lineNotes,
+        }));
+        const labourItems: QuoteLineItem[] = labourLines.map((l) => ({
+          deficiencyId: null,
+          description: l.labourType,
+          unitPrice: l.rate,
+          qty: 1,
+          type: "labour" as const,
+          hours: l.hours,
+          rate: l.rate,
+          lineNotes: l.lineNotes,
+        }));
+        allItems = [...serviceItems, ...labourItems];
+        const subtotal =
+          serviceItems.reduce((s, i) => s + i.unitPrice * i.qty, 0) +
+          labourItems.reduce((s, i) => s + (i.hours ?? 0) * (i.rate ?? 0), 0);
+        const disc = input.discount ?? parseFloat(String((quote as any).discount ?? "0"));
+        total = subtotal - subtotal * (disc / 100);
+      }
+
+      await db.updateQuote(input.id, {
+        siteId: input.siteId ?? quote.siteId,
+        customerOrgId: input.customerOrgId ?? quote.customerOrgId,
+        lineItems: allItems,
+        notes: input.comments ?? quote.notes,
+        total: total.toFixed(2),
+        ...(input.buildingInfo && { buildingInfo: input.buildingInfo }),
+        ...(input.discount !== undefined && { discount: input.discount.toFixed(2) }),
+        ...(input.discountReason !== undefined && { discountReason: input.discountReason }),
+      } as any);
+
+      return { success: true };
+    }),
+
+  /**
+   * List all quotes for the current user's company.
+   */
+  listByCompany: officeProcedure.query(async ({ ctx }) => {
+    return db.getQuotesByCompany(ctx.user.companyId!);
+  }),
 
   /**
    * Public token-gated endpoint — customer clicks the accept link.

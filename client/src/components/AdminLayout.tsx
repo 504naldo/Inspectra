@@ -22,6 +22,7 @@ import {
   CalendarDays,
   FolderOpen,
   Wrench,
+  ReceiptText,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -43,6 +44,7 @@ const primaryNavItems = [
 
 // Secondary nav — collapsed into "More" on desktop, visible in mobile drawer
 const secondaryNavItems = [
+  { label: "Quotes",           href: "/admin/quotes",           icon: ReceiptText,   adminOnly: false },
   { label: "Work Orders",      href: "/admin/work-orders",      icon: Wrench,        adminOnly: false },
   { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen,   adminOnly: false },
   { label: "Devices",          href: "/admin/devices",          icon: AlertTriangle, adminOnly: false },
