@@ -129,3 +129,8 @@ temp/
 # Excel data files
 /inspection_data.xlsm
 /sample_assets.xlsx
+
+# Import workbooks (large binary files; store locally in data/imports/)
+/data/imports/*.xlsx
+/data/imports/*.xlsm
+/data/imports/*.xls
