@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique, decimal, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique, uniqueIndex, decimal, index } from "drizzle-orm/mysql-core";
 
 // ============================================
 // CORE USER TABLE (Extended from template)
