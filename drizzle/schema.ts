@@ -1198,10 +1198,15 @@ export const partsCatalog = mysqlTable("parts_catalog", {
   taxableGst: tinyint("taxableGst").default(1).notNull(),
   taxablePst: tinyint("taxablePst").default(1).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
+  description: text("description"),
+  sourceWorkbook: varchar("sourceWorkbook", { length: 255 }),
+  sourceSheet: varchar("sourceSheet", { length: 100 }),
+  sourceRow: int("sourceRow"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
   companyIdIdx: index("parts_catalog_companyId_idx").on(table.companyId),
+  uniqueCatProduct: uniqueIndex("parts_catalog_unique_cat_product").on(table.companyId, table.category, table.productName),
 }));
 
 export type PartsCatalogItem = typeof partsCatalog.$inferSelect;
