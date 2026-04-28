@@ -1559,6 +1559,82 @@ export async function updateQuote(id: number, data: Partial<InsertQuote>) {
   if (!db) throw new Error("Database not available");
   await db.update(quotes).set(data).where(eq(quotes.id, id));
 }
+
+// ============================================
+// PARTS CATALOG QUERIES
+// ============================================
+import { partsCatalog, InsertPartsCatalogItem, PartsCatalogItem, repairQuoteItems, InsertRepairQuoteItem, RepairQuoteItem } from "../drizzle/schema";
+
+export async function createPartsCatalogItem(data: InsertPartsCatalogItem): Promise<PartsCatalogItem> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(partsCatalog).values(data);
+  return { ...data, id: Number(result[0].insertId) } as PartsCatalogItem;
+}
+
+export async function getPartsCatalogItemById(id: number): Promise<PartsCatalogItem | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(partsCatalog).where(eq(partsCatalog.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getPartsCatalogByCompany(companyId: number, includeInactive = false): Promise<PartsCatalogItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(partsCatalog.companyId, companyId)];
+  if (!includeInactive) conditions.push(eq(partsCatalog.isActive, true));
+  return db.select().from(partsCatalog).where(and(...conditions)).orderBy(asc(partsCatalog.category), asc(partsCatalog.productName));
+}
+
+export async function updatePartsCatalogItem(id: number, data: Partial<InsertPartsCatalogItem>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(partsCatalog).set(data).where(eq(partsCatalog.id, id));
+}
+
+// ============================================
+// REPAIR QUOTE ITEMS QUERIES
+// ============================================
+
+export async function createRepairQuoteItem(data: InsertRepairQuoteItem): Promise<RepairQuoteItem> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(repairQuoteItems).values(data);
+  return { ...data, id: Number(result[0].insertId) } as RepairQuoteItem;
+}
+
+export async function getRepairQuoteItemsByQuote(quoteId: number): Promise<RepairQuoteItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(repairQuoteItems).where(eq(repairQuoteItems.quoteId, quoteId)).orderBy(asc(repairQuoteItems.sortOrder), asc(repairQuoteItems.id));
+}
+
+export async function getRepairQuoteItemById(id: number): Promise<RepairQuoteItem | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(repairQuoteItems).where(eq(repairQuoteItems.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateRepairQuoteItem(id: number, data: Partial<InsertRepairQuoteItem>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(repairQuoteItems).set(data).where(eq(repairQuoteItems.id, id));
+}
+
+export async function deleteRepairQuoteItem(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(repairQuoteItems).where(eq(repairQuoteItems.id, id));
+}
+
+export async function deleteRepairQuoteItemsByQuote(quoteId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(repairQuoteItems).where(eq(repairQuoteItems.quoteId, quoteId));
+}
+
 // ============================================
 // SERVICE SCHEDULE QUERIES
 // ============================================

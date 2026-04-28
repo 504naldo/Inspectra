@@ -1001,6 +1001,20 @@ export const quotes = mysqlTable("quotes", {
   discount: decimal("discount", { precision: 5, scale: 2 }).default("0"),
   discountReason: varchar("discountReason", { length: 500 }),
   buildingInfo: json("buildingInfo").$type<BuildingQuoteInfo>(),
+  // Repair quote extensions
+  quoteNumber: varchar("quoteNumber", { length: 50 }),
+  techLabourRate: decimal("techLabourRate", { precision: 8, scale: 2 }),
+  fitterLabourRate: decimal("fitterLabourRate", { precision: 8, scale: 2 }),
+  fuelCharge: decimal("fuelCharge", { precision: 8, scale: 2 }),
+  backflowReportFee: decimal("backflowReportFee", { precision: 8, scale: 2 }),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }),
+  gst: decimal("gst", { precision: 10, scale: 2 }),
+  pst: decimal("pst", { precision: 10, scale: 2 }),
+  validUntil: date("validUntil"),
+  approvedAt: timestamp("approvedAt"),
+  declinedAt: timestamp("declinedAt"),
+  createdById: int("createdById"),
+  finalizedAt: timestamp("finalizedAt"),
 }, (table) => ({
   jobIdIdx: index("quotes_jobId_idx").on(table.jobId),
 }));
@@ -1167,6 +1181,74 @@ export const aiReviews = mysqlTable("ai_reviews", {
 }));
 
 export type AiReview = typeof aiReviews.$inferSelect;
+
+// ============================================
+// PARTS CATALOG
+// Pricing catalog for fire protection parts / products.
+// ============================================
+
+export const partsCatalog = mysqlTable("parts_catalog", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  category: varchar("category", { length: 100 }).notNull(),
+  productName: varchar("productName", { length: 255 }).notNull(),
+  sku: varchar("sku", { length: 100 }),
+  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).notNull().default("0"),
+  defaultLabourHours: decimal("defaultLabourHours", { precision: 5, scale: 2 }).default("0"),
+  taxableGst: tinyint("taxableGst").default(1).notNull(),
+  taxablePst: tinyint("taxablePst").default(1).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("parts_catalog_companyId_idx").on(table.companyId),
+}));
+
+export type PartsCatalogItem = typeof partsCatalog.$inferSelect;
+export type InsertPartsCatalogItem = typeof partsCatalog.$inferInsert;
+
+// ============================================
+// REPAIR QUOTE ITEMS
+// Normalized line items for repair quotes (quoteType='repair').
+// Each row represents one deficiency repair with parts + labour breakdown.
+// ============================================
+
+export const repairQuoteItems = mysqlTable("repair_quote_items", {
+  id: int("id").autoincrement().primaryKey(),
+  quoteId: int("quoteId").notNull(),
+  deficiencyId: int("deficiencyId"),
+  description: varchar("description", { length: 500 }).notNull(),
+  repairNotes: text("repairNotes"),
+  systemType: mysqlEnum("systemType", ["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER", "BACKFLOW", "OTHER"]),
+  location: varchar("location", { length: 255 }),
+  quantity: int("quantity").notNull().default(1),
+  // Part snapshot — copied from parts_catalog at quote time; price never recalculates from live catalog
+  partId: int("partId"),
+  partDescription: varchar("partDescription", { length: 255 }),
+  partUnitPrice: decimal("partUnitPrice", { precision: 10, scale: 2 }).default("0"),
+  partTotal: decimal("partTotal", { precision: 10, scale: 2 }).default("0"),
+  // Labour
+  techHours: decimal("techHours", { precision: 6, scale: 2 }).default("0"),
+  fitterHours: decimal("fitterHours", { precision: 6, scale: 2 }).default("0"),
+  techLabourRate: decimal("techLabourRate", { precision: 8, scale: 2 }).default("0"),
+  fitterLabourRate: decimal("fitterLabourRate", { precision: 8, scale: 2 }).default("0"),
+  labourTotal: decimal("labourTotal", { precision: 10, scale: 2 }).default("0"),
+  // Fees
+  fuelCharge: decimal("fuelCharge", { precision: 8, scale: 2 }).default("0"),
+  backflowReportFee: decimal("backflowReportFee", { precision: 8, scale: 2 }).default("0"),
+  // Tax (computed at save time, GST 5% / PST 7%)
+  gst: decimal("gst", { precision: 10, scale: 2 }).default("0"),
+  pst: decimal("pst", { precision: 10, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).default("0"),
+  sortOrder: int("sortOrder").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  quoteIdIdx: index("repair_quote_items_quoteId_idx").on(table.quoteId),
+}));
+
+export type RepairQuoteItem = typeof repairQuoteItems.$inferSelect;
+export type InsertRepairQuoteItem = typeof repairQuoteItems.$inferInsert;
 
 // ============================================
 // WORK ORDERS

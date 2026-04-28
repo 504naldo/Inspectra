@@ -30,6 +30,7 @@ import { driveRouter } from "./routers/driveRouter";
 import { fireAlarmFormRouter } from "./routers/fireAlarmFormRouter";
 import { customerRecordsRouter } from "./routers/customerRecordsRouter";
 import { quoteRouter } from "./routers/quoteRouter";
+import { repairQuoteRouter } from "./routers/repairQuoteRouter";
 import { serviceScheduleRouter } from "./routers/serviceScheduleRouter";
 import { repairLetterRouter } from "./routers/repairLetterRouter";
 import { workOrderRouter } from "./routers/workOrderRouter";
@@ -88,6 +89,7 @@ export const appRouter = router({
   drive: driveRouter,
   customerRecords: customerRecordsRouter,
   quote: quoteRouter,
+  repairQuote: repairQuoteRouter,
   serviceSchedule: serviceScheduleRouter,
   repairLetter: repairLetterRouter,
   workOrder: workOrderRouter,

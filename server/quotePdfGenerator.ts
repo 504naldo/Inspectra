@@ -313,6 +313,245 @@ export async function generateQuotePDF(data: QuoteReportData): Promise<Buffer> {
   });
 }
 
+// ─── Repair Quote PDF ─────────────────────────────────────────────────────────
+
+export interface RepairQuoteItemDisplay {
+  description: string;
+  repairNotes?: string | null;
+  systemType?: string | null;
+  location?: string | null;
+  quantity: number;
+  partDescription?: string | null;
+  partUnitPrice: number;
+  partTotal: number;
+  techHours: number;
+  fitterHours: number;
+  techLabourRate: number;
+  fitterLabourRate: number;
+  labourTotal: number;
+  fuelCharge: number;
+  backflowReportFee: number;
+  gst: number;
+  pst: number;
+  total: number;
+}
+
+export interface RepairQuoteReportData {
+  quoteId: number;
+  quoteNumber: string;
+  companyName: string;
+  companyPhone?: string;
+  companyEmail?: string;
+  companyAddress?: string;
+  customerName: string;
+  customerContactName?: string;
+  siteName: string;
+  siteAddress?: string;
+  jobNumber: string;
+  createdAt: Date;
+  validUntil?: Date | null;
+  items: RepairQuoteItemDisplay[];
+  subtotal: number;
+  gst: number;
+  pst: number;
+  total: number;
+  notes?: string | null;
+}
+
+export async function generateRepairQuotePDF(data: RepairQuoteReportData): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "LETTER", margin: PDF_SIZES.margin, bufferPages: true });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const M = PDF_SIZES.margin;
+    const PW = PDF_SIZES.pageWidth;
+    const contentWidth = PW - M * 2;
+
+    // ── Header band ─────────────────────────────────────────────────────────
+    doc.rect(0, 0, PW, 70).fill(PDF_COLORS.brandNavy);
+    drawLogo(doc, M, 12, 80);
+    doc.font(PDF_FONTS.bold).fontSize(16).fillColor(PDF_COLORS.white)
+       .text(data.companyName, M + 100, 20, { width: contentWidth - 100, align: "right" });
+    if (data.companyPhone || data.companyEmail) {
+      doc.font(PDF_FONTS.regular).fontSize(8).fillColor(PDF_COLORS.grayLight)
+         .text([data.companyPhone, data.companyEmail].filter(Boolean).join("  ·  "), M + 100, 38, { width: contentWidth - 100, align: "right" });
+    }
+
+    // ── Title ───────────────────────────────────────────────────────────────
+    const titleY = 82;
+    doc.font(PDF_FONTS.bold).fontSize(18).fillColor(PDF_COLORS.brandNavy)
+       .text("REPAIR QUOTE", M, titleY);
+    doc.font(PDF_FONTS.regular).fontSize(9).fillColor(PDF_COLORS.grayMedium)
+       .text(
+         `${data.quoteNumber}   ·   Job ${data.jobNumber}   ·   ${data.createdAt.toLocaleDateString("en-CA")}` +
+         (data.validUntil ? `   ·   Valid until ${data.validUntil.toLocaleDateString("en-CA")}` : ""),
+         M, titleY + 22
+       );
+
+    // ── Info block ──────────────────────────────────────────────────────────
+    const infoY = 122;
+    const col2 = M + contentWidth / 2;
+
+    doc.font(PDF_FONTS.bold).fontSize(8).fillColor(PDF_COLORS.grayMedium)
+       .text("PREPARED FOR", M, infoY)
+       .text("SITE / JOB", col2, infoY);
+
+    doc.font(PDF_FONTS.bold).fontSize(10).fillColor(PDF_COLORS.black)
+       .text(data.customerName, M, infoY + 13)
+       .text(data.siteName, col2, infoY + 13);
+
+    let infoRowY = infoY + 26;
+    if (data.customerContactName) {
+      doc.font(PDF_FONTS.regular).fontSize(8).fillColor(PDF_COLORS.grayDark)
+         .text(`Attn: ${data.customerContactName}`, M, infoRowY);
+    }
+    if (data.siteAddress) {
+      doc.font(PDF_FONTS.regular).fontSize(8).fillColor(PDF_COLORS.grayDark)
+         .text(data.siteAddress, col2, infoRowY);
+    }
+
+    // ── Divider ─────────────────────────────────────────────────────────────
+    const divY = 168;
+    doc.moveTo(M, divY).lineTo(M + contentWidth, divY).lineWidth(1).stroke(PDF_COLORS.grayLight);
+
+    let curY = divY + 10;
+
+    // ── Items table ──────────────────────────────────────────────────────────
+    const COL = {
+      desc:    contentWidth - 80 - 70 - 70 - 70,
+      parts:   80,
+      labour:  70,
+      fees:    70,
+      total:   70,
+    };
+    const colX = {
+      desc:   M,
+      parts:  M + COL.desc,
+      labour: M + COL.desc + COL.parts,
+      fees:   M + COL.desc + COL.parts + COL.labour,
+      total:  M + COL.desc + COL.parts + COL.labour + COL.fees,
+    };
+
+    // Table header
+    doc.rect(M, curY, contentWidth, PDF_SPACING.headerHeight).fill(PDF_COLORS.brandNavy);
+    doc.font(PDF_FONTS.bold).fontSize(8).fillColor(PDF_COLORS.white)
+       .text("DESCRIPTION / REPAIR", colX.desc + 4, curY + 8, { width: COL.desc - 8 })
+       .text("PARTS", colX.parts, curY + 8, { width: COL.parts - 4, align: "right" })
+       .text("LABOUR", colX.labour, curY + 8, { width: COL.labour - 4, align: "right" })
+       .text("FEES", colX.fees, curY + 8, { width: COL.fees - 4, align: "right" })
+       .text("TOTAL", colX.total, curY + 8, { width: COL.total - 4, align: "right" });
+    curY += PDF_SPACING.headerHeight;
+
+    data.items.forEach((item, i) => {
+      const lines: string[] = [item.description];
+      if (item.location) lines.push(`Location: ${item.location}`);
+      if (item.partDescription) lines.push(`Part: ${item.partDescription} × ${item.quantity} @ $${item.partUnitPrice.toFixed(2)}`);
+      if (item.techHours || item.fitterHours) {
+        const lParts: string[] = [];
+        if (item.techHours) lParts.push(`Tech ${item.techHours}h @ $${item.techLabourRate.toFixed(2)}`);
+        if (item.fitterHours) lParts.push(`Fitter ${item.fitterHours}h @ $${item.fitterLabourRate.toFixed(2)}`);
+        lines.push(lParts.join("  ·  "));
+      }
+      if (item.repairNotes) lines.push(item.repairNotes);
+
+      const descText = lines.join("\n");
+      const descH = doc.font(PDF_FONTS.regular).fontSize(8).heightOfString(descText, { width: COL.desc - 8 });
+      const rowH = Math.max(28, descH + 12);
+
+      const bg = i % 2 === 0 ? PDF_COLORS.white : PDF_COLORS.grayLightest;
+      doc.rect(M, curY, contentWidth, rowH).fill(bg);
+
+      doc.font(PDF_FONTS.regular).fontSize(8).fillColor(PDF_COLORS.black)
+         .text(descText, colX.desc + 4, curY + 6, { width: COL.desc - 8 })
+         .text(item.partTotal > 0 ? `$${item.partTotal.toFixed(2)}` : "—", colX.parts, curY + 6, { width: COL.parts - 4, align: "right" })
+         .text(item.labourTotal > 0 ? `$${item.labourTotal.toFixed(2)}` : "—", colX.labour, curY + 6, { width: COL.labour - 4, align: "right" })
+         .text((item.fuelCharge + item.backflowReportFee) > 0 ? `$${(item.fuelCharge + item.backflowReportFee).toFixed(2)}` : "—", colX.fees, curY + 6, { width: COL.fees - 4, align: "right" })
+         .text(`$${item.total.toFixed(2)}`, colX.total, curY + 6, { width: COL.total - 4, align: "right" });
+
+      curY += rowH;
+    });
+
+    // ── Totals block ─────────────────────────────────────────────────────────
+    curY += 8;
+    const totW = 200;
+    const totX = M + contentWidth - totW;
+
+    const drawTotRow = (label: string, value: string, bold = false) => {
+      doc.font(bold ? PDF_FONTS.bold : PDF_FONTS.regular).fontSize(bold ? 10 : 8)
+         .fillColor(PDF_COLORS.grayMedium)
+         .text(label, totX, curY, { width: 110, align: "right" });
+      doc.font(bold ? PDF_FONTS.bold : PDF_FONTS.regular).fontSize(bold ? 10 : 8)
+         .fillColor(PDF_COLORS.black)
+         .text(value, totX + 118, curY, { width: totW - 118, align: "right" });
+      curY += bold ? 16 : 13;
+    };
+
+    drawTotRow("Subtotal (before tax)", `$${data.subtotal.toFixed(2)}`);
+    drawTotRow("GST (5%)", `$${data.gst.toFixed(2)}`);
+    drawTotRow("PST (7% on parts)", `$${data.pst.toFixed(2)}`);
+
+    doc.moveTo(totX, curY - 2).lineTo(M + contentWidth, curY - 2).lineWidth(0.5).stroke(PDF_COLORS.grayLight);
+    curY += 4;
+
+    // Total — navy background
+    doc.rect(totX - 10, curY - 4, totW + 10, 26).fill(PDF_COLORS.brandNavy);
+    doc.font(PDF_FONTS.bold).fontSize(11).fillColor(PDF_COLORS.white)
+       .text("TOTAL", totX, curY + 3, { width: 110, align: "right" })
+       .text(`$${data.total.toFixed(2)}`, totX + 118, curY + 3, { width: totW - 118, align: "right" });
+    curY += 32;
+
+    doc.font(PDF_FONTS.regular).fontSize(7).fillColor(PDF_COLORS.grayMedium)
+       .text("All amounts in CAD. GST 5% on parts and labour. PST 7% on parts only.", totX - 10, curY, { width: totW + 10, align: "right" });
+    curY += 16;
+
+    // ── Notes ────────────────────────────────────────────────────────────────
+    if (data.notes) {
+      curY += 8;
+      doc.font(PDF_FONTS.bold).fontSize(8).fillColor(PDF_COLORS.grayMedium).text("NOTES", M, curY);
+      curY += 12;
+      doc.font(PDF_FONTS.regular).fontSize(8).fillColor(PDF_COLORS.black)
+         .text(data.notes, M, curY, { width: contentWidth });
+      curY = doc.y + 8;
+    }
+
+    // ── Approval / Signature block ────────────────────────────────────────────
+    const sigY = Math.max(curY + 20, PDF_SIZES.pageHeight - 160);
+    doc.moveTo(M, sigY).lineTo(M + contentWidth, sigY).lineWidth(1).stroke(PDF_COLORS.grayLight);
+
+    doc.rect(M, sigY + 8, contentWidth, 80).fillAndStroke(PDF_COLORS.grayLightest, PDF_COLORS.grayLight);
+
+    doc.font(PDF_FONTS.bold).fontSize(9).fillColor(PDF_COLORS.brandNavy)
+       .text("CUSTOMER APPROVAL", M + 10, sigY + 16);
+    doc.font(PDF_FONTS.regular).fontSize(8).fillColor(PDF_COLORS.grayDark)
+       .text("By signing below, you authorize the listed repair work at the quoted price.", M + 10, sigY + 28, { width: contentWidth / 2 - 20 });
+
+    // Signature lines
+    const sigLineY = sigY + 56;
+    doc.moveTo(M + 10, sigLineY).lineTo(M + contentWidth / 2 - 20, sigLineY).lineWidth(0.5).stroke(PDF_COLORS.grayMedium);
+    doc.moveTo(M + contentWidth / 2 + 10, sigLineY).lineTo(M + contentWidth - 10, sigLineY).lineWidth(0.5).stroke(PDF_COLORS.grayMedium);
+
+    doc.font(PDF_FONTS.regular).fontSize(7).fillColor(PDF_COLORS.grayMedium)
+       .text("Authorized Signature & Date", M + 10, sigLineY + 4)
+       .text("Print Name & Title", M + contentWidth / 2 + 10, sigLineY + 4);
+
+    // ── Disclaimer ────────────────────────────────────────────────────────────
+    const disclaimerY = sigY + 96;
+    doc.font(PDF_FONTS.regular).fontSize(7).fillColor(PDF_COLORS.grayMedium)
+       .text(
+         `This quote is valid for ${data.validUntil ? `30 days` : "30 days"} from the date of issue. ` +
+         "Prices are subject to change if scope of work changes upon inspection. " +
+         "Additional deficiencies found during repair may be quoted separately.",
+         M, disclaimerY, { width: contentWidth }
+       );
+
+    drawFooter(doc, data.companyName, data.quoteNumber, 1, 1);
+    doc.end();
+  });
+}
+
 // ─── Building Quote PDF ───────────────────────────────────────────────────────
 
 export interface BuildingServiceLine {
