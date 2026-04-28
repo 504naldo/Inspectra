@@ -1303,3 +1303,75 @@ export const workOrders = mysqlTable("work_orders", {
 export type WorkOrder = typeof workOrders.$inferSelect;
 export type InsertWorkOrder = typeof workOrders.$inferInsert;
 export type InsertAiReview = typeof aiReviews.$inferInsert;
+
+// ============================================
+// APPROVED WORK
+// Tracks authorized work from approval through scheduling, completion,
+// and close-out. Independent of the Work Orders module — can link to
+// work orders, jobs, quotes, deficiencies, sites, and customers, but
+// is not derived from or dependent on them.
+// ============================================
+
+export const APPROVED_WORK_STATUSES = [
+  "approved",
+  "ready_to_schedule",
+  "scheduled",
+  "assigned",
+  "in_progress",
+  "parts_required",
+  "awaiting_parts",
+  "parts_ordered",
+  "parts_received",
+  "completed",
+  "report_pending",
+  "invoiced",
+  "closed",
+  "cancelled",
+] as const;
+
+export type ApprovedWorkStatus = (typeof APPROVED_WORK_STATUSES)[number];
+
+export const approvedWork = mysqlTable("approved_work", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  customerOrgId: int("customerOrgId"),
+  siteId: int("siteId"),
+  jobId: int("jobId"),
+  deficiencyId: int("deficiencyId"),
+  quoteId: int("quoteId"),
+  quoteItemId: int("quoteItemId"),
+  workOrderId: int("workOrderId"),
+  type: mysqlEnum("type", ["job_order", "repair_order"]).notNull(),
+  status: mysqlEnum("status", [
+    "approved", "ready_to_schedule", "scheduled", "assigned", "in_progress",
+    "parts_required", "awaiting_parts", "parts_ordered", "parts_received",
+    "completed", "report_pending", "invoiced", "closed", "cancelled",
+  ]).notNull().default("approved"),
+  approvedScope: text("approvedScope"),
+  approvedAmount: decimal("approvedAmount", { precision: 10, scale: 2 }),
+  approvedAt: timestamp("approvedAt"),
+  approvedByName: varchar("approvedByName", { length: 255 }),
+  approvedByEmail: varchar("approvedByEmail", { length: 320 }),
+  approvalSource: mysqlEnum("approvalSource", [
+    "email", "phone", "signed_pdf", "in_person", "portal", "internal",
+  ]),
+  assignedTechnicianIds: json("assignedTechnicianIds").$type<number[]>().default([]),
+  scheduledDate: timestamp("scheduledDate"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  closedAt: timestamp("closedAt"),
+  partsStatus: varchar("partsStatus", { length: 100 }),
+  invoiceStatus: varchar("invoiceStatus", { length: 100 }),
+  officeNotes: text("officeNotes"),
+  technicianNotes: text("technicianNotes"),
+  createdById: int("createdById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("approved_work_companyId_idx").on(table.companyId),
+  siteIdIdx: index("approved_work_siteId_idx").on(table.siteId),
+  statusIdx: index("approved_work_status_idx").on(table.status),
+}));
+
+export type ApprovedWork = typeof approvedWork.$inferSelect;
+export type InsertApprovedWork = typeof approvedWork.$inferInsert;

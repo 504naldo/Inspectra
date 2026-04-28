@@ -27,6 +27,7 @@ import {
   monthlyServiceTracking, InsertMonthlyServiceTracking, MonthlyServiceTracking,
   repairLetterTracking, InsertRepairLetterTracking, RepairLetterTracking,
   aiReviews, InsertAiReview, AiReview,
+  approvedWork, InsertApprovedWork, ApprovedWork,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1885,4 +1886,51 @@ export async function deleteJobCascade(jobId: number): Promise<void> {
   await db.delete(workOrders).where(eq(workOrders.jobId, jobId));
   await db.delete(reports).where(eq(reports.jobId, jobId));
   await db.delete(jobs).where(eq(jobs.id, jobId));
+}
+
+// ============================================
+// APPROVED WORK QUERIES
+// ============================================
+
+export async function createApprovedWork(data: InsertApprovedWork): Promise<ApprovedWork> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(approvedWork).values(data);
+  const id = (result as any)[0]?.insertId;
+  return { ...data, id } as ApprovedWork;
+}
+
+export async function getApprovedWorkById(id: number): Promise<ApprovedWork | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(approvedWork).where(eq(approvedWork.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getApprovedWorkByCompany(companyId: number, status?: string): Promise<ApprovedWork[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [eq(approvedWork.companyId, companyId)];
+  if (status) conditions.push(eq(approvedWork.status, status as ApprovedWork["status"]));
+  return db.select().from(approvedWork).where(and(...conditions)).orderBy(desc(approvedWork.createdAt));
+}
+
+export async function getApprovedWorkByQuoteItem(quoteItemId: number): Promise<ApprovedWork | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(approvedWork).where(eq(approvedWork.quoteItemId, quoteItemId)).limit(1);
+  return result[0];
+}
+
+export async function getApprovedWorkByWorkOrder(workOrderId: number): Promise<ApprovedWork | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(approvedWork).where(eq(approvedWork.workOrderId, workOrderId)).limit(1);
+  return result[0];
+}
+
+export async function updateApprovedWork(id: number, data: Partial<InsertApprovedWork>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(approvedWork).set(data).where(eq(approvedWork.id, id));
 }

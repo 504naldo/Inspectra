@@ -23,6 +23,7 @@ import {
   FolderOpen,
   Wrench,
   ReceiptText,
+  CheckSquare,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -44,6 +45,7 @@ const primaryNavItems = [
 
 // Secondary nav — collapsed into "More" on desktop, visible in mobile drawer
 const secondaryNavItems = [
+  { label: "Approved Work",    href: "/admin/approved-work",    icon: CheckSquare,   adminOnly: false },
   { label: "Quotes",           href: "/admin/quotes",           icon: ReceiptText,   adminOnly: false },
   { label: "Work Orders",      href: "/admin/work-orders",      icon: Wrench,        adminOnly: false },
   { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen,   adminOnly: false },
