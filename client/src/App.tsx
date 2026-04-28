@@ -42,6 +42,7 @@ import CustomerRecordsPage from "./pages/admin/CustomerRecords";
 import AdminWorkOrders from "./pages/admin/WorkOrders";
 import AdminQuotes from "./pages/admin/AdminQuotes";
 import NewBuildingQuote from "./pages/admin/NewBuildingQuote";
+import BuildingQuoteDetail from "./pages/admin/BuildingQuoteDetail";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -293,6 +294,11 @@ function Router() {
       <Route path="/admin/quotes/new">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <NewBuildingQuote />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/quotes/:id">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <BuildingQuoteDetail />
         </ProtectedRoute>
       </Route>
       <Route path="/admin/quotes">

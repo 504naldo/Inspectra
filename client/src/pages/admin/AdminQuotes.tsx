@@ -92,7 +92,11 @@ export default function AdminQuotes() {
             ) : (
               <div className="divide-y">
                 {buildingQuotes.map((q) => (
-                  <div key={q.id} className="flex items-center justify-between py-3 gap-3">
+                  <div
+                    key={q.id}
+                    className="flex items-center justify-between py-3 gap-3 cursor-pointer hover:bg-muted/40 -mx-4 px-4 rounded transition-colors"
+                    onClick={() => navigate(`/admin/quotes/${q.id}`)}
+                  >
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{quoteLabel(q)}</p>
                       <p className="text-xs text-muted-foreground">{quoteSubLabel(q)} · {fmtDate(q.createdAt)}</p>

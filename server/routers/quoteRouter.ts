@@ -19,7 +19,7 @@ import { router, officeProcedure, publicProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
-import { generateQuotePDF } from "../quotePdfGenerator.js";
+import { generateQuotePDF, generateBuildingQuotePDF } from "../quotePdfGenerator.js";
 import type { QuoteLineItem } from "../../drizzle/schema.js";
 
 // ── Zod schemas ──────────────────────────────────────────────────────────────
@@ -441,6 +441,103 @@ export const quoteRouter = router({
   listByCompany: officeProcedure.query(async ({ ctx }) => {
     return db.getQuotesByCompany(ctx.user.companyId!);
   }),
+
+  /**
+   * Fetch a single building quote with company info.
+   */
+  getBuilding: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const company = await db.getCompanyById(quote.companyId);
+      return { quote, company };
+    }),
+
+  /**
+   * Generate and store a PDF for a building quote. Returns the S3 URL.
+   */
+  downloadBuildingPDF: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const company = await db.getCompanyById(quote.companyId);
+      const info = (quote as any).buildingInfo as { city?: string; backflowFeeCity?: string; buildingId?: string; buildingName?: string; address?: string } | null ?? {};
+      const lineItems = quote.lineItems as import("../../drizzle/schema.js").QuoteLineItem[];
+      const serviceLines = lineItems.filter((i) => i.type === "service" || !i.type);
+      const labourLines  = lineItems.filter((i) => i.type === "labour");
+
+      const discountPct = parseFloat(String((quote as any).discount ?? "0"));
+      const servicesSubtotal = serviceLines.reduce((s, i) => s + i.unitPrice * i.qty, 0);
+      const labourSubtotal   = labourLines.reduce((s, i) => s + (i.hours ?? 0) * (i.rate ?? i.unitPrice), 0);
+      const subtotal         = servicesSubtotal + labourSubtotal;
+      const discountAmount   = subtotal * (discountPct / 100);
+      const total            = parseFloat(String(quote.total));
+
+      const pdfBuffer = await generateBuildingQuotePDF({
+        quoteId: quote.id,
+        companyName: company?.name ?? "EWF",
+        createdAt: quote.createdAt,
+        buildingName:      info.buildingName,
+        buildingId:        info.buildingId,
+        address:           info.address,
+        city:              info.city,
+        backflowFeeCity:   info.backflowFeeCity,
+        serviceLines: serviceLines.map((s) => ({
+          description: s.description,
+          qty:         s.qty,
+          unitPrice:   s.unitPrice,
+          lineNotes:   s.lineNotes,
+        })),
+        labourLines: labourLines.map((l) => ({
+          labourType: l.description,
+          hours:      l.hours ?? 0,
+          rate:       l.rate ?? l.unitPrice,
+          lineNotes:  l.lineNotes,
+        })),
+        servicesSubtotal,
+        labourSubtotal,
+        subtotal,
+        discount:      discountPct,
+        discountAmount,
+        discountReason: (quote as any).discountReason ?? undefined,
+        total,
+        comments: quote.notes ?? undefined,
+      });
+
+      const pdfKey = `quotes/${quote.companyId}/${quote.id}/building-quote-${quote.id}.pdf`;
+      const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
+      await db.updateQuote(quote.id, { pdfUrl } as any);
+
+      return { pdfUrl };
+    }),
+
+  /**
+   * Update the status of a building quote (draft → sent → accepted/declined).
+   */
+  updateBuildingStatus: officeProcedure
+    .input(
+      z.object({
+        id:     z.number().int().positive(),
+        status: z.enum(["draft", "sent", "accepted", "declined"]),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const extra: Record<string, unknown> = {};
+      if (input.status === "sent" && !quote.sentAt) extra.sentAt = new Date();
+      if (input.status === "accepted" && !quote.acceptedAt) extra.acceptedAt = new Date();
+
+      await db.updateQuote(input.id, { status: input.status, ...extra } as any);
+      return { success: true };
+    }),
 
   /**
    * Public token-gated endpoint — customer clicks the accept link.
