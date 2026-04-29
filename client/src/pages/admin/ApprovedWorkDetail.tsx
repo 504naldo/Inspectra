@@ -205,6 +205,65 @@ function CreateWorkOrderDialog({ open, onClose, onCreate, isPending }: CreateWor
   );
 }
 
+interface MarkInvoicedDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (invoiceNumber: string, invoiceStatus: string, officeNotes: string) => void;
+  isPending: boolean;
+  existingNotes: string;
+}
+function MarkInvoicedDialog({ open, onClose, onConfirm, isPending, existingNotes }: MarkInvoicedDialogProps) {
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceStatus, setInvoiceStatus] = useState("sent");
+  const [notes, setNotes] = useState(existingNotes);
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Mark as Invoiced</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Invoice Number <span className="text-destructive">*</span></Label>
+            <Input
+              className="mt-1"
+              placeholder="e.g. INV-2026-001"
+              value={invoiceNumber}
+              onChange={(e) => setInvoiceNumber(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>Invoice Status</Label>
+            <Select value={invoiceStatus} onValueChange={setInvoiceStatus}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sent">Sent</SelectItem>
+                <SelectItem value="viewed">Viewed</SelectItem>
+                <SelectItem value="paid">Paid</SelectItem>
+                <SelectItem value="overdue">Overdue</SelectItem>
+                <SelectItem value="disputed">Disputed</SelectItem>
+                <SelectItem value="void">Void</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Office Notes (optional)</Label>
+            <Textarea className="mt-1" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isPending}>Cancel</Button>
+          <Button
+            onClick={() => onConfirm(invoiceNumber.trim(), invoiceStatus, notes)}
+            disabled={isPending || !invoiceNumber.trim()}
+          >
+            {isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            Mark Invoiced
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 interface EditNotesDialogProps {
   open: boolean;
   onClose: () => void;
@@ -258,8 +317,10 @@ export default function ApprovedWorkDetail({ id }: Props) {
   const [showCreateWoDialog, setShowCreateWoDialog] = useState(false);
   const [showNotesDialog, setShowNotesDialog] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [scheduledDateStr, setScheduledDateStr] = useState("");
   const [partsStatus, setPartsStatus] = useState("");
+  const [invoiceStatusInput, setInvoiceStatusInput] = useState("");
 
   const { data: record, isLoading, error } = trpc.approvedWork.get.useQuery(
     { id },
@@ -271,13 +332,12 @@ export default function ApprovedWorkDetail({ id }: Props) {
     utils.approvedWork.list.invalidate();
   };
 
-  const updateStatusMut = trpc.approvedWork.updateStatus.useMutation({ onSuccess: invalidate });
-  const updateMut       = trpc.approvedWork.update.useMutation({ onSuccess: invalidate });
-  const linkWoMut       = trpc.approvedWork.linkWorkOrder.useMutation({ onSuccess: invalidate });
-  const createWoMut     = trpc.approvedWork.createWorkOrder.useMutation({ onSuccess: invalidate });
-  const closeMut        = trpc.approvedWork.close.useMutation({
-    onSuccess: () => { invalidate(); },
-  });
+  const updateStatusMut  = trpc.approvedWork.updateStatus.useMutation({ onSuccess: invalidate });
+  const updateMut        = trpc.approvedWork.update.useMutation({ onSuccess: invalidate });
+  const markInvoicedMut  = trpc.approvedWork.markInvoiced.useMutation({ onSuccess: () => { invalidate(); setShowInvoiceDialog(false); } });
+  const linkWoMut        = trpc.approvedWork.linkWorkOrder.useMutation({ onSuccess: invalidate });
+  const createWoMut      = trpc.approvedWork.createWorkOrder.useMutation({ onSuccess: invalidate });
+  const closeMut         = trpc.approvedWork.close.useMutation({ onSuccess: () => { invalidate(); } });
 
   if (isLoading) {
     return (
@@ -355,15 +415,24 @@ export default function ApprovedWorkDetail({ id }: Props) {
                     Mark Complete
                   </Button>
                 )}
-                {record.status === "completed" && (
+                {(record.status === "completed" || record.status === "report_pending") && (
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => updateStatusMut.mutate({ id: record.id, status: "invoiced" })}
-                    disabled={updateStatusMut.isPending}
+                    onClick={() => setShowInvoiceDialog(true)}
                   >
                     <ReceiptText className="h-3.5 w-3.5 mr-1" />
                     Mark Invoiced
+                  </Button>
+                )}
+                {record.status === "invoiced" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowInvoiceDialog(true)}
+                  >
+                    <ReceiptText className="h-3.5 w-3.5 mr-1" />
+                    Update Invoice
                   </Button>
                 )}
                 <Button
@@ -460,10 +529,9 @@ export default function ApprovedWorkDetail({ id }: Props) {
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <Row label="Parts Status">{record.partsStatus ?? "—"}</Row>
-              <Row label="Invoice Status">{record.invoiceStatus ?? "—"}</Row>
 
               {!isClosed && (
-                <div className="pt-2 space-y-2">
+                <div className="space-y-2 pb-2 border-b">
                   <div className="flex gap-2">
                     <Input
                       placeholder="Parts status..."
@@ -496,6 +564,65 @@ export default function ApprovedWorkDetail({ id }: Props) {
                   </div>
                 </div>
               )}
+
+              <div className="pt-1 space-y-2">
+                {record.invoiceNumber && (
+                  <Row label="Invoice #">
+                    <span className="font-mono">{record.invoiceNumber}</span>
+                  </Row>
+                )}
+                {record.invoicedAt && (
+                  <Row label="Invoiced At">{formatDate(record.invoicedAt)}</Row>
+                )}
+                <Row label="Invoice Status">
+                  {record.invoiceStatus ? (
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      record.invoiceStatus === "paid"     ? "bg-green-100 text-green-700" :
+                      record.invoiceStatus === "overdue"  ? "bg-red-100 text-red-700" :
+                      record.invoiceStatus === "disputed" ? "bg-orange-100 text-orange-700" :
+                      record.invoiceStatus === "void"     ? "bg-muted text-muted-foreground" :
+                      "bg-teal-100 text-teal-700"
+                    }`}>
+                      {record.invoiceStatus}
+                    </span>
+                  ) : "—"}
+                </Row>
+
+                {!isClosed && record.invoiceNumber && (
+                  <div className="flex gap-2 pt-1">
+                    <Input
+                      placeholder="Update invoice status..."
+                      value={invoiceStatusInput}
+                      onChange={(e) => setInvoiceStatusInput(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        updateMut.mutate({ id: record.id, invoiceStatus: invoiceStatusInput || null });
+                        setInvoiceStatusInput("");
+                      }}
+                      disabled={updateMut.isPending || !invoiceStatusInput}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                )}
+                {!isClosed && record.invoiceNumber && (
+                  <div className="flex gap-1 flex-wrap">
+                    {["sent", "viewed", "paid", "overdue", "disputed", "void"].map(s => (
+                      <button
+                        key={s}
+                        className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
+                        onClick={() => updateMut.mutate({ id: record.id, invoiceStatus: s })}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -641,6 +768,16 @@ export default function ApprovedWorkDetail({ id }: Props) {
             setShowNotesDialog(false);
           }}
           isPending={updateMut.isPending}
+        />
+
+        <MarkInvoicedDialog
+          open={showInvoiceDialog}
+          onClose={() => setShowInvoiceDialog(false)}
+          onConfirm={(invoiceNumber, invoiceStatus, officeNotes) => {
+            markInvoicedMut.mutate({ id: record.id, invoiceNumber, invoiceStatus, officeNotes: officeNotes || undefined });
+          }}
+          isPending={markInvoicedMut.isPending}
+          existingNotes={record.officeNotes ?? ""}
         />
 
         {/* Schedule dialog */}
