@@ -8,8 +8,9 @@ import {
   Building2,
   AlertTriangle,
   FileText,
-  TrendingUp,
   Plus,
+  CheckSquare,
+  Wrench,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -77,26 +78,26 @@ export default function AdminDashboard() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Sites</CardTitle>
-              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Approved Work</CardTitle>
+              <CheckSquare className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats?.totalSites || 0}</div>
+              <div className="text-2xl font-bold">{stats?.openApprovedWork || 0}</div>
               <p className="text-xs text-muted-foreground">
-                Managed locations
+                {stats?.approvedWorkAwaitingSchedule || 0} awaiting schedule
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Devices</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Total Sites</CardTitle>
+              <Building2 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats?.totalDevices || 0}</div>
+              <div className="text-2xl font-bold">{stats?.totalSites || 0}</div>
               <p className="text-xs text-muted-foreground">
-                Tracked assets
+                {stats?.totalDevices || 0} tracked devices
               </p>
             </CardContent>
           </Card>
@@ -115,10 +116,16 @@ export default function AdminDashboard() {
                   Create New Job
                 </Button>
               </Link>
-              <Link href="/admin/customers">
+              <Link href="/admin/approved-work">
                 <Button variant="outline" className="w-full justify-start">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Customer
+                  <CheckSquare className="h-4 w-4 mr-2" />
+                  View Approved Work
+                </Button>
+              </Link>
+              <Link href="/admin/work-orders">
+                <Button variant="outline" className="w-full justify-start">
+                  <Wrench className="h-4 w-4 mr-2" />
+                  View Work Orders
                 </Button>
               </Link>
               <Link href="/admin/reports">
@@ -142,7 +149,7 @@ export default function AdminDashboard() {
               ) : (
                 <div className="space-y-2">
                   {recentJobs?.map((job: any) => (
-                    <Link key={job.id} href={`/tech/jobs/${job.id}`}>
+                    <Link key={job.id} href={`/admin/jobs/${job.id}`}>
                       <div className="flex items-center justify-between p-2 rounded hover:bg-muted cursor-pointer">
                         <div>
                           <p className="font-medium text-sm">{job.title}</p>
