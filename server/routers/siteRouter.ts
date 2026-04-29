@@ -82,6 +82,8 @@ const siteRouter = router({
     id: z.number(),
     name: z.string().optional(),
     buildingId: z.string().max(50).optional(),
+    fileNumber: z.string().max(20).optional(),
+    customerOrgId: z.number().optional(),
     address: z.string().optional(),
     city: z.string().optional(),
     state: z.string().optional(),
@@ -94,13 +96,16 @@ const siteRouter = router({
     keyNumber: z.string().optional(),
     keySignOutDate: z.string().optional(),
     keySignedOutBy: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { id, ...data } = input;
-    
+
     // Get existing site to merge with updates
     const existingSite = await db.getSiteById(id);
     if (!existingSite) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });
+    }
+    if (existingSite.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
     }
     
     // Update summary to keep it in sync with flat columns

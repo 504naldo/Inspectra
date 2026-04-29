@@ -35,6 +35,7 @@ import { serviceScheduleRouter } from "./routers/serviceScheduleRouter";
 import { repairLetterRouter } from "./routers/repairLetterRouter";
 import { workOrderRouter } from "./routers/workOrderRouter";
 import { approvedWorkRouter } from "./routers/approvedWorkRouter";
+import { invoiceRouter } from "./routers/invoiceRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -95,6 +96,7 @@ export const appRouter = router({
   repairLetter: repairLetterRouter,
   workOrder: workOrderRouter,
   approvedWork: approvedWorkRouter,
+  invoice: invoiceRouter,
 });
 
 export type AppRouter = typeof appRouter;

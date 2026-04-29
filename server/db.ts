@@ -28,6 +28,8 @@ import {
   repairLetterTracking, InsertRepairLetterTracking, RepairLetterTracking,
   aiReviews, InsertAiReview, AiReview,
   approvedWork, InsertApprovedWork, ApprovedWork,
+  invoices, InsertInvoice, Invoice,
+  invoiceLineItems, InsertInvoiceLineItem, InvoiceLineItem,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -855,7 +857,7 @@ export async function getOpenDeficienciesCount(companyId: number) {
   const result = await db.select({ count: sql<number>`count(*)` }).from(deficiencies).where(
     and(inArray(deficiencies.jobId, jobIds), eq(deficiencies.status, 'open'))
   );
-  return result[0]?.count ?? 0;
+  return Number(result[0]?.count ?? 0);
 }
 
 // ============================================
@@ -1029,14 +1031,14 @@ export async function getDashboardStats(companyId: number) {
   }).from(approvedWork).where(eq(approvedWork.companyId, companyId));
 
   return {
-    totalJobs: jobStats?.total ?? 0,
-    activeJobs: jobStats?.active ?? 0,
-    completedJobs: jobStats?.completed ?? 0,
-    openDeficiencies: openDef,
-    totalDevices: deviceCount,
-    totalSites: siteCount?.count ?? 0,
-    openApprovedWork: awStats?.open ?? 0,
-    approvedWorkAwaitingSchedule: awStats?.awaitingSchedule ?? 0,
+    totalJobs: Number(jobStats?.total ?? 0),
+    activeJobs: Number(jobStats?.active ?? 0),
+    completedJobs: Number(jobStats?.completed ?? 0),
+    openDeficiencies: Number(openDef),
+    totalDevices: Number(deviceCount),
+    totalSites: Number(siteCount?.count ?? 0),
+    openApprovedWork: Number(awStats?.open ?? 0),
+    approvedWorkAwaitingSchedule: Number(awStats?.awaitingSchedule ?? 0),
   };
 }
 
@@ -1940,4 +1942,89 @@ export async function updateApprovedWork(id: number, data: Partial<InsertApprove
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(approvedWork).set(data).where(eq(approvedWork.id, id));
+}
+
+// ============================================
+// INVOICE QUERIES
+// ============================================
+export async function createInvoice(data: InsertInvoice): Promise<Invoice> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(invoices).values(data);
+  const id = Number(result[0].insertId);
+  const row = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
+  return row[0];
+}
+
+export async function getInvoiceById(id: number): Promise<Invoice | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getInvoicesByCompany(companyId: number, status?: string): Promise<Invoice[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [eq(invoices.companyId, companyId)];
+  if (status) conditions.push(eq(invoices.status, status as Invoice["status"]));
+  return db.select().from(invoices).where(and(...conditions)).orderBy(desc(invoices.createdAt));
+}
+
+export async function updateInvoice(id: number, data: Partial<InsertInvoice>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(invoices).set(data).where(eq(invoices.id, id));
+}
+
+export async function getLineItemsByInvoice(invoiceId: number): Promise<InvoiceLineItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(invoiceLineItems)
+    .where(eq(invoiceLineItems.invoiceId, invoiceId))
+    .orderBy(asc(invoiceLineItems.sortOrder), asc(invoiceLineItems.id));
+}
+
+export async function createInvoiceLineItem(data: InsertInvoiceLineItem): Promise<InvoiceLineItem> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(invoiceLineItems).values(data);
+  const id = Number(result[0].insertId);
+  const row = await db.select().from(invoiceLineItems).where(eq(invoiceLineItems.id, id)).limit(1);
+  return row[0];
+}
+
+export async function updateInvoiceLineItem(id: number, data: Partial<InsertInvoiceLineItem>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(invoiceLineItems).set(data).where(eq(invoiceLineItems.id, id));
+}
+
+export async function deleteInvoiceLineItem(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(invoiceLineItems).where(eq(invoiceLineItems.id, id));
+}
+
+export async function recalculateInvoiceTotals(invoiceId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const items = await getLineItemsByInvoice(invoiceId);
+  const inv = await getInvoiceById(invoiceId);
+  if (!inv) return;
+  const subtotal = items.reduce((sum, item) => sum + parseFloat(String(item.total ?? "0")), 0);
+  const taxRate = parseFloat(String(inv.taxRate ?? "0"));
+  const taxableSubtotal = items
+    .filter((i) => i.taxable)
+    .reduce((sum, i) => sum + parseFloat(String(i.total ?? "0")), 0);
+  const taxAmount = taxableSubtotal * taxRate;
+  const total = subtotal + taxAmount;
+  const amountPaid = parseFloat(String(inv.amountPaid ?? "0"));
+  const balanceDue = total - amountPaid;
+  await db.update(invoices).set({
+    subtotal: subtotal.toFixed(2) as any,
+    taxAmount: taxAmount.toFixed(2) as any,
+    total: total.toFixed(2) as any,
+    balanceDue: balanceDue.toFixed(2) as any,
+  }).where(eq(invoices.id, invoiceId));
 }

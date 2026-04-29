@@ -155,13 +155,21 @@ export default function AdminSites() {
     navigate(`/admin/sites/${pdfImportPreview.siteId}/import`);
   };
 
+  const customerMap = new Map<number, string>(
+    customers?.map((c: any) => [c.id, c.name]) ?? []
+  );
+
   const filteredSites = sites?.filter((site: any) => {
     if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
+    const q = searchQuery.toLowerCase();
     return (
-      site.name.toLowerCase().includes(query) ||
-      site.address?.toLowerCase().includes(query) ||
-      site.city?.toLowerCase().includes(query)
+      site.name.toLowerCase().includes(q) ||
+      site.address?.toLowerCase().includes(q) ||
+      site.city?.toLowerCase().includes(q) ||
+      site.buildingId?.toLowerCase().includes(q) ||
+      site.fileNumber?.toLowerCase().includes(q) ||
+      site.contactName?.toLowerCase().includes(q) ||
+      customerMap.get(site.customerOrgId)?.toLowerCase().includes(q)
     );
   }) || [];
 
@@ -389,7 +397,13 @@ export default function AdminSites() {
                         {site.buildingId && (
                           <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">{site.buildingId}</span>
                         )}
+                        {site.fileNumber && (
+                          <span className="text-xs font-mono bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded shrink-0">{site.fileNumber}</span>
+                        )}
                       </div>
+                      {site.customerOrgId && customerMap.get(site.customerOrgId) && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{customerMap.get(site.customerOrgId)}</p>
+                      )}
                       {site.address && (
                         <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                           <MapPin className="h-3 w-3" />
@@ -422,7 +436,16 @@ export default function AdminSites() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => { setEditSite({...site}); setIsEditOpen(true); }}>
+                        <DropdownMenuItem onClick={() => {
+                          setEditSite({
+                            ...site,
+                            contactEmail: site.summary?.contacts?.[0]?.email ?? "",
+                            keySignOutDate: site.keySignOutDate
+                              ? new Date(site.keySignOutDate).toISOString().split("T")[0]
+                              : "",
+                          });
+                          setIsEditOpen(true);
+                        }}>
                           <KeyRound className="h-4 w-4 mr-2" />
                           Edit Site
                         </DropdownMenuItem>
@@ -470,9 +493,32 @@ export default function AdminSites() {
                 <Label>Site Name *</Label>
                 <Input value={editSite.name ?? ""} onChange={(e) => setEditSite({ ...editSite, name: e.target.value })} placeholder="Site name" />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Building ID</Label>
+                  <Input value={editSite.buildingId ?? ""} onChange={(e) => setEditSite({ ...editSite, buildingId: e.target.value })} placeholder="e.g. EWF-1234" />
+                </div>
+                <div className="space-y-2">
+                  <Label>File Number</Label>
+                  <Input value={editSite.fileNumber ?? ""} onChange={(e) => setEditSite({ ...editSite, fileNumber: e.target.value })} placeholder="e.g. #0007" />
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <Label>Building ID <span className="text-muted-foreground text-xs">(file / account number)</span></Label>
-                <Input value={editSite.buildingId ?? ""} onChange={(e) => setEditSite({ ...editSite, buildingId: e.target.value })} placeholder="e.g. EWF-1234" />
+                <Label>Customer</Label>
+                <Select
+                  value={String(editSite.customerOrgId ?? "")}
+                  onValueChange={(v) => setEditSite({ ...editSite, customerOrgId: v ? parseInt(v) : undefined })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers?.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Address */}
@@ -522,32 +568,49 @@ export default function AdminSites() {
                     <Input value={editSite.keyLocation ?? ""} onChange={(e) => setEditSite({ ...editSite, keyLocation: e.target.value })} placeholder="Key location" />
                     <Input value={editSite.keyNumber ?? ""} onChange={(e) => setEditSite({ ...editSite, keyNumber: e.target.value })} placeholder="Key number" />
                   </div>
-                  <Input value={editSite.keySignedOutBy ?? ""} onChange={(e) => setEditSite({ ...editSite, keySignedOutBy: e.target.value })} placeholder="Signed out by (leave blank to clear)" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Sign-out date</Label>
+                      <Input type="date" value={editSite.keySignOutDate ?? ""} onChange={(e) => setEditSite({ ...editSite, keySignOutDate: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Signed out by</Label>
+                      <Input value={editSite.keySignedOutBy ?? ""} onChange={(e) => setEditSite({ ...editSite, keySignedOutBy: e.target.value })} placeholder="Name" />
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <Button
-                className="w-full"
-                onClick={() => updateSite.mutate({
-                  id: editSite.id,
-                  name: editSite.name || undefined,
-                  buildingId: editSite.buildingId || undefined,
-                  address: editSite.address || undefined,
-                  city: editSite.city || undefined,
-                  state: editSite.state || undefined,
-                  postalCode: editSite.postalCode || undefined,
-                  contactName: editSite.contactName || undefined,
-                  contactPhone: editSite.contactPhone || undefined,
-                  contactEmail: editSite.contactEmail || undefined,
-                  notes: editSite.notes || undefined,
-                  keyLocation: editSite.keyLocation || undefined,
-                  keyNumber: editSite.keyNumber || undefined,
-                  keySignedOutBy: editSite.keySignedOutBy || undefined,
-                })}
-                disabled={updateSite.isPending || !editSite.name?.trim()}
-              >
-                {updateSite.isPending ? "Saving..." : "Save Site"}
-              </Button>
+              <div className="flex gap-2 pt-1">
+                <Button variant="outline" className="flex-1" onClick={() => { setIsEditOpen(false); setEditSite(null); }}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => updateSite.mutate({
+                    id: editSite.id,
+                    name: editSite.name,
+                    buildingId: editSite.buildingId,
+                    fileNumber: editSite.fileNumber,
+                    customerOrgId: editSite.customerOrgId ? Number(editSite.customerOrgId) : undefined,
+                    address: editSite.address,
+                    city: editSite.city,
+                    state: editSite.state,
+                    postalCode: editSite.postalCode,
+                    contactName: editSite.contactName,
+                    contactPhone: editSite.contactPhone,
+                    contactEmail: editSite.contactEmail,
+                    notes: editSite.notes,
+                    keyLocation: editSite.keyLocation,
+                    keyNumber: editSite.keyNumber,
+                    keySignOutDate: editSite.keySignOutDate,
+                    keySignedOutBy: editSite.keySignedOutBy,
+                  })}
+                  disabled={updateSite.isPending || !editSite.name?.trim()}
+                >
+                  {updateSite.isPending ? "Saving..." : "Save Site"}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
