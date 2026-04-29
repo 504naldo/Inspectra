@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique, decimal, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique, uniqueIndex, decimal, index } from "drizzle-orm/mysql-core";
 
 // ============================================
 // CORE USER TABLE (Extended from template)
@@ -1303,3 +1303,157 @@ export const workOrders = mysqlTable("work_orders", {
 export type WorkOrder = typeof workOrders.$inferSelect;
 export type InsertWorkOrder = typeof workOrders.$inferInsert;
 export type InsertAiReview = typeof aiReviews.$inferInsert;
+
+// ============================================
+// APPROVED WORK
+// Tracks authorized work from approval through scheduling, completion,
+// and close-out. Independent of the Work Orders module — can link to
+// work orders, jobs, quotes, deficiencies, sites, and customers, but
+// is not derived from or dependent on them.
+// ============================================
+
+export const APPROVED_WORK_STATUSES = [
+  "approved",
+  "ready_to_schedule",
+  "scheduled",
+  "assigned",
+  "in_progress",
+  "parts_required",
+  "awaiting_parts",
+  "parts_ordered",
+  "parts_received",
+  "completed",
+  "report_pending",
+  "invoiced",
+  "closed",
+  "cancelled",
+] as const;
+
+export type ApprovedWorkStatus = (typeof APPROVED_WORK_STATUSES)[number];
+
+export const approvedWork = mysqlTable("approved_work", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  customerOrgId: int("customerOrgId"),
+  siteId: int("siteId"),
+  jobId: int("jobId"),
+  deficiencyId: int("deficiencyId"),
+  quoteId: int("quoteId"),
+  quoteItemId: int("quoteItemId"),
+  workOrderId: int("workOrderId"),
+  type: mysqlEnum("type", ["job_order", "repair_order"]).notNull(),
+  status: mysqlEnum("status", [
+    "approved", "ready_to_schedule", "scheduled", "assigned", "in_progress",
+    "parts_required", "awaiting_parts", "parts_ordered", "parts_received",
+    "completed", "report_pending", "invoiced", "closed", "cancelled",
+  ]).notNull().default("approved"),
+  approvedScope: text("approvedScope"),
+  approvedAmount: decimal("approvedAmount", { precision: 10, scale: 2 }),
+  approvedAt: timestamp("approvedAt"),
+  approvedByName: varchar("approvedByName", { length: 255 }),
+  approvedByEmail: varchar("approvedByEmail", { length: 320 }),
+  approvalSource: mysqlEnum("approvalSource", [
+    "email", "phone", "signed_pdf", "in_person", "portal", "internal",
+  ]),
+  assignedTechnicianIds: json("assignedTechnicianIds").$type<number[]>().default([]),
+  scheduledDate: timestamp("scheduledDate"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  closedAt: timestamp("closedAt"),
+  partsStatus: varchar("partsStatus", { length: 100 }),
+  invoiceStatus: varchar("invoiceStatus", { length: 100 }),
+  officeNotes: text("officeNotes"),
+  technicianNotes: text("technicianNotes"),
+  createdById: int("createdById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("approved_work_companyId_idx").on(table.companyId),
+  siteIdIdx: index("approved_work_siteId_idx").on(table.siteId),
+  statusIdx: index("approved_work_status_idx").on(table.status),
+}));
+
+export type ApprovedWork = typeof approvedWork.$inferSelect;
+export type InsertApprovedWork = typeof approvedWork.$inferInsert;
+
+// ============================================
+// INVOICES
+// ============================================
+export const INVOICE_STATUSES = [
+  "draft",
+  "sent",
+  "viewed",
+  "approved",
+  "paid",
+  "partial",
+  "overdue",
+  "void",
+] as const;
+
+export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
+
+export const invoices = mysqlTable("invoices", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  invoiceNumber: varchar("invoiceNumber", { length: 50 }).notNull(),
+  customerOrgId: int("customerOrgId"),
+  siteId: int("siteId"),
+  jobId: int("jobId"),
+  approvedWorkId: int("approvedWorkId"),
+  workOrderId: int("workOrderId"),
+  quoteId: int("quoteId"),
+  status: mysqlEnum("status", [...INVOICE_STATUSES]).notNull().default("draft"),
+  billToName: varchar("billToName", { length: 255 }),
+  billToAddress: text("billToAddress"),
+  billToCity: varchar("billToCity", { length: 100 }),
+  billToState: varchar("billToState", { length: 100 }),
+  billToPostalCode: varchar("billToPostalCode", { length: 20 }),
+  billToEmail: varchar("billToEmail", { length: 320 }),
+  invoiceDate: timestamp("invoiceDate"),
+  dueDate: timestamp("dueDate"),
+  paidAt: timestamp("paidAt"),
+  sentAt: timestamp("sentAt"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).default("0"),
+  taxRate: decimal("taxRate", { precision: 5, scale: 4 }).default("0"),
+  taxAmount: decimal("taxAmount", { precision: 10, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).default("0"),
+  amountPaid: decimal("amountPaid", { precision: 10, scale: 2 }).default("0"),
+  balanceDue: decimal("balanceDue", { precision: 10, scale: 2 }).default("0"),
+  sageCustomerCode: varchar("sageCustomerCode", { length: 50 }),
+  sageGlCode: varchar("sageGlCode", { length: 50 }),
+  sageDepartment: varchar("sageDepartment", { length: 50 }),
+  sageExportedAt: timestamp("sageExportedAt"),
+  sageExportStatus: mysqlEnum("sageExportStatus", ["pending", "exported", "error"]).default("pending"),
+  internalNotes: text("internalNotes"),
+  clientNotes: text("clientNotes"),
+  createdById: int("createdById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("invoices_companyId_idx").on(table.companyId),
+  statusIdx: index("invoices_status_idx").on(table.status),
+  customerOrgIdIdx: index("invoices_customerOrgId_idx").on(table.customerOrgId),
+}));
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = typeof invoices.$inferInsert;
+
+export const invoiceLineItems = mysqlTable("invoice_line_items", {
+  id: int("id").autoincrement().primaryKey(),
+  invoiceId: int("invoiceId").notNull(),
+  sortOrder: int("sortOrder").default(0),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).default("1"),
+  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).default("0"),
+  taxable: boolean("taxable").default(true),
+  sageGlCode: varchar("sageGlCode", { length: 50 }),
+  sageDepartment: varchar("sageDepartment", { length: 50 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  invoiceIdIdx: index("invoice_line_items_invoiceId_idx").on(table.invoiceId),
+}));
+
+export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
+export type InsertInvoiceLineItem = typeof invoiceLineItems.$inferInsert;
