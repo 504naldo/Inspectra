@@ -1361,6 +1361,8 @@ export const approvedWork = mysqlTable("approved_work", {
   completedAt: timestamp("completedAt"),
   closedAt: timestamp("closedAt"),
   partsStatus: varchar("partsStatus", { length: 100 }),
+  invoiceNumber: varchar("invoiceNumber", { length: 100 }),
+  invoicedAt: timestamp("invoicedAt"),
   invoiceStatus: varchar("invoiceStatus", { length: 100 }),
   officeNotes: text("officeNotes"),
   technicianNotes: text("technicianNotes"),

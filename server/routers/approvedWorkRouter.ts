@@ -233,6 +233,7 @@ export const approvedWorkRouter = router({
       scheduledDate:   z.date().optional().nullable(),
       assignedTechnicianIds: z.array(z.number().int().positive()).optional(),
       partsStatus:     z.string().max(100).optional().nullable(),
+      invoiceNumber:   z.string().max(100).optional().nullable(),
       invoiceStatus:   z.string().max(100).optional().nullable(),
       officeNotes:     z.string().max(5000).optional(),
       technicianNotes: z.string().max(5000).optional(),
@@ -287,6 +288,41 @@ export const approvedWorkRouter = router({
       }
 
       await db.updateApprovedWork(input.id, { status: input.status, ...timestamps });
+      return { success: true };
+    }),
+
+  /**
+   * Mark an approved work record as invoiced.
+   * Captures invoice number, sets invoicedAt timestamp, and transitions status to "invoiced".
+   * Blocked on closed/cancelled records.
+   */
+  markInvoiced: officeProcedure
+    .input(z.object({
+      id:            z.number().int().positive(),
+      invoiceNumber: z.string().min(1).max(100),
+      invoiceStatus: z.string().max(100).optional(),
+      officeNotes:   z.string().max(5000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const record = await db.getApprovedWorkById(input.id);
+      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
+      if (record.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      if (record.status === "closed" || record.status === "cancelled") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Cannot invoice a ${record.status} record.`,
+        });
+      }
+
+      await db.updateApprovedWork(input.id, {
+        invoiceNumber: input.invoiceNumber,
+        invoicedAt:    new Date(),
+        invoiceStatus: input.invoiceStatus ?? "sent",
+        status:        "invoiced",
+        ...(input.officeNotes ? { officeNotes: input.officeNotes } : {}),
+      });
       return { success: true };
     }),
 
