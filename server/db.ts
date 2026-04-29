@@ -1003,16 +1003,16 @@ export async function getSyncLogsByUser(userId: number, limit = 50) {
 // ============================================
 export async function getDashboardStats(companyId: number) {
   const db = await getDb();
-  if (!db) return { totalJobs: 0, activeJobs: 0, completedJobs: 0, openDeficiencies: 0, totalDevices: 0, totalSites: 0 };
-  
+  if (!db) return { totalJobs: 0, activeJobs: 0, completedJobs: 0, openDeficiencies: 0, totalDevices: 0, totalSites: 0, openApprovedWork: 0, approvedWorkAwaitingSchedule: 0 };
+
   const [jobStats] = await db.select({
     total: sql<number>`count(*)`,
     active: sql<number>`sum(case when status in ('pending', 'scheduled', 'in_progress') then 1 else 0 end)`,
     completed: sql<number>`sum(case when status = 'completed' then 1 else 0 end)`
   }).from(jobs).where(eq(jobs.companyId, companyId));
-  
+
   const [siteCount] = await db.select({ count: sql<number>`count(*)` }).from(sites).where(eq(sites.companyId, companyId));
-  
+
   const companySites = await db.select({ id: sites.id }).from(sites).where(eq(sites.companyId, companyId));
   let deviceCount = 0;
   if (companySites.length > 0) {
@@ -1020,16 +1020,23 @@ export async function getDashboardStats(companyId: number) {
     const [dc] = await db.select({ count: sql<number>`count(*)` }).from(devices).where(inArray(devices.siteId, siteIds));
     deviceCount = dc?.count ?? 0;
   }
-  
+
   const openDef = await getOpenDeficienciesCount(companyId);
-  
+
+  const [awStats] = await db.select({
+    open: sql<number>`sum(case when status not in ('closed', 'cancelled') then 1 else 0 end)`,
+    awaitingSchedule: sql<number>`sum(case when status in ('approved', 'ready_to_schedule') then 1 else 0 end)`,
+  }).from(approvedWork).where(eq(approvedWork.companyId, companyId));
+
   return {
     totalJobs: jobStats?.total ?? 0,
     activeJobs: jobStats?.active ?? 0,
     completedJobs: jobStats?.completed ?? 0,
     openDeficiencies: openDef,
     totalDevices: deviceCount,
-    totalSites: siteCount?.count ?? 0
+    totalSites: siteCount?.count ?? 0,
+    openApprovedWork: awStats?.open ?? 0,
+    approvedWorkAwaitingSchedule: awStats?.awaitingSchedule ?? 0,
   };
 }
 
