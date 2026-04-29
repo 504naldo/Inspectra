@@ -415,7 +415,7 @@ export default function ApprovedWorkDetail({ id }: Props) {
                     Mark Complete
                   </Button>
                 )}
-                {(record.status === "completed" || record.status === "report_pending") && (
+                {record.status !== "invoiced" && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -566,11 +566,11 @@ export default function ApprovedWorkDetail({ id }: Props) {
               )}
 
               <div className="pt-1 space-y-2">
-                {record.invoiceNumber && (
-                  <Row label="Invoice #">
-                    <span className="font-mono">{record.invoiceNumber}</span>
-                  </Row>
-                )}
+                <Row label="Invoice #">
+                  {record.invoiceNumber
+                    ? <span className="font-mono">{record.invoiceNumber}</span>
+                    : "—"}
+                </Row>
                 {record.invoicedAt && (
                   <Row label="Invoiced At">{formatDate(record.invoicedAt)}</Row>
                 )}
@@ -588,39 +588,60 @@ export default function ApprovedWorkDetail({ id }: Props) {
                   ) : "—"}
                 </Row>
 
+                {!isClosed && !record.invoiceNumber && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full mt-1"
+                    onClick={() => setShowInvoiceDialog(true)}
+                  >
+                    <ReceiptText className="h-3.5 w-3.5 mr-1" />
+                    Mark as Invoiced
+                  </Button>
+                )}
+
                 {!isClosed && record.invoiceNumber && (
-                  <div className="flex gap-2 pt-1">
-                    <Input
-                      placeholder="Update invoice status..."
-                      value={invoiceStatusInput}
-                      onChange={(e) => setInvoiceStatusInput(e.target.value)}
-                      className="h-8 text-sm"
-                    />
+                  <>
+                    <div className="flex gap-2 pt-1">
+                      <Input
+                        placeholder="Update invoice status..."
+                        value={invoiceStatusInput}
+                        onChange={(e) => setInvoiceStatusInput(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          updateMut.mutate({ id: record.id, invoiceStatus: invoiceStatusInput || null });
+                          setInvoiceStatusInput("");
+                        }}
+                        disabled={updateMut.isPending || !invoiceStatusInput}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                    <div className="flex gap-1 flex-wrap">
+                      {["sent", "viewed", "paid", "overdue", "disputed", "void"].map(s => (
+                        <button
+                          key={s}
+                          className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
+                          onClick={() => updateMut.mutate({ id: record.id, invoiceStatus: s })}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
                     <Button
                       size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        updateMut.mutate({ id: record.id, invoiceStatus: invoiceStatusInput || null });
-                        setInvoiceStatusInput("");
-                      }}
-                      disabled={updateMut.isPending || !invoiceStatusInput}
+                      variant="ghost"
+                      className="w-full text-muted-foreground"
+                      onClick={() => setShowInvoiceDialog(true)}
                     >
-                      Save
+                      <ReceiptText className="h-3.5 w-3.5 mr-1" />
+                      Update Invoice Details
                     </Button>
-                  </div>
-                )}
-                {!isClosed && record.invoiceNumber && (
-                  <div className="flex gap-1 flex-wrap">
-                    {["sent", "viewed", "paid", "overdue", "disputed", "void"].map(s => (
-                      <button
-                        key={s}
-                        className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
-                        onClick={() => updateMut.mutate({ id: record.id, invoiceStatus: s })}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+                  </>
                 )}
               </div>
             </CardContent>
