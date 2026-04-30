@@ -34,13 +34,18 @@ const dashboardRouter = router({
   getStats: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
     return db.getDashboardStats(input.companyId);
   }),
-  
-  getRecentJobs: officeProcedure.input(z.object({ 
+
+  getRecentJobs: officeProcedure.input(z.object({
     companyId: z.number(),
     limit: z.number().optional()
   })).query(async ({ input }) => {
     const jobs = await db.getJobsByCompany(input.companyId);
     return jobs.slice(0, input.limit || 10);
+  }),
+
+  getOperationsSummary: officeProcedure.query(async ({ ctx }) => {
+    if (!ctx.user.companyId) return null;
+    return db.getOperationsSummary(ctx.user.companyId);
   }),
 });
 
