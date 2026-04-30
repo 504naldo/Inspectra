@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,11 +29,225 @@ import {
   CheckCircle2,
   AlertTriangle,
   Cpu,
+  Info,
+  RotateCcw,
+  ExternalLink,
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { DriveImportPicker } from "@/components/DriveImportPicker";
+
+function SiteCard({
+  site,
+  customerMap,
+  onEdit,
+}: {
+  site: any;
+  customerMap: Map<number, string>;
+  onEdit: (site: any) => void;
+}) {
+  const [isFlipped, setIsFlipped] = useState(false);
+  const { data: info, isLoading: infoLoading } = trpc.workSiteInfo.getBySiteId.useQuery(
+    { siteId: site.id },
+    { enabled: isFlipped, staleTime: 30_000 }
+  );
+
+  return (
+    <Card className="hover:shadow-md transition-shadow overflow-hidden">
+      <CardContent className="p-4">
+        <AnimatePresence mode="wait" initial={false}>
+          {!isFlipped ? (
+            <motion.div
+              key="front"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg shrink-0">
+                  <Building2 className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-semibold truncate">{site.name}</h3>
+                    {site.buildingId && (
+                      <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">{site.buildingId}</span>
+                    )}
+                    {site.fileNumber && (
+                      <span className="text-xs font-mono bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded shrink-0">{site.fileNumber}</span>
+                    )}
+                  </div>
+                  {site.customerOrgId && customerMap.get(site.customerOrgId) && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{customerMap.get(site.customerOrgId)}</p>
+                  )}
+                  {site.address && (
+                    <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                      <MapPin className="h-3 w-3" />
+                      {site.address}
+                      {site.city && `, ${site.city}`}
+                      {site.state && `, ${site.state}`}
+                    </p>
+                  )}
+                  {site.contactPhone && (
+                    <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                      <Phone className="h-3 w-3" />
+                      {site.contactPhone}
+                    </p>
+                  )}
+                  {site.keyNumber && (
+                    <p className="text-sm flex items-center gap-1 mt-1">
+                      <Key className="h-3 w-3 text-[var(--warning)]" />
+                      <span className="text-[var(--warning)] font-medium">Key {site.keyNumber}</span>
+                      {site.keyLocation && <span className="text-muted-foreground">— {site.keyLocation}</span>}
+                      {site.keySignedOutBy && (
+                        <span className="ml-1 text-[var(--warning)] font-medium text-xs">(Out: {site.keySignedOutBy})</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setIsFlipped(true)}
+                    title="Work Site Info"
+                  >
+                    <Info className="h-4 w-4" />
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onEdit(site)}>
+                        <KeyRound className="h-4 w-4 mr-2" />
+                        Edit Site
+                      </DropdownMenuItem>
+                      <Link href={`/admin/sites/${site.id}/files`}>
+                        <DropdownMenuItem>
+                          <FileImage className="h-4 w-4 mr-2" />
+                          Manage Files
+                        </DropdownMenuItem>
+                      </Link>
+                      <Link href={`/admin/sites/${site.id}/import`}>
+                        <DropdownMenuItem>
+                          <Upload className="h-4 w-4 mr-2" />
+                          Import Assets
+                        </DropdownMenuItem>
+                      </Link>
+                      <Link href={`/admin/sites/${site.id}/fire-alarm`}>
+                        <DropdownMenuItem>
+                          <Flame className="h-4 w-4 mr-2" />
+                          Fire Alarm Setup
+                        </DropdownMenuItem>
+                      </Link>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="back"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              {/* Back face header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="min-w-0">
+                  <h3 className="font-semibold truncate">{site.name}</h3>
+                  <p className="text-xs text-muted-foreground">Work Site Info</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setIsFlipped(false)}
+                  title="Back to site card"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {infoLoading ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : info ? (
+                <div className="space-y-2 text-sm">
+                  {(info.siteContactName || info.siteContactPhone) && (
+                    <div className="flex items-start gap-1.5 text-muted-foreground">
+                      <Phone className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        {info.siteContactName}
+                        {info.siteContactPhone && ` · ${info.siteContactPhone}`}
+                      </span>
+                    </div>
+                  )}
+                  {(info.keyNumber || info.keyLocation) && (
+                    <div className="flex items-start gap-1.5">
+                      <Key className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--warning)]" />
+                      <span className="text-[var(--warning)] font-medium">
+                        {info.keyNumber && `Key ${info.keyNumber}`}
+                        {info.keyLocation && ` — ${info.keyLocation}`}
+                        {info.lockboxCode && ` (code: ${info.lockboxCode})`}
+                      </span>
+                    </div>
+                  )}
+                  {(info.fireAlarmPanelMake || info.fireAlarmPanelLocation) && (
+                    <div className="flex items-start gap-1.5 text-muted-foreground">
+                      <Flame className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        {[info.fireAlarmPanelMake, info.fireAlarmPanelModel].filter(Boolean).join(" ")}
+                        {info.fireAlarmPanelLocation && ` — ${info.fireAlarmPanelLocation}`}
+                      </span>
+                    </div>
+                  )}
+                  {info.monitoringCompany && (
+                    <div className="flex items-start gap-1.5 text-muted-foreground">
+                      <Building2 className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        {info.monitoringCompany}
+                        {info.monitoringPhone && ` · ${info.monitoringPhone}`}
+                      </span>
+                    </div>
+                  )}
+                  {info.accessNotes && (
+                    <p className="text-xs text-muted-foreground line-clamp-2 italic">{info.accessNotes}</p>
+                  )}
+                  <Link href={`/admin/sites/${site.id}/work-site-info`}>
+                    <Button size="sm" className="w-full mt-3">
+                      <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                      Open Work Site Info
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="text-center py-5">
+                  <Info className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">No Work Site Info yet</p>
+                  <Link href={`/admin/sites/${site.id}/work-site-info`}>
+                    <Button variant="outline" size="sm" className="mt-3">
+                      <Plus className="h-3.5 w-3.5 mr-2" />
+                      Add Work Site Info
+                    </Button>
+                  </Link>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function AdminSites() {
   const { user } = useAuth();
@@ -385,93 +600,21 @@ export default function AdminSites() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredSites.map((site: any) => (
-              <Card key={site.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <Building2 className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold truncate">{site.name}</h3>
-                        {site.buildingId && (
-                          <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">{site.buildingId}</span>
-                        )}
-                        {site.fileNumber && (
-                          <span className="text-xs font-mono bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded shrink-0">{site.fileNumber}</span>
-                        )}
-                      </div>
-                      {site.customerOrgId && customerMap.get(site.customerOrgId) && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{customerMap.get(site.customerOrgId)}</p>
-                      )}
-                      {site.address && (
-                        <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                          <MapPin className="h-3 w-3" />
-                          {site.address}
-                          {site.city && `, ${site.city}`}
-                          {site.state && `, ${site.state}`}
-                        </p>
-                      )}
-                      {site.contactPhone && (
-                        <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                          <Phone className="h-3 w-3" />
-                          {site.contactPhone}
-                        </p>
-                      )}
-                      {site.keyNumber && (
-                        <p className="text-sm flex items-center gap-1 mt-1">
-                          <Key className="h-3 w-3 text-[var(--warning)]" />
-                          <span className="text-[var(--warning)] font-medium">Key {site.keyNumber}</span>
-                          {site.keyLocation && <span className="text-muted-foreground">— {site.keyLocation}</span>}
-                          {site.keySignedOutBy && (
-                            <span className="ml-1 text-[var(--warning)] font-medium text-xs">(Out: {site.keySignedOutBy})</span>
-                          )}
-                        </p>
-                      )}
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => {
-                          setEditSite({
-                            ...site,
-                            contactEmail: site.summary?.contacts?.[0]?.email ?? "",
-                            keySignOutDate: site.keySignOutDate
-                              ? new Date(site.keySignOutDate).toISOString().split("T")[0]
-                              : "",
-                          });
-                          setIsEditOpen(true);
-                        }}>
-                          <KeyRound className="h-4 w-4 mr-2" />
-                          Edit Site
-                        </DropdownMenuItem>
-                        <Link href={`/admin/sites/${site.id}/files`}>
-                          <DropdownMenuItem>
-                            <FileImage className="h-4 w-4 mr-2" />
-                            Manage Files
-                          </DropdownMenuItem>
-                        </Link>
-                        <Link href={`/admin/sites/${site.id}/import`}>
-                          <DropdownMenuItem>
-                            <Upload className="h-4 w-4 mr-2" />
-                            Import Assets
-                          </DropdownMenuItem>
-                        </Link>
-                        <Link href={`/admin/sites/${site.id}/fire-alarm`}>
-                          <DropdownMenuItem>
-                            <Flame className="h-4 w-4 mr-2" />
-                            Fire Alarm Setup
-                          </DropdownMenuItem>
-                        </Link>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </CardContent>
-              </Card>
+              <SiteCard
+                key={site.id}
+                site={site}
+                customerMap={customerMap}
+                onEdit={(s) => {
+                  setEditSite({
+                    ...s,
+                    contactEmail: s.summary?.contacts?.[0]?.email ?? "",
+                    keySignOutDate: s.keySignOutDate
+                      ? new Date(s.keySignOutDate).toISOString().split("T")[0]
+                      : "",
+                  });
+                  setIsEditOpen(true);
+                }}
+              />
             ))}
           </div>
         )}

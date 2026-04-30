@@ -1459,3 +1459,58 @@ export const invoiceLineItems = mysqlTable("invoice_line_items", {
 
 export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
 export type InsertInvoiceLineItem = typeof invoiceLineItems.$inferInsert;
+
+// ============================================
+// SITE WORK SITE INFO
+// Detailed operational info per site — sourced from the
+// "Work Site Info" tab of the inspection workbook.
+// One row per site (upserted).
+// ============================================
+export const siteWorkSiteInfo = mysqlTable("site_work_site_info", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  siteId: int("siteId").notNull(),
+  customerOrgId: int("customerOrgId"),
+  // Contacts
+  siteContactName: varchar("siteContactName", { length: 255 }),
+  siteContactPhone: varchar("siteContactPhone", { length: 50 }),
+  siteContactEmail: varchar("siteContactEmail", { length: 320 }),
+  propertyManagerName: varchar("propertyManagerName", { length: 255 }),
+  propertyManagerPhone: varchar("propertyManagerPhone", { length: 50 }),
+  propertyManagerEmail: varchar("propertyManagerEmail", { length: 320 }),
+  // Access
+  accessNotes: text("accessNotes"),
+  keyLocation: text("keyLocation"),
+  keyNumber: varchar("keyNumber", { length: 50 }),
+  lockboxCode: varchar("lockboxCode", { length: 50 }),
+  parkingNotes: text("parkingNotes"),
+  serviceEntranceNotes: text("serviceEntranceNotes"),
+  // Fire alarm panel
+  fireAlarmPanelMake: varchar("fireAlarmPanelMake", { length: 100 }),
+  fireAlarmPanelModel: varchar("fireAlarmPanelModel", { length: 100 }),
+  fireAlarmPanelLocation: text("fireAlarmPanelLocation"),
+  annunciatorLocation: text("annunciatorLocation"),
+  // Monitoring
+  monitoringCompany: varchar("monitoringCompany", { length: 255 }),
+  monitoringPhone: varchar("monitoringPhone", { length: 50 }),
+  monitoringAccount: varchar("monitoringAccount", { length: 100 }),
+  // Other systems
+  sprinklerNotes: text("sprinklerNotes"),
+  backflowNotes: text("backflowNotes"),
+  emergencyLightingNotes: text("emergencyLightingNotes"),
+  fireExtinguisherNotes: text("fireExtinguisherNotes"),
+  // Notes and workbook provenance
+  generalNotes: text("generalNotes"),
+  lastImportedFromWorkbook: timestamp("lastImportedFromWorkbook"),
+  sourceWorkbookName: varchar("sourceWorkbookName", { length: 255 }),
+  sourceSheetName: varchar("sourceSheetName", { length: 100 }),
+  sourceUpdatedAt: timestamp("sourceUpdatedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  siteIdUnique: unique("site_work_site_info_siteId_unique").on(table.siteId),
+  companyIdIdx: index("site_work_site_info_companyId_idx").on(table.companyId),
+}));
+
+export type SiteWorkSiteInfo = typeof siteWorkSiteInfo.$inferSelect;
+export type InsertSiteWorkSiteInfo = typeof siteWorkSiteInfo.$inferInsert;

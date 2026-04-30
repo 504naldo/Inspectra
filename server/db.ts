@@ -30,6 +30,7 @@ import {
   approvedWork, InsertApprovedWork, ApprovedWork,
   invoices, InsertInvoice, Invoice,
   invoiceLineItems, InsertInvoiceLineItem, InvoiceLineItem,
+  siteWorkSiteInfo, InsertSiteWorkSiteInfo, SiteWorkSiteInfo,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2027,4 +2028,35 @@ export async function recalculateInvoiceTotals(invoiceId: number): Promise<void>
     total: total.toFixed(2) as any,
     balanceDue: balanceDue.toFixed(2) as any,
   }).where(eq(invoices.id, invoiceId));
+}
+
+// ============================================
+// SITE WORK SITE INFO QUERIES
+// ============================================
+export async function getWorkSiteInfoBySiteId(siteId: number): Promise<SiteWorkSiteInfo | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(siteWorkSiteInfo)
+    .where(eq(siteWorkSiteInfo.siteId, siteId))
+    .limit(1);
+  return result[0];
+}
+
+export async function upsertWorkSiteInfo(data: InsertSiteWorkSiteInfo): Promise<SiteWorkSiteInfo> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getWorkSiteInfoBySiteId(data.siteId);
+  if (existing) {
+    await db.update(siteWorkSiteInfo)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(siteWorkSiteInfo.siteId, data.siteId));
+    const updated = await getWorkSiteInfoBySiteId(data.siteId);
+    return updated!;
+  }
+  const result = await db.insert(siteWorkSiteInfo).values(data);
+  const id = Number(result[0].insertId);
+  const row = await db.select().from(siteWorkSiteInfo)
+    .where(eq(siteWorkSiteInfo.id, id))
+    .limit(1);
+  return row[0];
 }
