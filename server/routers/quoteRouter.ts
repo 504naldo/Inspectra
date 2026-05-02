@@ -272,9 +272,11 @@ export const quoteRouter = router({
         });
       }
 
-      // Persist: token, pdfUrl, sentAt, status→sent
+      // Persist: token, expiry (90 days), pdfUrl, sentAt, status→sent
+      const acceptTokenExpiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
       await db.updateQuote(quote.id, {
         acceptToken,
+        acceptTokenExpiresAt,
         pdfUrl,
         sentAt: new Date(),
         status: "sent",
@@ -553,6 +555,9 @@ export const quoteRouter = router({
       }
       if (quote.status !== "sent") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "This quote is no longer available." });
+      }
+      if (quote.acceptTokenExpiresAt && new Date() > new Date(quote.acceptTokenExpiresAt)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This quote link has expired. Please contact us for a new quote." });
       }
 
       // Mark quote accepted
