@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { attachments, devices, sites } from "../../drizzle/schema";
+import { attachments, devices, jobs, sites } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import fetch from "node-fetch";
@@ -54,7 +54,17 @@ export const filesRouter = router({
     .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      
+
+      // Verify the job belongs to the caller's company before returning attachments.
+      const [job] = await db
+        .select({ companyId: jobs.companyId })
+        .from(jobs)
+        .where(eq(jobs.id, input.jobId));
+
+      if (!job || job.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Access denied." });
+      }
+
       const files = await db
         .select()
         .from(attachments)
