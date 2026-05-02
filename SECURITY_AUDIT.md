@@ -150,7 +150,7 @@ Sessions are signed JWTs with a 1-year TTL (`ONE_YEAR_MS`). There is no server-s
 Several Drive import mutations (`createOrgsAndSitesFromDrive`) insert records using `input.companyId` directly. Shares the same root cause as finding #3 but lower priority because Drive integration is admin/office-only.
 
 **Recommended fix:** Follow-up with the same pattern as the `jobRouter` fix — validate `input.companyId === ctx.user.companyId`.  
-**Patch status: NOT APPLIED** — follow-up
+**Patch status: APPLIED**
 
 ---
 
@@ -166,7 +166,7 @@ Several Drive import mutations (`createOrgsAndSitesFromDrive`) insert records us
 | 6 | **Medium** | Quote accept tokens never expire | Follow-up |
 | 7 | **Medium** | `filesRouter.listByJob` has no company ownership check | ✅ Yes |
 | 8 | **Low** | 1-year sessions, no server-side revocation | ✅ Yes |
-| 9 | **Low** | `driveRouter` DB writes trust client `companyId` | Follow-up |
+| 9 | **Low** | `driveRouter` DB writes trust client `companyId` | ✅ Yes |
 
 ---
 
