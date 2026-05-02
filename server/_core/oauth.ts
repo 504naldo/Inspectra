@@ -140,16 +140,17 @@ export function registerOAuthRoutes(app: Express) {
         console.log('[OAuth] User upserted:', { email: userInfo.email, role, companyId, isActive });
       }
 
+      // Fetch user after upsert to get the current sessionVersion for JWT embedding.
+      const user = await db.getUserByOpenId(userInfo.openId);
+
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
         expiresInMs: ONE_YEAR_MS,
+        sessionVersion: user?.sessionVersion ?? 1,
       });
 
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-
-      // Check if user is active
-      const user = await db.getUserByOpenId(userInfo.openId);
       if (user && user.isActive === 0) {
         // User exists but is not active - show pending approval message
         res.status(403).send(`

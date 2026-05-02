@@ -32,6 +32,7 @@ export type SessionPayload = {
   openId: string;
   appId: string;
   name: string;
+  sessionVersion: number;
 };
 
 // ============================================================================
@@ -177,13 +178,14 @@ class SDKServer {
    */
   async createSessionToken(
     openId: string,
-    options: { expiresInMs?: number; name?: string } = {}
+    options: { expiresInMs?: number; name?: string; sessionVersion?: number } = {}
   ): Promise<string> {
     return this.signSession(
       {
         openId,
         appId: ENV.appId || "inspectra",
         name: options.name || "",
+        sessionVersion: options.sessionVersion ?? 1,
       },
       options
     );
@@ -202,6 +204,7 @@ class SDKServer {
       openId: payload.openId,
       appId: payload.appId,
       name: payload.name,
+      sv: payload.sessionVersion,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setExpirationTime(expirationSeconds)
@@ -210,7 +213,7 @@ class SDKServer {
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string } | null> {
+  ): Promise<{ openId: string; appId: string; name: string; sessionVersion: number } | null> {
     if (!cookieValue) {
       return null;
     }
@@ -220,7 +223,7 @@ class SDKServer {
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
-      const { openId, appId, name } = payload as Record<string, unknown>;
+      const { openId, appId, name, sv } = payload as Record<string, unknown>;
 
       if (
         !isNonEmptyString(openId) ||
@@ -234,6 +237,8 @@ class SDKServer {
         openId,
         appId: isNonEmptyString(appId) ? appId : "inspectra",
         name,
+        // sv absent means a pre-versioning token (treat as 0; will fail the DB check below)
+        sessionVersion: typeof sv === "number" ? sv : 0,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -270,6 +275,12 @@ class SDKServer {
     // Block deactivated accounts on every API request, not just the OAuth redirect.
     if (user.isActive === 0) {
       throw ForbiddenError("Account is inactive. Contact your administrator.");
+    }
+
+    // Reject sessions whose version no longer matches — this fires when an admin
+    // deactivates a user, or when the user explicitly logs out.
+    if (session.sessionVersion !== (user.sessionVersion ?? 1)) {
+      throw ForbiddenError("Session has been revoked — please log in again.");
     }
 
     // Update last sign-in timestamp

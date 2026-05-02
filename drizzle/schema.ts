@@ -25,6 +25,7 @@ export const users = mysqlTable("users", {
   googleAccessToken: text("googleAccessToken"),
   googleRefreshToken: text("googleRefreshToken"),
   googleTokenExpiry: timestamp("googleTokenExpiry"),
+  sessionVersion: int("sessionVersion").default(1).notNull(),
 });
 
 export type User = typeof users.$inferSelect;

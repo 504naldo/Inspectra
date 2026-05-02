@@ -188,6 +188,12 @@ export async function updateUser(userId: number, data: Partial<InsertUser>) {
   await db.update(users).set(data).where(eq(users.id, userId));
 }
 
+export async function incrementUserSessionVersion(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ sessionVersion: sql`sessionVersion + 1` }).where(eq(users.id, userId));
+}
+
 // ============================================
 // COMPANY QUERIES
 // ============================================

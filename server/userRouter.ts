@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getDb } from './db';
+import { getDb, incrementUserSessionVersion } from './db';
 import { users } from '../drizzle/schema';
 import { eq, and, or, like, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
@@ -104,12 +104,17 @@ export const userRouter = router({
       if (Object.keys(updates).length === 0) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No updates provided' });
       }
-      
+
       await db
         .update(users)
         .set(updates)
         .where(eq(users.id, userId));
-      
+
+      // Instantly revoke all active sessions when an account is deactivated.
+      if (isActive === false) {
+        await incrementUserSessionVersion(userId);
+      }
+
       return { success: true };
     }),
 
