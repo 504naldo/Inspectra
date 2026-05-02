@@ -23,9 +23,12 @@ export const filesRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      // Generate unique file key
+      // Use server-side companyId — never trust the client-supplied value.
+      const companyId = ctx.user.companyId;
+      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "User has no company assignment" });
+
       const randomSuffix = Math.random().toString(36).substring(7);
-      const fileKey = `${input.companyId}/jobs/${input.jobId}/${input.fileName}-${randomSuffix}`;
+      const fileKey = `${companyId}/jobs/${input.jobId}/${input.fileName}-${randomSuffix}`;
       
       // Decode base64 file data
       const buffer = Buffer.from(input.fileData, "base64");

@@ -60,7 +60,7 @@ async function googleExchangeCode(code: string): Promise<TokenResponse> {
       code,
       client_id: ENV.googleClientId,
       client_secret: ENV.googleClientSecret,
-      redirect_uri: (() => { const uri = `${ENV.appUrl}/api/oauth/callback`; console.log("[OAuth Debug] redirect_uri:", uri); return uri; })(),
+      redirect_uri: `${ENV.appUrl}/api/oauth/callback`,
       grant_type: "authorization_code",
     }),
   });
@@ -265,6 +265,11 @@ class SDKServer {
     // (Previously this would call Manus to sync — now we just reject.)
     if (!user) {
       throw ForbiddenError("User not found — please log in again");
+    }
+
+    // Block deactivated accounts on every API request, not just the OAuth redirect.
+    if (user.isActive === 0) {
+      throw ForbiddenError("Account is inactive. Contact your administrator.");
     }
 
     // Update last sign-in timestamp
