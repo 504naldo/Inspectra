@@ -128,7 +128,7 @@ listByJob: protectedProcedure.input(z.object({ jobId: z.number() }))
 Any authenticated user from any company can enumerate attachments (including file URLs) for any job ID. Guessing or brute-forcing job IDs would leak attachment metadata and URLs.
 
 **Recommended fix:** Join through `jobs` table to verify `jobs.companyId === ctx.user.companyId` before returning results.  
-**Patch status: NOT APPLIED** — requires a join query change. Recommended as follow-up.
+**Patch status: APPLIED**
 
 ---
 
@@ -164,7 +164,7 @@ Several Drive import mutations (`createOrgsAndSitesFromDrive`) insert records us
 | 4 | **High** | `user.list` can return all-company user data | ✅ Yes |
 | 5 | **Medium** | Unconditional `[OAuth Debug]` `console.log` in production | ✅ Yes |
 | 6 | **Medium** | Quote accept tokens never expire | Follow-up |
-| 7 | **Medium** | `filesRouter.listByJob` has no company ownership check | Follow-up |
+| 7 | **Medium** | `filesRouter.listByJob` has no company ownership check | ✅ Yes |
 | 8 | **Low** | 1-year sessions, no server-side revocation | Follow-up |
 | 9 | **Low** | `driveRouter` DB writes trust client `companyId` | Follow-up |
 
