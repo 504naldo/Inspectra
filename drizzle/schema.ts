@@ -992,6 +992,8 @@ export const quotes = mysqlTable("quotes", {
   pdfUrl: text("pdfUrl"),
   // Opaque token for the customer accept link (set when the quote is sent)
   acceptToken: varchar("acceptToken", { length: 64 }),
+  // Token validity window — null means no expiry (legacy rows); new sends always set this.
+  acceptTokenExpiresAt: timestamp("acceptTokenExpiresAt"),
   sentAt: timestamp("sentAt"),
   acceptedAt: timestamp("acceptedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
