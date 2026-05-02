@@ -5,8 +5,9 @@ import * as db from "../db";
 
 // User management router
 const userRouter = router({
-  list: adminProcedure.input(z.object({ companyId: z.number().optional() })).query(async ({ input }) => {
-    return db.getAllUsers(input.companyId);
+  list: adminProcedure.input(z.object({ companyId: z.number().optional() })).query(async ({ input, ctx }) => {
+    // Fall back to the caller's own company — never return all-company data to a non-super-admin.
+    return db.getAllUsers(input.companyId ?? ctx.user.companyId ?? undefined);
   }),
   
   listTechnicians: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {

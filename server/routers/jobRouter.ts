@@ -94,6 +94,11 @@ const jobRouter = router({
     priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
     scheduledDate: z.date().optional(),
   })).mutation(async ({ input, ctx }) => {
+    // Prevent cross-company job creation.
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Cannot create a job for another company." });
+    }
+
     const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
 
     // Find the last finalized job for this site so we can copy its inspection_results
