@@ -139,7 +139,7 @@ Any authenticated user from any company can enumerate attachments (including fil
 Sessions are signed JWTs with a 1-year TTL (`ONE_YEAR_MS`). There is no server-side session store and no revocation mechanism. A stolen cookie is valid until expiry. Combined with finding #1 (deactivated users), this means even after `isActive=0` is set a user's stolen cookie would continue to work until the JWT expires — unless finding #1 is patched (which it now is via the `isActive` check).
 
 **Recommended fix (long-term):** Add a `sessionVersion` integer to the `users` table. Embed it in the JWT payload and verify it on each request. Incrementing `sessionVersion` instantly revokes all existing sessions for that user. Low urgency after #1 is patched.  
-**Patch status: NOT APPLIED**
+**Patch status: APPLIED** — `sessionVersion` column added to `users`; embedded as `sv` claim in every JWT; `authenticateRequest` rejects mismatches; incremented on logout and admin deactivation.
 
 ---
 
@@ -165,7 +165,7 @@ Several Drive import mutations (`createOrgsAndSitesFromDrive`) insert records us
 | 5 | **Medium** | Unconditional `[OAuth Debug]` `console.log` in production | ✅ Yes |
 | 6 | **Medium** | Quote accept tokens never expire | Follow-up |
 | 7 | **Medium** | `filesRouter.listByJob` has no company ownership check | ✅ Yes |
-| 8 | **Low** | 1-year sessions, no server-side revocation | Follow-up |
+| 8 | **Low** | 1-year sessions, no server-side revocation | ✅ Yes |
 | 9 | **Low** | `driveRouter` DB writes trust client `companyId` | Follow-up |
 
 ---
