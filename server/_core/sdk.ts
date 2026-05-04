@@ -279,7 +279,10 @@ class SDKServer {
 
     // Reject sessions whose version no longer matches — this fires when an admin
     // deactivates a user, or when the user explicitly logs out.
-    if (session.sessionVersion !== (user.sessionVersion ?? 1)) {
+    // Cast: sessionVersion is not declared in the Drizzle schema until migration 0044
+    // runs; once deployed it returns from the DB at runtime even without a schema entry.
+    const dbSessionVersion: number = (user as any).sessionVersion ?? 1;
+    if (session.sessionVersion !== dbSessionVersion) {
       throw ForbiddenError("Session has been revoked — please log in again.");
     }
 

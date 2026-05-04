@@ -146,7 +146,7 @@ export function registerOAuthRoutes(app: Express) {
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
         expiresInMs: ONE_YEAR_MS,
-        sessionVersion: user?.sessionVersion ?? 1,
+        sessionVersion: (user as any)?.sessionVersion ?? 1,
       });
 
       const cookieOptions = getSessionCookieOptions(req);
