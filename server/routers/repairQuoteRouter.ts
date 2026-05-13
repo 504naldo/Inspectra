@@ -460,6 +460,9 @@ export const repairQuoteRouter = router({
 
       if (input.status === "accepted") {
         await _createWorkOrderFromQuote(quote.id, ctx.user.companyId!);
+        _createApprovedWorkFromQuote(quote.id, "internal").catch((err) => {
+          console.warn("[ApprovedWork] Auto-create failed on office accept:", err);
+        });
       }
 
       return { success: true };
@@ -567,6 +570,26 @@ async function _recalcQuoteTotals(quoteId: number) {
     pst: String(totals.pst),
     total: String(totals.total),
   } as any);
+}
+
+async function _createApprovedWorkFromQuote(quoteId: number, approvalSource: "email" | "internal"): Promise<void> {
+  const existing = await db.getApprovedWorkByQuote(quoteId);
+  if (existing) return;
+  const quote = await db.getQuoteById(quoteId);
+  if (!quote) return;
+  await db.createApprovedWork({
+    companyId: quote.companyId,
+    siteId: quote.siteId,
+    customerOrgId: quote.customerOrgId,
+    jobId: quote.jobId,
+    quoteId,
+    type: "repair_order",
+    status: "approved",
+    approvalSource,
+    approvedAt: new Date(),
+    approvedAmount: String(quote.total),
+    approvedScope: (quote as any).quoteNumber ? `Quote ${(quote as any).quoteNumber}` : `Quote #${quoteId}`,
+  });
 }
 
 async function _createWorkOrderFromQuote(quoteId: number, companyId: number): Promise<{ workOrderId: number }> {
