@@ -218,8 +218,11 @@ export const serviceScheduleRouter = router({
     .input(
       z.object({
         trackingId: z.number().int().positive(),
-        scheduledDate: z.string().optional(), // ISO date string override
+        scheduledDate: z.string().optional(),
         notes: z.string().max(2000).optional(),
+        title: z.string().max(200).optional(),
+        leadTechnicianId: z.number().int().positive().optional(),
+        assignedTechnicianIds: z.array(z.number().int().positive()).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -231,7 +234,6 @@ export const serviceScheduleRouter = router({
       const customer = await db.getCustomerOrgById(row.customerOrgId);
       if (!site || !customer) throw new TRPCError({ code: "NOT_FOUND", message: "Site or customer not found." });
 
-      // Map serviceType / frequency to jobType
       const jobTypeMap: Record<string, string> = {
         annual: "annual",
         semi_annual: "semi_annual",
@@ -247,21 +249,41 @@ export const serviceScheduleRouter = router({
         : (row.scheduledDate ?? undefined);
 
       const jobNumber = `JOB-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+      const jobTitle = input.title?.trim() || `${row.serviceType} — ${site.name}`;
 
       const job = await db.createJob({
         companyId: row.companyId,
         siteId: row.siteId,
         customerOrgId: row.customerOrgId,
         jobNumber,
-        title: `${row.serviceType} — ${site.name}`,
+        title: jobTitle,
         description: input.notes ?? row.notes ?? undefined,
         jobType,
         status: scheduledDateParsed ? "scheduled" : "pending",
         priority: "medium",
         scheduledDate: scheduledDateParsed,
+        ...(input.leadTechnicianId ? { leadTechnicianId: input.leadTechnicianId } : {}),
       });
 
-      // Link back to the tracking row
+      // Create job assignments
+      if (input.leadTechnicianId) {
+        await db.addJobAssignment({
+          jobId: job.id,
+          userId: input.leadTechnicianId,
+          role: "LEAD",
+          assignedByUserId: ctx.user.id,
+        });
+      }
+      for (const techId of input.assignedTechnicianIds ?? []) {
+        if (techId === input.leadTechnicianId) continue;
+        await db.addJobAssignment({
+          jobId: job.id,
+          userId: techId,
+          role: "ASSIST",
+          assignedByUserId: ctx.user.id,
+        });
+      }
+
       await db.updateMonthlyTracking(row.id, {
         linkedJobId: job.id,
         status: "scheduled",
