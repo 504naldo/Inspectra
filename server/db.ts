@@ -945,6 +945,32 @@ export async function getReportsByCustomerOrg(customerOrgId: number) {
   return db.select().from(reports).where(inArray(reports.jobId, jobIds)).orderBy(desc(reports.createdAt));
 }
 
+export async function getReportsByCompany(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: reports.id,
+      jobId: reports.jobId,
+      reportNumber: reports.reportNumber,
+      title: reports.title,
+      status: reports.status,
+      fileUrl: reports.fileUrl,
+      fileKey: reports.fileKey,
+      createdAt: reports.createdAt,
+      jobNumber: jobs.jobNumber,
+      jobTitle: jobs.title,
+      siteName: sites.name,
+      contactEmail: customerOrgs.contactEmail,
+    })
+    .from(reports)
+    .innerJoin(jobs, eq(reports.jobId, jobs.id))
+    .leftJoin(customerOrgs, eq(jobs.customerOrgId, customerOrgs.id))
+    .leftJoin(sites, eq(jobs.siteId, sites.id))
+    .where(eq(jobs.companyId, companyId))
+    .orderBy(desc(reports.createdAt));
+}
+
 export async function getReportById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
