@@ -1929,6 +1929,13 @@ export async function getApprovedWorkByQuoteItem(quoteItemId: number): Promise<A
   return result[0];
 }
 
+export async function getApprovedWorkByQuote(quoteId: number): Promise<ApprovedWork | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(approvedWork).where(eq(approvedWork.quoteId, quoteId)).limit(1);
+  return result[0];
+}
+
 export async function getApprovedWorkByWorkOrder(workOrderId: number): Promise<ApprovedWork | undefined> {
   const db = await getDb();
   if (!db) return undefined;
