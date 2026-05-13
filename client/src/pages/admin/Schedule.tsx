@@ -162,7 +162,7 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
   const [editingRow, setEditingRow] = useState<number | null>(null);
   const [editStatus, setEditStatus] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
-  const [creatingJobForRow, setCreatingJobForRow] = useState<number | null>(null);
+  const [jobModalRow, setJobModalRow] = useState<any | null>(null);
 
   const { data: trackingRows, isLoading, refetch } = trpc.serviceSchedule.listTracking.useQuery(
     {
@@ -171,6 +171,11 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
       status: statusFilter !== "all" ? (statusFilter as any) : undefined,
       search: search.trim() || undefined,
     },
+    { enabled: !!companyId }
+  );
+
+  const { data: technicians = [] } = trpc.jobAssignment.listTechnicians.useQuery(
+    { companyId },
     { enabled: !!companyId }
   );
 
@@ -184,8 +189,13 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
   const createJob = trpc.serviceSchedule.createJobFromTracking.useMutation({
     onSuccess: (res) => {
       refetch();
-      setCreatingJobForRow(null);
-      alert(`Job created: ${res.jobNumber}`);
+      setJobModalRow(null);
+      toast.success(`Job ${res.jobNumber} created`, {
+        action: { label: "Open", onClick: () => window.location.assign(`/admin/jobs/${res.jobId}`) },
+      });
+    },
+    onError: (err) => {
+      toast.error(err.message ?? "Failed to create job");
     },
   });
 
@@ -322,9 +332,14 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
                 </td>
                 <td className="px-3 py-2">
                   {row.linkedJob ? (
-                    <Link href={`/admin/jobs/${row.linkedJob.id}`}>
-                      <span className="text-blue-600 underline">{row.linkedJob.jobNumber}</span>
-                    </Link>
+                    <div className="flex flex-col gap-0.5">
+                      <Link href={`/admin/jobs/${row.linkedJob.id}`}>
+                        <span className="text-blue-600 underline">{row.linkedJob.jobNumber}</span>
+                      </Link>
+                      <span className={`inline-block px-1.5 py-0 rounded-full text-[10px] font-medium ${STATUS_COLORS[row.linkedJob.status] ?? "bg-gray-100 text-gray-500"}`}>
+                        {STATUS_LABELS[row.linkedJob.status] ?? row.linkedJob.status}
+                      </span>
+                    </div>
                   ) : "—"}
                 </td>
                 <td className="px-3 py-2">
@@ -360,20 +375,23 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
                     </div>
                   ) : (
                     <div className="flex gap-1">
-                      {!row.linkedJobId && (
+                      {!row.linkedJobId ? (
                         <Button
                           size="sm"
                           variant="outline"
                           className="h-6 px-2 text-[11px]"
-                          onClick={() => {
-                            setCreatingJobForRow(row.id);
-                            createJob.mutate({ trackingId: row.id });
-                          }}
-                          disabled={createJob.isPending && creatingJobForRow === row.id}
+                          onClick={() => setJobModalRow(row)}
                           title="Create Job"
                         >
-                          <Briefcase className="h-3 w-3" />
+                          <Briefcase className="h-3 w-3 mr-1" />
+                          Create Job
                         </Button>
+                      ) : (
+                        <Link href={`/admin/jobs/${row.linkedJob?.id ?? row.linkedJobId}`}>
+                          <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]">
+                            Open Job
+                          </Button>
+                        </Link>
                       )}
                     </div>
                   )}
@@ -394,7 +412,129 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
           onImported={() => { setImportOpen(false); refetch(); }}
         />
       )}
+
+      {jobModalRow && (
+        <CreateJobModal
+          row={jobModalRow}
+          technicians={technicians}
+          isPending={createJob.isPending}
+          onClose={() => setJobModalRow(null)}
+          onSubmit={(fields) => createJob.mutate({ trackingId: jobModalRow.id, ...fields })}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Create Job Modal ───────────────────────────────────────────────────────────
+
+function CreateJobModal({
+  row,
+  technicians,
+  isPending,
+  onClose,
+  onSubmit,
+}: {
+  row: any;
+  technicians: any[];
+  isPending: boolean;
+  onClose: () => void;
+  onSubmit: (fields: {
+    title?: string;
+    scheduledDate?: string;
+    leadTechnicianId?: number;
+    assignedTechnicianIds?: number[];
+    notes?: string;
+  }) => void;
+}) {
+  const defaultTitle = `${row.serviceType} — ${row.siteName}`;
+  const defaultDate = row.scheduledDate
+    ? new Date(row.scheduledDate).toISOString().slice(0, 10)
+    : row.targetDate
+    ? new Date(row.targetDate).toISOString().slice(0, 10)
+    : "";
+
+  const [title, setTitle] = useState(defaultTitle);
+  const [scheduledDate, setScheduledDate] = useState(defaultDate);
+  const [leadTechId, setLeadTechId] = useState<string>("");
+  const [notes, setNotes] = useState(row.notes ?? "");
+
+  function handleSubmit() {
+    onSubmit({
+      title: title.trim() || undefined,
+      scheduledDate: scheduledDate || undefined,
+      leadTechnicianId: leadTechId ? Number(leadTechId) : undefined,
+      notes: notes.trim() || undefined,
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create Job from Schedule</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="text-xs text-gray-500">
+            <span className="font-medium">{row.siteName}</span> · {row.serviceType}
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="job-title" className="text-xs">Job Title</Label>
+            <Input
+              id="job-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={defaultTitle}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="job-date" className="text-xs">Scheduled Date</Label>
+            <Input
+              id="job-date"
+              type="date"
+              value={scheduledDate}
+              onChange={(e) => setScheduledDate(e.target.value)}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Lead Technician</Label>
+            <Select value={leadTechId} onValueChange={setLeadTechId}>
+              <SelectTrigger className="text-sm">
+                <SelectValue placeholder="Unassigned" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Unassigned</SelectItem>
+                {technicians.map((t: any) => (
+                  <SelectItem key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="job-notes" className="text-xs">Notes</Label>
+            <Input
+              id="job-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional notes…"
+              className="text-sm"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSubmit} disabled={isPending}>
+            {isPending ? "Creating…" : "Create Job"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
