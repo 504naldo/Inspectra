@@ -48,11 +48,18 @@ export default function AdminReports() {
   const [emailTo, setEmailTo] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
+  // Track the active job/report when emailing an existing (pre-generated) report
+  const [activeEmailJobId, setActiveEmailJobId] = useState<number | null>(null);
 
   const { data: jobs, refetch: refetchJobs } = trpc.job.listByCompany.useQuery({
     companyId,
     status: 'completed'
   });
+
+  const { data: allReports, refetch: refetchReports } = trpc.report.listByCompany.useQuery(
+    { companyId },
+    { enabled: !!companyId }
+  );
 
   // Gmail connection check
   const { data: gmailConnection } = trpc.gmail.checkConnection.useQuery();
@@ -134,6 +141,8 @@ export default function AdminReports() {
       toast.success('Report emailed successfully!');
       setIsEmailOpen(false);
       setEmailTo("");
+      setActiveEmailJobId(null);
+      refetchReports();
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to send email');
@@ -220,18 +229,7 @@ export default function AdminReports() {
     }
   };
 
-  const handleOpenEmailDialog = () => {
-    // Pre-fill the email dialog from available data
-    const selectedJob = jobs?.find((j: any) => j.id.toString() === selectedJobId);
-    const siteName = selectedJob?.title || "Inspection";
-    const jobNumber = selectedJob?.jobNumber || "";
-    const reportNumber = generatedReportNumber || "";
-    const inspectionDate = selectedJob?.completedAt
-      ? new Date(selectedJob.completedAt).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })
-      : new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
-
-    setEmailSubject(`Inspection Report - ${siteName} - ${reportNumber}`);
-    setEmailBody(
+  const buildEmailBody = (siteName: string, jobNumber: string, reportNumber: string, inspectionDate: string) =>
 `Dear Property Manager,
 
 Please find attached the inspection report for ${siteName}.
@@ -244,8 +242,37 @@ If you have any questions regarding this report, please don't hesitate to contac
 
 Best regards,
 ${user?.name || "Inspectra Team"}
-EWF Fire & Security`
-    );
+EWF Fire & Security`;
+
+  const handleOpenEmailDialog = () => {
+    // Pre-fill from the just-generated report (generate flow)
+    const selectedJob = jobs?.find((j: any) => j.id.toString() === selectedJobId);
+    const siteName = selectedJob?.title || "Inspection";
+    const jobNumber = selectedJob?.jobNumber || "";
+    const reportNumber = generatedReportNumber || "";
+    const inspectionDate = selectedJob?.completedAt
+      ? new Date(selectedJob.completedAt).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })
+      : new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
+
+    setActiveEmailJobId(parseInt(selectedJobId));
+    setEmailSubject(`Inspection Report - ${siteName} - ${reportNumber}`);
+    setEmailBody(buildEmailBody(siteName, jobNumber, reportNumber, inspectionDate));
+    setEmailTo("");
+    setIsEmailOpen(true);
+  };
+
+  const handleEmailExistingReport = (r: NonNullable<typeof allReports>[number]) => {
+    // Pre-fill from an existing report row (list flow)
+    const siteName = r.siteName || r.jobTitle || "Inspection";
+    const reportNumber = r.reportNumber || "";
+    const inspectionDate = new Date(r.createdAt).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
+
+    setActiveEmailJobId(r.jobId);
+    setGeneratedReportId(r.id);
+    setGeneratedReportNumber(reportNumber);
+    setEmailTo(r.contactEmail || "");
+    setEmailSubject(`Inspection Report - ${siteName} - ${reportNumber}`);
+    setEmailBody(buildEmailBody(siteName, r.jobNumber || "", reportNumber, inspectionDate));
     setIsEmailOpen(true);
   };
 
@@ -254,12 +281,13 @@ EWF Fire & Security`
       toast.error('Please fill in all required fields');
       return;
     }
-    if (!generatedReportId || !selectedJobId) {
+    const jobId = activeEmailJobId ?? (selectedJobId ? parseInt(selectedJobId) : null);
+    if (!generatedReportId || !jobId) {
       toast.error('No report selected');
       return;
     }
     sendReport.mutate({
-      jobId: parseInt(selectedJobId),
+      jobId,
       reportId: generatedReportId,
       recipientEmail: emailTo,
       subject: emailSubject,
@@ -636,6 +664,62 @@ EWF Fire & Security`
                           <ChevronRight className="h-4 w-4" />
                         </Button>
                       </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Generated Reports */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Generated Reports</CardTitle>
+            <CardDescription>All reports — download or email to client</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!allReports || allReports.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No reports generated yet</p>
+            ) : (
+              <div className="space-y-2">
+                {allReports.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-medium text-sm truncate">{r.siteName || r.jobTitle}</span>
+                        {getStatusBadge(r.status)}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {r.reportNumber} · {r.jobNumber} · {new Date(r.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-4 shrink-0">
+                      {r.fileUrl && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => window.open(r.fileUrl!, '_blank')}
+                          title="Download PDF"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {gmailConnection?.connected === false ? (
+                        <Button variant="ghost" size="sm" disabled title="Gmail not connected">
+                          <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEmailExistingReport(r)}
+                          className="text-accent border-accent/30 hover:bg-accent/10"
+                        >
+                          <Mail className="h-4 w-4 mr-1" />
+                          Email
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}
