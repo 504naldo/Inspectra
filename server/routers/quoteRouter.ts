@@ -566,6 +566,28 @@ export const quoteRouter = router({
         acceptedAt: new Date(),
       });
 
+      // Auto-create Approved Work record so office can schedule the repair without a manual step
+      try {
+        const existingAW = await db.getApprovedWorkByQuote(quote.id);
+        if (!existingAW) {
+          await db.createApprovedWork({
+            companyId: quote.companyId,
+            siteId: quote.siteId,
+            customerOrgId: quote.customerOrgId,
+            jobId: quote.jobId,
+            quoteId: quote.id,
+            type: "repair_order",
+            status: "approved",
+            approvalSource: "email",
+            approvedAt: new Date(),
+            approvedAmount: String(quote.total),
+            approvedScope: quote.quoteNumber ? `Quote ${quote.quoteNumber}` : `Quote #${quote.id}`,
+          });
+        }
+      } catch (awErr) {
+        console.warn("[ApprovedWork] Auto-create failed on customer accept:", awErr);
+      }
+
       // Flag linked deficiencies as quoted and link to work order
       const lineItems = quote.lineItems as QuoteLineItem[];
       const defIds = lineItems
