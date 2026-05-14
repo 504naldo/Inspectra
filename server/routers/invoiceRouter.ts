@@ -13,9 +13,15 @@ function generateInvoiceNumber(): string {
 
 export const invoiceRouter = router({
   list: officeProcedure
-    .input(z.object({ status: z.string().optional() }))
+    .input(z.object({
+      status: z.string().optional(),
+      sageExportStatus: z.enum(["pending", "exported", "error"]).optional(),
+    }))
     .query(async ({ input, ctx }) => {
-      const rows = await db.getInvoicesByCompany(ctx.user.companyId, input.status);
+      let rows = await db.getInvoicesByCompany(ctx.user.companyId, input.status);
+      if (input.sageExportStatus) {
+        rows = rows.filter((r: any) => r.sageExportStatus === input.sageExportStatus);
+      }
       const customerOrgs = await db.getCustomerOrgsByCompany(ctx.user.companyId);
       const orgMap = new Map(customerOrgs.map((o: any) => [o.id, o.name]));
       return rows.map((inv) => ({
@@ -262,5 +268,38 @@ export const invoiceRouter = router({
         });
       }
       return { csv: rows.join("\n"), count: rows.length - 1 };
+    }),
+
+  markReadyForReview: officeProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const inv = await db.getInvoiceById(input.id);
+      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
+      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!["sent", "viewed"].includes(inv.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Invoice must be sent or viewed to mark as approved" });
+      }
+      await db.updateInvoice(input.id, { status: "approved" });
+      return { success: true };
+    }),
+
+  markReadyForSageExport: officeProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const inv = await db.getInvoiceById(input.id);
+      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
+      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await db.updateInvoice(input.id, { sageExportStatus: "pending" });
+      return { success: true };
+    }),
+
+  markExportedToSage: officeProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const inv = await db.getInvoiceById(input.id);
+      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
+      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await db.updateInvoice(input.id, { sageExportStatus: "exported", sageExportedAt: new Date() });
+      return { success: true };
     }),
 });
