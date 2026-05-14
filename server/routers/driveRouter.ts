@@ -307,6 +307,10 @@ export const driveRouter = router({
         });
       }
 
+      if (input.companyId !== undefined && input.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot access data for another company." });
+      }
+
       // 1. Fetch file metadata
       const metaResponse = await fetch(
         `${DRIVE_API}/files/${input.fileId}?fields=id,name,mimeType,size&supportsAllDrives=true`,
@@ -409,6 +413,9 @@ export const driveRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      if (input.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company." });
+      }
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
         throw new TRPCError({
@@ -605,6 +612,9 @@ export const driveRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      if (input.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company." });
+      }
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
         throw new TRPCError({
@@ -659,6 +669,9 @@ export const driveRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      if (input.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company." });
+      }
       const pdfBuffer = Buffer.from(input.fileData, "base64");
       const { importPdfData } = await import("../_core/pdfImport");
 

@@ -1,0 +1,628 @@
+import { useState } from "react";
+import AdminLayout from "@/components/AdminLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { trpc } from "@/lib/trpc";
+import { Link, useLocation } from "wouter";
+import { toast } from "sonner";
+import {
+  ArrowLeft,
+  FileText,
+  Loader2,
+  AlertCircle,
+  Building2,
+  DollarSign,
+  Calendar,
+  ExternalLink,
+  Download,
+  Plus,
+  Trash2,
+  Edit,
+  CheckCircle,
+} from "lucide-react";
+import { INVOICE_STATUSES, type InvoiceStatus } from "../../../../drizzle/schema";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmt(v: string | number | null | undefined) {
+  if (v === null || v === undefined) return "$0.00";
+  const n = parseFloat(String(v));
+  if (isNaN(n)) return "$0.00";
+  return `$${n.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const STATUS_LABELS: Record<InvoiceStatus, string> = {
+  draft: "Draft", sent: "Sent", viewed: "Viewed", approved: "Approved",
+  paid: "Paid", partial: "Partial", overdue: "Overdue", void: "Void",
+};
+
+const STATUS_COLORS: Record<InvoiceStatus, string> = {
+  draft:    "bg-gray-100 text-gray-700",
+  sent:     "bg-blue-100 text-blue-700",
+  viewed:   "bg-purple-100 text-purple-700",
+  approved: "bg-cyan-100 text-cyan-700",
+  paid:     "bg-green-100 text-green-700",
+  partial:  "bg-yellow-100 text-yellow-700",
+  overdue:  "bg-red-100 text-red-700",
+  void:     "bg-gray-100 text-gray-400",
+};
+
+// ── Sub-dialogs ───────────────────────────────────────────────────────────────
+
+function AddLineItemDialog({
+  invoiceId,
+  onClose,
+  onAdded,
+}: { invoiceId: number; onClose: () => void; onAdded: () => void }) {
+  const [description, setDescription] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [unitPrice, setUnitPrice] = useState("0");
+  const [taxable, setTaxable] = useState(false);
+
+  const addItem = trpc.invoice.addLineItem.useMutation({
+    onSuccess: () => { onAdded(); onClose(); },
+    onError: () => toast.error("Failed to add line item"),
+  });
+
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Add Line Item</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Description <span className="text-destructive">*</span></Label>
+            <Input className="mt-1" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Line item description" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Quantity</Label>
+              <Input className="mt-1" type="number" min="0" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            </div>
+            <div>
+              <Label>Unit Price</Label>
+              <Input className="mt-1" type="number" min="0" step="0.01" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="taxable"
+              checked={taxable}
+              onChange={(e) => setTaxable(e.target.checked)}
+              className="rounded"
+            />
+            <Label htmlFor="taxable" className="cursor-pointer">Taxable</Label>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={addItem.isPending}>Cancel</Button>
+          <Button
+            onClick={() => addItem.mutate({
+              invoiceId,
+              description: description.trim(),
+              quantity: parseFloat(quantity) || 1,
+              unitPrice: parseFloat(unitPrice) || 0,
+              taxable,
+            })}
+            disabled={addItem.isPending || !description.trim()}
+          >
+            {addItem.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Add Item
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MarkPaidDialog({
+  invoice,
+  onClose,
+  onPaid,
+}: { invoice: any; onClose: () => void; onPaid: () => void }) {
+  const [amount, setAmount] = useState(String(parseFloat(String(invoice.balanceDue ?? invoice.total ?? "0")).toFixed(2)));
+  const [paidAt, setPaidAt] = useState(new Date().toISOString().split("T")[0]);
+
+  const markPaid = trpc.invoice.markPaid.useMutation({
+    onSuccess: () => { toast.success("Payment recorded"); onPaid(); onClose(); },
+    onError: () => toast.error("Failed to record payment"),
+  });
+
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-xs">
+        <DialogHeader><DialogTitle>Record Payment</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Amount Paid</Label>
+            <Input className="mt-1" type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </div>
+          <div>
+            <Label>Payment Date</Label>
+            <Input className="mt-1" type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={markPaid.isPending}>Cancel</Button>
+          <Button onClick={() => markPaid.mutate({ id: invoice.id, amountPaid: parseFloat(amount), paidAt })} disabled={markPaid.isPending || !amount}>
+            {markPaid.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Record Payment
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+interface Props { id: number }
+
+export default function InvoiceDetail({ id }: Props) {
+  const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
+
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [showMarkPaid, setShowMarkPaid] = useState(false);
+  const [editingItem, setEditingItem] = useState<number | null>(null);
+  const [editDesc, setEditDesc] = useState("");
+  const [editQty, setEditQty] = useState("");
+  const [editPrice, setEditPrice] = useState("");
+
+  const { data: invoice, isLoading, error } = trpc.invoice.get.useQuery({ id }, { enabled: !!id });
+
+  const invalidate = () => utils.invoice.get.invalidate({ id });
+
+  const updateStatus = trpc.invoice.updateStatus.useMutation({
+    onSuccess: () => { toast.success("Status updated"); invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const removeItem = trpc.invoice.removeLineItem.useMutation({
+    onSuccess: () => { toast.success("Line item removed"); invalidate(); },
+    onError: () => toast.error("Failed to remove item"),
+  });
+
+  const updateItem = trpc.invoice.updateLineItem.useMutation({
+    onSuccess: () => { toast.success("Line item updated"); setEditingItem(null); invalidate(); },
+    onError: () => toast.error("Failed to update item"),
+  });
+
+  const voidInvoice = trpc.invoice.void.useMutation({
+    onSuccess: () => { toast.success("Invoice voided"); invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const exportSage = trpc.invoice.exportSage.useMutation({
+    onSuccess: (data) => {
+      const blob = new Blob([data.csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sage-export-${invoice?.invoiceNumber ?? id}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${data.count} invoice(s) to CSV`);
+      invalidate();
+    },
+    onError: () => toast.error("Export failed"),
+  });
+
+  if (isLoading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  if (error || !invoice) {
+    return (
+      <AdminLayout>
+        <div className="py-16 text-center">
+          <AlertCircle className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-40" />
+          <p className="text-muted-foreground">Invoice not found.</p>
+          <Button variant="outline" className="mt-4" onClick={() => navigate("/admin/invoices")}>
+            Back to Invoices
+          </Button>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  const isVoid = invoice.status === "void";
+  const isPaid = invoice.status === "paid";
+  const lineItems = invoice.lineItems ?? [];
+
+  return (
+    <AdminLayout>
+      <div className="space-y-6 max-w-4xl mx-auto">
+        {/* Back + Header */}
+        <div>
+          <Button variant="ghost" size="sm" className="mb-3 -ml-2 text-muted-foreground" onClick={() => navigate("/admin/invoices")}>
+            <ArrowLeft className="h-4 w-4 mr-1" /> Invoices
+          </Button>
+
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[invoice.status as InvoiceStatus] ?? "bg-gray-100 text-gray-600"}`}>
+                  {STATUS_LABELS[invoice.status as InvoiceStatus] ?? invoice.status}
+                </span>
+                {invoice.sageExportStatus === "exported" && (
+                  <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-700">
+                    Sage Exported
+                  </span>
+                )}
+              </div>
+              <h1 className="text-2xl font-bold mt-2 flex items-center gap-2 font-mono">
+                <FileText className="h-6 w-6 text-primary" />
+                {invoice.invoiceNumber}
+              </h1>
+              {(invoice.customerOrg?.name ?? invoice.billToName) && (
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {invoice.customerOrg?.name ?? invoice.billToName}
+                </p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-wrap gap-2">
+              {!isVoid && invoice.status === "draft" && (
+                <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "sent" })} disabled={updateStatus.isPending}>
+                  <CheckCircle className="h-3.5 w-3.5 mr-1" /> Mark Sent
+                </Button>
+              )}
+              {!isVoid && invoice.status === "sent" && (
+                <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "approved" })} disabled={updateStatus.isPending}>
+                  Mark Approved
+                </Button>
+              )}
+              {!isVoid && !isPaid && (
+                <Button size="sm" variant="outline" onClick={() => setShowMarkPaid(true)}>
+                  <DollarSign className="h-3.5 w-3.5 mr-1" /> Record Payment
+                </Button>
+              )}
+              {!isVoid && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => exportSage.mutate({ ids: [invoice.id] })}
+                  disabled={exportSage.isPending}
+                  title="Download Sage-ready CSV"
+                >
+                  <Download className="h-3.5 w-3.5 mr-1" />
+                  {exportSage.isPending ? "Exporting…" : "Export Sage CSV"}
+                </Button>
+              )}
+              {!isVoid && !isPaid && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => {
+                    if (confirm("Void this invoice? This cannot be undone.")) {
+                      voidInvoice.mutate({ id: invoice.id });
+                    }
+                  }}
+                  disabled={voidInvoice.isPending}
+                >
+                  Void
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Bill To */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Building2 className="h-4 w-4" /> Bill To
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1 text-sm">
+              <p className="font-medium">{invoice.billToName ?? invoice.customerOrg?.name ?? "—"}</p>
+              {invoice.billToEmail && <p className="text-muted-foreground">{invoice.billToEmail}</p>}
+              {invoice.billToAddress && <p className="text-muted-foreground">{invoice.billToAddress}</p>}
+              {(invoice.billToCity || invoice.billToPostalCode) && (
+                <p className="text-muted-foreground">{[invoice.billToCity, invoice.billToState, invoice.billToPostalCode].filter(Boolean).join(", ")}</p>
+              )}
+              {invoice.site?.name && <p className="text-muted-foreground mt-2">Site: {invoice.site.name}</p>}
+            </CardContent>
+          </Card>
+
+          {/* Dates & Sage */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Calendar className="h-4 w-4" /> Dates & Sage
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <InvRow label="Invoice Date">{invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString() : "—"}</InvRow>
+              <InvRow label="Due Date">{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}</InvRow>
+              {invoice.sentAt && <InvRow label="Sent At">{new Date(invoice.sentAt).toLocaleDateString()}</InvRow>}
+              {invoice.paidAt && <InvRow label="Paid At">{new Date(invoice.paidAt).toLocaleDateString()}</InvRow>}
+              {invoice.sageCustomerCode && <InvRow label="Sage Customer">{invoice.sageCustomerCode}</InvRow>}
+              {invoice.sageGlCode && <InvRow label="GL Code">{invoice.sageGlCode}</InvRow>}
+              {invoice.sageDepartment && <InvRow label="Department">{invoice.sageDepartment}</InvRow>}
+              {invoice.sageExportedAt && (
+                <InvRow label="Sage Exported">{new Date(invoice.sageExportedAt).toLocaleDateString()}</InvRow>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Line Items */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Line Items</CardTitle>
+              {!isVoid && (
+                <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Item
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {lineItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No line items yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs text-muted-foreground font-medium">
+                      <th className="text-left py-2 pr-3">Description</th>
+                      <th className="text-right py-2 px-3 w-16">Qty</th>
+                      <th className="text-right py-2 px-3 w-28">Unit Price</th>
+                      <th className="text-right py-2 px-3 w-28">Total</th>
+                      <th className="text-center py-2 px-3 w-16">Tax</th>
+                      {!isVoid && <th className="w-20"></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lineItems.map((item: any) => (
+                      <tr key={item.id} className="border-b last:border-0">
+                        {editingItem === item.id ? (
+                          <>
+                            <td className="py-2 pr-3">
+                              <Input
+                                value={editDesc}
+                                onChange={(e) => setEditDesc(e.target.value)}
+                                className="h-7 text-xs"
+                              />
+                            </td>
+                            <td className="py-2 px-3">
+                              <Input
+                                type="number"
+                                value={editQty}
+                                onChange={(e) => setEditQty(e.target.value)}
+                                className="h-7 text-xs text-right w-16"
+                              />
+                            </td>
+                            <td className="py-2 px-3">
+                              <Input
+                                type="number"
+                                value={editPrice}
+                                onChange={(e) => setEditPrice(e.target.value)}
+                                className="h-7 text-xs text-right w-24"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right text-muted-foreground">
+                              {fmt((parseFloat(editQty) || 0) * (parseFloat(editPrice) || 0))}
+                            </td>
+                            <td></td>
+                            <td className="py-2 px-3">
+                              <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => updateItem.mutate({
+                                    id: item.id,
+                                    invoiceId: invoice.id,
+                                    description: editDesc,
+                                    quantity: parseFloat(editQty),
+                                    unitPrice: parseFloat(editPrice),
+                                  })}
+                                  disabled={updateItem.isPending}
+                                >
+                                  Save
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => setEditingItem(null)}>
+                                  ✕
+                                </Button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="py-2 pr-3">{item.description}</td>
+                            <td className="py-2 px-3 text-right">{parseFloat(String(item.quantity ?? "1"))}</td>
+                            <td className="py-2 px-3 text-right">{fmt(item.unitPrice)}</td>
+                            <td className="py-2 px-3 text-right font-medium">{fmt(item.total)}</td>
+                            <td className="py-2 px-3 text-center text-xs text-muted-foreground">
+                              {item.taxable ? "✓" : "—"}
+                            </td>
+                            {!isVoid && (
+                              <td className="py-2 px-3">
+                                <div className="flex gap-1 justify-end">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0"
+                                    onClick={() => {
+                                      setEditingItem(item.id);
+                                      setEditDesc(item.description);
+                                      setEditQty(String(parseFloat(String(item.quantity ?? "1"))));
+                                      setEditPrice(String(parseFloat(String(item.unitPrice ?? "0"))));
+                                    }}
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                                    onClick={() => {
+                                      if (confirm("Remove this line item?")) {
+                                        removeItem.mutate({ id: item.id, invoiceId: invoice.id });
+                                      }
+                                    }}
+                                    disabled={removeItem.isPending}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </td>
+                            )}
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Totals */}
+            <div className="mt-4 border-t pt-4 space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span>{fmt(invoice.subtotal)}</span>
+              </div>
+              {parseFloat(String(invoice.taxAmount ?? "0")) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Tax ({(parseFloat(String(invoice.taxRate ?? "0")) * 100).toFixed(0)}%)</span>
+                  <span>{fmt(invoice.taxAmount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-bold text-base border-t pt-2">
+                <span>Total</span>
+                <span>{fmt(invoice.total)}</span>
+              </div>
+              {parseFloat(String(invoice.amountPaid ?? "0")) > 0 && (
+                <>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Amount Paid</span>
+                    <span className="text-green-600">– {fmt(invoice.amountPaid)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold">
+                    <span>Balance Due</span>
+                    <span className={parseFloat(String(invoice.balanceDue ?? "0")) > 0 ? "text-red-600" : "text-green-600"}>
+                      {fmt(invoice.balanceDue)}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Linked Records */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Linked Records</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+              <LinkedRecord label="Approved Work" href={invoice.approvedWorkId ? `/admin/approved-work/${invoice.approvedWorkId}` : null} text={invoice.approvedWorkId ? `AW #${invoice.approvedWorkId}` : null} />
+              <LinkedRecord label="Job" href={invoice.jobId ? `/admin/jobs/${invoice.jobId}` : null} text={invoice.jobId ? `Job #${invoice.jobId}` : null} />
+              <LinkedRecord label="Quote" href={invoice.quoteId ? `/admin/repair-quotes/${invoice.quoteId}` : null} text={invoice.quoteId ? `Quote #${invoice.quoteId}` : null} />
+              <LinkedRecord label="Work Order" href={null} text={invoice.workOrderId ? `WO #${invoice.workOrderId}` : null} />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Notes */}
+        {(invoice.internalNotes || invoice.clientNotes) && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-base">Notes</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {invoice.internalNotes && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Internal</p>
+                  <p className="whitespace-pre-wrap">{invoice.internalNotes}</p>
+                </div>
+              )}
+              {invoice.clientNotes && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Client</p>
+                  <p className="whitespace-pre-wrap">{invoice.clientNotes}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Dialogs */}
+        {showAddItem && (
+          <AddLineItemDialog
+            invoiceId={invoice.id}
+            onClose={() => setShowAddItem(false)}
+            onAdded={invalidate}
+          />
+        )}
+        {showMarkPaid && (
+          <MarkPaidDialog
+            invoice={invoice}
+            onClose={() => setShowMarkPaid(false)}
+            onPaid={invalidate}
+          />
+        )}
+      </div>
+    </AdminLayout>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function InvRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <span className="font-medium text-right">{children}</span>
+    </div>
+  );
+}
+
+function LinkedRecord({ label, href, text }: { label: string; href: string | null; text: string | null }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      {href && text ? (
+        <Link href={href}>
+          <span className="text-primary hover:underline flex items-center gap-1 cursor-pointer">
+            {text}
+            <ExternalLink className="h-3 w-3" />
+          </span>
+        </Link>
+      ) : text ? (
+        <span className="text-sm">{text}</span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      )}
+    </div>
+  );
+}

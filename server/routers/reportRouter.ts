@@ -10,6 +10,11 @@ import * as checklists from "../complianceChecklists";
 import { sendReportEmail } from "../emailService";
 
 const reportRouter = router({
+  listByCompany: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+    return db.getReportsByCompany(input.companyId);
+  }),
+
   listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
     const job = await db.getJobById(input.jobId);
     if (job) {

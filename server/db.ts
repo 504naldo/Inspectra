@@ -28,6 +28,9 @@ import {
   repairLetterTracking, InsertRepairLetterTracking, RepairLetterTracking,
   aiReviews, InsertAiReview, AiReview,
   approvedWork, InsertApprovedWork, ApprovedWork,
+  invoices, InsertInvoice, Invoice,
+  invoiceLineItems, InsertInvoiceLineItem, InvoiceLineItem,
+  siteWorkSiteInfo, InsertSiteWorkSiteInfo, SiteWorkSiteInfo,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -183,6 +186,12 @@ export async function updateUser(userId: number, data: Partial<InsertUser>) {
   const db = await getDb();
   if (!db) return;
   await db.update(users).set(data).where(eq(users.id, userId));
+}
+
+export async function incrementUserSessionVersion(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ sessionVersion: sql`sessionVersion + 1` }).where(eq(users.id, userId));
 }
 
 // ============================================
@@ -855,7 +864,7 @@ export async function getOpenDeficienciesCount(companyId: number) {
   const result = await db.select({ count: sql<number>`count(*)` }).from(deficiencies).where(
     and(inArray(deficiencies.jobId, jobIds), eq(deficiencies.status, 'open'))
   );
-  return result[0]?.count ?? 0;
+  return Number(result[0]?.count ?? 0);
 }
 
 // ============================================
@@ -934,6 +943,32 @@ export async function getReportsByCustomerOrg(customerOrgId: number) {
   if (customerJobs.length === 0) return [];
   const jobIds = customerJobs.map(j => j.id);
   return db.select().from(reports).where(inArray(reports.jobId, jobIds)).orderBy(desc(reports.createdAt));
+}
+
+export async function getReportsByCompany(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: reports.id,
+      jobId: reports.jobId,
+      reportNumber: reports.reportNumber,
+      title: reports.title,
+      status: reports.status,
+      fileUrl: reports.fileUrl,
+      fileKey: reports.fileKey,
+      createdAt: reports.createdAt,
+      jobNumber: jobs.jobNumber,
+      jobTitle: jobs.title,
+      siteName: sites.name,
+      contactEmail: customerOrgs.contactEmail,
+    })
+    .from(reports)
+    .innerJoin(jobs, eq(reports.jobId, jobs.id))
+    .leftJoin(customerOrgs, eq(jobs.customerOrgId, customerOrgs.id))
+    .leftJoin(sites, eq(jobs.siteId, sites.id))
+    .where(eq(jobs.companyId, companyId))
+    .orderBy(desc(reports.createdAt));
 }
 
 export async function getReportById(id: number) {
@@ -1029,14 +1064,14 @@ export async function getDashboardStats(companyId: number) {
   }).from(approvedWork).where(eq(approvedWork.companyId, companyId));
 
   return {
-    totalJobs: jobStats?.total ?? 0,
-    activeJobs: jobStats?.active ?? 0,
-    completedJobs: jobStats?.completed ?? 0,
-    openDeficiencies: openDef,
-    totalDevices: deviceCount,
-    totalSites: siteCount?.count ?? 0,
-    openApprovedWork: awStats?.open ?? 0,
-    approvedWorkAwaitingSchedule: awStats?.awaitingSchedule ?? 0,
+    totalJobs: Number(jobStats?.total ?? 0),
+    activeJobs: Number(jobStats?.active ?? 0),
+    completedJobs: Number(jobStats?.completed ?? 0),
+    openDeficiencies: Number(openDef),
+    totalDevices: Number(deviceCount),
+    totalSites: Number(siteCount?.count ?? 0),
+    openApprovedWork: Number(awStats?.open ?? 0),
+    approvedWorkAwaitingSchedule: Number(awStats?.awaitingSchedule ?? 0),
   };
 }
 
@@ -1947,4 +1982,328 @@ export async function updateApprovedWork(id: number, data: Partial<InsertApprove
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(approvedWork).set(data).where(eq(approvedWork.id, id));
+}
+
+// ============================================
+// INVOICE QUERIES
+// ============================================
+export async function createInvoice(data: InsertInvoice): Promise<Invoice> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(invoices).values(data);
+  const id = Number(result[0].insertId);
+  const row = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
+  return row[0];
+}
+
+export async function getInvoiceById(id: number): Promise<Invoice | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getInvoicesByCompany(companyId: number, status?: string): Promise<Invoice[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [eq(invoices.companyId, companyId)];
+  if (status) conditions.push(eq(invoices.status, status as Invoice["status"]));
+  return db.select().from(invoices).where(and(...conditions)).orderBy(desc(invoices.createdAt));
+}
+
+export async function getInvoiceByApprovedWork(approvedWorkId: number): Promise<Invoice | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(invoices).where(eq(invoices.approvedWorkId, approvedWorkId)).limit(1);
+  return result[0];
+}
+
+export async function updateInvoice(id: number, data: Partial<InsertInvoice>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(invoices).set(data).where(eq(invoices.id, id));
+}
+
+export async function getLineItemsByInvoice(invoiceId: number): Promise<InvoiceLineItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(invoiceLineItems)
+    .where(eq(invoiceLineItems.invoiceId, invoiceId))
+    .orderBy(asc(invoiceLineItems.sortOrder), asc(invoiceLineItems.id));
+}
+
+export async function createInvoiceLineItem(data: InsertInvoiceLineItem): Promise<InvoiceLineItem> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(invoiceLineItems).values(data);
+  const id = Number(result[0].insertId);
+  const row = await db.select().from(invoiceLineItems).where(eq(invoiceLineItems.id, id)).limit(1);
+  return row[0];
+}
+
+export async function updateInvoiceLineItem(id: number, data: Partial<InsertInvoiceLineItem>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(invoiceLineItems).set(data).where(eq(invoiceLineItems.id, id));
+}
+
+export async function deleteInvoiceLineItem(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(invoiceLineItems).where(eq(invoiceLineItems.id, id));
+}
+
+export async function recalculateInvoiceTotals(invoiceId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const items = await getLineItemsByInvoice(invoiceId);
+  const inv = await getInvoiceById(invoiceId);
+  if (!inv) return;
+  const subtotal = items.reduce((sum, item) => sum + parseFloat(String(item.total ?? "0")), 0);
+  const taxRate = parseFloat(String(inv.taxRate ?? "0"));
+  const taxableSubtotal = items
+    .filter((i) => i.taxable)
+    .reduce((sum, i) => sum + parseFloat(String(i.total ?? "0")), 0);
+  const taxAmount = taxableSubtotal * taxRate;
+  const total = subtotal + taxAmount;
+  const amountPaid = parseFloat(String(inv.amountPaid ?? "0"));
+  const balanceDue = total - amountPaid;
+  await db.update(invoices).set({
+    subtotal: subtotal.toFixed(2) as any,
+    taxAmount: taxAmount.toFixed(2) as any,
+    total: total.toFixed(2) as any,
+    balanceDue: balanceDue.toFixed(2) as any,
+  }).where(eq(invoices.id, invoiceId));
+}
+
+// ============================================
+// SITE WORK SITE INFO QUERIES
+// ============================================
+export async function getWorkSiteInfoBySiteId(siteId: number): Promise<SiteWorkSiteInfo | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(siteWorkSiteInfo)
+    .where(eq(siteWorkSiteInfo.siteId, siteId))
+    .limit(1);
+  return result[0];
+}
+
+export async function upsertWorkSiteInfo(data: InsertSiteWorkSiteInfo): Promise<SiteWorkSiteInfo> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getWorkSiteInfoBySiteId(data.siteId);
+  if (existing) {
+    await db.update(siteWorkSiteInfo)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(siteWorkSiteInfo.siteId, data.siteId));
+    const updated = await getWorkSiteInfoBySiteId(data.siteId);
+    return updated!;
+  }
+  const result = await db.insert(siteWorkSiteInfo).values(data);
+  const id = Number(result[0].insertId);
+  const row = await db.select().from(siteWorkSiteInfo)
+    .where(eq(siteWorkSiteInfo.id, id))
+    .limit(1);
+  return row[0];
+}
+
+// ============================================
+// OPERATIONS SUMMARY (Admin Dashboard 2.0)
+// ============================================
+
+export type AttentionQueueItem = {
+  type: 'overdue_job' | 'deficiency' | 'approved_work' | 'repair_quote';
+  id: number;
+  title: string;
+  siteName: string | null;
+  ageInDays: number;
+  dueDate: string | null;
+  severity: string | null;
+  priority: string | null;
+  status: string;
+  link: string;
+};
+
+export type TodayScheduleItem = {
+  id: number;
+  title: string;
+  jobNumber: string;
+  siteName: string | null;
+  status: string;
+  priority: string;
+  scheduledDate: Date | null;
+  link: string;
+};
+
+export async function getOperationsSummary(companyId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // ── Sites ─────────────────────────────────────────────────────────────────
+  const allSites = await db
+    .select({ id: sites.id, name: sites.name, buildingId: sites.buildingId, fileNumber: sites.fileNumber, customerOrgId: sites.customerOrgId })
+    .from(sites)
+    .where(eq(sites.companyId, companyId));
+  const siteMap = new Map(allSites.map(s => [s.id, s]));
+
+  // ── Jobs ──────────────────────────────────────────────────────────────────
+  const allJobs = await db
+    .select({ id: jobs.id, title: jobs.title, jobNumber: jobs.jobNumber, siteId: jobs.siteId, status: jobs.status, priority: jobs.priority, scheduledDate: jobs.scheduledDate, completedAt: jobs.completedAt })
+    .from(jobs)
+    .where(eq(jobs.companyId, companyId));
+
+  const companyJobIds = allJobs.map(j => j.id);
+
+  const overdueJobsList = allJobs.filter(j => {
+    if (!j.scheduledDate) return false;
+    if (['completed', 'cancelled'].includes(j.status)) return false;
+    return new Date(j.scheduledDate) < todayStart;
+  });
+
+  const todaySchedule: TodayScheduleItem[] = allJobs
+    .filter(j => {
+      if (!j.scheduledDate) return false;
+      const d = new Date(j.scheduledDate);
+      return d >= todayStart && d <= todayEnd;
+    })
+    .map(j => ({
+      id: j.id,
+      title: j.title,
+      jobNumber: j.jobNumber,
+      siteName: siteMap.get(j.siteId)?.name ?? null,
+      status: j.status,
+      priority: j.priority,
+      scheduledDate: j.scheduledDate,
+      link: `/admin/jobs/${j.id}`,
+    }))
+    .sort((a, b) => (a.scheduledDate?.getTime() ?? 0) - (b.scheduledDate?.getTime() ?? 0));
+
+  const completedThisWeek = allJobs.filter(j => j.completedAt && new Date(j.completedAt) >= weekAgo).length;
+
+  // ── Reports ───────────────────────────────────────────────────────────────
+  let reportsPendingReview = 0;
+  if (companyJobIds.length > 0) {
+    const [rc] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(reports)
+      .where(and(inArray(reports.jobId, companyJobIds), inArray(reports.status, ['draft', 'generated'])));
+    reportsPendingReview = Number(rc?.count ?? 0);
+  }
+
+  // ── Deficiencies ──────────────────────────────────────────────────────────
+  let openDefCount = 0;
+  let topDeficiencies: { id: number; title: string; severity: string; status: string; jobId: number; createdAt: Date }[] = [];
+  if (companyJobIds.length > 0) {
+    const [dc] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(deficiencies)
+      .where(and(inArray(deficiencies.jobId, companyJobIds), inArray(deficiencies.status, ['open', 'in_progress'])));
+    openDefCount = Number(dc?.count ?? 0);
+
+    topDeficiencies = await db
+      .select({ id: deficiencies.id, title: deficiencies.title, severity: deficiencies.severity, status: deficiencies.status, jobId: deficiencies.jobId, createdAt: deficiencies.createdAt })
+      .from(deficiencies)
+      .where(and(inArray(deficiencies.jobId, companyJobIds), inArray(deficiencies.status, ['open', 'in_progress'])))
+      .orderBy(desc(deficiencies.createdAt))
+      .limit(8);
+  }
+
+  // ── Approved Work ─────────────────────────────────────────────────────────
+  const awRecords = await db
+    .select({ id: approvedWork.id, status: approvedWork.status, approvedScope: approvedWork.approvedScope, siteId: approvedWork.siteId, createdAt: approvedWork.createdAt })
+    .from(approvedWork)
+    .where(eq(approvedWork.companyId, companyId));
+
+  const awByStatus: Record<string, number> = {};
+  for (const r of awRecords) awByStatus[r.status] = (awByStatus[r.status] ?? 0) + 1;
+
+  const awReadyList = awRecords
+    .filter(r => ['approved', 'ready_to_schedule'].includes(r.status))
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    .slice(0, 6);
+
+  // ── Repair Quotes ─────────────────────────────────────────────────────────
+  const repairQuotesList = await db
+    .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, siteId: quotes.siteId, status: quotes.status, total: quotes.total, createdAt: quotes.createdAt })
+    .from(quotes)
+    .where(and(eq(quotes.companyId, companyId), eq(quotes.quoteType, 'repair'), inArray(quotes.status, ['draft', 'sent'])))
+    .limit(8);
+
+  // ── Invoices ──────────────────────────────────────────────────────────────
+  const invoiceRecords = await db
+    .select({ status: invoices.status, sageExportStatus: invoices.sageExportStatus })
+    .from(invoices)
+    .where(eq(invoices.companyId, companyId));
+
+  const invoiceSummary = { draft: 0, sent: 0, approved: 0, paid: 0, partial: 0, overdue: 0, void: 0 };
+  let invoicesReadyForExport = 0;
+  for (const inv of invoiceRecords) {
+    const k = inv.status as keyof typeof invoiceSummary;
+    if (k in invoiceSummary) invoiceSummary[k]++;
+    if (!['draft', 'void'].includes(inv.status) && inv.sageExportStatus === 'pending') invoicesReadyForExport++;
+  }
+
+  // ── Data Quality ──────────────────────────────────────────────────────────
+  const sitesMissingBuildingId = allSites.filter(s => !s.buildingId?.trim()).length;
+  const sitesMissingFileNumber = allSites.filter(s => !s.fileNumber?.trim()).length;
+  const sitesMissingCustomerOrg = allSites.filter(s => !s.customerOrgId).length;
+
+  // ── Attention Queue ───────────────────────────────────────────────────────
+  const attentionQueue: AttentionQueueItem[] = [];
+
+  const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, observation: 3 };
+
+  for (const j of overdueJobsList.slice(0, 6)) {
+    const sched = j.scheduledDate ? new Date(j.scheduledDate) : null;
+    const ageInDays = sched ? Math.floor((now.getTime() - sched.getTime()) / 86_400_000) : 0;
+    attentionQueue.push({ type: 'overdue_job', id: j.id, title: j.title, siteName: siteMap.get(j.siteId)?.name ?? null, ageInDays, dueDate: sched?.toISOString() ?? null, severity: null, priority: j.priority, status: j.status, link: `/admin/jobs/${j.id}` });
+  }
+
+  const sortedDefs = [...topDeficiencies].sort((a, b) => (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9));
+  for (const d of sortedDefs) {
+    const jobInfo = allJobs.find(j => j.id === d.jobId);
+    const site = jobInfo ? siteMap.get(jobInfo.siteId) : undefined;
+    const ageInDays = Math.floor((now.getTime() - new Date(d.createdAt).getTime()) / 86_400_000);
+    attentionQueue.push({ type: 'deficiency', id: d.id, title: d.title, siteName: site?.name ?? null, ageInDays, dueDate: null, severity: d.severity, priority: null, status: d.status, link: `/admin/jobs/${d.jobId}` });
+  }
+
+  for (const aw of awReadyList) {
+    const site = aw.siteId ? siteMap.get(aw.siteId) : undefined;
+    const ageInDays = Math.floor((now.getTime() - new Date(aw.createdAt).getTime()) / 86_400_000);
+    const title = aw.approvedScope ? aw.approvedScope.slice(0, 60) : `Approved Work #${aw.id}`;
+    attentionQueue.push({ type: 'approved_work', id: aw.id, title, siteName: site?.name ?? null, ageInDays, dueDate: null, severity: null, priority: null, status: aw.status, link: `/admin/approved-work/${aw.id}` });
+  }
+
+  for (const q of repairQuotesList) {
+    const site = q.siteId ? siteMap.get(q.siteId) : undefined;
+    const ageInDays = Math.floor((now.getTime() - new Date(q.createdAt).getTime()) / 86_400_000);
+    const title = q.quoteNumber ? `Quote ${q.quoteNumber}` : `Repair Quote #${q.id}`;
+    attentionQueue.push({ type: 'repair_quote', id: q.id, title, siteName: site?.name ?? null, ageInDays, dueDate: null, severity: null, priority: null, status: q.status, link: `/admin/repair-quotes/${q.id}` });
+  }
+
+  return {
+    fetchedAt: now,
+    snapshot: {
+      jobsToday: todaySchedule.length,
+      overdueJobs: overdueJobsList.length,
+      openDeficiencies: openDefCount,
+      reportsPendingReview,
+      approvedWorkReadyToSchedule: (awByStatus['approved'] ?? 0) + (awByStatus['ready_to_schedule'] ?? 0),
+      repairQuotesPending: repairQuotesList.length,
+      invoicesReadyForExport,
+      completedThisWeek,
+    },
+    attentionQueue,
+    todaySchedule,
+    approvedWorkByStatus: awByStatus,
+    invoiceSummary,
+    dataQuality: { sitesMissingBuildingId, sitesMissingFileNumber, sitesMissingCustomerOrg },
+    totalSites: allSites.length,
+    totalJobs: allJobs.length,
+  };
 }

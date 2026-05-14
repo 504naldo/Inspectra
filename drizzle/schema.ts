@@ -25,6 +25,9 @@ export const users = mysqlTable("users", {
   googleAccessToken: text("googleAccessToken"),
   googleRefreshToken: text("googleRefreshToken"),
   googleTokenExpiry: timestamp("googleTokenExpiry"),
+  // sessionVersion column is live in the DB after migration 0044; not declared here
+  // so Drizzle's explicit SELECT list doesn't break pre-migration deploys.
+  // Use (user as any).sessionVersion at runtime.
 });
 
 export type User = typeof users.$inferSelect;
@@ -1379,3 +1382,140 @@ export const approvedWork = mysqlTable("approved_work", {
 
 export type ApprovedWork = typeof approvedWork.$inferSelect;
 export type InsertApprovedWork = typeof approvedWork.$inferInsert;
+
+// ============================================
+// INVOICES
+// ============================================
+export const INVOICE_STATUSES = [
+  "draft",
+  "sent",
+  "viewed",
+  "approved",
+  "paid",
+  "partial",
+  "overdue",
+  "void",
+] as const;
+
+export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
+
+export const invoices = mysqlTable("invoices", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  invoiceNumber: varchar("invoiceNumber", { length: 50 }).notNull(),
+  customerOrgId: int("customerOrgId"),
+  siteId: int("siteId"),
+  jobId: int("jobId"),
+  approvedWorkId: int("approvedWorkId"),
+  workOrderId: int("workOrderId"),
+  quoteId: int("quoteId"),
+  status: mysqlEnum("status", [...INVOICE_STATUSES]).notNull().default("draft"),
+  billToName: varchar("billToName", { length: 255 }),
+  billToAddress: text("billToAddress"),
+  billToCity: varchar("billToCity", { length: 100 }),
+  billToState: varchar("billToState", { length: 100 }),
+  billToPostalCode: varchar("billToPostalCode", { length: 20 }),
+  billToEmail: varchar("billToEmail", { length: 320 }),
+  invoiceDate: timestamp("invoiceDate"),
+  dueDate: timestamp("dueDate"),
+  paidAt: timestamp("paidAt"),
+  sentAt: timestamp("sentAt"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).default("0"),
+  taxRate: decimal("taxRate", { precision: 5, scale: 4 }).default("0"),
+  taxAmount: decimal("taxAmount", { precision: 10, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).default("0"),
+  amountPaid: decimal("amountPaid", { precision: 10, scale: 2 }).default("0"),
+  balanceDue: decimal("balanceDue", { precision: 10, scale: 2 }).default("0"),
+  sageCustomerCode: varchar("sageCustomerCode", { length: 50 }),
+  sageGlCode: varchar("sageGlCode", { length: 50 }),
+  sageDepartment: varchar("sageDepartment", { length: 50 }),
+  sageExportedAt: timestamp("sageExportedAt"),
+  sageExportStatus: mysqlEnum("sageExportStatus", ["pending", "exported", "error"]).default("pending"),
+  internalNotes: text("internalNotes"),
+  clientNotes: text("clientNotes"),
+  createdById: int("createdById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("invoices_companyId_idx").on(table.companyId),
+  statusIdx: index("invoices_status_idx").on(table.status),
+  customerOrgIdIdx: index("invoices_customerOrgId_idx").on(table.customerOrgId),
+}));
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = typeof invoices.$inferInsert;
+
+export const invoiceLineItems = mysqlTable("invoice_line_items", {
+  id: int("id").autoincrement().primaryKey(),
+  invoiceId: int("invoiceId").notNull(),
+  sortOrder: int("sortOrder").default(0),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).default("1"),
+  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).default("0"),
+  taxable: boolean("taxable").default(true),
+  sageGlCode: varchar("sageGlCode", { length: 50 }),
+  sageDepartment: varchar("sageDepartment", { length: 50 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  invoiceIdIdx: index("invoice_line_items_invoiceId_idx").on(table.invoiceId),
+}));
+
+export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
+export type InsertInvoiceLineItem = typeof invoiceLineItems.$inferInsert;
+
+// ============================================
+// SITE WORK SITE INFO
+// Detailed operational info per site — sourced from the
+// "Work Site Info" tab of the inspection workbook.
+// One row per site (upserted).
+// ============================================
+export const siteWorkSiteInfo = mysqlTable("site_work_site_info", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  siteId: int("siteId").notNull(),
+  customerOrgId: int("customerOrgId"),
+  // Contacts
+  siteContactName: varchar("siteContactName", { length: 255 }),
+  siteContactPhone: varchar("siteContactPhone", { length: 50 }),
+  siteContactEmail: varchar("siteContactEmail", { length: 320 }),
+  propertyManagerName: varchar("propertyManagerName", { length: 255 }),
+  propertyManagerPhone: varchar("propertyManagerPhone", { length: 50 }),
+  propertyManagerEmail: varchar("propertyManagerEmail", { length: 320 }),
+  // Access
+  accessNotes: text("accessNotes"),
+  keyLocation: text("keyLocation"),
+  keyNumber: varchar("keyNumber", { length: 50 }),
+  lockboxCode: varchar("lockboxCode", { length: 50 }),
+  parkingNotes: text("parkingNotes"),
+  serviceEntranceNotes: text("serviceEntranceNotes"),
+  // Fire alarm panel
+  fireAlarmPanelMake: varchar("fireAlarmPanelMake", { length: 100 }),
+  fireAlarmPanelModel: varchar("fireAlarmPanelModel", { length: 100 }),
+  fireAlarmPanelLocation: text("fireAlarmPanelLocation"),
+  annunciatorLocation: text("annunciatorLocation"),
+  // Monitoring
+  monitoringCompany: varchar("monitoringCompany", { length: 255 }),
+  monitoringPhone: varchar("monitoringPhone", { length: 50 }),
+  monitoringAccount: varchar("monitoringAccount", { length: 100 }),
+  // Other systems
+  sprinklerNotes: text("sprinklerNotes"),
+  backflowNotes: text("backflowNotes"),
+  emergencyLightingNotes: text("emergencyLightingNotes"),
+  fireExtinguisherNotes: text("fireExtinguisherNotes"),
+  // Notes and workbook provenance
+  generalNotes: text("generalNotes"),
+  lastImportedFromWorkbook: timestamp("lastImportedFromWorkbook"),
+  sourceWorkbookName: varchar("sourceWorkbookName", { length: 255 }),
+  sourceSheetName: varchar("sourceSheetName", { length: 100 }),
+  sourceUpdatedAt: timestamp("sourceUpdatedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  siteIdUnique: unique("site_work_site_info_siteId_unique").on(table.siteId),
+  companyIdIdx: index("site_work_site_info_companyId_idx").on(table.companyId),
+}));
+
+export type SiteWorkSiteInfo = typeof siteWorkSiteInfo.$inferSelect;
+export type InsertSiteWorkSiteInfo = typeof siteWorkSiteInfo.$inferInsert;

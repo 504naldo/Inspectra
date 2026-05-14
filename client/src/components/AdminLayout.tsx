@@ -48,6 +48,7 @@ const secondaryNavItems = [
   { label: "Approved Work",    href: "/admin/approved-work",    icon: CheckSquare,   adminOnly: false },
   { label: "Quotes",           href: "/admin/quotes",           icon: ReceiptText,   adminOnly: false },
   { label: "Work Orders",      href: "/admin/work-orders",      icon: Wrench,        adminOnly: false },
+  { label: "Invoices",         href: "/admin/invoices",         icon: FileText,      adminOnly: false },
   { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen,   adminOnly: false },
   { label: "Devices",          href: "/admin/devices",          icon: AlertTriangle, adminOnly: false },
   { label: "Users",            href: "/admin/users",            icon: Users,         adminOnly: true  },

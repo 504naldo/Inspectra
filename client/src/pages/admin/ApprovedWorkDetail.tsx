@@ -24,6 +24,7 @@ import { trpc } from "@/lib/trpc";
 import { formatDate } from "@/lib/utils";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link, useLocation } from "wouter";
+import { toast } from "sonner";
 import {
   CheckSquare,
   Loader2,
@@ -338,6 +339,13 @@ export default function ApprovedWorkDetail({ id }: Props) {
   const linkWoMut        = trpc.approvedWork.linkWorkOrder.useMutation({ onSuccess: invalidate });
   const createWoMut      = trpc.approvedWork.createWorkOrder.useMutation({ onSuccess: invalidate });
   const closeMut         = trpc.approvedWork.close.useMutation({ onSuccess: () => { invalidate(); } });
+  const createInvoiceMut = trpc.approvedWork.createInvoice.useMutation({
+    onSuccess: (res) => {
+      invalidate();
+      navigate(`/admin/invoices/${res.invoiceId}`);
+    },
+    onError: (e) => toast.error(e.message ?? "Failed to create invoice"),
+  });
 
   if (isLoading) {
     return (
@@ -589,14 +597,37 @@ export default function ApprovedWorkDetail({ id }: Props) {
                 </Row>
 
                 {!isClosed && !record.invoiceNumber && (
+                  <div className="space-y-2 mt-1">
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      onClick={() => createInvoiceMut.mutate({ id: record.id })}
+                      disabled={createInvoiceMut.isPending}
+                    >
+                      {createInvoiceMut.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+                      <ReceiptText className="h-3.5 w-3.5 mr-1" />
+                      Create Invoice
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setShowInvoiceDialog(true)}
+                    >
+                      <ReceiptText className="h-3.5 w-3.5 mr-1" />
+                      Mark as Invoiced (manual)
+                    </Button>
+                  </div>
+                )}
+                {!isClosed && record.invoiceNumber && record.invoiceStatus !== "void" && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className="w-full mt-1"
-                    onClick={() => setShowInvoiceDialog(true)}
+                    className="w-full mt-2"
+                    onClick={() => navigate(record.invoiceId ? `/admin/invoices/${record.invoiceId}` : `/admin/invoices`)}
                   >
                     <ReceiptText className="h-3.5 w-3.5 mr-1" />
-                    Mark as Invoiced
+                    View Invoice
                   </Button>
                 )}
 

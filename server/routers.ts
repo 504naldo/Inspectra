@@ -2,6 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import { incrementUserSessionVersion } from "./db";
 
 // Domain routers
 import { companyRouter, customerOrgRouter } from "./routers/entityRouters";
@@ -35,6 +36,9 @@ import { serviceScheduleRouter } from "./routers/serviceScheduleRouter";
 import { repairLetterRouter } from "./routers/repairLetterRouter";
 import { workOrderRouter } from "./routers/workOrderRouter";
 import { approvedWorkRouter } from "./routers/approvedWorkRouter";
+import { invoiceRouter } from "./routers/invoiceRouter";
+import { workSiteInfoRouter } from "./routers/workSiteInfoRouter";
+import { partsCatalogRouter } from "./routers/partsCatalogRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -45,10 +49,15 @@ export const appRouter = router({
       opts.ctx.res.setHeader('Expires', '0');
       return opts.ctx.user;
     }),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       ctx.res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      // Invalidate the session server-side so the old JWT can't be reused even if
+      // someone retained the cookie value.
+      if (ctx.user) {
+        await incrementUserSessionVersion(ctx.user.id);
+      }
       return { success: true } as const;
     }),
   }),
@@ -95,6 +104,9 @@ export const appRouter = router({
   repairLetter: repairLetterRouter,
   workOrder: workOrderRouter,
   approvedWork: approvedWorkRouter,
+  invoice: invoiceRouter,
+  workSiteInfo: workSiteInfoRouter,
+  partsCatalog: partsCatalogRouter,
 });
 
 export type AppRouter = typeof appRouter;

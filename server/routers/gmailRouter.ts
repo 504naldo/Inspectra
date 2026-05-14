@@ -192,6 +192,9 @@ export const gmailRouter = router({
           labelIds: string[];
         };
 
+        // Mark the report as sent so the status reflects delivery.
+        await db.updateReport(input.reportId, { status: "sent" });
+
         return {
           success: true,
           messageId: result.id,
