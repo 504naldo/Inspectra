@@ -422,6 +422,119 @@ export const approvedWorkRouter = router({
     }),
 
   /**
+   * Create an Invoice from a completed Approved Work record.
+   * Snapshots line items from the linked quote (preferred) or work order.
+   * Prevents duplicate invoices from the same Approved Work.
+   */
+  createInvoice: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const record = await db.getApprovedWorkById(input.id);
+      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
+      if (record.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (record.status === "cancelled") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot invoice a cancelled record." });
+      }
+
+      const existing = await db.getInvoiceByApprovedWork(input.id);
+      if (existing) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "An invoice already exists for this Approved Work record.",
+        });
+      }
+
+      const customerOrg = record.customerOrgId
+        ? await db.getCustomerOrgById(record.customerOrgId)
+        : null;
+
+      const now = new Date();
+      const dueDate = new Date(now);
+      dueDate.setDate(dueDate.getDate() + 30);
+
+      const inv = await db.createInvoice({
+        companyId: record.companyId,
+        invoiceNumber: `INV-${now.getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`,
+        status: "draft",
+        customerOrgId: record.customerOrgId ?? undefined,
+        siteId: record.siteId ?? undefined,
+        jobId: record.jobId ?? undefined,
+        approvedWorkId: record.id,
+        workOrderId: record.workOrderId ?? undefined,
+        quoteId: record.quoteId ?? undefined,
+        billToName: customerOrg?.name ?? undefined,
+        billToEmail: customerOrg?.contactEmail ?? undefined,
+        billToAddress: customerOrg?.address ?? undefined,
+        invoiceDate: now,
+        dueDate,
+        taxRate: "0" as any,
+        createdById: ctx.user.id,
+        internalNotes: record.officeNotes ?? undefined,
+      });
+
+      // Snapshot line items — prefer repair quote items, then WO line items, then AW summary
+      let linesSaved = 0;
+      if (record.quoteId) {
+        const quoteItems = await db.getRepairQuoteItemsByQuote(record.quoteId);
+        for (let i = 0; i < quoteItems.length; i++) {
+          const qi = quoteItems[i];
+          const lineTotal = parseFloat(String(qi.total ?? "0"));
+          await db.createInvoiceLineItem({
+            invoiceId: inv.id,
+            description: qi.description ?? "Repair item",
+            quantity: "1" as any,
+            unitPrice: String(lineTotal) as any,
+            total: String(lineTotal) as any,
+            taxable: false,
+            sortOrder: i,
+          });
+          linesSaved++;
+        }
+      } else if (record.workOrderId) {
+        const wo = await db.getWorkOrderById(record.workOrderId);
+        const woLines = (wo?.lineItems as Array<{ description: string; quantity: number; unitPrice: number; total?: number }> | null) ?? [];
+        for (let i = 0; i < woLines.length; i++) {
+          const wl = woLines[i];
+          const lineTotal = wl.total ?? wl.quantity * wl.unitPrice;
+          await db.createInvoiceLineItem({
+            invoiceId: inv.id,
+            description: wl.description,
+            quantity: String(wl.quantity) as any,
+            unitPrice: String(wl.unitPrice) as any,
+            total: String(lineTotal) as any,
+            taxable: false,
+            sortOrder: i,
+          });
+          linesSaved++;
+        }
+      }
+
+      if (linesSaved === 0) {
+        const amount = parseFloat(String(record.approvedAmount ?? "0"));
+        await db.createInvoiceLineItem({
+          invoiceId: inv.id,
+          description: record.approvedScope ?? "Repair/Service",
+          quantity: "1" as any,
+          unitPrice: String(amount) as any,
+          total: String(amount) as any,
+          taxable: false,
+          sortOrder: 0,
+        });
+      }
+
+      await db.recalculateInvoiceTotals(inv.id);
+
+      await db.updateApprovedWork(record.id, {
+        invoiceNumber: inv.invoiceNumber,
+        invoicedAt: now,
+        invoiceStatus: "draft",
+        status: "invoiced",
+      });
+
+      return { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber };
+    }),
+
+  /**
    * Close out an approved work record.
    */
   close: officeProcedure
