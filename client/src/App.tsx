@@ -49,6 +49,8 @@ import NewRepairQuote from "./pages/admin/NewRepairQuote";
 import RepairQuoteDetail from "./pages/admin/RepairQuoteDetail";
 import ApprovedWork from "./pages/admin/ApprovedWork";
 import ApprovedWorkDetail from "./pages/admin/ApprovedWorkDetail";
+import AdminInvoices from "./pages/admin/Invoices";
+import InvoiceDetail from "./pages/admin/InvoiceDetail";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -343,6 +345,18 @@ function Router() {
         {(params) => (
           <ProtectedRoute allowedRoles={['admin', 'office']}>
             <ApprovedWorkDetail id={parseInt(params.id)} />
+          </ProtectedRoute>
+        )}
+      </Route>
+      <Route path="/admin/invoices">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <AdminInvoices />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/invoices/:id">
+        {(params) => (
+          <ProtectedRoute allowedRoles={['admin', 'office']}>
+            <InvoiceDetail id={parseInt(params.id)} />
           </ProtectedRoute>
         )}
       </Route>
