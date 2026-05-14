@@ -624,7 +624,7 @@ export default function ApprovedWorkDetail({ id }: Props) {
                     size="sm"
                     variant="outline"
                     className="w-full mt-2"
-                    onClick={() => navigate(`/admin/invoices`)}
+                    onClick={() => navigate(record.invoiceId ? `/admin/invoices/${record.invoiceId}` : `/admin/invoices`)}
                   >
                     <ReceiptText className="h-3.5 w-3.5 mr-1" />
                     View Invoice

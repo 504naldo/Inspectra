@@ -80,12 +80,13 @@ export const approvedWorkRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
-      const [site, org, wo, job, deficiency] = await Promise.all([
+      const [site, org, wo, job, deficiency, linkedInvoice] = await Promise.all([
         record.siteId       ? db.getSiteById(record.siteId)            : Promise.resolve(null),
         record.customerOrgId ? db.getCustomerOrgById(record.customerOrgId) : Promise.resolve(null),
         record.workOrderId  ? db.getWorkOrderById(record.workOrderId)  : Promise.resolve(null),
         record.jobId        ? db.getJobById(record.jobId)              : Promise.resolve(null),
         record.deficiencyId ? db.getDeficiencyById(record.deficiencyId) : Promise.resolve(null),
+        db.getInvoiceByApprovedWork(record.id),
       ]);
 
       const techIds = (record.assignedTechnicianIds as number[] | null) ?? [];
@@ -101,6 +102,7 @@ export const approvedWorkRouter = router({
         job: job ?? null,
         deficiency: deficiency ?? null,
         assignedTechs: techs,
+        invoiceId: linkedInvoice?.id ?? null,
       };
     }),
 
@@ -434,6 +436,13 @@ export const approvedWorkRouter = router({
       if (record.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
       if (record.status === "cancelled") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot invoice a cancelled record." });
+      }
+
+      if (record.invoiceNumber) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "This Approved Work record already has an invoice number recorded. Use the existing invoice or void it before creating a new one.",
+        });
       }
 
       const existing = await db.getInvoiceByApprovedWork(input.id);
