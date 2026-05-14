@@ -2004,6 +2004,13 @@ export async function getInvoicesByCompany(companyId: number, status?: string): 
   return db.select().from(invoices).where(and(...conditions)).orderBy(desc(invoices.createdAt));
 }
 
+export async function getInvoiceByApprovedWork(approvedWorkId: number): Promise<Invoice | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(invoices).where(eq(invoices.approvedWorkId, approvedWorkId)).limit(1);
+  return result[0];
+}
+
 export async function updateInvoice(id: number, data: Partial<InsertInvoice>): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
