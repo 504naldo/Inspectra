@@ -239,7 +239,7 @@ export default function AdminDashboard() {
           <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 mt-3">
             <SnapshotCard icon={CheckSquare}    label="Ready to Schedule"      count={snap?.approvedWorkReadyToSchedule ?? 0}  href="/admin/approved-work" />
             <SnapshotCard icon={Wrench}         label="Repair Quotes Pending"  count={snap?.repairQuotesPending ?? 0}          href="/admin/repair-quotes" />
-            <SnapshotCard icon={Receipt}        label="Invoices for Export"    count={snap?.invoicesReadyForExport ?? 0}       href="/admin/work-orders" />
+            <SnapshotCard icon={Receipt}        label="Invoices for Export"    count={snap?.invoicesReadyForExport ?? 0}       href="/admin/invoices" />
             <SnapshotCard icon={FileText}       label="Reports Pending Review" count={snap?.reportsPendingReview ?? 0}         href="/admin/reports" />
           </div>
         </div>
@@ -390,7 +390,7 @@ export default function AdminDashboard() {
               <CardTitle className="text-sm flex items-center gap-2">
                 <Receipt className="h-4 w-4 text-primary" />
                 Invoices / Sage Prep
-                <Link href="/admin/work-orders" className="ml-auto">
+                <Link href="/admin/invoices" className="ml-auto">
                   <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">View all <ArrowRight className="h-3 w-3 ml-1" /></Button>
                 </Link>
               </CardTitle>
