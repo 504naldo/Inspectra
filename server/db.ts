@@ -31,6 +31,7 @@ import {
   invoices, InsertInvoice, Invoice,
   invoiceLineItems, InsertInvoiceLineItem, InvoiceLineItem,
   siteWorkSiteInfo, InsertSiteWorkSiteInfo, SiteWorkSiteInfo,
+  companySettings, InsertCompanySettings, CompanySettings,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1964,6 +1965,13 @@ export async function getApprovedWorkByQuoteItem(quoteItemId: number): Promise<A
   return result[0];
 }
 
+export async function getApprovedWorkByQuote(quoteId: number): Promise<ApprovedWork | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(approvedWork).where(eq(approvedWork.quoteId, quoteId)).limit(1);
+  return result[0];
+}
+
 export async function getApprovedWorkByWorkOrder(workOrderId: number): Promise<ApprovedWork | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -2299,4 +2307,40 @@ export async function getOperationsSummary(companyId: number) {
     totalSites: allSites.length,
     totalJobs: allJobs.length,
   };
+}
+
+// ============================================
+// COMPANY SETTINGS
+// ============================================
+
+const DEFAULT_COMPANY_SETTINGS = {
+  gstRate: "0.0500",
+  pstRate: "0.0700",
+  technicianLabourRate: "75.00",
+  fitterLabourRate: "65.00",
+  quoteValidityDays: 30,
+  defaultQuoteTerms: null as string | null,
+  invoiceDueDays: 30,
+  defaultInvoiceTerms: null as string | null,
+  invoiceNumberPrefix: "INV",
+  repairQuoteNumberPrefix: "RQ",
+  sageDefaultGlCode: null as string | null,
+  sageDefaultDepartment: null as string | null,
+  reportFooterText: null as string | null,
+};
+
+export async function getCompanySettings(companyId: number): Promise<CompanySettings & { _isDefault?: boolean }> {
+  const db = await getDb();
+  if (!db) return { id: 0, companyId, ...DEFAULT_COMPANY_SETTINGS, createdAt: new Date(), updatedAt: new Date(), _isDefault: true };
+
+  const [row] = await db.select().from(companySettings).where(eq(companySettings.companyId, companyId)).limit(1);
+  if (row) return row;
+  return { id: 0, companyId, ...DEFAULT_COMPANY_SETTINGS, createdAt: new Date(), updatedAt: new Date(), _isDefault: true };
+}
+
+export async function upsertCompanySettings(companyId: number, data: Partial<Omit<InsertCompanySettings, "id" | "companyId" | "createdAt" | "updatedAt">>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.insert(companySettings).values({ companyId, ...data } as InsertCompanySettings).onDuplicateKeyUpdate({ set: { ...data, updatedAt: new Date() } });
 }

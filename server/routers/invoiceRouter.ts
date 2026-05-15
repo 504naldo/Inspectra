@@ -4,11 +4,55 @@ import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { INVOICE_STATUSES } from "../../drizzle/schema";
 
-function generateInvoiceNumber(): string {
+function generateInvoiceNumber(prefix = "INV"): string {
   const now = new Date();
   const year = now.getFullYear();
   const seq = Date.now().toString(36).toUpperCase().slice(-4);
-  return `INV-${year}-${seq}`;
+  return `${prefix}-${year}-${seq}`;
+}
+
+// ── Edit-lock rules ───────────────────────────────────────────────────────────
+// An invoice is locked (immutable for accounting) when:
+//   - status is "paid"   → payment is final
+//   - status is "void"   → voided invoices cannot be changed
+//   - sageExportStatus is "exported" → already sent to Sage; changes would desync
+
+function isInvoiceLocked(inv: { status: string; sageExportStatus: string | null }): boolean {
+  return (
+    inv.status === "paid" ||
+    inv.status === "void" ||
+    inv.sageExportStatus === "exported"
+  );
+}
+
+function lockMessage(inv: { status: string; sageExportStatus: string | null }): string {
+  if (inv.status === "void") return "This invoice has been voided and cannot be edited";
+  if (inv.status === "paid") return "This invoice has been paid and is locked for accounting integrity";
+  if (inv.sageExportStatus === "exported") return "This invoice has been exported to Sage and is locked";
+  return "This invoice is locked";
+}
+
+// ── Status transition table ───────────────────────────────────────────────────
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  draft:    ["sent", "void"],
+  sent:     ["viewed", "approved", "void", "overdue"],
+  viewed:   ["approved", "void", "overdue"],
+  approved: ["paid", "partial", "void"],
+  partial:  ["paid", "void"],
+  overdue:  ["paid", "partial", "void"],
+  paid:     [],   // terminal
+  void:     [],   // terminal
+};
+
+// ── CSV helpers ───────────────────────────────────────────────────────────────
+// Wrap a value in double-quotes if it contains commas, quotes, or newlines.
+// Always safe to call; passes through clean values unchanged.
+function csvCell(v: string | number | null | undefined): string {
+  const s = (v ?? "").toString().trim();
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
 }
 
 // ── Edit-lock rules ───────────────────────────────────────────────────────────
@@ -112,9 +156,10 @@ export const invoiceRouter = router({
       sageDepartment: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      const settings = await db.getCompanySettings(ctx.user.companyId!);
       const inv = await db.createInvoice({
         companyId: ctx.user.companyId,
-        invoiceNumber: generateInvoiceNumber(),
+        invoiceNumber: generateInvoiceNumber(settings.invoiceNumberPrefix ?? "INV"),
         status: "draft",
         createdById: ctx.user.id,
         ...input,

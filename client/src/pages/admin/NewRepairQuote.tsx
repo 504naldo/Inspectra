@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,7 @@ export default function NewRepairQuote() {
   const [jobSearch, setJobSearch] = useState("");
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
 
-  // Quote settings
+  // Quote settings — seeded from company settings once loaded
   const [techLabourRate, setTechLabourRate] = useState("75");
   const [fitterLabourRate, setFitterLabourRate] = useState("65");
   const [validDays, setValidDays] = useState("30");
@@ -28,6 +28,15 @@ export default function NewRepairQuote() {
 
   // Deficiency selection
   const [selectedDefIds, setSelectedDefIds] = useState<number[]>([]);
+
+  const { data: settings } = trpc.companySettings.get.useQuery(undefined, { enabled: !!user?.companyId });
+
+  useEffect(() => {
+    if (!settings) return;
+    if (settings.technicianLabourRate) setTechLabourRate(parseFloat(String(settings.technicianLabourRate)).toFixed(2));
+    if (settings.fitterLabourRate) setFitterLabourRate(parseFloat(String(settings.fitterLabourRate)).toFixed(2));
+    if (settings.quoteValidityDays) setValidDays(String(settings.quoteValidityDays));
+  }, [settings]);
 
   const { data: jobs = [] } = trpc.job.listByCompany.useQuery(
     { companyId: user!.companyId! },

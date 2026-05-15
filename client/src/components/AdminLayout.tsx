@@ -24,6 +24,7 @@ import {
   Wrench,
   ReceiptText,
   CheckSquare,
+  Settings,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -52,6 +53,7 @@ const secondaryNavItems = [
   { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen,   adminOnly: false },
   { label: "Devices",          href: "/admin/devices",          icon: AlertTriangle, adminOnly: false },
   { label: "Users",            href: "/admin/users",            icon: Users,         adminOnly: true  },
+  { label: "Settings",         href: "/admin/settings",         icon: Settings,      adminOnly: false },
 ];
 
 export default function AdminLayout({ children, title }: AdminLayoutProps) {

@@ -177,18 +177,22 @@ export const repairQuoteRouter = router({
       validDays: z.number().int().min(1).max(365).default(30),
     }))
     .mutation(async ({ ctx, input }) => {
-      const job = await db.getJobById(input.jobId);
+      const [job, settings] = await Promise.all([
+        db.getJobById(input.jobId),
+        db.getCompanySettings(ctx.user.companyId!),
+      ]);
       if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
       if (job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
 
-      // Generate quote number: RQ-YYYY-NNN
+      const rqPrefix = settings.repairQuoteNumberPrefix ?? "RQ";
       const year = new Date().getFullYear();
       const existing = await db.getQuotesByCompany(ctx.user.companyId!);
       const repairCount = existing.filter((q: any) => q.quoteType === "repair").length;
-      const quoteNumber = `RQ-${year}-${String(repairCount + 1).padStart(3, "0")}`;
+      const quoteNumber = `${rqPrefix}-${year}-${String(repairCount + 1).padStart(3, "0")}`;
 
+      const effectiveValidDays = input.validDays ?? settings.quoteValidityDays ?? 30;
       const validUntil = new Date();
-      validUntil.setDate(validUntil.getDate() + input.validDays);
+      validUntil.setDate(validUntil.getDate() + effectiveValidDays);
 
       const quote = await db.createQuote({
         jobId: input.jobId,

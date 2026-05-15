@@ -1519,3 +1519,36 @@ export const siteWorkSiteInfo = mysqlTable("site_work_site_info", {
 
 export type SiteWorkSiteInfo = typeof siteWorkSiteInfo.$inferSelect;
 export type InsertSiteWorkSiteInfo = typeof siteWorkSiteInfo.$inferInsert;
+
+// ============================================
+// COMPANY SETTINGS (Business rules / defaults per company)
+// ============================================
+export const companySettings = mysqlTable("company_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  // Tax rates
+  gstRate: decimal("gstRate", { precision: 5, scale: 4 }).notNull().default("0.0500"),
+  pstRate: decimal("pstRate", { precision: 5, scale: 4 }).notNull().default("0.0700"),
+  // Labour defaults
+  technicianLabourRate: decimal("technicianLabourRate", { precision: 8, scale: 2 }).notNull().default("75.00"),
+  fitterLabourRate: decimal("fitterLabourRate", { precision: 8, scale: 2 }).notNull().default("65.00"),
+  quoteValidityDays: int("quoteValidityDays").notNull().default(30),
+  defaultQuoteTerms: text("defaultQuoteTerms"),
+  // Invoice defaults
+  invoiceDueDays: int("invoiceDueDays").notNull().default(30),
+  defaultInvoiceTerms: text("defaultInvoiceTerms"),
+  invoiceNumberPrefix: varchar("invoiceNumberPrefix", { length: 20 }).notNull().default("INV"),
+  // Sage defaults
+  repairQuoteNumberPrefix: varchar("repairQuoteNumberPrefix", { length: 20 }).notNull().default("RQ"),
+  sageDefaultGlCode: varchar("sageDefaultGlCode", { length: 50 }),
+  sageDefaultDepartment: varchar("sageDefaultDepartment", { length: 50 }),
+  // Reports
+  reportFooterText: text("reportFooterText"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdUnique: unique("company_settings_companyId_unique").on(table.companyId),
+}));
+
+export type CompanySettings = typeof companySettings.$inferSelect;
+export type InsertCompanySettings = typeof companySettings.$inferInsert;
