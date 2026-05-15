@@ -58,7 +58,7 @@ export default function AdminInvoices() {
 
   const [tab, setTab] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sageFilter, setSageFilter] = useState("");
+  const [sageFilter, setSageFilter] = useState("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newInvoice, setNewInvoice] = useState({
     customerOrgId: "",
@@ -72,7 +72,7 @@ export default function AdminInvoices() {
   });
 
   const { data: invoices = [], isLoading, refetch } = trpc.invoice.list.useQuery(
-    { status: tab || undefined, sageExportStatus: (sageFilter as any) || undefined },
+    { status: tab || undefined, sageExportStatus: sageFilter === "all" ? undefined : (sageFilter as any) },
     { enabled: !!companyId }
   );
   const { data: customers } = trpc.customerOrg.list.useQuery(
@@ -169,7 +169,7 @@ export default function AdminInvoices() {
               <SelectValue placeholder="Sage status: All" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Sage statuses</SelectItem>
+              <SelectItem value="all">All Sage statuses</SelectItem>
               <SelectItem value="pending">Pending export</SelectItem>
               <SelectItem value="exported">Exported</SelectItem>
               <SelectItem value="error">Export error</SelectItem>

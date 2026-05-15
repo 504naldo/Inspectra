@@ -11,6 +11,50 @@ function generateInvoiceNumber(): string {
   return `INV-${year}-${seq}`;
 }
 
+// ── Edit-lock rules ───────────────────────────────────────────────────────────
+// An invoice is locked (immutable for accounting) when:
+//   - status is "paid"   → payment is final
+//   - status is "void"   → voided invoices cannot be changed
+//   - sageExportStatus is "exported" → already sent to Sage; changes would desync
+
+function isInvoiceLocked(inv: { status: string; sageExportStatus: string | null }): boolean {
+  return (
+    inv.status === "paid" ||
+    inv.status === "void" ||
+    inv.sageExportStatus === "exported"
+  );
+}
+
+function lockMessage(inv: { status: string; sageExportStatus: string | null }): string {
+  if (inv.status === "void") return "This invoice has been voided and cannot be edited";
+  if (inv.status === "paid") return "This invoice has been paid and is locked for accounting integrity";
+  if (inv.sageExportStatus === "exported") return "This invoice has been exported to Sage and is locked";
+  return "This invoice is locked";
+}
+
+// ── Status transition table ───────────────────────────────────────────────────
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  draft:    ["sent", "void"],
+  sent:     ["viewed", "approved", "void", "overdue"],
+  viewed:   ["approved", "void", "overdue"],
+  approved: ["paid", "partial", "void"],
+  partial:  ["paid", "void"],
+  overdue:  ["paid", "partial", "void"],
+  paid:     [],   // terminal
+  void:     [],   // terminal
+};
+
+// ── CSV helpers ───────────────────────────────────────────────────────────────
+// Wrap a value in double-quotes if it contains commas, quotes, or newlines.
+// Always safe to call; passes through clean values unchanged.
+function csvCell(v: string | number | null | undefined): string {
+  const s = (v ?? "").toString().trim();
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
 export const invoiceRouter = router({
   list: officeProcedure
     .input(z.object({
@@ -106,7 +150,7 @@ export const invoiceRouter = router({
       const inv = await db.getInvoiceById(id);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
-      if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot edit a voided invoice" });
+      if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv) });
       await db.updateInvoice(id, {
         ...data,
         invoiceDate: data.invoiceDate ? new Date(data.invoiceDate) : undefined,
@@ -132,7 +176,7 @@ export const invoiceRouter = router({
       const inv = await db.getInvoiceById(input.invoiceId);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
-      if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot edit a voided invoice" });
+      if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv) });
       const lineTotal = input.quantity * input.unitPrice;
       const item = await db.createInvoiceLineItem({
         invoiceId: input.invoiceId,
@@ -166,7 +210,7 @@ export const invoiceRouter = router({
       const inv = await db.getInvoiceById(invoiceId);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
-      if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot edit a voided invoice" });
+      if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv) });
       const lineTotal =
         quantity !== undefined && unitPrice !== undefined ? quantity * unitPrice : undefined;
       await db.updateInvoiceLineItem(id, {
@@ -185,7 +229,7 @@ export const invoiceRouter = router({
       const inv = await db.getInvoiceById(input.invoiceId);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
-      if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot edit a voided invoice" });
+      if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv) });
       await db.deleteInvoiceLineItem(input.id);
       await db.recalculateInvoiceTotals(input.invoiceId);
       return { success: true };
@@ -200,6 +244,13 @@ export const invoiceRouter = router({
       const inv = await db.getInvoiceById(input.id);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const allowed = ALLOWED_TRANSITIONS[inv.status] ?? [];
+      if (!allowed.includes(input.status)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Cannot transition invoice from "${inv.status}" to "${input.status}"`,
+        });
+      }
       const updates: any = { status: input.status };
       if (input.status === "sent" && !inv.sentAt) updates.sentAt = new Date();
       await db.updateInvoice(input.id, updates);
@@ -216,6 +267,9 @@ export const invoiceRouter = router({
       const inv = await db.getInvoiceById(input.id);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot record payment on a voided invoice" });
+      if (inv.status === "paid") throw new TRPCError({ code: "BAD_REQUEST", message: "Invoice is already fully paid" });
+      if (inv.sageExportStatus === "exported") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot modify a Sage-exported invoice" });
       const total = parseFloat(String(inv.total ?? "0"));
       const status = input.amountPaid >= total ? "paid" : "partial";
       const balanceDue = Math.max(0, total - input.amountPaid);
@@ -236,6 +290,9 @@ export const invoiceRouter = router({
       const inv = await db.getInvoiceById(input.id);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Invoice is already voided" });
+      if (inv.status === "paid") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot void a paid invoice. Use a credit note workflow instead." });
+      if (inv.sageExportStatus === "exported") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot void an invoice that has been exported to Sage. Contact your accountant to reverse it there first." });
       await db.updateInvoice(input.id, { status: "void" });
       return { success: true };
     }),
@@ -243,31 +300,54 @@ export const invoiceRouter = router({
   exportSage: officeProcedure
     .input(z.object({ ids: z.array(z.number()) }))
     .mutation(async ({ input, ctx }) => {
-      const rows: string[] = [
-        "Invoice Number,Customer Code,Invoice Date,Due Date,Total,Tax,GL Code,Department,Bill To Name,Site,Status",
-      ];
+      // Validate all invoices first, then generate CSV, then mark exported.
+      // This prevents partial exports where some rows are marked and CSV is incomplete.
+      const validated: any[] = [];
       for (const id of input.ids) {
         const inv = await db.getInvoiceById(id);
         if (!inv || inv.companyId !== ctx.user.companyId) continue;
+        if (inv.status === "void") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Invoice ${inv.invoiceNumber} is voided and cannot be exported` });
+        }
+        const total = parseFloat(String(inv.total ?? "0"));
+        const lineItems = await db.getLineItemsByInvoice(id);
+        if (total === 0 && lineItems.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Invoice ${inv.invoiceNumber} has no line items and a zero total — add at least one line item before exporting` });
+        }
+        validated.push({ inv, lineItems });
+      }
+
+      // Build CSV rows with full escaping on every string field
+      const rows: string[] = [
+        "Invoice Number,Customer Code,Invoice Date,Due Date,Total,Tax,GL Code,Department,Bill To Name,Bill To Email,Bill To Address,Site ID,Status",
+      ];
+      for (const { inv } of validated) {
         rows.push([
-          inv.invoiceNumber,
-          inv.sageCustomerCode ?? "",
+          csvCell(inv.invoiceNumber),
+          csvCell(inv.sageCustomerCode),
           inv.invoiceDate ? new Date(inv.invoiceDate).toISOString().split("T")[0] : "",
           inv.dueDate ? new Date(inv.dueDate).toISOString().split("T")[0] : "",
-          inv.total ?? "0.00",
-          inv.taxAmount ?? "0.00",
-          inv.sageGlCode ?? "",
-          inv.sageDepartment ?? "",
-          `"${(inv.billToName ?? "").replace(/"/g, '""')}"`,
-          inv.siteId?.toString() ?? "",
-          inv.status,
+          csvCell(inv.total ?? "0.00"),
+          csvCell(inv.taxAmount ?? "0.00"),
+          csvCell(inv.sageGlCode),
+          csvCell(inv.sageDepartment),
+          csvCell(inv.billToName),
+          csvCell(inv.billToEmail),
+          csvCell(inv.billToAddress),
+          csvCell(inv.siteId?.toString()),
+          csvCell(inv.status),
         ].join(","));
-        await db.updateInvoice(id, {
+      }
+
+      // Mark exported only after all rows are built
+      for (const { inv } of validated) {
+        await db.updateInvoice(inv.id, {
           sageExportStatus: "exported",
           sageExportedAt: new Date(),
         });
       }
-      return { csv: rows.join("\n"), count: rows.length - 1 };
+
+      return { csv: rows.join("\n"), count: validated.length };
     }),
 
   markReadyForReview: officeProcedure
@@ -289,6 +369,7 @@ export const invoiceRouter = router({
       const inv = await db.getInvoiceById(input.id);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot reset Sage export status on a voided invoice" });
       await db.updateInvoice(input.id, { sageExportStatus: "pending" });
       return { success: true };
     }),
@@ -299,6 +380,7 @@ export const invoiceRouter = router({
       const inv = await db.getInvoiceById(input.id);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot mark a voided invoice as exported" });
       await db.updateInvoice(input.id, { sageExportStatus: "exported", sageExportedAt: new Date() });
       return { success: true };
     }),

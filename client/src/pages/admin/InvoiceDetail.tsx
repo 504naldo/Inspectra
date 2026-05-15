@@ -37,6 +37,7 @@ import {
   Trash2,
   Edit,
   CheckCircle,
+  Lock,
 } from "lucide-react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "../../../../drizzle/schema";
 
@@ -382,6 +383,17 @@ export default function InvoiceDetail({ id }: Props) {
 
   const isVoid = invoice.status === "void";
   const isPaid = invoice.status === "paid";
+  const isSageExported = invoice.sageExportStatus === "exported";
+  // Locked invoices cannot have their contents or amounts changed.
+  // Voided/paid/Sage-exported are all accounting-final.
+  const isLocked = isVoid || isPaid || isSageExported;
+  const lockedReason = isVoid
+    ? "This invoice has been voided and is read-only."
+    : isPaid
+    ? "This invoice has been marked paid and is locked for accounting integrity."
+    : isSageExported
+    ? "This invoice has been exported to Sage and is locked. Reset the Sage export status to unlock."
+    : null;
   const lineItems = invoice.lineItems ?? [];
 
   return (
@@ -392,6 +404,13 @@ export default function InvoiceDetail({ id }: Props) {
           <Button variant="ghost" size="sm" className="mb-3 -ml-2 text-muted-foreground" onClick={() => navigate("/admin/invoices")}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Invoices
           </Button>
+
+          {isLocked && lockedReason && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <Lock className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{lockedReason}</span>
+            </div>
+          )}
 
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -418,17 +437,17 @@ export default function InvoiceDetail({ id }: Props) {
 
             {/* Actions */}
             <div className="flex flex-wrap gap-2">
-              {!isVoid && invoice.status === "draft" && (
+              {!isLocked && invoice.status === "draft" && (
                 <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "sent" })} disabled={updateStatus.isPending}>
                   <CheckCircle className="h-3.5 w-3.5 mr-1" /> Mark Sent
                 </Button>
               )}
-              {!isVoid && (invoice.status === "sent" || invoice.status === "viewed") && (
+              {!isLocked && (invoice.status === "sent" || invoice.status === "viewed") && (
                 <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "approved" })} disabled={updateStatus.isPending}>
                   Mark Approved
                 </Button>
               )}
-              {!isVoid && !isPaid && (
+              {!isVoid && !isPaid && !isSageExported && (
                 <Button size="sm" variant="outline" onClick={() => setShowMarkPaid(true)}>
                   <DollarSign className="h-3.5 w-3.5 mr-1" /> Record Payment
                 </Button>
@@ -445,7 +464,7 @@ export default function InvoiceDetail({ id }: Props) {
                   {exportSage.isPending ? "Exporting…" : "Export Sage CSV"}
                 </Button>
               )}
-              {!isVoid && invoice.sageExportStatus !== "exported" && (
+              {!isVoid && !isSageExported && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -457,7 +476,7 @@ export default function InvoiceDetail({ id }: Props) {
                   Mark Exported
                 </Button>
               )}
-              {!isVoid && !isPaid && (
+              {!isVoid && !isPaid && !isSageExported && (
                 <Button
                   size="sm"
                   variant="destructive"
@@ -481,7 +500,7 @@ export default function InvoiceDetail({ id }: Props) {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between gap-2">
                 <span className="flex items-center gap-2"><Building2 className="h-4 w-4" /> Bill To</span>
-                {!isVoid && (
+                {!isLocked && (
                   <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setShowEditHeader(true)}>
                     <Edit className="h-3 w-3 mr-1" /> Edit
                   </Button>
@@ -526,7 +545,7 @@ export default function InvoiceDetail({ id }: Props) {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Line Items</CardTitle>
-              {!isVoid && (
+              {!isLocked && (
                 <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> Add Item
                 </Button>
@@ -546,7 +565,7 @@ export default function InvoiceDetail({ id }: Props) {
                       <th className="text-right py-2 px-3 w-28">Unit Price</th>
                       <th className="text-right py-2 px-3 w-28">Total</th>
                       <th className="text-center py-2 px-3 w-16">Tax</th>
-                      {!isVoid && <th className="w-20"></th>}
+                      {!isLocked && <th className="w-20"></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -612,7 +631,7 @@ export default function InvoiceDetail({ id }: Props) {
                             <td className="py-2 px-3 text-center text-xs text-muted-foreground">
                               {item.taxable ? "✓" : "—"}
                             </td>
-                            {!isVoid && (
+                            {!isLocked && (
                               <td className="py-2 px-3">
                                 <div className="flex gap-1 justify-end">
                                   <Button
