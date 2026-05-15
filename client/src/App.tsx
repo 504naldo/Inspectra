@@ -51,6 +51,7 @@ import ApprovedWork from "./pages/admin/ApprovedWork";
 import ApprovedWorkDetail from "./pages/admin/ApprovedWorkDetail";
 import AdminInvoices from "./pages/admin/Invoices";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
+import CompanySettings from "./pages/admin/CompanySettings";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -359,6 +360,11 @@ function Router() {
             <InvoiceDetail id={parseInt(params.id)} />
           </ProtectedRoute>
         )}
+      </Route>
+      <Route path="/admin/settings">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <CompanySettings />
+        </ProtectedRoute>
       </Route>
 
       {/* Customer routes — disabled, customer portal not active in this release */}

@@ -37,6 +37,7 @@ import {
   Trash2,
   Edit,
   CheckCircle,
+  Lock,
 } from "lucide-react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "../../../../drizzle/schema";
 
@@ -133,6 +134,130 @@ function AddLineItemDialog({
   );
 }
 
+function EditHeaderDialog({
+  invoice,
+  onClose,
+  onSaved,
+}: { invoice: any; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    billToName: invoice.billToName ?? "",
+    billToEmail: invoice.billToEmail ?? "",
+    billToAddress: invoice.billToAddress ?? "",
+    billToCity: invoice.billToCity ?? "",
+    billToState: invoice.billToState ?? "",
+    billToPostalCode: invoice.billToPostalCode ?? "",
+    invoiceDate: invoice.invoiceDate ? new Date(invoice.invoiceDate).toISOString().split("T")[0] : "",
+    dueDate: invoice.dueDate ? new Date(invoice.dueDate).toISOString().split("T")[0] : "",
+    sageCustomerCode: invoice.sageCustomerCode ?? "",
+    sageGlCode: invoice.sageGlCode ?? "",
+    sageDepartment: invoice.sageDepartment ?? "",
+  });
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const update = trpc.invoice.update.useMutation({
+    onSuccess: () => { toast.success("Invoice updated"); onSaved(); onClose(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Edit Invoice Header</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-1">
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bill To</p>
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <Label>Name</Label>
+                <Input className="mt-1" value={form.billToName} onChange={set("billToName")} placeholder="Company or person name" />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input className="mt-1" type="email" value={form.billToEmail} onChange={set("billToEmail")} placeholder="billing@example.com" />
+              </div>
+              <div>
+                <Label>Address</Label>
+                <Input className="mt-1" value={form.billToAddress} onChange={set("billToAddress")} placeholder="Street address" />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-1">
+                  <Label>City</Label>
+                  <Input className="mt-1" value={form.billToCity} onChange={set("billToCity")} />
+                </div>
+                <div>
+                  <Label>Province</Label>
+                  <Input className="mt-1" value={form.billToState} onChange={set("billToState")} placeholder="ON" />
+                </div>
+                <div>
+                  <Label>Postal Code</Label>
+                  <Input className="mt-1" value={form.billToPostalCode} onChange={set("billToPostalCode")} placeholder="A1A 1A1" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-3 pt-2 border-t">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dates</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Invoice Date</Label>
+                <Input className="mt-1" type="date" value={form.invoiceDate} onChange={set("invoiceDate")} />
+              </div>
+              <div>
+                <Label>Due Date</Label>
+                <Input className="mt-1" type="date" value={form.dueDate} onChange={set("dueDate")} />
+              </div>
+            </div>
+          </div>
+          <div className="space-y-3 pt-2 border-t">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sage / Accounting</p>
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <Label>Customer Code</Label>
+                <Input className="mt-1" value={form.sageCustomerCode} onChange={set("sageCustomerCode")} placeholder="e.g. CUST001" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>GL Code</Label>
+                  <Input className="mt-1" value={form.sageGlCode} onChange={set("sageGlCode")} placeholder="e.g. 4000" />
+                </div>
+                <div>
+                  <Label>Department</Label>
+                  <Input className="mt-1" value={form.sageDepartment} onChange={set("sageDepartment")} placeholder="e.g. OPS" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={update.isPending}>Cancel</Button>
+          <Button
+            onClick={() => update.mutate({
+              id: invoice.id,
+              billToName: form.billToName || undefined,
+              billToEmail: form.billToEmail || undefined,
+              billToAddress: form.billToAddress || undefined,
+              billToCity: form.billToCity || undefined,
+              billToState: form.billToState || undefined,
+              billToPostalCode: form.billToPostalCode || undefined,
+              invoiceDate: form.invoiceDate || undefined,
+              dueDate: form.dueDate || undefined,
+              sageCustomerCode: form.sageCustomerCode || undefined,
+              sageGlCode: form.sageGlCode || undefined,
+              sageDepartment: form.sageDepartment || undefined,
+            })}
+            disabled={update.isPending}
+          >
+            {update.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function MarkPaidDialog({
   invoice,
   onClose,
@@ -182,6 +307,7 @@ export default function InvoiceDetail({ id }: Props) {
 
   const [showAddItem, setShowAddItem] = useState(false);
   const [showMarkPaid, setShowMarkPaid] = useState(false);
+  const [showEditHeader, setShowEditHeader] = useState(false);
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [editDesc, setEditDesc] = useState("");
   const [editQty, setEditQty] = useState("");
@@ -208,6 +334,11 @@ export default function InvoiceDetail({ id }: Props) {
 
   const voidInvoice = trpc.invoice.void.useMutation({
     onSuccess: () => { toast.success("Invoice voided"); invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const markExportedToSage = trpc.invoice.markExportedToSage.useMutation({
+    onSuccess: () => { toast.success("Marked as exported to Sage"); invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -252,6 +383,17 @@ export default function InvoiceDetail({ id }: Props) {
 
   const isVoid = invoice.status === "void";
   const isPaid = invoice.status === "paid";
+  const isSageExported = invoice.sageExportStatus === "exported";
+  // Locked invoices cannot have their contents or amounts changed.
+  // Voided/paid/Sage-exported are all accounting-final.
+  const isLocked = isVoid || isPaid || isSageExported;
+  const lockedReason = isVoid
+    ? "This invoice has been voided and is read-only."
+    : isPaid
+    ? "This invoice has been marked paid and is locked for accounting integrity."
+    : isSageExported
+    ? "This invoice has been exported to Sage and is locked. Reset the Sage export status to unlock."
+    : null;
   const lineItems = invoice.lineItems ?? [];
 
   return (
@@ -262,6 +404,13 @@ export default function InvoiceDetail({ id }: Props) {
           <Button variant="ghost" size="sm" className="mb-3 -ml-2 text-muted-foreground" onClick={() => navigate("/admin/invoices")}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Invoices
           </Button>
+
+          {isLocked && lockedReason && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <Lock className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{lockedReason}</span>
+            </div>
+          )}
 
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -288,17 +437,17 @@ export default function InvoiceDetail({ id }: Props) {
 
             {/* Actions */}
             <div className="flex flex-wrap gap-2">
-              {!isVoid && invoice.status === "draft" && (
+              {!isLocked && invoice.status === "draft" && (
                 <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "sent" })} disabled={updateStatus.isPending}>
                   <CheckCircle className="h-3.5 w-3.5 mr-1" /> Mark Sent
                 </Button>
               )}
-              {!isVoid && invoice.status === "sent" && (
+              {!isLocked && (invoice.status === "sent" || invoice.status === "viewed") && (
                 <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "approved" })} disabled={updateStatus.isPending}>
                   Mark Approved
                 </Button>
               )}
-              {!isVoid && !isPaid && (
+              {!isVoid && !isPaid && !isSageExported && (
                 <Button size="sm" variant="outline" onClick={() => setShowMarkPaid(true)}>
                   <DollarSign className="h-3.5 w-3.5 mr-1" /> Record Payment
                 </Button>
@@ -315,7 +464,19 @@ export default function InvoiceDetail({ id }: Props) {
                   {exportSage.isPending ? "Exporting…" : "Export Sage CSV"}
                 </Button>
               )}
-              {!isVoid && !isPaid && (
+              {!isVoid && !isSageExported && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => markExportedToSage.mutate({ id: invoice.id })}
+                  disabled={markExportedToSage.isPending}
+                  title="Mark as already exported to Sage without re-downloading"
+                >
+                  {markExportedToSage.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5 mr-1" />}
+                  Mark Exported
+                </Button>
+              )}
+              {!isVoid && !isPaid && !isSageExported && (
                 <Button
                   size="sm"
                   variant="destructive"
@@ -337,8 +498,13 @@ export default function InvoiceDetail({ id }: Props) {
           {/* Bill To */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Building2 className="h-4 w-4" /> Bill To
+              <CardTitle className="text-base flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2"><Building2 className="h-4 w-4" /> Bill To</span>
+                {!isLocked && (
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setShowEditHeader(true)}>
+                    <Edit className="h-3 w-3 mr-1" /> Edit
+                  </Button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1 text-sm">
@@ -379,7 +545,7 @@ export default function InvoiceDetail({ id }: Props) {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Line Items</CardTitle>
-              {!isVoid && (
+              {!isLocked && (
                 <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> Add Item
                 </Button>
@@ -399,7 +565,7 @@ export default function InvoiceDetail({ id }: Props) {
                       <th className="text-right py-2 px-3 w-28">Unit Price</th>
                       <th className="text-right py-2 px-3 w-28">Total</th>
                       <th className="text-center py-2 px-3 w-16">Tax</th>
-                      {!isVoid && <th className="w-20"></th>}
+                      {!isLocked && <th className="w-20"></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -465,7 +631,7 @@ export default function InvoiceDetail({ id }: Props) {
                             <td className="py-2 px-3 text-center text-xs text-muted-foreground">
                               {item.taxable ? "✓" : "—"}
                             </td>
-                            {!isVoid && (
+                            {!isLocked && (
                               <td className="py-2 px-3">
                                 <div className="flex gap-1 justify-end">
                                   <Button
@@ -577,6 +743,13 @@ export default function InvoiceDetail({ id }: Props) {
         )}
 
         {/* Dialogs */}
+        {showEditHeader && (
+          <EditHeaderDialog
+            invoice={invoice}
+            onClose={() => setShowEditHeader(false)}
+            onSaved={invalidate}
+          />
+        )}
         {showAddItem && (
           <AddLineItemDialog
             invoiceId={invoice.id}

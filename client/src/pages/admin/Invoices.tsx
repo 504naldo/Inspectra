@@ -58,6 +58,7 @@ export default function AdminInvoices() {
 
   const [tab, setTab] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sageFilter, setSageFilter] = useState("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newInvoice, setNewInvoice] = useState({
     customerOrgId: "",
@@ -71,7 +72,7 @@ export default function AdminInvoices() {
   });
 
   const { data: invoices = [], isLoading, refetch } = trpc.invoice.list.useQuery(
-    { status: tab || undefined },
+    { status: tab || undefined, sageExportStatus: sageFilter === "all" ? undefined : (sageFilter as any) },
     { enabled: !!companyId }
   );
   const { data: customers } = trpc.customerOrg.list.useQuery(
@@ -163,6 +164,17 @@ export default function AdminInvoices() {
               className="pl-10"
             />
           </div>
+          <Select value={sageFilter} onValueChange={setSageFilter}>
+            <SelectTrigger className="w-auto min-w-[160px]">
+              <SelectValue placeholder="Sage status: All" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sage statuses</SelectItem>
+              <SelectItem value="pending">Pending export</SelectItem>
+              <SelectItem value="exported">Exported</SelectItem>
+              <SelectItem value="error">Export error</SelectItem>
+            </SelectContent>
+          </Select>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -327,6 +339,16 @@ export default function AdminInvoices() {
                           <span className={`text-xs font-medium px-2 py-0.5 rounded border ${STATUS_COLORS[inv.status as InvoiceStatus] ?? ""}`}>
                             {STATUS_LABELS[inv.status as InvoiceStatus] ?? inv.status}
                           </span>
+                          {inv.sageExportStatus === "exported" && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                              Sage ✓
+                            </span>
+                          )}
+                          {inv.sageExportStatus === "error" && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded border bg-red-50 text-red-700 border-red-200">
+                              Sage Error
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 mt-1 flex-wrap">
                           {(inv.customerOrgName || inv.billToName) && (
@@ -339,6 +361,15 @@ export default function AdminInvoices() {
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
                               {new Date(inv.invoiceDate).toLocaleDateString()}
+                            </span>
+                          )}
+                          {inv.dueDate && (
+                            <span className={`text-xs flex items-center gap-1 ${
+                              new Date(inv.dueDate) < new Date() && !["paid", "void"].includes(inv.status)
+                                ? "text-red-600 font-medium"
+                                : "text-muted-foreground"
+                            }`}>
+                              Due {new Date(inv.dueDate).toLocaleDateString()}
                             </span>
                           )}
                         </div>

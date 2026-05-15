@@ -39,6 +39,7 @@ import { approvedWorkRouter } from "./routers/approvedWorkRouter";
 import { invoiceRouter } from "./routers/invoiceRouter";
 import { workSiteInfoRouter } from "./routers/workSiteInfoRouter";
 import { partsCatalogRouter } from "./routers/partsCatalogRouter";
+import { companySettingsRouter } from "./routers/companySettingsRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -107,6 +108,7 @@ export const appRouter = router({
   invoice: invoiceRouter,
   workSiteInfo: workSiteInfoRouter,
   partsCatalog: partsCatalogRouter,
+  companySettings: companySettingsRouter,
 });
 
 export type AppRouter = typeof appRouter;
