@@ -597,7 +597,7 @@ export default function ApprovedWorkDetail({ id }: Props) {
                   ) : "—"}
                 </Row>
 
-                {!isClosed && !record.invoiceNumber && (
+                {!isClosed && !record.invoiceNumber && !record.invoiceId && (
                   <div className="space-y-2 mt-1">
                     <Button
                       size="sm"

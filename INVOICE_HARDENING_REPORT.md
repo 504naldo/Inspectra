@@ -1,139 +1,97 @@
-# Invoice Module — Hardening Report
-**Date:** 2026-05-15  
-**Scope:** Edit-lock rules, status transitions, Sage export integrity, UI locking
+# Invoice + Sage Export Hardening Report
+
+**Date:** 2026-05-16  
+**Branch:** claude/continue-work-vt04A
 
 ---
 
-## 1. Edit-Lock Rules
+## Summary
 
-An invoice is **locked** (immutable) when any of the following is true:
-
-| Condition | Reason |
-|-----------|--------|
-| `status === "paid"` | Payment is final; changing amounts would break reconciliation |
-| `status === "void"` | Voided invoices are accounting records; they cannot be changed |
-| `sageExportStatus === "exported"` | Invoice has been sent to Sage; edits would desync the books |
-
-### Helper: `isInvoiceLocked(inv)`
-Defined in `server/routers/invoiceRouter.ts`. Returns `true` if any of the above conditions hold.
-
-### `lockMessage(inv)`
-Returns a human-readable reason used in both API error messages and the UI banner.
-
-### Blocked actions for locked invoices (backend + frontend)
-- Edit invoice header (bill-to, dates, Sage codes)
-- Add line item
-- Edit line item
-- Remove line item
-- Record payment (blocks on void, paid, or Sage-exported)
-- Void invoice (blocks on paid or Sage-exported)
-- Status transitions out of paid/void
-
-### Allowed actions for locked invoices
-- View invoice and all details
-- Download / re-export Sage CSV (export always allowed except on voided)
-- Mark Exported to Sage (useful for invoices exported outside the app)
+Surgical hardening pass across the invoice workflow. No new dependencies, no schema changes, no unrelated refactors. Six targeted fixes applied across four files.
 
 ---
 
-## 2. Status Transition Rules
+## What Was Checked
 
-Implemented as a server-side transition table in `invoiceRouter.updateStatus`:
-
-```
-draft    → sent, void
-sent     → viewed, approved, void, overdue
-viewed   → approved, void, overdue
-approved → paid, partial, void
-partial  → paid, void
-overdue  → paid, partial, void
-paid     → (terminal — no transitions allowed)
-void     → (terminal — no transitions allowed)
-```
-
-Any transition not in this table returns `BAD_REQUEST: "Cannot transition invoice from X to Y"`.
+| Area | File(s) | Result |
+|---|---|---|
+| Radix Select `value=""` crash | `Schedule.tsx`, `Invoices.tsx`, `InvoiceDetail.tsx` | Fixed in Schedule.tsx; others OK |
+| Invoice list filter consistency | `Invoices.tsx` | OK — sentinel `"all"` already used |
+| Sage status naming | `Invoices.tsx` | Fixed — labels updated |
+| Frontend locking (paid/void/sage-exported) | `InvoiceDetail.tsx` | Already comprehensive — verified OK |
+| Payment validation ($0, negative) | `InvoiceDetail.tsx`, `invoiceRouter.ts` | Fixed (frontend + backend) |
+| Sage CSV export UX | `InvoiceDetail.tsx`, `invoiceRouter.ts` | Error message fix applied; backend already marks exported only on success |
+| Dashboard invoice/Sage links | `Dashboard.tsx` | Verified correct — no stale links |
+| Approved Work → invoice navigation | `ApprovedWorkDetail.tsx` | Duplicate-create guard tightened |
+| Type safety (`as any`) | invoice-related files | No easy removals without larger refactors |
+| `pnpm check` | whole project | Pre-existing errors only (node/vite types); no new errors |
 
 ---
 
-## 3. Sage Export Validation
+## Bugs Found & Fixes Applied
 
-Enforced in `invoiceRouter.exportSage` before writing any CSV rows:
+### 1. Radix Select empty-string crash — `Schedule.tsx:508`
+**Problem:** `<SelectItem value="">Unassigned</SelectItem>` — Radix UI throws on empty-string values at runtime.  
+**Fix:** Changed to sentinel `"__unassigned__"` with bidirectional conversion in `onValueChange`. Submit handler already mapped falsy `leadTechId` to `undefined` — still correct.
 
-| Check | Action on failure |
-|-------|-------------------|
-| Invoice belongs to current company | Silently skip (cross-company guard) |
-| Invoice is not void | `BAD_REQUEST` — stops entire export |
-| Invoice has ≥1 line item OR non-zero total | `BAD_REQUEST` — stops entire export |
-| Invoice number exists | Always true by construction |
+### 2. Sage filter/badge naming — `Invoices.tsx`
+**Problem:** Dropdown labels were inconsistent (`"Pending export"`, `"Exported"`), and list badges used abbreviated or incorrect text (`"Sage ✓"`, missing pending badge, `"Sage Error"`).  
+**Fix:**
+- Dropdown: `"Ready for export"`, `"Exported to Sage"`, `"Export error"`
+- Badges: `"Sage Exported"` (emerald), `"Ready for Export"` (amber), `"Export Error"` (red)
 
-### CSV Integrity
-- Added `csvCell()` helper that wraps any field containing commas, double-quotes, or newlines in double-quotes, doubling internal quotes per RFC 4180.
-- **Previously:** only `billToName` was quoted.
-- **Now:** all string fields are escaped: `invoiceNumber`, `sageCustomerCode`, `sageGlCode`, `sageDepartment`, `billToName`, `billToEmail`, `billToAddress`, `status`.
-- Added `billToEmail` and `billToAddress` to the export columns.
+### 3. Sage export error message swallowed — `InvoiceDetail.tsx`
+**Problem:** `onError: () => toast.error("Export failed")` discarded the backend's descriptive error message.  
+**Fix:** `onError: (e) => toast.error(e.message || "Sage export failed")`
 
-### Export Atomicity
-- **Previously:** each invoice was marked `sageExportStatus = "exported"` inside the loop, so a failure mid-export could leave some invoices marked and others not.
-- **Now:** all invoices are validated and rows are built first; `sageExportStatus` updates happen only after all rows are successfully generated.
+### 4. $0 payment allowed — `InvoiceDetail.tsx` + `invoiceRouter.ts`
+**Problem:** Frontend only blocked empty string (`!amount`); backend used `z.number().min(0)` allowing $0.  
+**Fix:**
+- Frontend: `disabled={markPaid.isPending || !amount || parseFloat(amount) <= 0}`
+- Backend: `amountPaid: z.number().positive()` (requires > 0)
 
----
+### 5. Duplicate invoice creation — `ApprovedWorkDetail.tsx:600`
+**Problem:** "Create Invoice" button only checked `!record.invoiceNumber`. An invoice could exist with its ID stored on the record but `invoiceNumber` not yet populated, allowing a second invoice to be created.  
+**Fix:** `{!isClosed && !record.invoiceNumber && !record.invoiceId && (`
 
-## 4. Additional Mutation Guards
-
-| Mutation | Guards added |
-|----------|-------------|
-| `update` | Locked invoices (paid / void / Sage-exported) |
-| `addLineItem` | Locked invoices |
-| `updateLineItem` | Locked invoices |
-| `removeLineItem` | Locked invoices |
-| `updateStatus` | Full transition table validation |
-| `markPaid` | void, already-paid, Sage-exported |
-| `void` | already-void, paid, Sage-exported |
-| `markReadyForSageExport` | void |
-| `markExportedToSage` | void |
+### 6. Duplicate declarations in `invoiceRouter.ts` (previous session)
+**Problem:** `isInvoiceLocked`, `lockMessage`, `ALLOWED_TRANSITIONS`, `csvCell` each declared twice — esbuild rejected the file as invalid ES module, causing two consecutive Railway deployment failures.  
+**Fix:** Removed duplicate declarations (commit `ee25ede`).
 
 ---
 
-## 5. UI Locking Behavior
+## Already Correct — No Action Needed
 
-In `InvoiceDetail.tsx`:
-
-- **Lock banner** appears at the top when `isLocked` is true, showing the specific reason (voided / paid / Sage-exported). Color: amber.
-- **Edit Header button** hidden when `isLocked`.
-- **Add Item button** hidden when `isLocked`.
-- **Line item edit/delete controls** hidden when `isLocked`.
-- **Record Payment button** hidden when void, paid, or Sage-exported.
-- **Void button** hidden when void, paid, or Sage-exported (previously only blocked on void/paid).
-- **Mark Exported button** hidden when already `sageExportStatus === "exported"` or void.
-- **Export Sage CSV** always visible unless voided (unchanged).
-
-### Sage filter fix in `Invoices.tsx`
-- Changed `sageFilter` initial state from `""` to `"all"` — an empty string value is not supported by radix-ui Select and caused the "All" option to be unselectable after choosing a filter.
-- `SelectItem value=""` changed to `value="all"`.
+- **Invoice locking:** `isLocked = isVoid || isPaid || isSageExported` — all edit/delete/void/payment controls gated on it.
+- **Sage export backend:** Blocks void invoices, empty invoices, marks `exported` only after CSV is successfully built.
+- **Dashboard links:** All invoice/Sage widgets link to `/admin/invoices`.
+- **Approved Work navigation:** `createInvoiceMut.onSuccess` navigates to new invoice detail; "View Invoice" button uses existing `invoiceId`.
+- **Filter sentinel:** `sageFilter` starts `"all"`, maps to `undefined` in query. `TABS` uses `<button>`, not `SelectItem` — safe.
 
 ---
 
-## 6. Files Changed
+## Remaining Risks
 
-| File | Changes |
-|------|---------|
-| `server/routers/invoiceRouter.ts` | `isInvoiceLocked`, `lockMessage`, `ALLOWED_TRANSITIONS`, `csvCell` helpers; lock guards on all edit mutations; transition validation on `updateStatus`; atomic export with pre-validation |
-| `client/src/pages/admin/InvoiceDetail.tsx` | `isLocked`/`lockedReason` computed state; lock banner; `isLocked` gating on Edit/Add/line-item/Pay/Void; Void also blocked on Sage-exported |
-| `client/src/pages/admin/Invoices.tsx` | Sage filter sentinel fix (`""` → `"all"`) |
-
----
-
-## 7. TypeScript Check
-
-`pnpm check` reports only the three pre-existing environment errors (`@types/node`, `vite/client`, deprecated `baseUrl`). No new application-level type errors.
+| Risk | Severity | Notes |
+|---|---|---|
+| Sage export is append-only — re-exporting re-marks as `exported` | Low | No live Sage integration yet; UI blocks re-export when already `exported` |
+| `as any` casts in Drizzle numeric columns (`amountPaid`, `balanceDue`, etc.) | Low | Safe — values are string-typed in DB, cast for Drizzle compat. Larger refactor needed to fix properly |
+| `pnpm check` pre-existing TS errors (`node`, `vite/client` types) | Low | Pre-existing; unrelated to invoice work |
 
 ---
 
-## 8. Remaining Accounting Risks / Future Work
+## Manual Test Checklist
 
-| Risk | Notes |
-|------|-------|
-| Reversing a paid invoice | No credit note or payment reversal workflow exists. Currently blocked at the UI and API. A future "Reverse Payment" workflow should create a negative adjustment invoice rather than mutating the original. |
-| Reversing a Sage export | `markReadyForSageExport` can reset the status to `pending`, allowing re-export, but there is no audit log of who reset it or why. Future: add an `auditLog` table entry on reset. |
-| Partial payment editing | A `partial` invoice can have additional payments recorded, which overwrites `amountPaid` without accumulating history. Future: add a `payments` table. |
-| `companyId` guard on `workOrderRouter.listByCompany` | Pre-existing: caller-supplied `companyId` is not validated against `ctx.user.companyId`. Out of scope for this pass. |
+- [ ] Create a new invoice from `/admin/invoices` — verify navigation to detail
+- [ ] Create invoice from Approved Work — verify navigation to `/admin/invoices/{id}`
+- [ ] Try creating invoice again from same Approved Work — button should be hidden
+- [ ] Add line items; verify totals update
+- [ ] Attempt to record $0 payment — button should be disabled
+- [ ] Attempt to record negative payment — button should be disabled
+- [ ] Record a partial payment — status becomes `partial`, balance updates
+- [ ] Record full payment — status becomes `paid`, all edit controls lock
+- [ ] Void an invoice — all edit controls lock, payment blocked
+- [ ] Export to Sage — badge updates to "Sage Exported", all edits blocked
+- [ ] Verify Sage filter dropdown shows "Ready for export" / "Exported to Sage" / "Export error"
+- [ ] Verify list badges: amber "Ready for Export", emerald "Sage Exported", red "Export Error"
+- [ ] Schedule page — Unassigned tech select works without crash

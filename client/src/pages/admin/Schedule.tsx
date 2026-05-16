@@ -500,12 +500,15 @@ function CreateJobModal({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Lead Technician</Label>
-            <Select value={leadTechId} onValueChange={setLeadTechId}>
+            <Select
+              value={leadTechId || "__unassigned__"}
+              onValueChange={(v) => setLeadTechId(v === "__unassigned__" ? "" : v)}
+            >
               <SelectTrigger className="text-sm">
                 <SelectValue placeholder="Unassigned" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Unassigned</SelectItem>
+                <SelectItem value="__unassigned__">Unassigned</SelectItem>
                 {technicians.map((t: any) => (
                   <SelectItem key={t.id} value={String(t.id)}>
                     {t.name}

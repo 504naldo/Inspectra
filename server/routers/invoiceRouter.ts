@@ -267,7 +267,7 @@ export const invoiceRouter = router({
   markPaid: officeProcedure
     .input(z.object({
       id: z.number(),
-      amountPaid: z.number().min(0),
+      amountPaid: z.number().positive(),
       paidAt: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {

@@ -170,8 +170,8 @@ export default function AdminInvoices() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Sage statuses</SelectItem>
-              <SelectItem value="pending">Pending export</SelectItem>
-              <SelectItem value="exported">Exported</SelectItem>
+              <SelectItem value="pending">Ready for export</SelectItem>
+              <SelectItem value="exported">Exported to Sage</SelectItem>
               <SelectItem value="error">Export error</SelectItem>
             </SelectContent>
           </Select>
@@ -341,12 +341,17 @@ export default function AdminInvoices() {
                           </span>
                           {inv.sageExportStatus === "exported" && (
                             <span className="text-xs font-medium px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
-                              Sage ✓
+                              Sage Exported
+                            </span>
+                          )}
+                          {inv.sageExportStatus === "pending" && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                              Ready for Export
                             </span>
                           )}
                           {inv.sageExportStatus === "error" && (
                             <span className="text-xs font-medium px-2 py-0.5 rounded border bg-red-50 text-red-700 border-red-200">
-                              Sage Error
+                              Export Error
                             </span>
                           )}
                         </div>
