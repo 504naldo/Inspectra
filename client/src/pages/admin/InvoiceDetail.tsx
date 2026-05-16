@@ -288,7 +288,7 @@ function MarkPaidDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={markPaid.isPending}>Cancel</Button>
-          <Button onClick={() => markPaid.mutate({ id: invoice.id, amountPaid: parseFloat(amount), paidAt })} disabled={markPaid.isPending || !amount}>
+          <Button onClick={() => markPaid.mutate({ id: invoice.id, amountPaid: parseFloat(amount), paidAt })} disabled={markPaid.isPending || !amount || parseFloat(amount) <= 0}>
             {markPaid.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Record Payment
           </Button>
@@ -355,7 +355,7 @@ export default function InvoiceDetail({ id }: Props) {
       toast.success(`Exported ${data.count} invoice(s) to CSV`);
       invalidate();
     },
-    onError: () => toast.error("Export failed"),
+    onError: (e) => toast.error(e.message || "Sage export failed"),
   });
 
   if (isLoading) {
