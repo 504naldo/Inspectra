@@ -30,6 +30,7 @@ import {
   Bell,
   ClipboardCheck,
   FolderOpen,
+  ShieldAlert,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -54,6 +55,7 @@ const primaryNavItems = [
 const secondaryNavItems = [
   { label: "Approved Work",    href: "/admin/approved-work",    icon: CheckSquare,    adminOnly: false },
   { label: "Report QA",       href: "/admin/report-qa",        icon: ClipboardCheck, adminOnly: false },
+  { label: "Compliance",      href: "/admin/compliance",       icon: ShieldAlert,    adminOnly: false },
   { label: "Documents",       href: "/admin/documents",        icon: FolderOpen,     adminOnly: false },
   { label: "Quotes",           href: "/admin/quotes",           icon: ReceiptText,   adminOnly: false },
   { label: "Work Orders",      href: "/admin/work-orders",      icon: Wrench,        adminOnly: false },
