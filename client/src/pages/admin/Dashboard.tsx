@@ -21,6 +21,10 @@ import {
   AlertOctagon,
   TrendingUp,
   Database,
+  Bell,
+  ShieldAlert,
+  Info,
+  Zap,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -166,6 +170,22 @@ export default function AdminDashboard() {
     undefined,
     { staleTime: 60_000 }
   );
+
+  const { data: topAlerts = [] } = trpc.notifications.list.useQuery(
+    { filter: "all", limit: 5 },
+    { staleTime: 60_000 }
+  );
+  const { data: unreadAlertCount = 0 } = trpc.notifications.getUnreadCount.useQuery(
+    undefined,
+    { staleTime: 60_000 }
+  );
+  const generateAlerts = trpc.notifications.generateAlerts.useMutation({
+    onSuccess: () => {
+      utils.notifications.list.invalidate();
+      utils.notifications.getUnreadCount.invalidate();
+    },
+  });
+  const utils = trpc.useUtils();
 
   const lastUpdated = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -342,8 +362,8 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* ── Approved Work + Invoice Summary + Data Quality ── */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* ── Approved Work + Invoice Summary + Data Quality + Alerts ── */}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 
           {/* Approved Work Status */}
           <Card>
@@ -427,6 +447,66 @@ export default function AdminDashboard() {
                         <span className="text-sm font-bold tabular-nums text-amber-700 dark:text-amber-400">{ops.snapshot?.invoicesReadyForExport}</span>
                       </div>
                     </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Alerts / Notifications */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Bell className="h-4 w-4 text-primary" />
+                Alerts
+                {unreadAlertCount > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                    {unreadAlertCount}
+                  </span>
+                )}
+                <Link href="/admin/notifications" className="ml-auto">
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">View all <ArrowRight className="h-3 w-3 ml-1" /></Button>
+                </Link>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {topAlerts.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-3 text-center">
+                  <CheckCircle2 className="h-6 w-6 text-green-500" />
+                  <p className="text-xs text-muted-foreground">No active alerts</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-7"
+                    onClick={() => generateAlerts.mutate()}
+                    disabled={generateAlerts.isPending}
+                  >
+                    <Zap className="h-3 w-3 mr-1" />
+                    Scan
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {topAlerts.slice(0, 4).map((a) => (
+                    <div key={a.id} className="flex items-start gap-2">
+                      {a.severity === "critical" ? (
+                        <ShieldAlert className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                      ) : a.severity === "urgent" ? (
+                        <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0 mt-0.5" />
+                      ) : a.severity === "warning" ? (
+                        <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 shrink-0 mt-0.5" />
+                      ) : (
+                        <Info className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" />
+                      )}
+                      <p className="text-xs leading-snug line-clamp-2">{a.title}</p>
+                    </div>
+                  ))}
+                  {topAlerts.length > 4 && (
+                    <Link href="/admin/notifications">
+                      <p className="text-xs text-primary hover:underline cursor-pointer">
+                        +{topAlerts.length - 4} more alerts
+                      </p>
+                    </Link>
                   )}
                 </div>
               )}

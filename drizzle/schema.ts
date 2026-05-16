@@ -1587,3 +1587,56 @@ export const activityEvents = mysqlTable("activity_events", {
 
 export type ActivityEvent = typeof activityEvents.$inferSelect;
 export type InsertActivityEvent = typeof activityEvents.$inferInsert;
+
+// ============================================
+// NOTIFICATIONS (In-app operational alerts)
+// ============================================
+
+export const NOTIFICATION_SEVERITIES = ["info", "warning", "urgent", "critical"] as const;
+export type NotificationSeverity = (typeof NOTIFICATION_SEVERITIES)[number];
+
+export const NOTIFICATION_TYPES = [
+  "job_overdue",
+  "job_today",
+  "report_pending_review",
+  "deficiency_critical",
+  "approved_work_ready",
+  "approved_work_awaiting_parts",
+  "invoice_overdue",
+  "invoice_ready_for_sage",
+  "sage_export_error",
+  "import_issue",
+  "data_quality_issue",
+  "technician_completed_job",
+  "system",
+] as const;
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  userId: int("userId"),
+  roleTarget: varchar("roleTarget", { length: 20 }),
+  entityType: varchar("entityType", { length: 64 }),
+  entityId: int("entityId"),
+  type: varchar("type", { length: 64 }).notNull(),
+  severity: mysqlEnum("severity", NOTIFICATION_SEVERITIES).notNull().default("info"),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  href: varchar("href", { length: 500 }),
+  isRead: tinyint("isRead").notNull().default(0),
+  readAt: timestamp("readAt"),
+  isDismissed: tinyint("isDismissed").notNull().default(0),
+  dismissedAt: timestamp("dismissedAt"),
+  dedupeKey: varchar("dedupeKey", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt"),
+  metadataJson: json("metadataJson"),
+}, (table) => ({
+  companyIdIdx: index("notifications_companyId_idx").on(table.companyId),
+  dedupeIdx: index("notifications_dedupe_idx").on(table.companyId, table.dedupeKey),
+  unreadIdx: index("notifications_unread_idx").on(table.companyId, table.isRead, table.isDismissed),
+}));
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
