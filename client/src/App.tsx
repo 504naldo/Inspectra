@@ -53,6 +53,7 @@ import AdminInvoices from "./pages/admin/Invoices";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
 import CompanySettings from "./pages/admin/CompanySettings";
 import DataQuality from "./pages/admin/DataQuality";
+import ImportCenter from "./pages/admin/ImportCenter";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -370,6 +371,11 @@ function Router() {
       <Route path="/admin/data-quality">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <DataQuality />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/imports">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <ImportCenter />
         </ProtectedRoute>
       </Route>
 

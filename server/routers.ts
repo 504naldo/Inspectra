@@ -42,6 +42,7 @@ import { partsCatalogRouter } from "./routers/partsCatalogRouter";
 import { companySettingsRouter } from "./routers/companySettingsRouter";
 import { activityRouter } from "./routers/activityRouter";
 import { dataQualityRouter } from "./routers/dataQualityRouter";
+import { importCenterRouter } from "./routers/importCenterRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -113,6 +114,7 @@ export const appRouter = router({
   companySettings: companySettingsRouter,
   activity: activityRouter,
   dataQuality: dataQualityRouter,
+  importCenter: importCenterRouter,
 });
 
 export type AppRouter = typeof appRouter;
