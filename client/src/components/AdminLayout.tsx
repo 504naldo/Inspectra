@@ -29,8 +29,7 @@ import {
   Upload,
   Bell,
   ClipboardCheck,
-  FolderOpen,
-  ShieldAlert,
+  Zap,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -53,9 +52,10 @@ const primaryNavItems = [
 
 // Secondary nav — collapsed into "More" on desktop, visible in mobile drawer
 const secondaryNavItems = [
-  { label: "Approved Work",    href: "/admin/approved-work",    icon: CheckSquare,    adminOnly: false },
-  { label: "Report QA",       href: "/admin/report-qa",        icon: ClipboardCheck, adminOnly: false },
-  { label: "Compliance",      href: "/admin/compliance",       icon: ShieldAlert,    adminOnly: false },
+  { label: "Approved Work",    href: "/admin/approved-work",          icon: CheckSquare,    adminOnly: false },
+  { label: "Auto Schedule",   href: "/admin/scheduling-automation",  icon: Zap,            adminOnly: false },
+  { label: "Report QA",       href: "/admin/report-qa",              icon: ClipboardCheck, adminOnly: false },
+  { label: "Compliance",      href: "/admin/compliance",             icon: ShieldAlert,    adminOnly: false },
   { label: "Documents",       href: "/admin/documents",        icon: FolderOpen,     adminOnly: false },
   { label: "Quotes",           href: "/admin/quotes",           icon: ReceiptText,   adminOnly: false },
   { label: "Work Orders",      href: "/admin/work-orders",      icon: Wrench,        adminOnly: false },
