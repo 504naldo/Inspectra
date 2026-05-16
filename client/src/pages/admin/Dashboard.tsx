@@ -439,8 +439,8 @@ export default function AdminDashboard() {
               <CardTitle className="text-sm flex items-center gap-2">
                 <Database className="h-4 w-4 text-primary" />
                 Data Quality
-                <Link href="/admin/sites" className="ml-auto">
-                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">Sites <ArrowRight className="h-3 w-3 ml-1" /></Button>
+                <Link href="/admin/data-quality" className="ml-auto">
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">View all <ArrowRight className="h-3 w-3 ml-1" /></Button>
                 </Link>
               </CardTitle>
             </CardHeader>
@@ -474,8 +474,8 @@ export default function AdminDashboard() {
                       <Badge variant="outline" className="text-xs text-red-600 border-red-300">{ops.dataQuality.sitesMissingCustomerOrg}</Badge>
                     </div>
                   )}
-                  <Link href="/admin/sites">
-                    <Button variant="outline" size="sm" className="w-full mt-1 text-xs">Fix in Sites</Button>
+                  <Link href="/admin/data-quality">
+                    <Button variant="outline" size="sm" className="w-full mt-1 text-xs">View Data Quality</Button>
                   </Link>
                 </div>
               )}
