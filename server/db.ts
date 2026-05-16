@@ -2194,7 +2194,7 @@ export async function getOperationsSummary(companyId: number) {
     const [rc] = await db
       .select({ count: sql<number>`count(*)` })
       .from(reports)
-      .where(and(inArray(reports.jobId, companyJobIds), inArray(reports.status, ['draft', 'generated'])));
+      .where(and(inArray(reports.jobId, companyJobIds), inArray(reports.status, ['generated', 'corrections_required'])));
     reportsPendingReview = Number(rc?.count ?? 0);
   }
 
