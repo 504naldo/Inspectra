@@ -419,4 +419,271 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
       if (!content) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response empty" });
       return { ...JSON.parse(content), isDraft: true };
     }),
+
+  // ── Report QA AI Review ───────────────────────────────────────────────────
+
+  /**
+   * runReportQAReview — LLM-powered structured inspection review.
+   * Builds full inspection context, calls AI, stores result in ai_reviews.
+   * Never modifies job/report/deficiency records.
+   */
+  runReportQAReview: officeProcedure
+    .input(z.object({
+      jobId: z.number().int().positive(),
+      reportId: z.number().int().positive().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+
+      // 1. Verify job ownership
+      const job = await db.getJobById(input.jobId);
+      if (!job || job.companyId !== companyId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+      }
+
+      // 2. Build inspection context package
+      const [site, stats, deficiencies, reports, inspectionResults] = await Promise.all([
+        db.getSiteById(job.siteId),
+        db.getInspectionStats(input.jobId),
+        db.getDeficienciesByJob(input.jobId),
+        db.getReportsByJob(input.jobId),
+        db.getInspectionResultsByJob(input.jobId),
+      ]);
+
+      const [customer, wsi, technician] = await Promise.all([
+        site?.customerOrgId ? db.getCustomerOrgById(site.customerOrgId) : Promise.resolve(null),
+        db.getWorkSiteInfoBySiteId(job.siteId),
+        job.leadTechnicianId ? db.getUserById(job.leadTechnicianId) : Promise.resolve(undefined),
+      ]);
+
+      const report = input.reportId
+        ? reports.find(r => r.id === input.reportId) ?? reports[0]
+        : reports[0];
+
+      // Build missing flags
+      const missingFlags: string[] = [];
+      if (stats.notTested > 0) missingFlags.push(`${stats.notTested} device(s) not tested`);
+
+      // Failed results without a linked deficiency
+      const failedResults = inspectionResults.filter(r => r.result === "fail");
+      const deficiencyDeviceIds = new Set(deficiencies.map(d => d.deviceId).filter(Boolean));
+      const failedWithoutDef = failedResults.filter(r => !deficiencyDeviceIds.has(r.deviceId));
+      if (failedWithoutDef.length > 0) {
+        missingFlags.push(`${failedWithoutDef.length} failed device(s) with no deficiency record`);
+      }
+
+      const defsWithoutDesc = deficiencies.filter(d => !d.description?.trim());
+      const defsWithoutAction = deficiencies.filter(d => !d.correctiveAction?.trim());
+      const defsWithoutExplanation = deficiencies.filter(d => !d.customerExplanation?.trim());
+      if (defsWithoutDesc.length > 0) missingFlags.push(`${defsWithoutDesc.length} deficienc(ies) missing description`);
+      if (defsWithoutAction.length > 0) missingFlags.push(`${defsWithoutAction.length} deficienc(ies) missing corrective action`);
+      if (defsWithoutExplanation.length > 0) missingFlags.push(`${defsWithoutExplanation.length} deficienc(ies) missing customer explanation`);
+      if (!report) missingFlags.push("No report generated yet");
+      if (!technician) missingFlags.push("No technician assigned");
+
+      const openDefs = deficiencies.filter(d => d.status === "open" || d.status === "in_progress");
+      const critDefs = openDefs.filter(d => d.severity === "critical");
+
+      // Build context text
+      const defLines = deficiencies.map(d =>
+        `- [${d.severity?.toUpperCase() ?? "?"}] ${d.systemCategory ?? "General"}: ${d.title}\n` +
+        `  Description: ${d.description?.slice(0, 150) || "(missing)"}\n` +
+        `  Corrective action: ${d.correctiveAction?.slice(0, 150) || "(missing)"}\n` +
+        `  Customer explanation: ${d.customerExplanation?.slice(0, 100) || "(missing)"}\n` +
+        `  Status: ${d.status}`
+      ).join("\n");
+
+      const contextText = [
+        `JOB: ${job.jobNumber} — ${job.title}`,
+        `Type: ${job.jobType} | Status: ${job.status} | Priority: ${job.priority ?? "normal"}`,
+        `Site: ${site?.name ?? "Unknown"}, ${site?.address ?? ""}, ${site?.city ?? ""}`,
+        `Building ID: ${site?.buildingId ?? "none"} | File #: ${site?.fileNumber ?? "none"}`,
+        `Customer: ${customer?.name ?? "Unknown"}`,
+        `Technician: ${technician?.name ?? "Not assigned"}`,
+        `Scheduled: ${job.scheduledDate ? new Date(job.scheduledDate).toDateString() : "not set"}`,
+        `Completed: ${job.completedAt ? new Date(job.completedAt).toDateString() : "not completed"}`,
+        "",
+        `INSPECTION PROGRESS:`,
+        `Total devices: ${stats.total}`,
+        `Tested: ${stats.total - stats.notTested} (${stats.total > 0 ? Math.round((stats.total - stats.notTested) / stats.total * 100) : 0}%)`,
+        `Not tested: ${stats.notTested}`,
+        `Pass: ${stats.pass} | Fail: ${stats.fail} | N/A: ${stats.na}`,
+        "",
+        `DEFICIENCIES (${deficiencies.length} total, ${openDefs.length} open, ${critDefs.length} critical):`,
+        deficiencies.length > 0 ? defLines : "(none)",
+        "",
+        `REPORT: ${report ? `${report.reportNumber ?? "no number"} — status: ${report.status}` : "(not generated)"}`,
+        "",
+        `MISSING FLAGS:`,
+        missingFlags.length > 0 ? missingFlags.map(f => `- ${f}`).join("\n") : "(none identified)",
+      ].join("\n");
+
+      // 3. Fetch relevant KB snippets
+      const kbSnippets = await db.getRelevantKnowledgeContext(companyId, "report qa inspection review", {
+        mode: "report_qa",
+        limit: 2,
+      });
+      const kbBlock = kbSnippets.length > 0
+        ? `\nINTERNAL REFERENCE:\n${kbSnippets.map(s => `[${s.title}]: ${s.excerpt}`).join("\n\n")}`
+        : "";
+
+      // 4. Call LLM
+      const reviewResult = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `${SYSTEM_PROMPT}\n\nYou are reviewing a fire inspection package for QA. Analyze the data carefully and identify issues that need office attention. Be specific. Do not invent data not present. State clearly when information is missing. Use knowledge base content as internal reference. This is an internal advisory review — not a compliance certificate.`,
+          },
+          {
+            role: "user",
+            content: `Review this inspection package for QA:\n\n${contextText}${kbBlock}\n\nReturn a structured JSON review.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "inspection_qa_review",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                summary: { type: "string" },
+                riskLevel: { type: "string", enum: ["low", "medium", "high", "critical"] },
+                findings: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      severity: { type: "string", enum: ["info", "warning", "blocker"] },
+                      category: { type: "string", enum: ["completion", "deficiency", "report", "compliance", "other"] },
+                      issue: { type: "string" },
+                    },
+                    required: ["severity", "category", "issue"],
+                    additionalProperties: false,
+                  },
+                },
+                suggestedQaNote: { type: "string" },
+                suggestedActions: { type: "array", items: { type: "string" } },
+                missingDataWarnings: { type: "array", items: { type: "string" } },
+              },
+              required: ["summary", "riskLevel", "findings", "suggestedQaNote", "suggestedActions", "missingDataWarnings"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 1000,
+      });
+
+      const raw = extractText(reviewResult);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI review response was empty" });
+
+      let parsed: {
+        summary: string;
+        riskLevel: "low" | "medium" | "high" | "critical";
+        findings: Array<{ severity: string; category: string; issue: string }>;
+        suggestedQaNote: string;
+        suggestedActions: string[];
+        missingDataWarnings: string[];
+      };
+
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response could not be parsed" });
+      }
+
+      // 5. Save to ai_reviews
+      const review = await db.createAiReview({
+        jobId: input.jobId,
+        issues: [],
+        modelUsed: "gpt-4o-mini",
+        companyId,
+        reviewType: "report_qa",
+        status: "completed",
+        summary: parsed.summary,
+        riskLevel: parsed.riskLevel,
+        suggestedQaNote: parsed.suggestedQaNote,
+        findingsJson: parsed.findings as any,
+        suggestedActions: parsed.suggestedActions as any,
+        createdById: ctx.user.id,
+      } as any);
+
+      // 6. Log activity
+      void logActivity({
+        ctx,
+        entityType: "job",
+        entityId: input.jobId,
+        eventType: "ai_review.generated",
+        title: `AI QA review generated (risk: ${parsed.riskLevel})`,
+        metadata: { reviewId: review.id, riskLevel: parsed.riskLevel, findingCount: parsed.findings.length },
+      });
+
+      // 7. Notify office if high/critical risk
+      if (parsed.riskLevel === "high" || parsed.riskLevel === "critical") {
+        const dedupeKey = `ai-review-${input.jobId}-${parsed.riskLevel}`;
+        const alreadyNotified = await db.hasUndismissedNotification(companyId, dedupeKey);
+        if (!alreadyNotified) {
+          await db.createNotification({
+            companyId,
+            roleTarget: "office",
+            entityType: "job",
+            entityId: input.jobId,
+            type: "ai_review_high_risk",
+            severity: parsed.riskLevel === "critical" ? "critical" : "warning",
+            title: `AI Review: ${parsed.riskLevel === "critical" ? "Critical" : "High"} risk — ${job.jobNumber}`,
+            message: parsed.summary.slice(0, 300),
+            href: "/admin/report-qa",
+            dedupeKey,
+          } as any);
+        }
+      }
+
+      return {
+        reviewId: review.id,
+        riskLevel: parsed.riskLevel,
+        summary: parsed.summary,
+        findings: parsed.findings,
+        suggestedQaNote: parsed.suggestedQaNote,
+        suggestedActions: parsed.suggestedActions,
+        missingDataWarnings: parsed.missingDataWarnings,
+      };
+    }),
+
+  /**
+   * getReviewsForEntity — Returns stored AI reviews for a job.
+   */
+  getReviewsForEntity: officeProcedure
+    .input(z.object({ jobId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const job = await db.getJobById(input.jobId);
+      if (!job || job.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
+      const reviews = await db.getAiReviewsByJobScoped(input.jobId, companyId);
+      return reviews.filter(r => (r as any).reviewType === "report_qa");
+    }),
+
+  /**
+   * dismissReview — Marks a review as dismissed. Does not change any record.
+   */
+  dismissReview: officeProcedure
+    .input(z.object({ reviewId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const review = await db.getAiReviewById(input.reviewId);
+      if (!review) throw new TRPCError({ code: "NOT_FOUND" });
+      if ((review as any).companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      await db.updateAiReview(input.reviewId, { status: "dismissed" } as any);
+
+      void logActivity({
+        ctx,
+        entityType: "job",
+        entityId: review.jobId,
+        eventType: "ai_review.dismissed",
+        title: "AI QA review dismissed",
+        metadata: { reviewId: input.reviewId },
+      });
+
+      return { success: true as const };
+    }),
 });

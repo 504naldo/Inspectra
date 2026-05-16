@@ -1184,6 +1184,13 @@ export type AiReviewOverride = {
   dismissedAt: string; // ISO timestamp
 };
 
+// v2 structured finding (used by runReportQAReview)
+export type AiReviewFinding = {
+  severity: "info" | "warning" | "blocker";
+  category: "completion" | "deficiency" | "report" | "compliance" | "other";
+  issue: string;
+};
+
 export const aiReviews = mysqlTable("ai_reviews", {
   id: int("id").autoincrement().primaryKey(),
   jobId: int("jobId").notNull(),
@@ -1192,6 +1199,16 @@ export const aiReviews = mysqlTable("ai_reviews", {
   reviewedAt: timestamp("reviewedAt").defaultNow().notNull(),
   overrides: json("overrides").$type<AiReviewOverride[]>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // v2 fields (migration 0051)
+  companyId: int("companyId"),
+  reviewType: varchar("reviewType", { length: 50 }).default("pre_publish").notNull(),
+  status: varchar("status", { length: 50 }).default("completed").notNull(),
+  summary: text("summary"),
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high", "critical"]).default("low"),
+  suggestedQaNote: text("suggestedQaNote"),
+  findingsJson: json("findingsJson").$type<AiReviewFinding[]>(),
+  suggestedActions: json("suggestedActions").$type<string[]>(),
+  createdById: int("createdById"),
 }, (table) => ({
   jobIdIdx: index("ai_reviews_jobId_idx").on(table.jobId),
 }));

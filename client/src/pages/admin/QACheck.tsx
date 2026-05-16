@@ -5,17 +5,43 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { 
+import {
   ArrowLeft,
   CheckCircle2,
   XCircle,
   AlertTriangle,
   Sparkles,
   Loader2,
-  FileText
+  FileText,
+  Info,
+  Copy,
+  ArrowRight,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+
+type AiReviewFinding = { severity: "info" | "warning" | "blocker"; category: string; issue: string };
+
+function riskBadge(level: string) {
+  const cls =
+    level === "critical" ? "bg-red-100 text-red-700 border-red-300" :
+    level === "high"     ? "bg-orange-100 text-orange-700 border-orange-300" :
+    level === "medium"   ? "bg-amber-100 text-amber-700 border-amber-300" :
+                           "bg-green-100 text-green-700 border-green-300";
+  return <Badge className={`${cls} text-xs capitalize`}>{level} risk</Badge>;
+}
+
+function findingSeverityClass(severity: string): string {
+  if (severity === "blocker") return "border-red-200 bg-red-50 text-red-800";
+  if (severity === "warning") return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-blue-200 bg-blue-50 text-blue-800";
+}
+
+function FindingIcon({ severity }: { severity: string }) {
+  if (severity === "blocker") return <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-red-600" />;
+  if (severity === "warning") return <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />;
+  return <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-blue-600" />;
+}
 
 interface QACheckProps {
   jobId: number;
@@ -28,7 +54,7 @@ export default function QACheck({ jobId }: QACheckProps) {
 
   const { data: jobData, isLoading } = trpc.job.getWithDetails.useQuery({ id: jobId });
 
-  // AI QA Check
+  // Logic-based QA check (existing)
   const aiQaCheck = trpc.ai.runQACheck.useMutation({
     onSuccess: () => {
       toast.success('QA analysis complete');
@@ -36,6 +62,24 @@ export default function QACheck({ jobId }: QACheckProps) {
     onError: () => {
       toast.error('Failed to run QA check');
     }
+  });
+
+  // LLM-powered AI report review (new)
+  const aiReview = trpc.aiAssistant.runReportQAReview.useMutation({
+    onSuccess: () => {
+      toast.success('AI review complete');
+    },
+    onError: (e) => {
+      toast.error(e.message || 'AI review failed');
+    }
+  });
+
+  const dismissReview = trpc.aiAssistant.dismissReview.useMutation({
+    onSuccess: () => {
+      toast.success('Review dismissed');
+      aiReview.reset();
+    },
+    onError: (e) => toast.error(e.message || 'Failed to dismiss'),
   });
 
   const handleRunAICheck = () => {
@@ -206,6 +250,132 @@ export default function QACheck({ jobId }: QACheckProps) {
                 )}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* AI Report Review — LLM-powered structured review */}
+        <Card className="border-primary/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              AI Report Review
+            </CardTitle>
+            <CardDescription>
+              LLM-powered review: completion gaps, deficiency quality, compliance risk, and suggested QA note.
+              Advisory only — no records are changed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              onClick={() => aiReview.mutate({ jobId })}
+              disabled={aiReview.isPending}
+              variant="outline"
+            >
+              {aiReview.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Analyzing…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Run AI Review
+                </>
+              )}
+            </Button>
+
+            {aiReview.data && (() => {
+              const r = aiReview.data as {
+                reviewId: number;
+                riskLevel: string;
+                summary: string;
+                findings: AiReviewFinding[];
+                suggestedQaNote: string | null;
+                suggestedActions: string[];
+                missingDataWarnings: string[];
+              };
+              return (
+                <div className="space-y-4 mt-2">
+                  {/* Risk + summary */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Risk level:</span>
+                    {riskBadge(r.riskLevel)}
+                  </div>
+                  <div className="rounded-md border p-3 bg-muted/30 text-sm">{r.summary}</div>
+
+                  {/* Findings */}
+                  {r.findings.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Findings ({r.findings.length})</p>
+                      {(["blocker", "warning", "info"] as const).map((sev) =>
+                        r.findings.filter((f) => f.severity === sev).map((f, i) => (
+                          <div key={`${sev}-${i}`} className={`flex items-start gap-2 rounded border px-3 py-2 text-xs ${findingSeverityClass(f.severity)}`}>
+                            <FindingIcon severity={f.severity} />
+                            <span>{f.issue}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* Missing data */}
+                  {r.missingDataWarnings.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">Missing data</p>
+                      {r.missingDataWarnings.map((w, i) => (
+                        <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                          <Info className="h-3 w-3 shrink-0 mt-0.5" /><span>{w}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Suggested QA note */}
+                  {r.suggestedQaNote && (
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-medium">Suggested QA note</p>
+                      <div className="rounded-md border p-3 bg-muted/30 text-xs whitespace-pre-wrap">{r.suggestedQaNote}</div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => { navigator.clipboard.writeText(r.suggestedQaNote!); toast.success("Copied"); }}
+                      >
+                        <Copy className="h-3 w-3 mr-1" /> Copy note
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Suggested actions */}
+                  {r.suggestedActions.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">Suggested actions</p>
+                      <ul className="space-y-1">
+                        {r.suggestedActions.map((a, i) => (
+                          <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                            <ArrowRight className="h-3 w-3 shrink-0 mt-0.5 text-primary" /><span>{a}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Dismiss */}
+                  <div className="pt-2 border-t">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-muted-foreground"
+                      disabled={dismissReview.isPending}
+                      onClick={() => dismissReview.mutate({ reviewId: r.reviewId })}
+                    >
+                      {dismissReview.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+                      Dismiss this review
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
 
