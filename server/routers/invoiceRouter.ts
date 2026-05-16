@@ -114,15 +114,26 @@ export const invoiceRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const settings = await db.getCompanySettings(ctx.user.companyId!);
+      const invoiceDate = input.invoiceDate ? new Date(input.invoiceDate) : new Date();
+      let dueDate: Date | undefined;
+      if (input.dueDate) {
+        dueDate = new Date(input.dueDate);
+      } else {
+        dueDate = new Date(invoiceDate);
+        dueDate.setDate(dueDate.getDate() + (settings.invoiceDueDays ?? 30));
+      }
       const inv = await db.createInvoice({
         companyId: ctx.user.companyId,
         invoiceNumber: generateInvoiceNumber(settings.invoiceNumberPrefix ?? "INV"),
         status: "draft",
         createdById: ctx.user.id,
         ...input,
-        invoiceDate: input.invoiceDate ? new Date(input.invoiceDate) : undefined,
-        dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
-        taxRate: input.taxRate !== undefined ? String(input.taxRate) as any : undefined,
+        invoiceDate,
+        dueDate,
+        taxRate: input.taxRate !== undefined ? String(input.taxRate) as any : settings.gstRate as any,
+        sageGlCode: input.sageGlCode ?? settings.sageDefaultGlCode ?? undefined,
+        sageDepartment: input.sageDepartment ?? settings.sageDefaultDepartment ?? undefined,
+        sageCustomerCode: input.sageCustomerCode ?? settings.sageCustomerCodeDefault ?? undefined,
       });
       void logActivity({ ctx, entityType: "invoice", entityId: inv.id, eventType: "created",
         title: `Invoice created: ${inv.invoiceNumber}` });

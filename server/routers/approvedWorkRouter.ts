@@ -468,17 +468,22 @@ export const approvedWorkRouter = router({
         });
       }
 
-      const customerOrg = record.customerOrgId
-        ? await db.getCustomerOrgById(record.customerOrgId)
-        : null;
+      const [customerOrg, settings] = await Promise.all([
+        record.customerOrgId ? db.getCustomerOrgById(record.customerOrgId) : Promise.resolve(null),
+        db.getCompanySettings(record.companyId),
+      ]);
 
       const now = new Date();
       const dueDate = new Date(now);
-      dueDate.setDate(dueDate.getDate() + 30);
+      dueDate.setDate(dueDate.getDate() + (settings.invoiceDueDays ?? 30));
+
+      const invPrefix = settings.invoiceNumberPrefix ?? "INV";
+      const invSeq = Date.now().toString(36).toUpperCase().slice(-4);
+      const invoiceNumber = `${invPrefix}-${now.getFullYear()}-${invSeq}`;
 
       const inv = await db.createInvoice({
         companyId: record.companyId,
-        invoiceNumber: `INV-${now.getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`,
+        invoiceNumber,
         status: "draft",
         customerOrgId: record.customerOrgId ?? undefined,
         siteId: record.siteId ?? undefined,
@@ -491,7 +496,10 @@ export const approvedWorkRouter = router({
         billToAddress: customerOrg?.address ?? undefined,
         invoiceDate: now,
         dueDate,
-        taxRate: "0" as any,
+        taxRate: settings.gstRate as any,
+        sageGlCode: settings.sageDefaultGlCode ?? undefined,
+        sageDepartment: settings.sageDefaultDepartment ?? undefined,
+        sageCustomerCode: settings.sageCustomerCodeDefault ?? undefined,
         createdById: ctx.user.id,
         internalNotes: record.officeNotes ?? undefined,
       });

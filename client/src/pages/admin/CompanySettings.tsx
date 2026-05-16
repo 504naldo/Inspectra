@@ -8,14 +8,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
-import { Settings, DollarSign, FileText, Building2, BarChart3 } from "lucide-react";
+import { Settings, DollarSign, FileText, Building2, BarChart3, User } from "lucide-react";
 
 const TABS = [
-  { id: "tax",     label: "Tax",             icon: DollarSign  },
-  { id: "labour",  label: "Labour & Quotes", icon: Settings    },
-  { id: "invoice", label: "Invoices",        icon: FileText    },
-  { id: "sage",    label: "Sage Export",     icon: Building2   },
-  { id: "reports", label: "Reports",         icon: BarChart3   },
+  { id: "profile",  label: "Company Profile", icon: User        },
+  { id: "tax",      label: "Tax",             icon: DollarSign  },
+  { id: "labour",   label: "Labour & Quotes", icon: Settings    },
+  { id: "invoice",  label: "Invoices",        icon: FileText    },
+  { id: "sage",     label: "Sage Export",     icon: Building2   },
+  { id: "reports",  label: "Reports",         icon: BarChart3   },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -30,7 +31,7 @@ function pctToDecimal(s: string): number {
 export default function CompanySettings() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [tab, setTab] = useState<TabId>("tax");
+  const [tab, setTab] = useState<TabId>("profile");
 
   const { data: settings, isLoading, refetch } = trpc.companySettings.get.useQuery(undefined, {
     enabled: !!user?.companyId,
@@ -41,6 +42,10 @@ export default function CompanySettings() {
     onError: (err) => toast.error(err.message),
   });
 
+  // ── Company Profile ───────────────────────────────────────────────────────────
+  const [displayName, setDisplayName] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+
   // ── Tax ───────────────────────────────────────────────────────────────────────
   const [gstRate, setGstRate] = useState("");
   const [pstRate, setPstRate] = useState("");
@@ -48,6 +53,7 @@ export default function CompanySettings() {
   // ── Labour & Quotes ───────────────────────────────────────────────────────────
   const [techRate, setTechRate] = useState("");
   const [fitterRate, setFitterRate] = useState("");
+  const [fuelCharge, setFuelCharge] = useState("");
   const [validDays, setValidDays] = useState("");
   const [quoteTerms, setQuoteTerms] = useState("");
 
@@ -60,16 +66,21 @@ export default function CompanySettings() {
   const [rqPrefix, setRqPrefix] = useState("");
   const [sageGl, setSageGl] = useState("");
   const [sageDept, setSageDept] = useState("");
+  const [sageCustomerCode, setSageCustomerCode] = useState("");
+  const [sageTaxCode, setSageTaxCode] = useState("");
 
   // ── Reports ───────────────────────────────────────────────────────────────────
   const [reportFooter, setReportFooter] = useState("");
 
   useEffect(() => {
     if (!settings) return;
+    setDisplayName(settings.companyDisplayName ?? "");
+    setLogoUrl(settings.logoUrl ?? "");
     setGstRate(pct(settings.gstRate));
     setPstRate(pct(settings.pstRate));
     setTechRate(parseFloat(String(settings.technicianLabourRate ?? "75")).toFixed(2));
     setFitterRate(parseFloat(String(settings.fitterLabourRate ?? "65")).toFixed(2));
+    setFuelCharge(parseFloat(String(settings.defaultFuelCharge ?? "0")).toFixed(2));
     setValidDays(String(settings.quoteValidityDays ?? 30));
     setQuoteTerms(settings.defaultQuoteTerms ?? "");
     setDueDays(String(settings.invoiceDueDays ?? 30));
@@ -78,8 +89,22 @@ export default function CompanySettings() {
     setRqPrefix(settings.repairQuoteNumberPrefix ?? "RQ");
     setSageGl(settings.sageDefaultGlCode ?? "");
     setSageDept(settings.sageDefaultDepartment ?? "");
+    setSageCustomerCode(settings.sageCustomerCodeDefault ?? "");
+    setSageTaxCode(settings.sageTaxCodeDefault ?? "");
     setReportFooter(settings.reportFooterText ?? "");
   }, [settings]);
+
+  function saveProfile() {
+    const logo = logoUrl.trim();
+    if (logo && !logo.startsWith("http://") && !logo.startsWith("https://")) {
+      toast.error("Logo URL must start with http:// or https://");
+      return;
+    }
+    updateMut.mutate({
+      companyDisplayName: displayName.trim() || null,
+      logoUrl: logo || null,
+    });
+  }
 
   function saveTax() {
     const g = pctToDecimal(gstRate);
@@ -91,9 +116,10 @@ export default function CompanySettings() {
   function saveLabour() {
     const t = parseFloat(techRate);
     const f = parseFloat(fitterRate);
+    const fc = parseFloat(fuelCharge);
     const v = parseInt(validDays);
-    if (isNaN(t) || isNaN(f) || isNaN(v) || v < 1) { toast.error("Enter valid values"); return; }
-    updateMut.mutate({ technicianLabourRate: t, fitterLabourRate: f, quoteValidityDays: v, defaultQuoteTerms: quoteTerms.trim() || null });
+    if (isNaN(t) || isNaN(f) || isNaN(fc) || isNaN(v) || v < 1) { toast.error("Enter valid values"); return; }
+    updateMut.mutate({ technicianLabourRate: t, fitterLabourRate: f, defaultFuelCharge: fc, quoteValidityDays: v, defaultQuoteTerms: quoteTerms.trim() || null });
   }
 
   function saveInvoice() {
@@ -105,7 +131,13 @@ export default function CompanySettings() {
 
   function saveSage() {
     if (!rqPrefix.trim()) { toast.error("Quote prefix cannot be empty"); return; }
-    updateMut.mutate({ repairQuoteNumberPrefix: rqPrefix.trim(), sageDefaultGlCode: sageGl.trim() || null, sageDefaultDepartment: sageDept.trim() || null });
+    updateMut.mutate({
+      repairQuoteNumberPrefix: rqPrefix.trim(),
+      sageDefaultGlCode: sageGl.trim() || null,
+      sageDefaultDepartment: sageDept.trim() || null,
+      sageCustomerCodeDefault: sageCustomerCode.trim() || null,
+      sageTaxCodeDefault: sageTaxCode.trim() || null,
+    });
   }
 
   function saveReports() {
@@ -150,12 +182,52 @@ export default function CompanySettings() {
           ))}
         </div>
 
+        {/* ── Company Profile ─────────────────────────────────────────────────── */}
+        {tab === "profile" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Company Profile</CardTitle>
+              <CardDescription>Display name and logo used in generated documents and reports.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Company Display Name</Label>
+                <Input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  disabled={readOnly}
+                  placeholder="Acme Fire Protection Ltd."
+                  maxLength={255}
+                />
+                <p className="text-xs text-muted-foreground">Used on reports, invoices, and PDF headers. Leave blank to use the system account name.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Logo URL</Label>
+                <Input
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  disabled={readOnly}
+                  placeholder="https://example.com/logo.png"
+                  maxLength={500}
+                />
+                <p className="text-xs text-muted-foreground">HTTPS URL to a PNG or JPG logo. Displayed on generated reports.</p>
+                {logoUrl && logoUrl.startsWith("https://") && (
+                  <img src={logoUrl} alt="Logo preview" className="h-12 object-contain border rounded p-1" onError={(e) => (e.currentTarget.style.display = "none")} />
+                )}
+              </div>
+              {!readOnly && (
+                <Button onClick={saveProfile} disabled={isSaving}>{isSaving ? "Saving…" : "Save Profile"}</Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* ── Tax ─────────────────────────────────────────────────────────────── */}
         {tab === "tax" && (
           <Card>
             <CardHeader>
               <CardTitle>Tax Rates</CardTitle>
-              <CardDescription>Default rates applied to new repair quote line items. Existing quotes are not affected.</CardDescription>
+              <CardDescription>Default rates applied to new invoices and repair quote line items. Existing records are not affected.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -195,9 +267,16 @@ export default function CompanySettings() {
                   <Input value={fitterRate} onChange={(e) => setFitterRate(e.target.value)} disabled={readOnly} placeholder="65.00" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>Quote Validity (days)</Label>
-                <Input value={validDays} onChange={(e) => setValidDays(e.target.value)} disabled={readOnly} placeholder="30" className="w-32" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Default Fuel Charge ($ per item)</Label>
+                  <Input value={fuelCharge} onChange={(e) => setFuelCharge(e.target.value)} disabled={readOnly} placeholder="0.00" />
+                  <p className="text-xs text-muted-foreground">Applied to each line item seeded from deficiencies</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Quote Validity (days)</Label>
+                  <Input value={validDays} onChange={(e) => setValidDays(e.target.value)} disabled={readOnly} placeholder="30" />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Default Quote Terms</Label>
@@ -227,6 +306,7 @@ export default function CompanySettings() {
                 <div className="space-y-2">
                   <Label>Payment Due (days after invoice date)</Label>
                   <Input value={dueDays} onChange={(e) => setDueDays(e.target.value)} disabled={readOnly} placeholder="30" />
+                  <p className="text-xs text-muted-foreground">Used when creating a new invoice with no due date specified</p>
                 </div>
               </div>
               <div className="space-y-2">
@@ -245,7 +325,7 @@ export default function CompanySettings() {
           <Card>
             <CardHeader>
               <CardTitle>Sage Export Defaults</CardTitle>
-              <CardDescription>Default GL code and department applied when no invoice-level override is set.</CardDescription>
+              <CardDescription>Default values pre-filled on new invoices. Can be overridden per invoice.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -255,12 +335,24 @@ export default function CompanySettings() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Default Sage GL Code</Label>
+                  <Label>Default GL Code</Label>
                   <Input value={sageGl} onChange={(e) => setSageGl(e.target.value)} disabled={readOnly} placeholder="4000" className="font-mono" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Default Sage Department</Label>
+                  <Label>Default Department</Label>
                   <Input value={sageDept} onChange={(e) => setSageDept(e.target.value)} disabled={readOnly} placeholder="SERVICE" className="font-mono" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Default Customer Code</Label>
+                  <Input value={sageCustomerCode} onChange={(e) => setSageCustomerCode(e.target.value)} disabled={readOnly} placeholder="CUST001" className="font-mono" />
+                  <p className="text-xs text-muted-foreground">Sage customer account code applied to new invoices</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Default Tax Code</Label>
+                  <Input value={sageTaxCode} onChange={(e) => setSageTaxCode(e.target.value)} disabled={readOnly} placeholder="GST" className="font-mono" />
+                  <p className="text-xs text-muted-foreground">Sage tax code for export</p>
                 </div>
               </div>
               {!readOnly && (

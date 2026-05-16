@@ -1526,12 +1526,16 @@ export type InsertSiteWorkSiteInfo = typeof siteWorkSiteInfo.$inferInsert;
 export const companySettings = mysqlTable("company_settings", {
   id: int("id").autoincrement().primaryKey(),
   companyId: int("companyId").notNull(),
+  // Company profile / branding
+  companyDisplayName: varchar("companyDisplayName", { length: 255 }),
+  logoUrl: varchar("logoUrl", { length: 500 }),
   // Tax rates
   gstRate: decimal("gstRate", { precision: 5, scale: 4 }).notNull().default("0.0500"),
   pstRate: decimal("pstRate", { precision: 5, scale: 4 }).notNull().default("0.0700"),
   // Labour defaults
   technicianLabourRate: decimal("technicianLabourRate", { precision: 8, scale: 2 }).notNull().default("75.00"),
   fitterLabourRate: decimal("fitterLabourRate", { precision: 8, scale: 2 }).notNull().default("65.00"),
+  defaultFuelCharge: decimal("defaultFuelCharge", { precision: 8, scale: 2 }).notNull().default("0.00"),
   quoteValidityDays: int("quoteValidityDays").notNull().default(30),
   defaultQuoteTerms: text("defaultQuoteTerms"),
   // Invoice defaults
@@ -1542,6 +1546,8 @@ export const companySettings = mysqlTable("company_settings", {
   repairQuoteNumberPrefix: varchar("repairQuoteNumberPrefix", { length: 20 }).notNull().default("RQ"),
   sageDefaultGlCode: varchar("sageDefaultGlCode", { length: 50 }),
   sageDefaultDepartment: varchar("sageDefaultDepartment", { length: 50 }),
+  sageCustomerCodeDefault: varchar("sageCustomerCodeDefault", { length: 50 }),
+  sageTaxCodeDefault: varchar("sageTaxCodeDefault", { length: 50 }),
   // Reports
   reportFooterText: text("reportFooterText"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

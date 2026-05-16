@@ -2315,10 +2315,13 @@ export async function getOperationsSummary(companyId: number) {
 // ============================================
 
 const DEFAULT_COMPANY_SETTINGS = {
+  companyDisplayName: null as string | null,
+  logoUrl: null as string | null,
   gstRate: "0.0500",
   pstRate: "0.0700",
   technicianLabourRate: "75.00",
   fitterLabourRate: "65.00",
+  defaultFuelCharge: "0.00",
   quoteValidityDays: 30,
   defaultQuoteTerms: null as string | null,
   invoiceDueDays: 30,
@@ -2327,6 +2330,8 @@ const DEFAULT_COMPANY_SETTINGS = {
   repairQuoteNumberPrefix: "RQ",
   sageDefaultGlCode: null as string | null,
   sageDefaultDepartment: null as string | null,
+  sageCustomerCodeDefault: null as string | null,
+  sageTaxCodeDefault: null as string | null,
   reportFooterText: null as string | null,
 };
 

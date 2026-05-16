@@ -238,7 +238,7 @@ export const repairQuoteRouter = router({
             techLabourRate: String(input.techLabourRate),
             fitterLabourRate: String(input.fitterLabourRate),
             labourTotal: "0",
-            fuelCharge: "0",
+            fuelCharge: String(settings.defaultFuelCharge ?? "0"),
             backflowReportFee: "0",
             gst: "0",
             pst: "0",
