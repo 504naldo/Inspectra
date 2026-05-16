@@ -139,11 +139,34 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
     });
   };
 
+  // Save & Add Another mode
+  const [addAnother, setAddAnother] = useState(false);
+
+  const resetForm = () => {
+    setTitle("");
+    setSeverity("major");
+    setStatus("open");
+    setSystemCategory(undefined);
+    setObservedIssue("");
+    setDescription("");
+    setCorrectiveAction("");
+    setCustomerExplanation("");
+    setCodeReference("");
+    setEstimatedCost("");
+    setAiDraft(false);
+  };
+
   // Create deficiency
   const createDeficiency = trpc.deficiency.create.useMutation({
     onSuccess: () => {
-      toast.success('Deficiency created');
-      setLocation(`/tech/jobs/${jobId}`);
+      if (addAnother) {
+        toast.success('Deficiency saved — add another');
+        resetForm();
+        setAddAnother(false);
+      } else {
+        toast.success('Deficiency created');
+        setLocation(`/tech/jobs/${jobId}`);
+      }
     },
     onError: () => {
       toast.error('Failed to create deficiency');
@@ -163,11 +186,12 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
     }
   });
 
-  const handleSave = () => {
+  const doSave = (andAnother = false) => {
     if (!title) {
       toast.error('Please enter a title');
       return;
     }
+    setAddAnother(andAnother);
 
     if (isEditing) {
       updateDeficiency.mutate({
@@ -201,6 +225,8 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
     }
   };
 
+  const handleSave = () => doSave(false);
+
   const isSaving = createDeficiency.isPending || updateDeficiency.isPending;
 
   return (
@@ -208,10 +234,9 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       {/* Header */}
       <header className="sticky top-0 z-50 bg-card border-b">
         <div className="container flex h-16 items-center gap-4">
-          <Link href="/tech/jobs">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              My Jobs
+          <Link href={jobId ? `/tech/jobs/${jobId}` : isEditing && existingDef?.deficiency?.jobId ? `/tech/jobs/${existingDef.deficiency.jobId}` : "/tech/jobs"}>
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
           <h1 className="font-bold text-lg">
@@ -245,40 +270,53 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Quick severity buttons — large tap targets */}
+          <div className="space-y-2">
+            <Label>Severity</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["critical", "major", "minor", "observation"] as const).map(level => {
+                const colors: Record<string, string> = {
+                  critical: "border-red-400 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400",
+                  major: "border-orange-400 bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400",
+                  minor: "border-yellow-400 bg-yellow-50 text-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-400",
+                  observation: "border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400",
+                };
+                const selected = severity === level;
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setSeverity(level)}
+                    className={`h-12 rounded-lg border-2 font-semibold text-sm capitalize transition-all ${
+                      selected
+                        ? `${colors[level]} ring-2 ring-offset-1 ring-current`
+                        : "border-border bg-background text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {level}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {isEditing && (
             <div className="space-y-2">
-              <Label>Severity</Label>
-              <Select value={severity} onValueChange={setSeverity}>
+              <Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="major">Major</SelectItem>
-                  <SelectItem value="minor">Minor</SelectItem>
-                  <SelectItem value="observation">Observation</SelectItem>
+                  <SelectItem value="open">Open</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="resolved">Resolved</SelectItem>
+                  <SelectItem value="closed">Closed</SelectItem>
+                  <SelectItem value="deferred">Deferred</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-
-            {isEditing && (
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={status} onValueChange={setStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="resolved">Resolved</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                    <SelectItem value="deferred">Deferred</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* System Category */}
           <div className="space-y-2">
@@ -417,8 +455,23 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
 
       {/* Bottom Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 safe-bottom">
-        <div className="container">
-          <Button 
+        <div className="container space-y-2">
+          {!isEditing && (
+            <Button
+              className="w-full"
+              variant="outline"
+              onClick={() => doSave(true)}
+              disabled={isSaving || !title}
+            >
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Save &amp; Add Another
+            </Button>
+          )}
+          <Button
             className="w-full action-btn"
             onClick={handleSave}
             disabled={isSaving || !title}
@@ -428,7 +481,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
             ) : (
               <Save className="h-5 w-5 mr-2" />
             )}
-            {isSaving ? 'Saving...' : (isEditing ? 'Update Deficiency' : 'Create Deficiency')}
+            {isSaving ? 'Saving...' : (isEditing ? 'Update Deficiency' : 'Save Deficiency')}
           </Button>
         </div>
       </div>

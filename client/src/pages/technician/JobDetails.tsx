@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { InspectionSummary } from "@/components/InspectionSummary";
@@ -37,6 +38,10 @@ import {
   ClipboardList,
   Clock,
   Save,
+  Key,
+  Radio,
+  Send,
+  Info,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -140,6 +145,23 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     onError: (error) => {
       toast.error(error.message || 'Failed to import assets');
     }
+  });
+
+  // Work Site Info — for field access details
+  const { data: wsi } = trpc.workSiteInfo.getForJob.useQuery(
+    { jobId },
+    { enabled: true, retry: 1 }
+  );
+
+  // Submit for QA
+  const [qaDialogOpen, setQaDialogOpen] = useState(false);
+  const submitForQA = trpc.technician.submitForQA.useMutation({
+    onSuccess: () => {
+      toast.success('Submitted for QA — office has been notified');
+      setQaDialogOpen(false);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message || 'Failed to submit for QA'),
   });
 
   if (isLoading && !cachedData) {
@@ -380,6 +402,66 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           siteName={site?.name || ''}
           scheduledDate={(job as any).scheduledDate}
         />
+
+        {/* Work Site Info — field access details */}
+        {wsi && (wsi.accessNotes || wsi.keyLocation || wsi.keyNumber || wsi.lockboxCode || wsi.fireAlarmPanelLocation || wsi.monitoringCompany || wsi.sprinklerNotes || wsi.emergencyLightingNotes) && (
+          <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
+                <Info className="h-4 w-4" /> Site Field Info
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-2 space-y-2 text-sm">
+              {wsi.accessNotes && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Access Notes</p>
+                  <p className="text-foreground whitespace-pre-line">{wsi.accessNotes}</p>
+                </div>
+              )}
+              {(wsi.keyLocation || wsi.keyNumber || wsi.lockboxCode) && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-2.5 space-y-1">
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
+                    <Key className="h-3 w-3" /> Key / Access
+                  </p>
+                  {wsi.keyNumber && <p className="text-amber-900 dark:text-amber-200"><span className="font-medium">Key #:</span> {wsi.keyNumber}</p>}
+                  {wsi.keyLocation && <p className="text-amber-900 dark:text-amber-200"><span className="font-medium">Location:</span> {wsi.keyLocation}</p>}
+                  {wsi.lockboxCode && <p className="text-amber-900 dark:text-amber-200"><span className="font-medium">Lockbox:</span> {wsi.lockboxCode}</p>}
+                </div>
+              )}
+              {wsi.fireAlarmPanelLocation && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Fire Alarm Panel</p>
+                  <p className="text-foreground">{wsi.fireAlarmPanelLocation}
+                    {wsi.annunciatorLocation && <span className="text-muted-foreground"> · Annunciator: {wsi.annunciatorLocation}</span>}
+                  </p>
+                </div>
+              )}
+              {wsi.monitoringCompany && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5 flex items-center gap-1">
+                    <Radio className="h-3 w-3" /> Monitoring
+                  </p>
+                  <p className="text-foreground">{wsi.monitoringCompany}
+                    {wsi.monitoringPhone && <span className="text-muted-foreground"> · {wsi.monitoringPhone}</span>}
+                    {wsi.monitoringAccount && <span className="text-muted-foreground"> · Acct: {wsi.monitoringAccount}</span>}
+                  </p>
+                </div>
+              )}
+              {wsi.sprinklerNotes && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Sprinkler Notes</p>
+                  <p className="text-foreground">{wsi.sprinklerNotes}</p>
+                </div>
+              )}
+              {wsi.emergencyLightingNotes && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Emergency Lighting Notes</p>
+                  <p className="text-foreground">{wsi.emergencyLightingNotes}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Smoke Alarms — inline spreadsheet grid (CAN/ULC-S552) */}
         <Card className="border-destructive/20">
@@ -880,14 +962,25 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               </Button>
             </div>
           ) : job.status === 'in_progress' ? (
-            <Button
-              className="w-full action-btn"
-              onClick={openSignatureDialog}
-              disabled={completeJob.isPending || saveSignatures.isPending || !isOnline}
-            >
-              <CheckCircle2 className="h-5 w-5 mr-2" />
-              Complete Job
-            </Button>
+            <div className="space-y-2">
+              <Button
+                className="w-full"
+                variant="outline"
+                onClick={() => setQaDialogOpen(true)}
+                disabled={!isOnline}
+              >
+                <Send className="h-4 w-4 mr-2" />
+                Submit for QA
+              </Button>
+              <Button
+                className="w-full action-btn"
+                onClick={openSignatureDialog}
+                disabled={completeJob.isPending || saveSignatures.isPending || !isOnline}
+              >
+                <CheckCircle2 className="h-5 w-5 mr-2" />
+                Complete Job
+              </Button>
+            </div>
           ) : (
             <Button className="w-full action-btn" variant="secondary" disabled>
               <CheckCircle2 className="h-5 w-5 mr-2" />
@@ -896,6 +989,45 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           )}
         </div>
       </div>
+
+      {/* Submit for QA dialog */}
+      <Dialog open={qaDialogOpen} onOpenChange={(open) => { if (!submitForQA.isPending) setQaDialogOpen(open); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5 text-primary" /> Submit for QA
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm">
+            <p>This will notify the office that <strong>{job?.title}</strong> is ready for report generation and QA review.</p>
+            <div className="rounded-lg bg-muted p-3 space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Devices tested</span>
+                <span className="font-medium">{testedCount} / {totalDevices}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Deficiencies</span>
+                <span className="font-medium">{deficiencies?.length ?? 0}</span>
+              </div>
+              {testedCount < totalDevices && (
+                <p className="text-amber-600 text-xs pt-1">
+                  ⚠ {totalDevices - testedCount} device{totalDevices - testedCount !== 1 ? "s" : ""} not yet tested.
+                </p>
+              )}
+            </div>
+            <p className="text-muted-foreground text-xs">The job will remain in progress. You can still make changes after submitting.</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setQaDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => submitForQA.mutate({ jobId })}
+              disabled={submitForQA.isPending}
+            >
+              {submitForQA.isPending ? "Submitting…" : "Submit for QA"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Signature capture dialog */}
       <Dialog open={sigDialogOpen} onOpenChange={(open) => { if (!saveSignatures.isPending) setSigDialogOpen(open); }}>
