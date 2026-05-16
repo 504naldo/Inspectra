@@ -429,6 +429,9 @@ export const approvedWorkRouter = router({
       });
 
       await db.updateApprovedWork(record.id, { workOrderId: wo.id });
+      void logActivity({ ctx, entityType: "work_order", entityId: wo.id, eventType: "created",
+        title: `Work order created: ${wo.workOrderNumber}`,
+        relatedEntityType: "approved_work", relatedEntityId: record.id });
       void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "linked",
         title: `Work order created: ${wo.workOrderNumber}`,
         relatedEntityType: "work_order", relatedEntityId: wo.id });

@@ -194,6 +194,9 @@ export const invoiceRouter = router({
         sageDepartment: input.sageDepartment,
       });
       await db.recalculateInvoiceTotals(input.invoiceId);
+      void logActivity({ ctx, entityType: "invoice", entityId: input.invoiceId, eventType: "updated",
+        title: `Line item added: ${input.description}`,
+        newValue: `$${lineTotal.toFixed(2)}` });
       return item;
     }),
 
@@ -224,6 +227,8 @@ export const invoiceRouter = router({
         total: lineTotal !== undefined ? String(lineTotal) as any : undefined,
       });
       await db.recalculateInvoiceTotals(invoiceId);
+      void logActivity({ ctx, entityType: "invoice", entityId: invoiceId, eventType: "updated",
+        title: `Line item updated` });
       return { success: true };
     }),
 
@@ -236,6 +241,8 @@ export const invoiceRouter = router({
       if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv) });
       await db.deleteInvoiceLineItem(input.id);
       await db.recalculateInvoiceTotals(input.invoiceId);
+      void logActivity({ ctx, entityType: "invoice", entityId: input.invoiceId, eventType: "updated",
+        title: `Line item removed` });
       return { success: true };
     }),
 
