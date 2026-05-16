@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure } from "../_core/trpc";
+import { router, officeProcedure, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
 
 const workSiteInfoInput = z.object({
@@ -41,6 +41,20 @@ const workSiteInfoInput = z.object({
 });
 
 export const workSiteInfoRouter = router({
+  /**
+   * getForJob — Returns work site info for the site of a given job.
+   * Available to all authenticated users (technicians need it in the field).
+   * Verifies the job belongs to the user's company.
+   */
+  getForJob: protectedProcedure
+    .input(z.object({ jobId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const job = await db.getJobById(input.jobId);
+      if (!job) return null;
+      if (job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      return (await db.getWorkSiteInfoBySiteId(job.siteId)) ?? null;
+    }),
+
   getBySiteId: officeProcedure
     .input(z.object({ siteId: z.number() }))
     .query(async ({ input, ctx }) => {
