@@ -582,6 +582,10 @@ export default function AdminDashboard() {
               <Calendar className="h-3.5 w-3.5" />
               Open Schedule
             </Link>
+            <Link href="/admin/compliance" className="flex items-center gap-1.5 hover:text-primary transition-colors">
+              <ShieldAlert className="h-3.5 w-3.5" />
+              Compliance
+            </Link>
             <Link href="/admin/customer-records" className="flex items-center gap-1.5 hover:text-primary transition-colors">
               <FileText className="h-3.5 w-3.5" />
               Customer Records
