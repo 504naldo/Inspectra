@@ -260,7 +260,7 @@ export default function AdminDashboard() {
             <SnapshotCard icon={CheckSquare}    label="Ready to Schedule"      count={snap?.approvedWorkReadyToSchedule ?? 0}  href="/admin/approved-work" />
             <SnapshotCard icon={Wrench}         label="Repair Quotes Pending"  count={snap?.repairQuotesPending ?? 0}          href="/admin/repair-quotes" />
             <SnapshotCard icon={Receipt}        label="Invoices for Export"    count={snap?.invoicesReadyForExport ?? 0}       href="/admin/invoices" />
-            <SnapshotCard icon={FileText}       label="Reports Pending Review" count={snap?.reportsPendingReview ?? 0}         href="/admin/reports" />
+            <SnapshotCard icon={FileText}       label="Reports Pending Review" count={snap?.reportsPendingReview ?? 0}         href="/admin/report-qa" />
           </div>
         </div>
 

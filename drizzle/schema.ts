@@ -545,9 +545,10 @@ export const reports = mysqlTable("reports", {
   failCount: int("failCount"),
   deficiencyCount: int("deficiencyCount"),
   aiSummary: text("aiSummary"), // AI-generated summary
-  status: mysqlEnum("status", ["draft", "generated", "sent", "approved"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "generated", "sent", "approved", "corrections_required", "archived"]).default("draft").notNull(),
   approvedAt: timestamp("approvedAt"),
   approvedById: int("approvedById"),
+  qaNote: text("qaNote"), // QA reviewer note (corrections request, approval note, etc.)
   // Google Drive integration
   googleDriveUrl: text("googleDriveUrl"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

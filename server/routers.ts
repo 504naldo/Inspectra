@@ -44,6 +44,7 @@ import { activityRouter } from "./routers/activityRouter";
 import { dataQualityRouter } from "./routers/dataQualityRouter";
 import { importCenterRouter } from "./routers/importCenterRouter";
 import { notificationRouter } from "./routers/notificationRouter";
+import { reportQaRouter } from "./routers/reportQaRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -117,6 +118,7 @@ export const appRouter = router({
   dataQuality: dataQualityRouter,
   importCenter: importCenterRouter,
   notifications: notificationRouter,
+  reportQa: reportQaRouter,
 });
 
 export type AppRouter = typeof appRouter;
