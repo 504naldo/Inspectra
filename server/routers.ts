@@ -45,6 +45,7 @@ import { dataQualityRouter } from "./routers/dataQualityRouter";
 import { importCenterRouter } from "./routers/importCenterRouter";
 import { notificationRouter } from "./routers/notificationRouter";
 import { reportQaRouter } from "./routers/reportQaRouter";
+import { documentCenterRouter } from "./routers/documentCenterRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -119,6 +120,7 @@ export const appRouter = router({
   importCenter: importCenterRouter,
   notifications: notificationRouter,
   reportQa: reportQaRouter,
+  documentCenter: documentCenterRouter,
 });
 
 export type AppRouter = typeof appRouter;
