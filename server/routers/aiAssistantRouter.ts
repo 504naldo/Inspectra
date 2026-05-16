@@ -28,7 +28,8 @@ Rules you must always follow:
 - Always label generated customer text as a draft requiring human review.
 - Recommend actions but do not perform them.
 - Be concise. Prefer bullet points over long paragraphs.
-- You are not a public chatbot. Only respond to fire protection operations questions.`;
+- You are not a public chatbot. Only respond to fire protection operations questions.
+- Use knowledge base content as internal reference material. If it is missing or unclear, say so instead of inventing.`;
 
 // ── Context builders ──────────────────────────────────────────────────────────
 
@@ -199,6 +200,7 @@ export const aiAssistantRouter = router({
       mode: z.enum(["general", "summarize", "deficiency_help", "report_qa", "repair_quote", "invoice", "compliance", "workflow_help"]).default("general"),
       contextType: z.enum(["job", "site", "deficiency", "report", "repair_quote", "approved_work", "work_order", "invoice", "compliance"]).optional(),
       contextId: z.number().int().positive().optional(),
+      useKnowledgeBase: z.boolean().default(true),
     }))
     .mutation(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId!;
@@ -206,6 +208,16 @@ export const aiAssistantRouter = router({
       let contextBlock = "";
       if (input.contextType && input.contextId) {
         contextBlock = await fetchContext(input.contextType, input.contextId, companyId);
+      }
+
+      // Fetch relevant knowledge base snippets if enabled
+      const KB_ELIGIBLE_MODES = new Set(["deficiency_help", "report_qa", "repair_quote", "invoice", "compliance", "workflow_help", "general"]);
+      let knowledgeSnippets: Array<{ id: number; title: string; category: string; systemType: string | null; excerpt: string }> = [];
+      if (input.useKnowledgeBase && KB_ELIGIBLE_MODES.has(input.mode)) {
+        knowledgeSnippets = await db.getRelevantKnowledgeContext(companyId, input.message, {
+          mode: input.mode,
+          limit: 3,
+        });
       }
 
       const modeHints: Record<string, string> = {
@@ -221,9 +233,16 @@ export const aiAssistantRouter = router({
 
       const modeInstruction = modeHints[input.mode] ?? "";
 
+      const kbBlock = knowledgeSnippets.length > 0
+        ? `\n\nINTERNAL KNOWLEDGE BASE REFERENCE:\n${knowledgeSnippets.map(s =>
+            `[${s.title} | ${s.category}${s.systemType ? ` | ${s.systemType}` : ""}]\n${s.excerpt}`
+          ).join("\n\n")}`
+        : "";
+
       const userMessage = [
         modeInstruction ? `[Mode: ${input.mode}] ${modeInstruction}` : "",
         contextBlock ? `\n\nCONTEXT DATA:\n${contextBlock}` : "",
+        kbBlock,
         `\n\nUSER QUESTION:\n${input.message}`,
       ].filter(Boolean).join("");
 
@@ -244,13 +263,19 @@ export const aiAssistantRouter = router({
         entityId: input.contextId ?? 0,
         eventType: "ai_assistant.ask",
         title: `AI assistant used (mode: ${input.mode})`,
-        metadata: { mode: input.mode, contextType: input.contextType, contextId: input.contextId },
+        metadata: {
+          mode: input.mode,
+          contextType: input.contextType,
+          contextId: input.contextId,
+          kbItemsUsed: knowledgeSnippets.map(s => s.id),
+        },
       });
 
       return {
         answer,
         mode: input.mode,
         contextUsed: input.contextType && input.contextId ? `${input.contextType}:${input.contextId}` : null,
+        knowledgeUsed: knowledgeSnippets.map(s => ({ id: s.id, title: s.title, category: s.category, systemType: s.systemType })),
       };
     }),
 

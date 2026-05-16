@@ -29,6 +29,9 @@ import {
   ReceiptText,
   ShieldAlert,
   Trash2,
+  BookOpen,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -37,11 +40,14 @@ import { Link } from "wouter";
 type Mode = "general" | "summarize" | "deficiency_help" | "report_qa" | "repair_quote" | "invoice" | "compliance" | "workflow_help";
 type ContextType = "job" | "site" | "deficiency" | "report" | "repair_quote" | "approved_work" | "invoice";
 
+type KbSnippet = { id: number; title: string; category: string; systemType: string | null };
+
 type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
   contextUsed?: string | null;
+  knowledgeUsed?: KbSnippet[];
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -83,12 +89,16 @@ const SUGGESTED_ACTIONS: { label: string; href: string; icon: React.ComponentTyp
   { label: "Approved Work", href: "/admin/approved-work", icon: CheckSquare },
   { label: "Invoices", href: "/admin/invoices", icon: ReceiptText },
   { label: "Compliance", href: "/admin/compliance", icon: ShieldAlert },
+  { label: "Knowledge Base", href: "/admin/knowledge-base", icon: BookOpen },
 ];
 
 // ── Message Bubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === "user";
+  const [kbExpanded, setKbExpanded] = useState(false);
+  const hasKb = !isUser && msg.knowledgeUsed && msg.knowledgeUsed.length > 0;
+
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
@@ -96,14 +106,43 @@ function MessageBubble({ msg }: { msg: Message }) {
       }`}>
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
-      <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
-        isUser
-          ? "bg-primary text-primary-foreground rounded-tr-sm"
-          : "bg-muted text-foreground rounded-tl-sm"
-      }`}>
-        {msg.content}
-        {msg.contextUsed && (
-          <span className="block text-xs opacity-60 mt-1">Context: {msg.contextUsed}</span>
+      <div className="max-w-[80%] space-y-1">
+        <div className={`rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
+          isUser
+            ? "bg-primary text-primary-foreground rounded-tr-sm"
+            : "bg-muted text-foreground rounded-tl-sm"
+        }`}>
+          {msg.content}
+          {msg.contextUsed && (
+            <span className="block text-xs opacity-60 mt-1">Context: {msg.contextUsed}</span>
+          )}
+        </div>
+        {hasKb && (
+          <button
+            className="flex items-center gap-1 text-[11px] text-primary hover:underline"
+            onClick={() => setKbExpanded(v => !v)}
+          >
+            <BookOpen className="h-3 w-3" />
+            {msg.knowledgeUsed!.length} knowledge item{msg.knowledgeUsed!.length !== 1 ? "s" : ""} used
+            {kbExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          </button>
+        )}
+        {hasKb && kbExpanded && (
+          <div className="space-y-1">
+            {msg.knowledgeUsed!.map(k => (
+              <div key={k.id} className="rounded-lg border bg-background px-3 py-1.5 text-xs flex items-center gap-2">
+                <BookOpen className="h-3 w-3 text-primary shrink-0" />
+                <span className="font-medium truncate">{k.title}</span>
+                <span className="text-muted-foreground shrink-0">{k.category}</span>
+                {k.systemType && <span className="text-muted-foreground shrink-0">· {k.systemType}</span>}
+              </div>
+            ))}
+            <Link href="/admin/knowledge-base">
+              <span className="text-[11px] text-primary hover:underline flex items-center gap-1">
+                <ExternalLink className="h-3 w-3" /> Manage Knowledge Base
+              </span>
+            </Link>
+          </div>
         )}
       </div>
     </div>
@@ -124,6 +163,7 @@ export default function AIAssistant() {
   const [mode, setMode] = useState<Mode>("general");
   const [contextType, setContextType] = useState<ContextType | "">("");
   const [contextId, setContextId] = useState("");
+  const [useKnowledgeBase, setUseKnowledgeBase] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const ask = trpc.aiAssistant.ask.useMutation({
@@ -133,6 +173,7 @@ export default function AIAssistant() {
         role: "assistant",
         content: data.answer,
         contextUsed: data.contextUsed,
+        knowledgeUsed: data.knowledgeUsed ?? [],
       }]);
     },
     onError: (err) => {
@@ -167,6 +208,7 @@ export default function AIAssistant() {
       mode: overrideMode ?? mode,
       contextType: (contextType as ContextType) || undefined,
       contextId: contextId && !isNaN(parseInt(contextId)) ? parseInt(contextId) : undefined,
+      useKnowledgeBase,
     });
   };
 
@@ -208,6 +250,35 @@ export default function AIAssistant() {
                   ))}
                 </SelectContent>
               </Select>
+            </CardContent>
+          </Card>
+
+          {/* Knowledge Base toggle */}
+          <Card>
+            <CardContent className="px-4 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-xs font-medium">Use Knowledge Base</span>
+                </div>
+                <button
+                  onClick={() => setUseKnowledgeBase(v => !v)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                    useKnowledgeBase ? "bg-primary" : "bg-input"
+                  }`}
+                  role="switch"
+                  aria-checked={useKnowledgeBase}
+                >
+                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-transform ${
+                    useKnowledgeBase ? "translate-x-4" : "translate-x-0"
+                  }`} />
+                </button>
+              </div>
+              {useKnowledgeBase && (
+                <p className="text-[10px] text-muted-foreground mt-1.5">
+                  AI will reference your Knowledge Base when answering.
+                </p>
+              )}
             </CardContent>
           </Card>
 

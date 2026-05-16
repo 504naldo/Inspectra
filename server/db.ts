@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, sql, inArray, like, or, isNull, lt, ne, gt } from "drizzle-orm";
+import { eq, and, desc, asc, sql, inArray, like, or, isNull, isNotNull, lt, ne, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import * as schema from "../drizzle/schema";
@@ -997,12 +997,54 @@ export async function createKnowledgeBaseEntry(data: InsertKnowledgeBase) {
   return { id: Number(result[0].insertId), ...data };
 }
 
+export async function getKnowledgeBaseById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(knowledgeBase).where(eq(knowledgeBase.id, id)).limit(1);
+  return result[0] ?? null;
+}
+
 export async function getKnowledgeBaseByCompany(companyId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(knowledgeBase).where(
     and(eq(knowledgeBase.companyId, companyId), eq(knowledgeBase.isActive, true))
   ).orderBy(desc(knowledgeBase.createdAt));
+}
+
+export async function listKnowledgeBase(companyId: number, opts: {
+  category?: string;
+  systemType?: string;
+  visibility?: string;
+  includeInactive?: boolean;
+  search?: string;
+  limit?: number;
+} = {}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [eq(knowledgeBase.companyId, companyId)];
+  if (!opts.includeInactive) conditions.push(eq(knowledgeBase.isActive, true));
+  if (opts.category) conditions.push(eq(knowledgeBase.category, opts.category));
+  if (opts.systemType) conditions.push(eq(knowledgeBase.systemType as any, opts.systemType));
+  if (opts.visibility) conditions.push(eq(knowledgeBase.visibility, opts.visibility as any));
+  if (opts.search) {
+    conditions.push(or(
+      like(knowledgeBase.title, `%${opts.search}%`),
+      like(knowledgeBase.content, `%${opts.search}%`)
+    ));
+  }
+
+  return db.select().from(knowledgeBase)
+    .where(and(...conditions))
+    .orderBy(desc(knowledgeBase.updatedAt))
+    .limit(opts.limit ?? 200);
+}
+
+export async function updateKnowledgeBaseEntry(id: number, data: Partial<InsertKnowledgeBase>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(knowledgeBase).set(data).where(eq(knowledgeBase.id, id));
 }
 
 export async function searchKnowledgeBase(companyId: number, query: string) {
@@ -1018,6 +1060,58 @@ export async function searchKnowledgeBase(companyId: number, query: string) {
       )
     )
   ).orderBy(desc(knowledgeBase.createdAt));
+}
+
+export async function getRelevantKnowledgeContext(
+  companyId: number,
+  query: string,
+  opts: { mode?: string; systemType?: string; limit?: number } = {}
+): Promise<Array<{ id: number; title: string; category: string; systemType: string | null; excerpt: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const limit = opts.limit ?? 3;
+
+  const conditions = [
+    eq(knowledgeBase.companyId, companyId),
+    eq(knowledgeBase.isActive, true),
+    // Only include items visible to office staff or AI (not technician-only)
+    inArray(knowledgeBase.visibility, ["admin_office", "ai_only"]),
+    isNotNull(knowledgeBase.content),
+  ];
+
+  if (query) {
+    conditions.push(or(
+      like(knowledgeBase.title, `%${query}%`),
+      like(knowledgeBase.content, `%${query}%`)
+    ) as any);
+  }
+
+  if (opts.systemType) {
+    conditions.push(or(
+      eq(knowledgeBase.systemType as any, opts.systemType),
+      isNull(knowledgeBase.systemType)
+    ) as any);
+  }
+
+  const rows = await db.select({
+    id: knowledgeBase.id,
+    title: knowledgeBase.title,
+    category: knowledgeBase.category,
+    systemType: knowledgeBase.systemType,
+    content: knowledgeBase.content,
+  }).from(knowledgeBase)
+    .where(and(...conditions))
+    .orderBy(desc(knowledgeBase.updatedAt))
+    .limit(limit);
+
+  return rows.map(r => ({
+    id: r.id,
+    title: r.title,
+    category: r.category,
+    systemType: r.systemType ?? null,
+    excerpt: r.content ? r.content.slice(0, 250) : "(no content)",
+  }));
 }
 
 // ============================================

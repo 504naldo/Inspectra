@@ -565,12 +565,22 @@ export const knowledgeBase = mysqlTable("knowledge_base", {
   id: int("id").autoincrement().primaryKey(),
   companyId: int("companyId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
-  category: mysqlEnum("category", ["sop", "code", "manual", "template", "other"]).default("other").notNull(),
+  // varchar instead of enum so new categories can be added without migrations
+  category: varchar("category", { length: 50 }).default("other").notNull(),
   content: text("content"),
   fileKey: varchar("fileKey", { length: 500 }),
   fileUrl: text("fileUrl"),
   uploadedById: int("uploadedById").notNull(),
   isActive: boolean("isActive").default(true).notNull(),
+  // v2 fields (added migration 0050)
+  systemType: varchar("systemType", { length: 50 }),
+  tagsJson: json("tagsJson").$type<string[]>(),
+  visibility: mysqlEnum("visibility", ["admin_office", "technician", "ai_only"]).default("admin_office").notNull(),
+  siteId: int("siteId"),
+  customerOrgId: int("customerOrgId"),
+  sourceType: varchar("sourceType", { length: 50 }).default("manual").notNull(),
+  sourceFileId: int("sourceFileId"),
+  sourceDocumentId: int("sourceDocumentId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
