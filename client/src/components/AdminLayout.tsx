@@ -30,6 +30,7 @@ import {
   Bell,
   ClipboardCheck,
   Zap,
+  Bot,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -54,6 +55,7 @@ const primaryNavItems = [
 const secondaryNavItems = [
   { label: "Approved Work",    href: "/admin/approved-work",          icon: CheckSquare,    adminOnly: false },
   { label: "Auto Schedule",   href: "/admin/scheduling-automation",  icon: Zap,            adminOnly: false },
+  { label: "AI Assistant",    href: "/admin/ai-assistant",           icon: Bot,            adminOnly: false },
   { label: "Report QA",       href: "/admin/report-qa",              icon: ClipboardCheck, adminOnly: false },
   { label: "Compliance",      href: "/admin/compliance",             icon: ShieldAlert,    adminOnly: false },
   { label: "Documents",       href: "/admin/documents",        icon: FolderOpen,     adminOnly: false },

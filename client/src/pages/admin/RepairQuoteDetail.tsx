@@ -13,8 +13,16 @@ import { toast } from "sonner";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import {
   Plus, Trash2, Pencil, Loader2, FileText, CheckCircle,
-  Send, Lock, ChevronDown, ChevronUp, ExternalLink,
+  Send, Lock, ChevronDown, ChevronUp, ExternalLink, Bot, Copy,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const CAD = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
 const fmtDate = (d: Date | string | null | undefined) =>
@@ -89,6 +97,12 @@ export default function RepairQuoteDetail() {
   const [itemForm, setItemForm] = useState<ItemForm>(emptyItem("75", "65"));
   const [editItemForm, setEditItemForm] = useState<ItemForm>(emptyItem("75", "65"));
   const [expandedItems, setExpandedItems] = useState<Record<number, boolean>>({});
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiContent, setAiContent] = useState("");
+  const aiAsk = trpc.aiAssistant.ask.useMutation({
+    onSuccess: (d) => { setAiContent(d.answer); setAiOpen(true); },
+    onError: (e) => toast.error(e.message || "AI request failed"),
+  });
 
   const utils = trpc.useUtils();
 
@@ -399,6 +413,21 @@ export default function RepairQuoteDetail() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-primary border-primary/30 hover:bg-primary/10"
+              disabled={aiAsk.isPending}
+              onClick={() => aiAsk.mutate({
+                message: "Summarize this repair quote's scope and draft a clear, customer-friendly description of the work to be done.",
+                mode: "repair_quote",
+                contextType: "repair_quote",
+                contextId: quoteId,
+              })}
+            >
+              {aiAsk.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />}
+              Draft with AI
+            </Button>
             <Button variant="outline" size="sm" onClick={() => pdfMut.mutate({ id: quoteId })} disabled={pdfMut.isPending} className="gap-1.5">
               {pdfMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
               PDF
@@ -632,6 +661,30 @@ export default function RepairQuoteDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={aiOpen} onOpenChange={setAiOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-primary" /> AI Draft — Repair Quote
+            </DialogTitle>
+            <DialogDescription>Review before use. AI suggestions are drafts only.</DialogDescription>
+          </DialogHeader>
+          <div className="whitespace-pre-wrap text-sm max-h-72 overflow-y-auto border rounded-md p-3 bg-muted/30">
+            {aiContent}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { navigator.clipboard.writeText(aiContent); toast.success("Copied to clipboard"); }}
+            >
+              <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setAiOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

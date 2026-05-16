@@ -59,6 +59,7 @@ import ReportQA from "./pages/admin/ReportQA";
 import DocumentCenter from "./pages/admin/DocumentCenter";
 import ComplianceDashboard from "./pages/admin/ComplianceDashboard";
 import SchedulingAutomation from "./pages/admin/SchedulingAutomation";
+import AIAssistant from "./pages/admin/AIAssistant";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -406,6 +407,11 @@ function Router() {
       <Route path="/admin/scheduling-automation">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <SchedulingAutomation />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/ai-assistant">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <AIAssistant />
         </ProtectedRoute>
       </Route>
 

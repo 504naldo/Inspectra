@@ -32,6 +32,9 @@ import {
   Info,
   Calendar,
   User,
+  Bot,
+  Copy,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -211,6 +214,12 @@ function QueueCard({
 }) {
   const isFieldComplete = item.status === "field_complete";
   const hasReport = item.reportId != null;
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiContent, setAiContent] = useState("");
+  const aiAsk = trpc.aiAssistant.ask.useMutation({
+    onSuccess: (d) => { setAiContent(d.answer); setAiOpen(true); },
+    onError: (e) => toast.error(e.message || "AI request failed"),
+  });
 
   return (
     <Card className={`border ${item.status === "corrections_required" ? "border-red-200" : item.status === "generated" ? "border-blue-200" : ""}`}>
@@ -297,6 +306,23 @@ function QueueCard({
                 Job
               </Button>
             </Link>
+            {hasReport && item.reportId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-primary hover:bg-primary/10"
+                disabled={aiAsk.isPending}
+                onClick={() => aiAsk.mutate({
+                  message: "Summarize this report's key issues and draft a correction note I could share with the technician.",
+                  mode: "report_qa",
+                  contextType: "report",
+                  contextId: item.reportId!,
+                })}
+              >
+                {aiAsk.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Bot className="h-3 w-3 mr-1" />}
+                Ask AI
+              </Button>
+            )}
 
             {/* Status mutations (only for reports, not field_complete) */}
             {!isFieldComplete && hasReport && (
@@ -361,6 +387,30 @@ function QueueCard({
           </div>
         </div>
       </CardContent>
+
+      <Dialog open={aiOpen} onOpenChange={setAiOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-primary" /> AI Draft — Report QA
+            </DialogTitle>
+            <DialogDescription>Review before use. AI suggestions are drafts only.</DialogDescription>
+          </DialogHeader>
+          <div className="whitespace-pre-wrap text-sm max-h-72 overflow-y-auto border rounded-md p-3 bg-muted/30">
+            {aiContent}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { navigator.clipboard.writeText(aiContent); toast.success("Copied to clipboard"); }}
+            >
+              <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setAiOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -39,6 +39,8 @@ import {
   Edit,
   CheckCircle,
   Lock,
+  Bot,
+  Copy,
 } from "lucide-react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "../../../../drizzle/schema";
 
@@ -313,6 +315,13 @@ export default function InvoiceDetail({ id }: Props) {
   const [editDesc, setEditDesc] = useState("");
   const [editQty, setEditQty] = useState("");
   const [editPrice, setEditPrice] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiSubject, setAiSubject] = useState("");
+  const [aiBody, setAiBody] = useState("");
+  const aiDraft = trpc.aiAssistant.draftCustomerMessage.useMutation({
+    onSuccess: (d) => { setAiSubject(d.subject); setAiBody(d.body); setAiOpen(true); },
+    onError: (e) => toast.error(e.message || "AI request failed"),
+  });
 
   const { data: invoice, isLoading, error } = trpc.invoice.get.useQuery({ id }, { enabled: !!id });
 
@@ -438,6 +447,16 @@ export default function InvoiceDetail({ id }: Props) {
 
             {/* Actions */}
             <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-primary border-primary/30 hover:bg-primary/10"
+                disabled={aiDraft.isPending}
+                onClick={() => aiDraft.mutate({ type: "invoice", entityId: invoice.id, tone: "professional" })}
+              >
+                {aiDraft.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />}
+                Draft Note
+              </Button>
               {!isLocked && invoice.status === "draft" && (
                 <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "sent" })} disabled={updateStatus.isPending}>
                   <CheckCircle className="h-3.5 w-3.5 mr-1" /> Mark Sent
@@ -775,6 +794,45 @@ export default function InvoiceDetail({ id }: Props) {
           />
         )}
       </div>
+
+      <Dialog open={aiOpen} onOpenChange={setAiOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-primary" /> AI Draft — Invoice Note
+            </DialogTitle>
+            <DialogDescription>Review before sending. AI suggestions are drafts only.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {aiSubject && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">Subject</p>
+                <p className="text-sm font-medium">{aiSubject}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">Body</p>
+              <div className="whitespace-pre-wrap text-sm max-h-60 overflow-y-auto border rounded-md p-3 bg-muted/30">
+                {aiBody}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const full = aiSubject ? `Subject: ${aiSubject}\n\n${aiBody}` : aiBody;
+                navigator.clipboard.writeText(full);
+                toast.success("Copied to clipboard");
+              }}
+            >
+              <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setAiOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }
