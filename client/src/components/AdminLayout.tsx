@@ -25,6 +25,8 @@ import {
   ReceiptText,
   CheckSquare,
   Settings,
+  ShieldAlert,
+  Upload,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -52,6 +54,8 @@ const secondaryNavItems = [
   { label: "Invoices",         href: "/admin/invoices",         icon: FileText,      adminOnly: false },
   { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen,   adminOnly: false },
   { label: "Devices",          href: "/admin/devices",          icon: AlertTriangle, adminOnly: false },
+  { label: "Data Quality",     href: "/admin/data-quality",     icon: ShieldAlert,   adminOnly: false },
+  { label: "Imports",          href: "/admin/imports",          icon: Upload,        adminOnly: false },
   { label: "Users",            href: "/admin/users",            icon: Users,         adminOnly: true  },
   { label: "Settings",         href: "/admin/settings",         icon: Settings,      adminOnly: false },
 ];
