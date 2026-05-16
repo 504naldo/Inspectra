@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, sql, inArray, like, or } from "drizzle-orm";
+import { eq, and, desc, asc, sql, inArray, like, or, isNull, lt, ne, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import * as schema from "../drizzle/schema";
@@ -33,6 +33,7 @@ import {
   siteWorkSiteInfo, InsertSiteWorkSiteInfo, SiteWorkSiteInfo,
   companySettings, InsertCompanySettings, CompanySettings,
   activityEvents, ActivityEvent,
+  notifications, InsertNotification, Notification,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2390,4 +2391,96 @@ export async function getRecentActivityByCompany(
     .where(and(...conditions))
     .orderBy(desc(activityEvents.createdAt))
     .limit(limit);
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+export async function getNotificationsForCompany(
+  companyId: number,
+  options: {
+    unreadOnly?: boolean;
+    limit?: number;
+    severity?: string;
+  } = {}
+): Promise<Notification[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [
+    eq(notifications.companyId, companyId),
+    eq(notifications.isDismissed, 0),
+  ];
+  if (options.unreadOnly) conditions.push(eq(notifications.isRead, 0));
+  if (options.severity) conditions.push(eq(notifications.severity, options.severity as any));
+
+  return db
+    .select()
+    .from(notifications)
+    .where(and(...conditions))
+    .orderBy(desc(notifications.createdAt))
+    .limit(options.limit ?? 200);
+}
+
+export async function getUnreadNotificationCount(companyId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const [row] = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(notifications)
+    .where(and(
+      eq(notifications.companyId, companyId),
+      eq(notifications.isRead, 0),
+      eq(notifications.isDismissed, 0),
+    ));
+  return Number(row?.count ?? 0);
+}
+
+export async function markNotificationRead(id: number, companyId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(notifications)
+    .set({ isRead: 1, readAt: new Date() })
+    .where(and(eq(notifications.id, id), eq(notifications.companyId, companyId)));
+}
+
+export async function markAllNotificationsRead(companyId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(notifications)
+    .set({ isRead: 1, readAt: new Date() })
+    .where(and(eq(notifications.companyId, companyId), eq(notifications.isRead, 0)));
+}
+
+export async function dismissNotification(id: number, companyId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(notifications)
+    .set({ isDismissed: 1, dismissedAt: new Date() })
+    .where(and(eq(notifications.id, id), eq(notifications.companyId, companyId)));
+}
+
+export async function createNotification(data: InsertNotification): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(notifications).values(data);
+}
+
+export async function hasUndismissedNotification(companyId: number, dedupeKey: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const [row] = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(and(
+      eq(notifications.companyId, companyId),
+      eq(notifications.dedupeKey, dedupeKey),
+      eq(notifications.isDismissed, 0),
+    ))
+    .limit(1);
+  return !!row;
 }

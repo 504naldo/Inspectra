@@ -27,9 +27,11 @@ import {
   Settings,
   ShieldAlert,
   Upload,
+  Bell,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
+import { trpc } from "@/lib/trpc";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -64,6 +66,11 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
   const { user, logout } = useAuth();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const { data: unreadCount = 0 } = trpc.notifications.getUnreadCount.useQuery(undefined, {
+    refetchInterval: 60_000,
+    enabled: !!user?.companyId,
+  });
 
   const handleLogout = async () => {
     await logout();
@@ -142,11 +149,21 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             )}
           </nav>
 
-          {/* Right side: user name + logout + mobile toggle */}
+          {/* Right side: user name + bell + logout + mobile toggle */}
           <div className="flex items-center gap-2 ml-auto shrink-0">
             <span className="text-sm text-muted-foreground hidden sm:inline truncate max-w-[140px]">
               {user?.name}
             </span>
+            <Link href="/admin/notifications">
+              <Button variant="ghost" size="icon" title="Notifications" className="relative">
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </Button>
+            </Link>
             <Button variant="ghost" size="icon" onClick={handleLogout} title="Log out">
               <LogOut className="h-5 w-5" />
             </Button>
