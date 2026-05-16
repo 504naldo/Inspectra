@@ -25,6 +25,7 @@ import { formatDate } from "@/lib/utils";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
 import {
   CheckSquare,
   Loader2,
@@ -869,6 +870,15 @@ export default function ApprovedWorkDetail({ id }: Props) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Activity</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <ActivityTimeline entityType="approved_work" entityId={id} />
+          </CardContent>
+        </Card>
       </div>
     </AdminLayout>
   );

@@ -23,6 +23,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
 import {
   ArrowLeft,
   FileText,
@@ -741,6 +742,15 @@ export default function InvoiceDetail({ id }: Props) {
             </CardContent>
           </Card>
         )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Activity</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <ActivityTimeline entityType="invoice" entityId={id} />
+          </CardContent>
+        </Card>
 
         {/* Dialogs */}
         {showEditHeader && (

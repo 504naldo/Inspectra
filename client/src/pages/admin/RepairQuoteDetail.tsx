@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
 import {
   Plus, Trash2, Pencil, Loader2, FileText, CheckCircle,
   Send, Lock, ChevronDown, ChevronUp, ExternalLink,
@@ -619,6 +620,15 @@ export default function RepairQuoteDetail() {
                 <p className="text-sm">{quote.notes}</p>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Activity</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <ActivityTimeline entityType="repair_quote" entityId={quoteId} />
           </CardContent>
         </Card>
       </div>

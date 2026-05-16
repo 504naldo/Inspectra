@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { withAudit } from "../db";
+import { logActivity } from "../activityLogger";
 import { JOB_FINALIZED_IMMUTABLE } from "../../shared/_core/errors";
 import { populateJobFireAlarmChecklist } from "../fireAlarmRouter";
 import { storagePut } from "../storage";
@@ -225,6 +226,17 @@ const jobRouter = router({
       console.warn("[FireAlarmChecklist] Auto-populate failed for job", newJob.id, err);
     }
 
+    void logActivity({
+      ctx,
+      entityType: "job",
+      entityId: newJob.id,
+      eventType: "created",
+      title: `Job created: ${input.title}`,
+      description: input.scheduledDate
+        ? `Scheduled for ${new Date(input.scheduledDate).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })}`
+        : undefined,
+    });
+
     return newJob;
   }),
 
@@ -250,10 +262,25 @@ const jobRouter = router({
     if (input.scheduledDate !== undefined) {
       void syncWorkOrder(id, { scheduledDate: input.scheduledDate });
     }
+
+    if (input.status && input.status !== job?.status) {
+      void logActivity({ ctx, entityType: "job", entityId: id, eventType: "status_changed",
+        title: "Job status changed", oldValue: job?.status ?? undefined, newValue: input.status });
+    } else if (input.scheduledDate !== undefined) {
+      const oldDate = job?.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" }) : null;
+      const newDate = input.scheduledDate ? new Date(input.scheduledDate).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" }) : null;
+      const verb = oldDate && newDate && oldDate !== newDate ? "rescheduled" : (newDate ? "scheduled" : "updated");
+      void logActivity({ ctx, entityType: "job", entityId: id, eventType: verb === "rescheduled" ? "rescheduled" : "scheduled",
+        title: verb === "rescheduled" ? `Job rescheduled from ${oldDate} to ${newDate}` : `Job scheduled for ${newDate ?? "TBD"}`,
+        oldValue: oldDate ?? undefined, newValue: newDate ?? undefined });
+    } else if (Object.keys(data).length > 0) {
+      void logActivity({ ctx, entityType: "job", entityId: id, eventType: "updated", title: "Job updated" });
+    }
+
     return { success: true };
   }),
 
-  start: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+  start: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
     const job = await db.getJobById(input.id);
     if (job?.finalizedAt) {
       throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
@@ -261,10 +288,11 @@ const jobRouter = router({
     const now = new Date();
     await db.updateJob(input.id, { status: 'in_progress', startedAt: now });
     void syncWorkOrder(input.id, { status: "in_progress", startedAt: now });
+    void logActivity({ ctx, entityType: "job", entityId: input.id, eventType: "started", title: "Job started" });
     return { success: true };
   }),
 
-  complete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+  complete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
     const job = await db.getJobById(input.id);
     if (!job) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
@@ -281,6 +309,7 @@ const jobRouter = router({
     const completedNow = new Date();
     await db.updateJob(input.id, { status: 'completed', completedAt: completedNow });
     void syncWorkOrder(input.id, { status: "completed", completedAt: completedNow });
+    void logActivity({ ctx, entityType: "job", entityId: input.id, eventType: "completed", title: "Job completed" });
 
     // Best-effort sync to monthly_service_tracking.
     // Never fail job completion if tracker sync has an unexpected issue.
@@ -370,6 +399,8 @@ const jobRouter = router({
       assignedByUserId: ctx.user.id
     });
     void syncWorkOrder(input.jobId, { assignedTechnicianIds: [input.technicianId] });
+    void logActivity({ ctx, entityType: "job", entityId: input.jobId, eventType: "assigned",
+      title: `Lead technician assigned: ${technician.name ?? "Unknown"}` });
 
     return { success: true };
   }),
@@ -454,13 +485,15 @@ const jobRouter = router({
     void syncWorkOrder(input.jobId, {
       assignedTechnicianIds: [input.leadTechnicianId, ...additionalIds],
     });
+    void logActivity({ ctx, entityType: "job", entityId: input.jobId, eventType: "assignment_changed",
+      title: `Technicians set: ${leadTech.name ?? "Unknown"} (lead)${additionalIds.length > 0 ? ` + ${additionalIds.length} additional` : ""}` });
 
     return { success: true };
   }),
 
   unassignJob: officeProcedure.input(z.object({
     jobId: z.number()
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const job = await db.getJobById(input.jobId);
     if (job?.finalizedAt) {
       throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
@@ -472,9 +505,11 @@ const jobRouter = router({
       status: 'pending'
     });
     await db.clearJobAssignments(input.jobId);
+    void logActivity({ ctx, entityType: "job", entityId: input.jobId, eventType: "updated",
+      title: "Job unassigned" });
     return { success: true };
   }),
-  
+
   getJobTechnicians: protectedProcedure.input(z.object({
     jobId: z.number()
   })).query(async ({ input }) => {

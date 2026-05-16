@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { router, officeProcedure, adminProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
+import { logActivity } from "../activityLogger.js";
 
 const settingsUpdateSchema = z.object({
   gstRate: z.number().nonnegative().max(1).optional(),
@@ -42,6 +43,8 @@ export const companySettingsRouter = router({
       if (input.reportFooterText !== undefined) patch.reportFooterText = input.reportFooterText;
 
       await db.upsertCompanySettings(ctx.user.companyId!, patch as any);
+      void logActivity({ ctx, entityType: "company_settings", entityId: ctx.user.companyId!, eventType: "updated",
+        title: "Company settings updated" });
       return db.getCompanySettings(ctx.user.companyId!);
     }),
 });

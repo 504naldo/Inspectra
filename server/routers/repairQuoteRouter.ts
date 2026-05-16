@@ -28,6 +28,7 @@ import * as db from "../db.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateRepairQuotePDF } from "../quotePdfGenerator.js";
+import { logActivity } from "../activityLogger.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const GST_RATE = 0.05;
@@ -247,6 +248,9 @@ export const repairQuoteRouter = router({
         }
       }
 
+      void logActivity({ ctx, entityType: "repair_quote", entityId: quote.id, eventType: "created",
+        title: `Repair quote created: ${quoteNumber}`,
+        relatedEntityType: "job", relatedEntityId: input.jobId });
       return { quoteId: quote.id, quoteNumber };
     }),
 
@@ -442,6 +446,8 @@ export const repairQuoteRouter = router({
       if (!items.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one item before finalizing." });
 
       await db.updateQuote(input.id, { finalizedAt: new Date() } as any);
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "status_changed",
+        title: "Repair quote finalized" });
       return { success: true };
     }),
 
@@ -469,6 +475,8 @@ export const repairQuoteRouter = router({
         });
       }
 
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "status_changed",
+        title: `Repair quote ${input.status}`, oldValue: quote.status, newValue: input.status });
       return { success: true };
     }),
 
