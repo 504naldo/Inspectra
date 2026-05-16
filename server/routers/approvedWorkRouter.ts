@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { APPROVED_WORK_STATUSES } from "../../drizzle/schema";
+import { logActivity } from "../activityLogger";
 
 const STATUS_ENUM = z.enum(APPROVED_WORK_STATUSES);
 
@@ -152,6 +153,8 @@ export const approvedWorkRouter = router({
         createdById: ctx.user.id,
       });
 
+      void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "created",
+        title: "Approved work record created" });
       return record;
     }),
 
@@ -213,6 +216,9 @@ export const approvedWorkRouter = router({
         createdById:    ctx.user.id,
       });
 
+      void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "created",
+        title: "Approved work created from quote item",
+        relatedEntityType: "repair_quote", relatedEntityId: input.quoteId });
       return record;
     }),
 
@@ -290,6 +296,9 @@ export const approvedWorkRouter = router({
       }
 
       await db.updateApprovedWork(input.id, { status: input.status, ...timestamps });
+      void logActivity({ ctx, entityType: "approved_work", entityId: input.id, eventType: "status_changed",
+        title: `Approved work status changed to ${input.status}`,
+        oldValue: record.status, newValue: input.status });
       return { success: true };
     }),
 
@@ -420,6 +429,9 @@ export const approvedWorkRouter = router({
       });
 
       await db.updateApprovedWork(record.id, { workOrderId: wo.id });
+      void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "linked",
+        title: `Work order created: ${wo.workOrderNumber}`,
+        relatedEntityType: "work_order", relatedEntityId: wo.id });
       return wo;
     }),
 
@@ -540,6 +552,9 @@ export const approvedWorkRouter = router({
         status: "invoiced",
       });
 
+      void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "converted",
+        title: `Invoice created: ${inv.invoiceNumber}`,
+        relatedEntityType: "invoice", relatedEntityId: inv.id });
       return { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber };
     }),
 
@@ -566,6 +581,8 @@ export const approvedWorkRouter = router({
         closedAt: new Date(),
         ...(input.officeNotes ? { officeNotes: input.officeNotes } : {}),
       });
+      void logActivity({ ctx, entityType: "approved_work", entityId: input.id, eventType: "closed",
+        title: "Approved work closed" });
       return { success: true };
     }),
 });

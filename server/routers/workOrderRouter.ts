@@ -7,6 +7,7 @@ import {
   technicianProcedure,
 } from "../_core/trpc";
 import * as db from "../db";
+import { logActivity } from "../activityLogger";
 
 const materialSchema = z.object({
   description: z.string().min(1),
@@ -95,6 +96,10 @@ export const workOrderRouter = router({
           ? { estimatedHours: estimatedHours !== null ? String(estimatedHours) : null }
           : {}),
       });
+      if (input.scheduledDate !== undefined) {
+        void logActivity({ ctx, entityType: "work_order", entityId: id, eventType: "scheduled",
+          title: input.scheduledDate ? `Work order scheduled for ${new Date(input.scheduledDate).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })}` : "Work order schedule cleared" });
+      }
       return { success: true };
     }),
 
@@ -170,6 +175,8 @@ export const workOrderRouter = router({
         completionSummary: input.completionSummary ?? wo.completionSummary,
         actualHours: input.actualHours !== undefined ? String(input.actualHours) : wo.actualHours,
       });
+      void logActivity({ ctx, entityType: "work_order", entityId: input.id, eventType: "completed",
+        title: "Work order completed" });
       return { success: true };
     }),
 

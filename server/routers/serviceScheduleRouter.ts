@@ -12,6 +12,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
+import { logActivity } from "../activityLogger.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -207,6 +208,11 @@ export const serviceScheduleRouter = router({
         ...(scheduledDate !== undefined ? { scheduledDate: new Date(scheduledDate) } : {}),
         ...(plannedHours != null ? { plannedHours: String(plannedHours) } : {}),
       });
+      if (input.status && input.status !== row.status) {
+        void logActivity({ ctx, entityType: "monthly_service_tracking", entityId: id, eventType: "status_changed",
+          title: `Service tracking status changed to ${input.status}`,
+          oldValue: row.status, newValue: input.status });
+      }
       return { success: true };
     }),
 
@@ -290,6 +296,9 @@ export const serviceScheduleRouter = router({
         ...(scheduledDateParsed ? { scheduledDate: scheduledDateParsed } : {}),
       });
 
+      void logActivity({ ctx, entityType: "monthly_service_tracking", entityId: row.id, eventType: "linked",
+        title: `Job created from tracking: ${jobNumber}`,
+        relatedEntityType: "job", relatedEntityId: job.id });
       return { jobId: job.id, jobNumber };
     }),
 

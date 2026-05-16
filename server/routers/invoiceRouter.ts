@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { INVOICE_STATUSES } from "../../drizzle/schema";
+import { logActivity } from "../activityLogger";
 
 function generateInvoiceNumber(prefix = "INV"): string {
   const now = new Date();
@@ -167,6 +168,8 @@ export const invoiceRouter = router({
         dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
         taxRate: input.taxRate !== undefined ? String(input.taxRate) as any : undefined,
       });
+      void logActivity({ ctx, entityType: "invoice", entityId: inv.id, eventType: "created",
+        title: `Invoice created: ${inv.invoiceNumber}` });
       return inv;
     }),
 
@@ -299,6 +302,9 @@ export const invoiceRouter = router({
       const updates: any = { status: input.status };
       if (input.status === "sent" && !inv.sentAt) updates.sentAt = new Date();
       await db.updateInvoice(input.id, updates);
+      void logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "status_changed",
+        title: `Invoice status changed to ${input.status}`,
+        oldValue: inv.status, newValue: input.status });
       return { success: true };
     }),
 
@@ -326,6 +332,8 @@ export const invoiceRouter = router({
           ? (input.paidAt ? new Date(input.paidAt) : new Date())
           : undefined,
       });
+      void logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "paid",
+        title: status === "paid" ? `Invoice paid in full: $${input.amountPaid.toFixed(2)}` : `Partial payment recorded: $${input.amountPaid.toFixed(2)}` });
       return { success: true };
     }),
 
@@ -339,6 +347,8 @@ export const invoiceRouter = router({
       if (inv.status === "paid") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot void a paid invoice. Use a credit note workflow instead." });
       if (inv.sageExportStatus === "exported") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot void an invoice that has been exported to Sage. Contact your accountant to reverse it there first." });
       await db.updateInvoice(input.id, { status: "void" });
+      void logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "voided",
+        title: "Invoice voided" });
       return { success: true };
     }),
 
@@ -390,6 +400,8 @@ export const invoiceRouter = router({
           sageExportStatus: "exported",
           sageExportedAt: new Date(),
         });
+        void logActivity({ ctx, entityType: "invoice", entityId: inv.id, eventType: "exported",
+          title: `Invoice exported to Sage: ${inv.invoiceNumber}` });
       }
 
       return { csv: rows.join("\n"), count: validated.length };
@@ -427,6 +439,8 @@ export const invoiceRouter = router({
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
       if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot mark a voided invoice as exported" });
       await db.updateInvoice(input.id, { sageExportStatus: "exported", sageExportedAt: new Date() });
+      void logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "exported",
+        title: "Invoice manually marked as exported to Sage" });
       return { success: true };
     }),
 });

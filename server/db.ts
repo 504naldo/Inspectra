@@ -32,6 +32,7 @@ import {
   invoiceLineItems, InsertInvoiceLineItem, InvoiceLineItem,
   siteWorkSiteInfo, InsertSiteWorkSiteInfo, SiteWorkSiteInfo,
   companySettings, InsertCompanySettings, CompanySettings,
+  activityEvents, ActivityEvent,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2343,4 +2344,45 @@ export async function upsertCompanySettings(companyId: number, data: Partial<Omi
   if (!db) return;
 
   await db.insert(companySettings).values({ companyId, ...data } as InsertCompanySettings).onDuplicateKeyUpdate({ set: { ...data, updatedAt: new Date() } });
+}
+
+// ============================================
+// ACTIVITY EVENTS
+// ============================================
+
+export async function getActivityEventsForEntity(
+  companyId: number,
+  entityType: string,
+  entityId: number,
+  limit: number,
+): Promise<ActivityEvent[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(activityEvents)
+    .where(and(
+      eq(activityEvents.companyId, companyId),
+      eq(activityEvents.entityType, entityType),
+      eq(activityEvents.entityId, entityId),
+    ))
+    .orderBy(desc(activityEvents.createdAt))
+    .limit(limit);
+}
+
+export async function getRecentActivityByCompany(
+  companyId: number,
+  limit: number,
+  entityType?: string,
+): Promise<ActivityEvent[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: ReturnType<typeof eq>[] = [eq(activityEvents.companyId, companyId)];
+  if (entityType) conditions.push(eq(activityEvents.entityType, entityType));
+  return db
+    .select()
+    .from(activityEvents)
+    .where(and(...conditions))
+    .orderBy(desc(activityEvents.createdAt))
+    .limit(limit);
 }

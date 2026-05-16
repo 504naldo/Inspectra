@@ -43,6 +43,7 @@ import {
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { formatDate, parseDateInput } from "@/lib/utils";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
 
 export default function AdminJobDetails() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -524,6 +525,7 @@ export default function AdminJobDetails() {
               Work Order
             </TabsTrigger>
             <TabsTrigger value="files">Files</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
 
           <TabsContent value="details" className="space-y-4">
@@ -1184,6 +1186,17 @@ export default function AdminJobDetails() {
                     <p>No files uploaded yet</p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="activity">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Activity Log</CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <ActivityTimeline entityType="job" entityId={parseInt(jobId!)} />
               </CardContent>
             </Card>
           </TabsContent>

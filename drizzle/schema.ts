@@ -1552,3 +1552,32 @@ export const companySettings = mysqlTable("company_settings", {
 
 export type CompanySettings = typeof companySettings.$inferSelect;
 export type InsertCompanySettings = typeof companySettings.$inferInsert;
+
+// ============================================
+// ACTIVITY EVENTS (Lightweight audit trail)
+// ============================================
+export const activityEvents = mysqlTable("activity_events", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  actorUserId: int("actorUserId"),
+  actorName: varchar("actorName", { length: 255 }),
+  actorRole: varchar("actorRole", { length: 64 }),
+  entityType: varchar("entityType", { length: 64 }).notNull(),
+  entityId: int("entityId").notNull(),
+  relatedEntityType: varchar("relatedEntityType", { length: 64 }),
+  relatedEntityId: int("relatedEntityId"),
+  eventType: varchar("eventType", { length: 64 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  oldValue: text("oldValue"),
+  newValue: text("newValue"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("activity_events_companyId_idx").on(table.companyId),
+  entityIdx: index("activity_events_entity_idx").on(table.entityType, table.entityId),
+  createdAtIdx: index("activity_events_createdAt_idx").on(table.createdAt),
+}));
+
+export type ActivityEvent = typeof activityEvents.$inferSelect;
+export type InsertActivityEvent = typeof activityEvents.$inferInsert;
