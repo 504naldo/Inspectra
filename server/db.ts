@@ -1965,6 +1965,25 @@ export async function updateAiReview(id: number, data: Partial<InsertAiReview>) 
   await db.update(aiReviews).set(data).where(eq(aiReviews.id, id));
 }
 
+export async function getAiReviewById(id: number): Promise<AiReview | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(aiReviews).where(eq(aiReviews.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getAiReviewsByJobScoped(jobId: number, companyId: number): Promise<AiReview[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiReviews)
+    .where(and(
+      eq(aiReviews.jobId, jobId),
+      eq(aiReviews.companyId as any, companyId),
+    ))
+    .orderBy(desc(aiReviews.createdAt))
+    .limit(10);
+}
+
 // ============================================
 // WORK ORDER QUERIES
 // ============================================
