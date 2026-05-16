@@ -46,6 +46,7 @@ import { importCenterRouter } from "./routers/importCenterRouter";
 import { notificationRouter } from "./routers/notificationRouter";
 import { reportQaRouter } from "./routers/reportQaRouter";
 import { documentCenterRouter } from "./routers/documentCenterRouter";
+import { schedulingAutomationRouter } from "./routers/schedulingAutomationRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -121,6 +122,7 @@ export const appRouter = router({
   notifications: notificationRouter,
   reportQa: reportQaRouter,
   documentCenter: documentCenterRouter,
+  schedulingAutomation: schedulingAutomationRouter,
 });
 
 export type AppRouter = typeof appRouter;
