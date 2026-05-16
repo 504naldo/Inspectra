@@ -48,6 +48,7 @@ import { reportQaRouter } from "./routers/reportQaRouter";
 import { documentCenterRouter } from "./routers/documentCenterRouter";
 import { schedulingAutomationRouter } from "./routers/schedulingAutomationRouter";
 import { technicianRouter } from "./routers/technicianRouter";
+import { aiAssistantRouter } from "./routers/aiAssistantRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -125,6 +126,7 @@ export const appRouter = router({
   documentCenter: documentCenterRouter,
   schedulingAutomation: schedulingAutomationRouter,
   technician: technicianRouter,
+  aiAssistant: aiAssistantRouter,
 });
 
 export type AppRouter = typeof appRouter;
