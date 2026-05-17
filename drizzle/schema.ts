@@ -1809,3 +1809,156 @@ export const assetLifecycleEvents = mysqlTable("asset_lifecycle_events", {
 
 export type AssetLifecycleEvent = typeof assetLifecycleEvents.$inferSelect;
 export type InsertAssetLifecycleEvent = typeof assetLifecycleEvents.$inferInsert;
+
+// ============================================
+// INVENTORY / PARTS ORDERING
+// Stock tracking, parts requests, and usage
+// linked to Parts Catalog, Approved Work, Work Orders, and Jobs.
+// ============================================
+
+export const inventoryItems = mysqlTable("inventory_items", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  partsCatalogId: int("partsCatalogId"),
+  sku: varchar("sku", { length: 100 }),
+  category: varchar("category", { length: 100 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).default("0"),
+  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).default("0"),
+  quantityOnHand: int("quantityOnHand").notNull().default(0),
+  quantityReserved: int("quantityReserved").notNull().default(0),
+  reorderPoint: int("reorderPoint").notNull().default(0),
+  reorderQuantity: int("reorderQuantity").notNull().default(0),
+  storageLocation: varchar("storageLocation", { length: 255 }),
+  supplierName: varchar("supplierName", { length: 255 }),
+  supplierPartNumber: varchar("supplierPartNumber", { length: 100 }),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("inventory_items_companyId_idx").on(table.companyId),
+  categoryIdx: index("inventory_items_category_idx").on(table.companyId, table.category),
+}));
+
+export type InventoryItem = typeof inventoryItems.$inferSelect;
+export type InsertInventoryItem = typeof inventoryItems.$inferInsert;
+
+export const PARTS_REQUEST_STATUSES = [
+  "draft",
+  "submitted",
+  "approved",
+  "ordered",
+  "partially_received",
+  "received",
+  "issued",
+  "used",
+  "cancelled",
+] as const;
+export type PartsRequestStatus = (typeof PARTS_REQUEST_STATUSES)[number];
+
+export const PARTS_REQUEST_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export type PartsRequestPriority = (typeof PARTS_REQUEST_PRIORITIES)[number];
+
+export const partsRequests = mysqlTable("parts_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  requestNumber: varchar("requestNumber", { length: 50 }).notNull(),
+  status: mysqlEnum("status", PARTS_REQUEST_STATUSES).notNull().default("draft"),
+  priority: mysqlEnum("priority", PARTS_REQUEST_PRIORITIES).notNull().default("medium"),
+  requestedById: int("requestedById").notNull(),
+  assignedToId: int("assignedToId"),
+  customerOrgId: int("customerOrgId"),
+  siteId: int("siteId"),
+  jobId: int("jobId"),
+  workOrderId: int("workOrderId"),
+  approvedWorkId: int("approvedWorkId"),
+  deficiencyId: int("deficiencyId"),
+  notes: text("notes"),
+  neededByDate: date("neededByDate"),
+  submittedAt: timestamp("submittedAt"),
+  approvedAt: timestamp("approvedAt"),
+  approvedById: int("approvedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("parts_requests_companyId_idx").on(table.companyId),
+  statusIdx: index("parts_requests_status_idx").on(table.companyId, table.status),
+  approvedWorkIdIdx: index("parts_requests_approvedWorkId_idx").on(table.approvedWorkId),
+  workOrderIdIdx: index("parts_requests_workOrderId_idx").on(table.workOrderId),
+  jobIdIdx: index("parts_requests_jobId_idx").on(table.jobId),
+}));
+
+export type PartsRequest = typeof partsRequests.$inferSelect;
+export type InsertPartsRequest = typeof partsRequests.$inferInsert;
+
+export const PARTS_REQUEST_ITEM_STATUSES = [
+  "requested",
+  "approved",
+  "ordered",
+  "received",
+  "issued",
+  "used",
+  "unavailable",
+  "cancelled",
+] as const;
+export type PartsRequestItemStatus = (typeof PARTS_REQUEST_ITEM_STATUSES)[number];
+
+export const partsRequestItems = mysqlTable("parts_request_items", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  partsRequestId: int("partsRequestId").notNull(),
+  inventoryItemId: int("inventoryItemId"),
+  partsCatalogId: int("partsCatalogId"),
+  description: varchar("description", { length: 500 }).notNull(),
+  quantityRequested: int("quantityRequested").notNull().default(1),
+  quantityApproved: int("quantityApproved").notNull().default(0),
+  quantityOrdered: int("quantityOrdered").notNull().default(0),
+  quantityReceived: int("quantityReceived").notNull().default(0),
+  quantityUsed: int("quantityUsed").notNull().default(0),
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }),
+  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }),
+  status: mysqlEnum("status", PARTS_REQUEST_ITEM_STATUSES).notNull().default("requested"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  partsRequestIdIdx: index("parts_request_items_requestId_idx").on(table.partsRequestId),
+  companyIdIdx: index("parts_request_items_companyId_idx").on(table.companyId),
+}));
+
+export type PartsRequestItem = typeof partsRequestItems.$inferSelect;
+export type InsertPartsRequestItem = typeof partsRequestItems.$inferInsert;
+
+export const INVENTORY_TRANSACTION_TYPES = [
+  "initial_count",
+  "adjustment",
+  "reserved",
+  "unreserved",
+  "ordered",
+  "received",
+  "issued",
+  "used",
+  "returned",
+  "removed",
+] as const;
+export type InventoryTransactionType = (typeof INVENTORY_TRANSACTION_TYPES)[number];
+
+export const inventoryTransactions = mysqlTable("inventory_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  inventoryItemId: int("inventoryItemId").notNull(),
+  transactionType: mysqlEnum("transactionType", INVENTORY_TRANSACTION_TYPES).notNull(),
+  quantity: int("quantity").notNull(),
+  sourceType: varchar("sourceType", { length: 64 }),
+  sourceId: int("sourceId"),
+  notes: text("notes"),
+  performedById: int("performedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  inventoryItemIdIdx: index("inventory_transactions_itemId_idx").on(table.inventoryItemId),
+  companyIdIdx: index("inventory_transactions_companyId_idx").on(table.companyId),
+}));
+
+export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;
+export type InsertInventoryTransaction = typeof inventoryTransactions.$inferInsert;

@@ -52,6 +52,7 @@ import { aiAssistantRouter } from "./routers/aiAssistantRouter";
 import { knowledgeBaseRouter } from "./routers/knowledgeBaseRouter";
 import { serviceAgreementRouter } from "./routers/serviceAgreementRouter";
 import { assetLifecycleRouter } from "./routers/assetLifecycleRouter";
+import { inventoryRouter } from "./routers/inventoryRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -133,6 +134,7 @@ export const appRouter = router({
   knowledgeBase: knowledgeBaseRouter,
   serviceAgreement: serviceAgreementRouter,
   assetLifecycle: assetLifecycleRouter,
+  inventory: inventoryRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -43,6 +43,9 @@ import {
   Radio,
   Send,
   Info,
+  ShoppingCart,
+  Plus,
+  Package,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -153,6 +156,33 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     { jobId },
     { enabled: true, retry: 1 }
   );
+
+  // Parts requests
+  const [showPartsForm, setShowPartsForm] = useState(false);
+  const [partsDesc, setPartsDesc] = useState("");
+  const [partsQty, setPartsQty] = useState("1");
+  const [partsPriority, setPartsPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
+  const [partsNotes, setPartsNotes] = useState("");
+  const [partsNeededBy, setPartsNeededBy] = useState("");
+
+  const { data: jobPartsRequests = [], refetch: refetchPartsRequests } = trpc.inventory.getRequestsForJob.useQuery(
+    { jobId },
+    { enabled: true, retry: 1 },
+  );
+
+  const createPartsRequestMut = trpc.inventory.createPartsRequest.useMutation({
+    onSuccess: () => {
+      toast.success("Parts request submitted.");
+      refetchPartsRequests();
+      setShowPartsForm(false);
+      setPartsDesc("");
+      setPartsQty("1");
+      setPartsPriority("medium");
+      setPartsNotes("");
+      setPartsNeededBy("");
+    },
+    onError: (e) => toast.error(e.message || "Failed to submit parts request"),
+  });
 
   // Submit for QA
   const [qaDialogOpen, setQaDialogOpen] = useState(false);
@@ -873,6 +903,130 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             )}
           </Card>
         )}
+
+        {/* Parts Requests */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between text-base">
+              <span className="flex items-center gap-2">
+                <ShoppingCart className="h-4 w-4" />
+                Parts Requests ({(jobPartsRequests as any[]).length})
+              </span>
+              {!showPartsForm && (
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setShowPartsForm(true)}>
+                  <Plus className="h-3.5 w-3.5" /> Request Parts
+                </Button>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {showPartsForm && (
+              <div className="border rounded-lg p-3 mb-4 space-y-3 bg-muted/20">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Part description *</label>
+                  <input
+                    className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background"
+                    placeholder="e.g. Smoke detector replacement unit"
+                    value={partsDesc}
+                    onChange={(e) => setPartsDesc(e.target.value)}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Quantity</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background"
+                      value={partsQty}
+                      onChange={(e) => setPartsQty(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Priority</label>
+                    <select
+                      className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background"
+                      value={partsPriority}
+                      onChange={(e) => setPartsPriority(e.target.value as any)}
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Needed by (optional)</label>
+                  <input
+                    type="date"
+                    className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background"
+                    value={partsNeededBy}
+                    onChange={(e) => setPartsNeededBy(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Notes (optional)</label>
+                  <textarea
+                    className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background resize-none"
+                    rows={2}
+                    placeholder="Any additional details"
+                    value={partsNotes}
+                    onChange={(e) => setPartsNotes(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={!partsDesc.trim() || createPartsRequestMut.isPending}
+                    onClick={() =>
+                      createPartsRequestMut.mutate({
+                        jobId,
+                        priority: partsPriority,
+                        notes: partsNotes.trim() || undefined,
+                        neededByDate: partsNeededBy || undefined,
+                        items: [{ description: partsDesc.trim(), quantityRequested: parseInt(partsQty) || 1 }],
+                      })
+                    }
+                  >
+                    Submit Request
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowPartsForm(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+
+            {(jobPartsRequests as any[]).length === 0 && !showPartsForm && (
+              <p className="text-center text-muted-foreground py-6 text-sm">No parts requests for this job.</p>
+            )}
+
+            <div className="space-y-2">
+              {(jobPartsRequests as any[]).map((req: any) => (
+                <div key={req.id} className="border rounded-lg p-3 text-sm">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-xs font-semibold">{req.requestNumber}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      req.status === "issued" || req.status === "received" ? "bg-green-100 text-green-700" :
+                      req.status === "approved" || req.status === "ordered" ? "bg-blue-100 text-blue-700" :
+                      req.status === "cancelled" ? "bg-red-100 text-red-600" :
+                      req.status === "submitted" ? "bg-yellow-100 text-yellow-700" :
+                      "bg-gray-100 text-gray-700"
+                    }`}>
+                      {req.status.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                  {req.priority === "urgent" && (
+                    <span className="text-xs text-red-600 font-medium flex items-center gap-1 mb-1">
+                      <AlertTriangle className="h-3 w-3" /> Urgent
+                    </span>
+                  )}
+                  {req.notes && <p className="text-xs text-muted-foreground">{req.notes}</p>}
+                  <p className="text-xs text-muted-foreground mt-1">{String(req.createdAt).slice(0, 10)}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Deficiencies Section - Only show deficiencies, devices are in category cards above */}
         <Card>

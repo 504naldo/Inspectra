@@ -871,6 +871,9 @@ export default function ApprovedWorkDetail({ id }: Props) {
           </DialogContent>
         </Dialog>
 
+        {/* ── Parts Requests ── */}
+        <PartsRequestsSection approvedWorkId={id} />
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Activity</CardTitle>
@@ -881,6 +884,74 @@ export default function ApprovedWorkDetail({ id }: Props) {
         </Card>
       </div>
     </AdminLayout>
+  );
+}
+
+// ── Parts Requests section ─────────────────────────────────────────────────────
+
+function PartsRequestsSection({ approvedWorkId }: { approvedWorkId: number }) {
+  const { data: requests = [], isLoading } = trpc.inventory.getRequestsForApprovedWork.useQuery({ approvedWorkId });
+
+  const STATUS_COLORS: Record<string, string> = {
+    draft: "bg-gray-100 text-gray-700",
+    submitted: "bg-blue-100 text-blue-700",
+    approved: "bg-green-100 text-green-700",
+    ordered: "bg-indigo-100 text-indigo-700",
+    partially_received: "bg-yellow-100 text-yellow-700",
+    received: "bg-teal-100 text-teal-700",
+    issued: "bg-purple-100 text-purple-700",
+    used: "bg-slate-100 text-slate-700",
+    cancelled: "bg-red-100 text-red-600",
+  };
+
+  const PRIORITY_COLORS: Record<string, string> = {
+    low: "bg-gray-100 text-gray-600",
+    medium: "bg-blue-50 text-blue-700",
+    high: "bg-orange-100 text-orange-700",
+    urgent: "bg-red-100 text-red-700 font-semibold",
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Package className="h-4 w-4" />
+            Parts Requests
+            {requests.length > 0 && (
+              <span className="text-xs text-muted-foreground font-normal">({requests.length})</span>
+            )}
+          </CardTitle>
+          <Link href={`/admin/parts-requests?approvedWorkId=${approvedWorkId}`}>
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+              <Link2 className="h-3 w-3" /> New Request
+            </Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {isLoading && <p className="text-sm text-muted-foreground py-2">Loading…</p>}
+        {!isLoading && requests.length === 0 && (
+          <p className="text-sm text-muted-foreground py-2">No parts requests for this approved work.</p>
+        )}
+        {requests.map((req: any) => (
+          <Link key={req.id} href={`/admin/parts-requests/${req.id}`}>
+            <div className="flex items-center justify-between py-2 border-b last:border-0 hover:bg-muted/20 -mx-2 px-2 rounded cursor-pointer">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-semibold">{req.requestNumber}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${STATUS_COLORS[req.status] ?? ""}`}>
+                  {req.status.replace(/_/g, " ")}
+                </span>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${PRIORITY_COLORS[req.priority] ?? ""}`}>
+                  {req.priority}
+                </span>
+              </div>
+              <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+          </Link>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
