@@ -555,14 +555,371 @@ export const repairQuoteRouter = router({
       const quote = await db.getQuoteById(input.id);
       if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
       if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
-      if (quote.status !== "accepted") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Only accepted quotes can be converted to a work order." });
+      const q = quote as any;
+      const approvedStatuses = ["accepted", "approved", "partially_approved", "converted_to_approved_work"];
+      if (!approvedStatuses.includes(q.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only approved quotes can be converted to a work order." });
       }
       return _createWorkOrderFromQuote(quote.id, ctx.user.companyId!);
+    }),
+
+  // ── Approval workflow ─────────────────────────────────────────────────────────
+
+  markReadyToSend: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const q = quote as any;
+      if (!q.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Finalize the quote before marking it ready to send." });
+      const items = await db.getRepairQuoteItemsByQuote(input.id);
+      if (!items.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one item before marking ready to send." });
+
+      await db.updateQuote(input.id, { status: "ready_to_send" } as any);
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "status_changed",
+        title: "Quote marked ready to send", oldValue: quote.status, newValue: "ready_to_send" });
+      return { success: true as const };
+    }),
+
+  markSent: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const q = quote as any;
+
+      const update: Record<string, unknown> = { status: "sent" };
+      if (!q.sentAt) update.sentAt = new Date();
+      await db.updateQuote(input.id, update as any);
+
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.sent",
+        title: "Quote marked sent", oldValue: quote.status, newValue: "sent" });
+      return { success: true as const };
+    }),
+
+  markViewed: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const q = quote as any;
+
+      const update: Record<string, unknown> = { status: "viewed" };
+      if (!q.viewedAt) update.viewedAt = new Date();
+      await db.updateQuote(input.id, update as any);
+
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.viewed",
+        title: "Quote marked viewed by customer", oldValue: quote.status, newValue: "viewed" });
+      return { success: true as const };
+    }),
+
+  recordApproval: officeProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      approvedByName: z.string().max(255).optional().nullable(),
+      approvedByEmail: z.string().email().max(320).optional().nullable(),
+      approvalSource: z.enum(["email", "phone", "signed_pdf", "in_person", "portal_later", "internal_entry"]),
+      approvedAt: z.string().optional().nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const resolvedAt = input.approvedAt ? new Date(input.approvedAt) : new Date();
+
+      await db.updateQuote(input.id, {
+        approvedAt: resolvedAt,
+        approvedByName: input.approvedByName ?? null,
+        approvedByEmail: input.approvedByEmail ?? null,
+        approvalSource: input.approvalSource,
+      } as any);
+
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.approvalRecorded",
+        title: `Approval recorded (${input.approvalSource})`,
+        metadata: { approvedByName: input.approvedByName, approvalSource: input.approvalSource } });
+      return { success: true as const };
+    }),
+
+  approveAllItems: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const items = await db.getRepairQuoteItemsByQuote(input.id);
+      await Promise.all(items.map((item) =>
+        db.updateRepairQuoteItem(item.id, { approvalStatus: "approved" } as any)
+      ));
+      await _recalcQuoteApprovalStatus(input.id);
+
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.allItemsApproved",
+        title: `All ${items.length} items approved` });
+      return { success: true as const };
+    }),
+
+  declineAllItems: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const items = await db.getRepairQuoteItemsByQuote(input.id);
+      await Promise.all(items.map((item) =>
+        db.updateRepairQuoteItem(item.id, { approvalStatus: "declined" } as any)
+      ));
+      await db.updateQuote(input.id, { status: "declined", declinedAt: new Date() } as any);
+
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.allItemsDeclined",
+        title: `All ${items.length} items declined`, newValue: "declined" });
+
+      const companyId = ctx.user.companyId!;
+      const dedupeKey = `quote-declined-${input.id}`;
+      const alreadyNotified = await db.hasUndismissedNotification(companyId, dedupeKey);
+      if (!alreadyNotified) {
+        await db.createNotification({
+          companyId,
+          roleTarget: "office",
+          entityType: "repair_quote",
+          entityId: input.id,
+          type: "quote_declined",
+          severity: "warning",
+          title: `Repair quote declined — ${(quote as any).quoteNumber ?? `#${input.id}`}`,
+          message: "Customer declined all items on this repair quote.",
+          href: `/admin/repair-quotes/${input.id}`,
+          dedupeKey,
+        } as any);
+      }
+      return { success: true as const };
+    }),
+
+  approveSelectedItems: officeProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      itemIds: z.array(z.number().int().positive()).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const items = await db.getRepairQuoteItemsByQuote(input.id);
+      const validIds = new Set(items.map((i) => i.id));
+      const toApprove = input.itemIds.filter((id) => validIds.has(id));
+      if (!toApprove.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No valid items to approve." });
+
+      await Promise.all(toApprove.map((id) =>
+        db.updateRepairQuoteItem(id, { approvalStatus: "approved" } as any)
+      ));
+      const newStatus = await _recalcQuoteApprovalStatus(input.id);
+
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.itemsApproved",
+        title: `${toApprove.length} item(s) approved`, metadata: { itemIds: toApprove, newQuoteStatus: newStatus } });
+      return { success: true as const, newStatus };
+    }),
+
+  declineSelectedItems: officeProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      itemIds: z.array(z.number().int().positive()).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const items = await db.getRepairQuoteItemsByQuote(input.id);
+      const validIds = new Set(items.map((i) => i.id));
+      const toDecline = input.itemIds.filter((id) => validIds.has(id));
+      if (!toDecline.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No valid items to decline." });
+
+      await Promise.all(toDecline.map((id) =>
+        db.updateRepairQuoteItem(id, { approvalStatus: "declined" } as any)
+      ));
+      const newStatus = await _recalcQuoteApprovalStatus(input.id);
+
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.itemsDeclined",
+        title: `${toDecline.length} item(s) declined`, metadata: { itemIds: toDecline, newQuoteStatus: newStatus } });
+      return { success: true as const, newStatus };
+    }),
+
+  updateItemApprovalStatus: officeProcedure
+    .input(z.object({
+      itemId: z.number().int().positive(),
+      quoteId: z.number().int().positive(),
+      approvalStatus: z.enum(["pending", "approved", "declined", "needs_review"]),
+      customerNotes: z.string().max(1000).optional().nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.quoteId);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const item = await db.getRepairQuoteItemById(input.itemId);
+      if (!item || item.quoteId !== input.quoteId) throw new TRPCError({ code: "NOT_FOUND" });
+
+      await db.updateRepairQuoteItem(input.itemId, {
+        approvalStatus: input.approvalStatus,
+        ...(input.customerNotes !== undefined ? { customerNotes: input.customerNotes } : {}),
+      } as any);
+
+      const newStatus = await _recalcQuoteApprovalStatus(input.quoteId);
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.quoteId, eventType: "quote.itemStatusChanged",
+        title: `Item #${input.itemId} → ${input.approvalStatus}`,
+        metadata: { itemId: input.itemId, approvalStatus: input.approvalStatus } });
+      return { success: true as const, newStatus };
+    }),
+
+  convertApprovedItemsToApprovedWork: officeProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      approvalSource: z.enum(["email", "phone", "signed_pdf", "in_person", "portal_later", "internal_entry"]).default("internal_entry"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const companyId = ctx.user.companyId!;
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const q = quote as any;
+      const approvedStatuses = ["approved", "accepted", "partially_approved", "converted_to_approved_work"];
+      if (!approvedStatuses.includes(q.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Quote must be approved or partially approved before converting items." });
+      }
+
+      const items = await db.getRepairQuoteItemsByQuote(input.id);
+      const itemsToConvert = items.filter((i) => (i as any).approvalStatus === "approved");
+      if (!itemsToConvert.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No approved items to convert. Approve items first." });
+      }
+
+      let created = 0;
+      let skipped = 0;
+
+      for (const item of itemsToConvert) {
+        const existing = await db.getApprovedWorkByQuoteItem(item.id);
+        if (existing) { skipped++; continue; }
+
+        await db.createApprovedWork({
+          companyId,
+          siteId: quote.siteId,
+          customerOrgId: quote.customerOrgId,
+          jobId: quote.jobId,
+          quoteId: quote.id,
+          quoteItemId: item.id,
+          deficiencyId: item.deficiencyId ?? undefined,
+          type: "repair_order",
+          status: "approved",
+          approvalSource: input.approvalSource as any,
+          approvedAt: q.approvedAt ?? new Date(),
+          approvedByName: q.approvedByName ?? undefined,
+          approvedByEmail: q.approvedByEmail ?? undefined,
+          approvedAmount: String(toNum(item.total)),
+          approvedScope: item.description,
+          createdById: ctx.user.id,
+        } as any);
+
+        await db.updateRepairQuoteItem(item.id, { approvalStatus: "converted_to_approved_work" } as any);
+        created++;
+      }
+
+      // Update quote status if all approved items are now converted
+      const refreshedItems = await db.getRepairQuoteItemsByQuote(input.id);
+      const allApprovedConverted = refreshedItems.every((i) =>
+        ["converted_to_approved_work", "declined", "needs_review"].includes((i as any).approvalStatus ?? "pending")
+        && (i as any).approvalStatus !== "pending"
+        && (i as any).approvalStatus !== "approved"
+      );
+      if (allApprovedConverted) {
+        await db.updateQuote(input.id, { status: "converted_to_approved_work" } as any);
+      }
+
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.converted",
+        title: `${created} item(s) converted to Approved Work`,
+        metadata: { created, skipped } });
+
+      const dedupeKey = `quote-approved-ready-${input.id}`;
+      const alreadyNotified = await db.hasUndismissedNotification(companyId, dedupeKey);
+      if (!alreadyNotified && created > 0) {
+        await db.createNotification({
+          companyId,
+          roleTarget: "office",
+          entityType: "repair_quote",
+          entityId: input.id,
+          type: "quote_converted",
+          severity: "info",
+          title: `${created} repair item(s) converted to Approved Work`,
+          message: `From quote ${q.quoteNumber ?? `#${input.id}`}. Ready to schedule.`,
+          href: `/admin/approved-work`,
+          dedupeKey,
+        } as any);
+      }
+
+      return { success: true as const, created, skipped };
+    }),
+
+  expireQuote: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      await db.updateQuote(input.id, { status: "expired" } as any);
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.expired",
+        title: "Quote expired", oldValue: quote.status, newValue: "expired" });
+      return { success: true as const };
+    }),
+
+  cancelQuote: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      await db.updateQuote(input.id, { status: "cancelled" } as any);
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.cancelled",
+        title: "Quote cancelled", oldValue: quote.status, newValue: "cancelled" });
+      return { success: true as const };
     }),
 });
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
+
+async function _recalcQuoteApprovalStatus(quoteId: number): Promise<string> {
+  const items = await db.getRepairQuoteItemsByQuote(quoteId);
+  if (!items.length) return "";
+
+  const approvedOrConverted = items.filter((i) =>
+    (i as any).approvalStatus === "approved" || (i as any).approvalStatus === "converted_to_approved_work"
+  ).length;
+  const declined = items.filter((i) => (i as any).approvalStatus === "declined").length;
+  const total = items.length;
+
+  let newStatus: string | null = null;
+  if (approvedOrConverted === total) {
+    newStatus = "approved";
+  } else if (declined === total) {
+    newStatus = "declined";
+  } else if (approvedOrConverted > 0 || declined > 0) {
+    newStatus = "partially_approved";
+  }
+
+  if (newStatus) {
+    const extra: Record<string, unknown> = { status: newStatus };
+    if (newStatus === "approved") extra.approvedAt = extra.approvedAt ?? new Date();
+    if (newStatus === "declined") extra.declinedAt = extra.declinedAt ?? new Date();
+    await db.updateQuote(quoteId, extra as any);
+  }
+
+  return newStatus ?? "";
+}
 
 async function _recalcQuoteTotals(quoteId: number) {
   const items = await db.getRepairQuoteItemsByQuote(quoteId);

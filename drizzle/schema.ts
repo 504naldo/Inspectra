@@ -999,7 +999,7 @@ export const quotes = mysqlTable("quotes", {
   customerOrgId: int("customerOrgId").notNull(),
   companyId: int("companyId").notNull(),
   lineItems: json("lineItems").$type<QuoteLineItem[]>().notNull(),
-  status: mysqlEnum("status", ["draft", "sent", "accepted", "declined"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "ready_to_send", "sent", "viewed", "partially_approved", "approved", "accepted", "declined", "expired", "converted_to_approved_work", "cancelled"]).default("draft").notNull(),
   total: decimal("total", { precision: 10, scale: 2 }).notNull().default("0"),
   notes: text("notes"),
   // S3 URL for the generated PDF (set when the quote is sent)
@@ -1029,6 +1029,10 @@ export const quotes = mysqlTable("quotes", {
   validUntil: date("validUntil"),
   approvedAt: timestamp("approvedAt"),
   declinedAt: timestamp("declinedAt"),
+  viewedAt: timestamp("viewedAt"),
+  approvedByName: varchar("approvedByName", { length: 255 }),
+  approvedByEmail: varchar("approvedByEmail", { length: 320 }),
+  approvalSource: mysqlEnum("approvalSource", ["email", "phone", "signed_pdf", "in_person", "portal_later", "internal_entry"]),
   createdById: int("createdById"),
   finalizedAt: timestamp("finalizedAt"),
 }, (table) => ({
@@ -1279,6 +1283,8 @@ export const repairQuoteItems = mysqlTable("repair_quote_items", {
   pst: decimal("pst", { precision: 10, scale: 2 }).default("0"),
   total: decimal("total", { precision: 10, scale: 2 }).default("0"),
   sortOrder: int("sortOrder").default(0),
+  approvalStatus: mysqlEnum("approvalStatus", ["pending", "approved", "declined", "needs_review", "converted_to_approved_work"]).default("pending").notNull(),
+  customerNotes: text("customerNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
