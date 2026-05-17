@@ -11,7 +11,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure } from "../_core/trpc";
+import { router, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { invokeLLM } from "../_core/llm";
 import { logActivity } from "../activityLogger";
@@ -682,5 +682,448 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
       });
 
       return { success: true as const };
+    }),
+
+  // ── AI Deficiency + Quote Assistant ──────────────────────────────────────────
+
+  /**
+   * draftDeficiencyFromNotes — Turns raw technician field notes into professional deficiency text.
+   * Accessible to admin, office, and technicians.
+   * Never auto-saves. Output is a draft for human review.
+   */
+  draftDeficiencyFromNotes: technicianProcedure
+    .input(z.object({
+      jobId: z.number().int().positive().optional(),
+      deviceId: z.number().int().positive().optional(),
+      siteId: z.number().int().positive().optional(),
+      systemCategory: z.string().optional(),
+      severity: z.string().optional(),
+      rawTechnicianNotes: z.string().min(1).max(3000),
+      observedIssue: z.string().optional(),
+      location: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+
+      const contextLines: string[] = [
+        `TECHNICIAN NOTES: ${input.rawTechnicianNotes}`,
+      ];
+      if (input.observedIssue) contextLines.push(`OBSERVED ISSUE: ${input.observedIssue}`);
+      if (input.location) contextLines.push(`LOCATION: ${input.location}`);
+      if (input.systemCategory) contextLines.push(`SYSTEM CATEGORY: ${input.systemCategory}`);
+      if (input.severity) contextLines.push(`REPORTED SEVERITY: ${input.severity}`);
+
+      const fetches: Promise<void>[] = [];
+
+      if (input.deviceId) {
+        fetches.push(
+          db.getDeviceById(input.deviceId).then(device => {
+            if (!device) return;
+            contextLines.push(`DEVICE: ${device.deviceType}${device.location ? ` at ${device.location}` : ""}`);
+            if (device.model) contextLines.push(`Model: ${device.model}`);
+          })
+        );
+      }
+
+      if (input.jobId) {
+        fetches.push(
+          db.getJobById(input.jobId).then(job => {
+            if (!job || job.companyId !== companyId) return;
+            contextLines.push(`JOB: ${job.jobNumber} (${job.jobType ?? "inspection"})`);
+          })
+        );
+      }
+
+      if (input.siteId) {
+        fetches.push(
+          db.getSiteById(input.siteId).then(site => {
+            if (!site || site.companyId !== companyId) return;
+            contextLines.push(`SITE: ${site.name}, ${site.city ?? ""}`);
+          })
+        );
+      }
+
+      await Promise.all(fetches);
+
+      const kbSnippets = await db.getRelevantKnowledgeContext(companyId, input.rawTechnicianNotes, {
+        mode: "deficiency_help",
+        limit: 2,
+      });
+      const kbBlock = kbSnippets.length > 0
+        ? `\nINTERNAL REFERENCE:\n${kbSnippets.map(s => `[${s.title}]: ${s.excerpt}`).join("\n\n")}`
+        : "";
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `${SYSTEM_PROMPT}\n\nYou are a fire protection inspection expert. Turn raw technician field notes into professional, clear deficiency text. Be specific and factual. Do not invent device details not in the notes. When information is missing, note it in warnings.`,
+          },
+          {
+            role: "user",
+            content: `Convert these field notes into a professional deficiency record:\n\n${contextLines.join("\n")}${kbBlock}\n\nReturn JSON only.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "deficiency_draft",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                suggestedTitle: { type: "string" },
+                suggestedSeverity: { type: "string", enum: ["critical", "major", "minor", "observation"] },
+                systemCategory: { type: "string", enum: ["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER", "OTHER"] },
+                professionalDescription: { type: "string" },
+                customerExplanation: { type: "string" },
+                correctiveAction: { type: "string" },
+                internalNotes: { type: "string" },
+                confidence: { type: "string", enum: ["high", "medium", "low"] },
+                warnings: { type: "array", items: { type: "string" } },
+              },
+              required: ["suggestedTitle", "suggestedSeverity", "systemCategory", "professionalDescription", "customerExplanation", "correctiveAction", "internalNotes", "confidence", "warnings"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 700,
+      });
+
+      const raw = extractText(result);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const parsed = JSON.parse(raw);
+
+      void logActivity({
+        ctx,
+        entityType: "deficiency",
+        entityId: input.jobId ?? 0,
+        eventType: "ai_assistant.draftDeficiencyFromNotes",
+        title: "AI deficiency draft generated from field notes",
+        metadata: { jobId: input.jobId, deviceId: input.deviceId, confidence: parsed.confidence },
+      });
+
+      return { ...parsed, isDraft: true as const, disclaimer: "AI draft — review before saving." };
+    }),
+
+  /**
+   * improveDeficiencyText — Rewrites existing deficiency text fields to be more professional.
+   * Accessible to admin, office, and technicians.
+   */
+  improveDeficiencyText: technicianProcedure
+    .input(z.object({
+      deficiencyId: z.number().int().positive(),
+      currentTitle: z.string().min(1),
+      currentDescription: z.string().optional(),
+      currentObservedIssue: z.string().optional(),
+      currentCorrectiveAction: z.string().optional(),
+      currentCustomerExplanation: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+
+      const defResult = await db.getDeficiencyById(input.deficiencyId);
+      if (!defResult) throw new TRPCError({ code: "NOT_FOUND" });
+      const def = (defResult as any).deficiency ?? defResult;
+      const job = await db.getJobById(def.jobId);
+      if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const device = def.deviceId ? await db.getDeviceById(def.deviceId) : null;
+
+      const contextLines = [
+        `DEFICIENCY: ${input.currentTitle}`,
+        `Severity: ${def.severity} | System: ${def.systemCategory ?? "unspecified"}`,
+        device ? `Device: ${device.deviceType}${device.location ? ` at ${device.location}` : ""}` : "",
+        input.currentObservedIssue ? `Observed issue: ${input.currentObservedIssue}` : "",
+        input.currentDescription ? `Current description: ${input.currentDescription}` : "",
+        input.currentCorrectiveAction ? `Current corrective action: ${input.currentCorrectiveAction}` : "",
+        input.currentCustomerExplanation ? `Current customer explanation: ${input.currentCustomerExplanation}` : "",
+      ].filter(Boolean).join("\n");
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `${SYSTEM_PROMPT}\n\nYou are editing fire inspection deficiency text to be more professional, clear, and complete. Preserve all facts. Improve clarity and professional tone. Do not change technical details.`,
+          },
+          {
+            role: "user",
+            content: `Improve this deficiency text:\n\n${contextLines}\n\nReturn JSON only.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "deficiency_improve",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                improvedTitle: { type: "string" },
+                improvedDescription: { type: "string" },
+                improvedObservedIssue: { type: "string" },
+                improvedCorrectiveAction: { type: "string" },
+                improvedCustomerExplanation: { type: "string" },
+                warnings: { type: "array", items: { type: "string" } },
+              },
+              required: ["improvedTitle", "improvedDescription", "improvedObservedIssue", "improvedCorrectiveAction", "improvedCustomerExplanation", "warnings"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 700,
+      });
+
+      const raw = extractText(result);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const parsed = JSON.parse(raw);
+
+      void logActivity({
+        ctx,
+        entityType: "deficiency",
+        entityId: input.deficiencyId,
+        eventType: "ai_assistant.improveDeficiencyText",
+        title: "AI deficiency wording improvement generated",
+        metadata: { deficiencyId: input.deficiencyId },
+      });
+
+      return { ...parsed, isDraft: true as const, disclaimer: "AI draft — review before saving." };
+    }),
+
+  /**
+   * suggestRepairScope — Suggests repair scope, recommended work, and parts search terms
+   * based on a deficiency record.
+   */
+  suggestRepairScope: officeProcedure
+    .input(z.object({
+      deficiencyId: z.number().int().positive(),
+      siteId: z.number().int().positive().optional(),
+      systemCategory: z.string().optional(),
+      severity: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const contextBlock = await buildDeficiencyContext(input.deficiencyId, companyId);
+      if (contextBlock.startsWith("(")) throw new TRPCError({ code: "NOT_FOUND", message: contextBlock });
+
+      const kbSnippets = await db.getRelevantKnowledgeContext(companyId, contextBlock, {
+        mode: "repair_quote",
+        limit: 2,
+      });
+      const kbBlock = kbSnippets.length > 0
+        ? `\nINTERNAL REFERENCE:\n${kbSnippets.map(s => `[${s.title}]: ${s.excerpt}`).join("\n\n")}`
+        : "";
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `${SYSTEM_PROMPT}\n\nYou are a fire protection repair expert helping office staff scope repair work. Suggest realistic scope, work items, and parts for the described deficiency. Do not guarantee pricing or code compliance. Note any assumptions.`,
+          },
+          {
+            role: "user",
+            content: `Suggest repair scope for this deficiency:\n\n${contextBlock}${kbBlock}\n\nReturn JSON only.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "repair_scope",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                scopeSummary: { type: "string" },
+                recommendedWork: { type: "array", items: { type: "string" } },
+                recommendedPartsSearchTerms: { type: "array", items: { type: "string" } },
+                estimatedLabourNotes: { type: "string" },
+                customerFacingExplanation: { type: "string" },
+                internalPricingNotes: { type: "string" },
+                warnings: { type: "array", items: { type: "string" } },
+              },
+              required: ["scopeSummary", "recommendedWork", "recommendedPartsSearchTerms", "estimatedLabourNotes", "customerFacingExplanation", "internalPricingNotes", "warnings"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 800,
+      });
+
+      const raw = extractText(result);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const parsed = JSON.parse(raw);
+
+      void logActivity({
+        ctx,
+        entityType: "deficiency",
+        entityId: input.deficiencyId,
+        eventType: "ai_assistant.suggestRepairScope",
+        title: "AI repair scope suggested",
+        metadata: { deficiencyId: input.deficiencyId },
+      });
+
+      return { ...parsed, isDraft: true as const, disclaimer: "AI draft — review scope and pricing carefully before quoting." };
+    }),
+
+  /**
+   * draftRepairQuoteSummary — Drafts executive summary, scope of work, and customer approval note
+   * for a repair quote.
+   */
+  draftRepairQuoteSummary: officeProcedure
+    .input(z.object({
+      repairQuoteId: z.number().int().positive().optional(),
+      deficiencyIds: z.array(z.number().int().positive()).optional(),
+      customerOrgId: z.number().int().positive().optional(),
+      siteId: z.number().int().positive().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+
+      let contextBlock = "";
+      if (input.repairQuoteId) {
+        contextBlock = await buildRepairQuoteContext(input.repairQuoteId, companyId);
+      }
+
+      const defContexts: string[] = [];
+      for (const defId of (input.deficiencyIds ?? [])) {
+        const c = await buildDeficiencyContext(defId, companyId);
+        if (!c.startsWith("(")) defContexts.push(c);
+      }
+      if (defContexts.length > 0) {
+        contextBlock += `\n\nDEFICIENCIES TO QUOTE:\n${defContexts.join("\n---\n")}`;
+      }
+
+      if (!contextBlock.trim()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No context available. Provide repairQuoteId or deficiencyIds." });
+      }
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `${SYSTEM_PROMPT}\n\nYou are writing customer-facing repair quote documents for a fire protection company. Write clearly and professionally. Do not exaggerate urgency. Label all outputs as drafts. Do not make pricing guarantees.`,
+          },
+          {
+            role: "user",
+            content: `Draft a summary for this repair quote:\n\n${contextBlock}\n\nReturn JSON only.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "quote_summary",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                quoteTitle: { type: "string" },
+                executiveSummary: { type: "string" },
+                scopeOfWork: { type: "string" },
+                customerApprovalNote: { type: "string" },
+                exclusionsOrAssumptions: { type: "string" },
+                recommendedNextStep: { type: "string" },
+                warnings: { type: "array", items: { type: "string" } },
+              },
+              required: ["quoteTitle", "executiveSummary", "scopeOfWork", "customerApprovalNote", "exclusionsOrAssumptions", "recommendedNextStep", "warnings"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 800,
+      });
+
+      const raw = extractText(result);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const parsed = JSON.parse(raw);
+
+      void logActivity({
+        ctx,
+        entityType: "repair_quote",
+        entityId: input.repairQuoteId ?? 0,
+        eventType: "ai_assistant.draftRepairQuoteSummary",
+        title: "AI repair quote summary drafted",
+        metadata: { repairQuoteId: input.repairQuoteId, deficiencyIds: input.deficiencyIds },
+      });
+
+      return { ...parsed, isDraft: true as const, disclaimer: "AI draft — review before sending to customer." };
+    }),
+
+  /**
+   * suggestPartsFromDeficiency — Generates parts search terms from a deficiency,
+   * then searches the parts catalog for matches.
+   * Never auto-adds parts to a quote.
+   */
+  suggestPartsFromDeficiency: officeProcedure
+    .input(z.object({
+      deficiencyId: z.number().int().positive(),
+      searchText: z.string().optional(),
+      systemCategory: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const contextBlock = await buildDeficiencyContext(input.deficiencyId, companyId);
+      if (contextBlock.startsWith("(")) throw new TRPCError({ code: "NOT_FOUND", message: contextBlock });
+
+      const searchHint = input.searchText ? `\nAdditional search hint: ${input.searchText}` : "";
+
+      const termResult = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `${SYSTEM_PROMPT}\n\nYou are helping search a fire protection parts catalog. Generate 3-6 specific part search terms based on the deficiency. Use product-level terms (e.g., "smoke detector", "sprinkler head", "pull station", "control module").`,
+          },
+          {
+            role: "user",
+            content: `Generate search terms for parts needed to repair this deficiency:\n\n${contextBlock}${searchHint}\n\nReturn JSON only.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "parts_search",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                suggestedPartsSearchTerms: { type: "array", items: { type: "string" } },
+                notes: { type: "string" },
+              },
+              required: ["suggestedPartsSearchTerms", "notes"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 300,
+      });
+
+      const raw = extractText(termResult);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const { suggestedPartsSearchTerms, notes } = JSON.parse(raw);
+
+      const matchingParts = await db.searchPartsCatalogByKeywords(companyId, suggestedPartsSearchTerms, 8);
+
+      void logActivity({
+        ctx,
+        entityType: "deficiency",
+        entityId: input.deficiencyId,
+        eventType: "ai_assistant.suggestPartsFromDeficiency",
+        title: "AI parts suggestions generated",
+        metadata: { deficiencyId: input.deficiencyId, termsGenerated: suggestedPartsSearchTerms.length, partsFound: matchingParts.length },
+      });
+
+      return {
+        suggestedPartsSearchTerms,
+        matchingParts: matchingParts.map(p => ({
+          id: p.id,
+          productName: p.productName,
+          category: p.category,
+          description: p.description,
+          unitPrice: p.unitPrice,
+          defaultLabourHours: p.defaultLabourHours,
+          sku: p.sku,
+        })),
+        notes,
+        disclaimer: "AI suggestions — verify against current catalog pricing before adding to quote.",
+      };
     }),
 });

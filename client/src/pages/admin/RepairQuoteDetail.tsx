@@ -14,6 +14,7 @@ import { ActivityTimeline } from "@/components/ActivityTimeline";
 import {
   Plus, Trash2, Pencil, Loader2, FileText, CheckCircle,
   Send, Lock, ChevronDown, ChevronUp, ExternalLink, Bot, Copy,
+  Sparkles, ArrowRight, Package,
 } from "lucide-react";
 import {
   Dialog,
@@ -99,9 +100,23 @@ export default function RepairQuoteDetail() {
   const [expandedItems, setExpandedItems] = useState<Record<number, boolean>>({});
   const [aiOpen, setAiOpen] = useState(false);
   const [aiContent, setAiContent] = useState("");
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [partsOpen, setPartsOpen] = useState(false);
+  const [partsDefId, setPartsDefId] = useState<number | null>(null);
+
   const aiAsk = trpc.aiAssistant.ask.useMutation({
     onSuccess: (d) => { setAiContent(d.answer); setAiOpen(true); },
     onError: (e) => toast.error(e.message || "AI request failed"),
+  });
+
+  const quoteSummary = trpc.aiAssistant.draftRepairQuoteSummary.useMutation({
+    onSuccess: () => setSummaryOpen(true),
+    onError: (e) => toast.error(e.message || "AI summary failed"),
+  });
+
+  const partsFromDef = trpc.aiAssistant.suggestPartsFromDeficiency.useMutation({
+    onSuccess: () => setPartsOpen(true),
+    onError: (e) => toast.error(e.message || "Parts suggestion failed"),
   });
 
   const utils = trpc.useUtils();
@@ -428,6 +443,16 @@ export default function RepairQuoteDetail() {
               {aiAsk.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />}
               Draft with AI
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-primary border-primary/30 hover:bg-primary/10"
+              disabled={quoteSummary.isPending}
+              onClick={() => { quoteSummary.reset(); quoteSummary.mutate({ repairQuoteId: quoteId }); }}
+            >
+              {quoteSummary.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Draft Summary
+            </Button>
             <Button variant="outline" size="sm" onClick={() => pdfMut.mutate({ id: quoteId })} disabled={pdfMut.isPending} className="gap-1.5">
               {pdfMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
               PDF
@@ -599,16 +624,32 @@ export default function RepairQuoteDetail() {
                               <p className="font-medium">{CAD.format(parseFloat(String(item.gst)) + parseFloat(String(item.pst)))}</p>
                             </div>
                           </div>
-                          {canEdit && (
-                            <div className="flex gap-2 pt-1">
-                              <Button size="sm" variant="outline" onClick={() => startEditItem(item)} className="gap-1 h-7 text-xs">
-                                <Pencil className="h-3 w-3" /> Edit
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {canEdit && (
+                              <>
+                                <Button size="sm" variant="outline" onClick={() => startEditItem(item)} className="gap-1 h-7 text-xs">
+                                  <Pencil className="h-3 w-3" /> Edit
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => removeItemMut.mutate({ id: item.id, quoteId })} disabled={removeItemMut.isPending} className="gap-1 h-7 text-xs text-destructive hover:text-destructive">
+                                  <Trash2 className="h-3 w-3" /> Remove
+                                </Button>
+                              </>
+                            )}
+                            {(item as any).deficiencyId && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="gap-1 h-7 text-xs text-primary"
+                                disabled={partsFromDef.isPending}
+                                onClick={() => { setPartsDefId((item as any).deficiencyId); partsFromDef.reset(); partsFromDef.mutate({ deficiencyId: (item as any).deficiencyId }); }}
+                              >
+                                {partsFromDef.isPending && partsDefId === (item as any).deficiencyId
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <Package className="h-3 w-3" />}
+                                Suggest Parts
                               </Button>
-                              <Button size="sm" variant="ghost" onClick={() => removeItemMut.mutate({ id: item.id, quoteId })} disabled={removeItemMut.isPending} className="gap-1 h-7 text-xs text-destructive hover:text-destructive">
-                                <Trash2 className="h-3 w-3" /> Remove
-                              </Button>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       )}
                     </>
@@ -674,14 +715,119 @@ export default function RepairQuoteDetail() {
             {aiContent}
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { navigator.clipboard.writeText(aiContent); toast.success("Copied to clipboard"); }}
-            >
+            <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(aiContent); toast.success("Copied"); }}>
               <Copy className="h-3.5 w-3.5 mr-1" /> Copy
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setAiOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quote Summary dialog */}
+      <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" /> AI Quote Summary
+            </DialogTitle>
+            <DialogDescription>Advisory draft only. Review before sending to customer.</DialogDescription>
+          </DialogHeader>
+          {quoteSummary.data && (() => {
+            const s = quoteSummary.data as any;
+            return (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <p className="font-medium text-xs text-muted-foreground uppercase mb-1">Quote Title</p>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold">{s.quoteTitle}</p>
+                    <Button variant="ghost" size="sm" className="h-6 text-xs shrink-0" onClick={() => { navigator.clipboard.writeText(s.quoteTitle); toast.success("Copied"); }}>
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <p className="font-medium text-xs text-muted-foreground uppercase mb-1">Executive Summary</p>
+                  <div className="rounded border p-3 bg-muted/30 text-xs whitespace-pre-wrap">{s.executiveSummary}</div>
+                  <Button variant="ghost" size="sm" className="h-6 text-xs mt-1" onClick={() => { navigator.clipboard.writeText(s.executiveSummary); toast.success("Copied"); }}><Copy className="h-3 w-3 mr-1" /> Copy</Button>
+                </div>
+                <div>
+                  <p className="font-medium text-xs text-muted-foreground uppercase mb-1">Scope of Work</p>
+                  <div className="rounded border p-3 bg-muted/30 text-xs whitespace-pre-wrap">{s.scopeOfWork}</div>
+                  <Button variant="ghost" size="sm" className="h-6 text-xs mt-1" onClick={() => { navigator.clipboard.writeText(s.scopeOfWork); toast.success("Copied"); }}><Copy className="h-3 w-3 mr-1" /> Copy</Button>
+                </div>
+                <div>
+                  <p className="font-medium text-xs text-muted-foreground uppercase mb-1">Customer Approval Note</p>
+                  <div className="rounded border p-3 bg-muted/30 text-xs whitespace-pre-wrap">{s.customerApprovalNote}</div>
+                  <Button variant="ghost" size="sm" className="h-6 text-xs mt-1" onClick={() => { navigator.clipboard.writeText(s.customerApprovalNote); toast.success("Copied"); }}><Copy className="h-3 w-3 mr-1" /> Copy</Button>
+                </div>
+                {s.exclusionsOrAssumptions && (
+                  <div>
+                    <p className="font-medium text-xs text-muted-foreground uppercase mb-1">Exclusions / Assumptions</p>
+                    <p className="text-xs text-muted-foreground">{s.exclusionsOrAssumptions}</p>
+                  </div>
+                )}
+                {s.warnings?.length > 0 && (
+                  <div className="space-y-1">
+                    {s.warnings.map((w: string, i: number) => (
+                      <p key={i} className="text-xs text-amber-600">• {w}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setSummaryOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Suggest Parts dialog */}
+      <Dialog open={partsOpen} onOpenChange={setPartsOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-4 w-4 text-primary" /> Suggested Parts
+            </DialogTitle>
+            <DialogDescription>AI-generated suggestions. Verify pricing before adding to quote.</DialogDescription>
+          </DialogHeader>
+          {partsFromDef.data && (() => {
+            const p = partsFromDef.data as any;
+            return (
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-1">
+                  {p.suggestedPartsSearchTerms.map((t: string, i: number) => (
+                    <span key={i} className="text-xs bg-muted rounded-full px-2 py-0.5">{t}</span>
+                  ))}
+                </div>
+                {p.matchingParts.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">{p.matchingParts.length} catalog match{p.matchingParts.length !== 1 ? "es" : ""}</p>
+                    {p.matchingParts.map((part: any) => (
+                      <div key={part.id} className="border rounded p-3 text-xs space-y-0.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-medium">{part.productName}</p>
+                          <p className="font-semibold tabular-nums shrink-0">{CAD.format(parseFloat(String(part.unitPrice)))}</p>
+                        </div>
+                        <p className="text-muted-foreground">{part.category}{part.sku ? ` · ${part.sku}` : ""}</p>
+                        {part.description && <p className="text-muted-foreground">{part.description}</p>}
+                        {part.defaultLabourHours > 0 && (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <ArrowRight className="h-3 w-3" /> {parseFloat(String(part.defaultLabourHours))}h labour
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No catalog matches found for these search terms.</p>
+                )}
+                {p.notes && <p className="text-xs text-muted-foreground">{p.notes}</p>}
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setPartsOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

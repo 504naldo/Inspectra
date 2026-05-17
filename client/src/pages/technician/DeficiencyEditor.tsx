@@ -5,17 +5,48 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
-import { 
-  ArrowLeft, 
+import {
+  ArrowLeft,
   Sparkles,
   Save,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  Wand2,
+  AlertTriangle,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { useTrackInspectionProgress } from "@/hooks/useInspectionProgress";
+
+type DraftResult = {
+  suggestedTitle: string;
+  suggestedSeverity: string;
+  systemCategory: string;
+  professionalDescription: string;
+  customerExplanation: string;
+  correctiveAction: string;
+  internalNotes: string;
+  confidence: string;
+  warnings: string[];
+};
+
+type ImproveResult = {
+  improvedTitle: string;
+  improvedDescription: string;
+  improvedObservedIssue: string;
+  improvedCorrectiveAction: string;
+  improvedCustomerExplanation: string;
+  warnings: string[];
+};
 
 interface DeficiencyEditorProps {
   deficiencyId?: number;
@@ -95,7 +126,13 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
     }
   }, [device]);
 
-  // AI narrative generator
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftNotes, setDraftNotes] = useState("");
+  const [draftResult, setDraftResult] = useState<DraftResult | null>(null);
+  const [improveOpen, setImproveOpen] = useState(false);
+  const [improveResult, setImproveResult] = useState<ImproveResult | null>(null);
+
+  // Existing AI narrative generator (requires device)
   const generateNarrative = trpc.ai.generateDeficiencyNarrative.useMutation({
     onSuccess: (data) => {
       setDescription(data.description);
@@ -108,6 +145,41 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       toast.error(error.message || 'Failed to generate narrative');
     }
   });
+
+  // Draft from raw field notes (no device required)
+  const draftFromNotes = trpc.aiAssistant.draftDeficiencyFromNotes.useMutation({
+    onSuccess: (d) => { setDraftResult(d as DraftResult); },
+    onError: (e) => toast.error(e.message || "Draft failed"),
+  });
+
+  // Improve existing deficiency wording
+  const improveText = trpc.aiAssistant.improveDeficiencyText.useMutation({
+    onSuccess: (d) => { setImproveResult(d as ImproveResult); },
+    onError: (e) => toast.error(e.message || "Improve failed"),
+  });
+
+  function applyDraft(d: DraftResult) {
+    if (d.suggestedTitle) setTitle(d.suggestedTitle);
+    if (d.suggestedSeverity) setSeverity(d.suggestedSeverity);
+    if (d.systemCategory && d.systemCategory !== "OTHER") setSystemCategory(d.systemCategory);
+    if (d.professionalDescription) setDescription(d.professionalDescription);
+    if (d.correctiveAction) setCorrectiveAction(d.correctiveAction);
+    if (d.customerExplanation) setCustomerExplanation(d.customerExplanation);
+    setAiDraft(true);
+    setDraftOpen(false);
+    toast.success("AI draft applied — review before saving");
+  }
+
+  function applyImprove(d: ImproveResult) {
+    if (d.improvedTitle) setTitle(d.improvedTitle);
+    if (d.improvedDescription) setDescription(d.improvedDescription);
+    if (d.improvedObservedIssue) setObservedIssue(d.improvedObservedIssue);
+    if (d.improvedCorrectiveAction) setCorrectiveAction(d.improvedCorrectiveAction);
+    if (d.improvedCustomerExplanation) setCustomerExplanation(d.improvedCustomerExplanation);
+    setAiDraft(true);
+    setImproveOpen(false);
+    toast.success("AI improvements applied — review before saving");
+  }
 
   const handleGenerateNarrative = () => {
     // Validate required fields
@@ -352,39 +424,57 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
           />
         </div>
 
-        {/* AI Generate Button */}
+        {/* AI helpers */}
         <Card className="border-primary/50 bg-primary/5">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="font-medium">AI Narrative Generator</p>
-                  <p className="text-sm text-muted-foreground">
-                    Generate description, corrective action & customer explanation
-                  </p>
-                </div>
-              </div>
-              <Button 
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <p className="font-medium text-sm">AI Helpers</p>
+            </div>
+            <p className="text-xs text-muted-foreground">AI suggestions are drafts. Review before saving.</p>
+            <div className="flex flex-col gap-2">
+              {/* Existing: narrative from observed issue + device */}
+              <Button
+                variant="outline"
+                className="justify-start gap-2 h-10"
                 onClick={handleGenerateNarrative}
                 disabled={generateNarrative.isPending || !observedIssue}
-                size="sm"
               >
-                {generateNarrative.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  'Generate'
-                )}
+                {generateNarrative.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Generate Narrative
+                <span className="text-xs text-muted-foreground ml-auto">(needs observed issue + device)</span>
               </Button>
+              {/* New: draft from raw notes */}
+              <Button
+                variant="outline"
+                className="justify-start gap-2 h-10"
+                onClick={() => { setDraftNotes(observedIssue); setDraftResult(null); setDraftOpen(true); }}
+                disabled={draftFromNotes.isPending}
+              >
+                <Wand2 className="h-4 w-4" />
+                Draft from Notes
+                <span className="text-xs text-muted-foreground ml-auto">(works without device)</span>
+              </Button>
+              {/* Edit mode: improve wording */}
+              {isEditing && deficiencyId && (
+                <Button
+                  variant="outline"
+                  className="justify-start gap-2 h-10"
+                  onClick={() => { setImproveResult(null); setImproveOpen(true); improveText.mutate({ deficiencyId: deficiencyId!, currentTitle: title, currentDescription: description || undefined, currentObservedIssue: observedIssue || undefined, currentCorrectiveAction: correctiveAction || undefined, currentCustomerExplanation: customerExplanation || undefined }); }}
+                  disabled={improveText.isPending || !title}
+                >
+                  {improveText.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Improve Wording
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        {/* AI Draft Notice */}
         {aiDraft && (
           <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
             <Sparkles className="h-4 w-4" />
-            <span>AI-generated draft - please review and edit as needed</span>
+            <span>AI-generated draft — review and edit as needed</span>
           </div>
         )}
 
@@ -452,6 +542,134 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
           </div>
         </div>
       </main>
+
+      {/* Draft from Notes dialog */}
+      <Dialog open={draftOpen} onOpenChange={setDraftOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-4 w-4 text-primary" /> Draft from Field Notes
+            </DialogTitle>
+            <DialogDescription>AI suggestions are drafts. Review before saving.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor="draftNotes">Field notes / raw observations</Label>
+            <Textarea
+              id="draftNotes"
+              placeholder="Describe what you observed in your own words..."
+              value={draftNotes}
+              onChange={(e) => setDraftNotes(e.target.value)}
+              className="min-h-[100px]"
+            />
+            <Button
+              className="w-full"
+              disabled={draftFromNotes.isPending || !draftNotes.trim()}
+              onClick={() => draftFromNotes.mutate({
+                rawTechnicianNotes: draftNotes,
+                observedIssue: observedIssue || undefined,
+                location: deviceLocation || undefined,
+                systemCategory: systemCategory || undefined,
+                severity: severity || undefined,
+                jobId: jobId || undefined,
+                deviceId: deviceId || undefined,
+              })}
+            >
+              {draftFromNotes.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+              Generate Draft
+            </Button>
+
+            {draftResult && (
+              <div className="space-y-3 pt-2 border-t">
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" /> Review AI output carefully before applying.
+                </p>
+                {draftResult.warnings.length > 0 && (
+                  <div className="space-y-1">
+                    {draftResult.warnings.map((w, i) => (
+                      <p key={i} className="text-xs text-muted-foreground">• {w}</p>
+                    ))}
+                  </div>
+                )}
+                <div className="space-y-2 text-sm">
+                  <div><span className="font-medium">Title:</span> {draftResult.suggestedTitle}</div>
+                  <div><span className="font-medium">Severity:</span> {draftResult.suggestedSeverity} (confidence: {draftResult.confidence})</div>
+                  <div><span className="font-medium">System:</span> {draftResult.systemCategory}</div>
+                  <div className="border rounded p-2 bg-muted/30 text-xs">
+                    <p className="font-medium mb-1">Description:</p>
+                    <p>{draftResult.professionalDescription}</p>
+                  </div>
+                  <div className="border rounded p-2 bg-muted/30 text-xs">
+                    <p className="font-medium mb-1">Corrective Action:</p>
+                    <p>{draftResult.correctiveAction}</p>
+                  </div>
+                  <div className="border rounded p-2 bg-muted/30 text-xs">
+                    <p className="font-medium mb-1">Customer Explanation:</p>
+                    <p>{draftResult.customerExplanation}</p>
+                  </div>
+                </div>
+                <Button className="w-full" onClick={() => applyDraft(draftResult!)}>
+                  <CheckCircle2 className="h-4 w-4 mr-2" /> Apply All Fields
+                </Button>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setDraftOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Improve Wording dialog */}
+      <Dialog open={improveOpen} onOpenChange={setImproveOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" /> Improve Wording
+            </DialogTitle>
+            <DialogDescription>AI suggestions are drafts. Review before saving.</DialogDescription>
+          </DialogHeader>
+          {improveText.isPending && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          {improveResult && (
+            <div className="space-y-3">
+              <p className="text-xs text-amber-600 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" /> Review AI output carefully before applying.
+              </p>
+              {improveResult.warnings.length > 0 && (
+                <div className="space-y-1">
+                  {improveResult.warnings.map((w, i) => (
+                    <p key={i} className="text-xs text-muted-foreground">• {w}</p>
+                  ))}
+                </div>
+              )}
+              <div className="space-y-2 text-sm">
+                <div><span className="font-medium">Title:</span> {improveResult.improvedTitle}</div>
+                <div className="border rounded p-2 bg-muted/30 text-xs">
+                  <p className="font-medium mb-1">Description:</p>
+                  <p>{improveResult.improvedDescription}</p>
+                </div>
+                <div className="border rounded p-2 bg-muted/30 text-xs">
+                  <p className="font-medium mb-1">Corrective Action:</p>
+                  <p>{improveResult.improvedCorrectiveAction}</p>
+                </div>
+                <div className="border rounded p-2 bg-muted/30 text-xs">
+                  <p className="font-medium mb-1">Customer Explanation:</p>
+                  <p>{improveResult.improvedCustomerExplanation}</p>
+                </div>
+              </div>
+              <Button className="w-full" onClick={() => applyImprove(improveResult!)}>
+                <CheckCircle2 className="h-4 w-4 mr-2" /> Apply Improvements
+              </Button>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setImproveOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bottom Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 safe-bottom">

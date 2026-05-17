@@ -1733,6 +1733,32 @@ export async function updatePartsCatalogItem(id: number, data: Partial<InsertPar
   await db.update(partsCatalog).set(data).where(eq(partsCatalog.id, id));
 }
 
+export async function searchPartsCatalogByKeywords(
+  companyId: number,
+  keywords: string[],
+  limit = 10,
+): Promise<PartsCatalogItem[]> {
+  const db = await getDb();
+  if (!db || !keywords.length) return [];
+  const terms = keywords.map(k => k.trim()).filter(k => k.length >= 2);
+  if (!terms.length) return [];
+  const conditions = terms.map(kw =>
+    or(
+      like(partsCatalog.productName, `%${kw}%`),
+      like(partsCatalog.category, `%${kw}%`),
+      like(partsCatalog.description, `%${kw}%`),
+    )
+  );
+  return db.select().from(partsCatalog)
+    .where(and(
+      eq(partsCatalog.companyId, companyId),
+      eq(partsCatalog.isActive, true),
+      or(...conditions),
+    ))
+    .orderBy(asc(partsCatalog.category), asc(partsCatalog.productName))
+    .limit(limit);
+}
+
 // ============================================
 // REPAIR QUOTE ITEMS QUERIES
 // ============================================
