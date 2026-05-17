@@ -37,6 +37,11 @@ import {
   serviceAgreements, InsertServiceAgreement, ServiceAgreement,
   agreementSites, InsertAgreementSite, AgreementSite,
   assetLifecycleEvents, InsertAssetLifecycleEvent, AssetLifecycleEvent,
+  inventoryItems, InsertInventoryItem, InventoryItem,
+  partsRequests, InsertPartsRequest, PartsRequest,
+  partsRequestItems, InsertPartsRequestItem, PartsRequestItem,
+  inventoryTransactions, InsertInventoryTransaction, InventoryTransaction,
+  PARTS_REQUEST_STATUSES, PARTS_REQUEST_PRIORITIES,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2883,4 +2888,237 @@ export async function getRecentLifecycleEventsByCompany(
     .where(eq(assetLifecycleEvents.companyId, companyId))
     .orderBy(desc(assetLifecycleEvents.createdAt))
     .limit(limit);
+}
+
+// ============================================
+// INVENTORY ITEMS
+// ============================================
+
+export async function getInventoryItemsByCompany(
+  companyId: number,
+  includeInactive = false,
+): Promise<InventoryItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = includeInactive
+    ? [eq(inventoryItems.companyId, companyId)]
+    : [eq(inventoryItems.companyId, companyId), eq(inventoryItems.isActive, true)];
+  return db
+    .select()
+    .from(inventoryItems)
+    .where(and(...conditions))
+    .orderBy(asc(inventoryItems.category), asc(inventoryItems.name));
+}
+
+export async function getInventoryItemById(id: number): Promise<InventoryItem | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(inventoryItems).where(eq(inventoryItems.id, id));
+  return rows[0] ?? null;
+}
+
+export async function createInventoryItem(data: InsertInventoryItem): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(inventoryItems).values(data);
+  return Number((result as any).insertId);
+}
+
+export async function updateInventoryItem(
+  id: number,
+  data: Partial<InsertInventoryItem>,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inventoryItems).set(data).where(eq(inventoryItems.id, id));
+}
+
+export async function getLowStockInventoryItems(companyId: number): Promise<InventoryItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(inventoryItems)
+    .where(and(
+      eq(inventoryItems.companyId, companyId),
+      eq(inventoryItems.isActive, true),
+    ));
+  return rows.filter((item) => item.quantityOnHand <= item.reorderPoint);
+}
+
+// ============================================
+// INVENTORY TRANSACTIONS
+// ============================================
+
+export async function createInventoryTransaction(
+  data: InsertInventoryTransaction,
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(inventoryTransactions).values(data);
+  return Number((result as any).insertId);
+}
+
+export async function getInventoryTransactionsByItem(
+  inventoryItemId: number,
+): Promise<InventoryTransaction[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(inventoryTransactions)
+    .where(eq(inventoryTransactions.inventoryItemId, inventoryItemId))
+    .orderBy(desc(inventoryTransactions.createdAt));
+}
+
+// ============================================
+// PARTS REQUESTS
+// ============================================
+
+export async function generateRequestNumber(companyId: number): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const year = new Date().getFullYear();
+  const rows = await db
+    .select({ id: partsRequests.id })
+    .from(partsRequests)
+    .where(and(
+      eq(partsRequests.companyId, companyId),
+      like(partsRequests.requestNumber, `PR-${year}-%`),
+    ))
+    .orderBy(desc(partsRequests.id))
+    .limit(1);
+  const seq = rows.length > 0 ? parseInt(String((rows[0] as any).id ?? "0")) + 1 : 1;
+  const counter = await db
+    .select({ cnt: sql<number>`COUNT(*)` })
+    .from(partsRequests)
+    .where(and(
+      eq(partsRequests.companyId, companyId),
+      like(partsRequests.requestNumber, `PR-${year}-%`),
+    ));
+  const count = Number(counter[0]?.cnt ?? 0) + 1;
+  return `PR-${year}-${String(count).padStart(4, "0")}`;
+}
+
+export async function getPartsRequestsByCompany(
+  companyId: number,
+  status?: PartsRequest["status"],
+): Promise<PartsRequest[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = status
+    ? [eq(partsRequests.companyId, companyId), eq(partsRequests.status, status)]
+    : [eq(partsRequests.companyId, companyId)];
+  return db
+    .select()
+    .from(partsRequests)
+    .where(and(...conditions))
+    .orderBy(desc(partsRequests.createdAt));
+}
+
+export async function getPartsRequestById(id: number): Promise<PartsRequest | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(partsRequests).where(eq(partsRequests.id, id));
+  return rows[0] ?? null;
+}
+
+export async function createPartsRequest(data: InsertPartsRequest): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(partsRequests).values(data);
+  return Number((result as any).insertId);
+}
+
+export async function updatePartsRequest(
+  id: number,
+  data: Partial<InsertPartsRequest>,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(partsRequests).set(data).where(eq(partsRequests.id, id));
+}
+
+export async function getPartsRequestsByApprovedWork(
+  approvedWorkId: number,
+): Promise<PartsRequest[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(partsRequests)
+    .where(eq(partsRequests.approvedWorkId, approvedWorkId))
+    .orderBy(desc(partsRequests.createdAt));
+}
+
+export async function getPartsRequestsByWorkOrder(
+  workOrderId: number,
+): Promise<PartsRequest[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(partsRequests)
+    .where(eq(partsRequests.workOrderId, workOrderId))
+    .orderBy(desc(partsRequests.createdAt));
+}
+
+export async function getPartsRequestsByJob(jobId: number): Promise<PartsRequest[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(partsRequests)
+    .where(eq(partsRequests.jobId, jobId))
+    .orderBy(desc(partsRequests.createdAt));
+}
+
+// ============================================
+// PARTS REQUEST ITEMS
+// ============================================
+
+export async function getPartsRequestItemsByRequest(
+  partsRequestId: number,
+): Promise<PartsRequestItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(partsRequestItems)
+    .where(eq(partsRequestItems.partsRequestId, partsRequestId))
+    .orderBy(asc(partsRequestItems.createdAt));
+}
+
+export async function getPartsRequestItemById(id: number): Promise<PartsRequestItem | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(partsRequestItems)
+    .where(eq(partsRequestItems.id, id));
+  return rows[0] ?? null;
+}
+
+export async function createPartsRequestItem(
+  data: InsertPartsRequestItem,
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(partsRequestItems).values(data);
+  return Number((result as any).insertId);
+}
+
+export async function updatePartsRequestItem(
+  id: number,
+  data: Partial<InsertPartsRequestItem>,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(partsRequestItems).set(data).where(eq(partsRequestItems.id, id));
+}
+
+export async function deletePartsRequestItem(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(partsRequestItems).where(eq(partsRequestItems.id, id));
 }

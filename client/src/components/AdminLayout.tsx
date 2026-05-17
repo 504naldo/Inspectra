@@ -34,6 +34,8 @@ import {
   BookOpen,
   ScrollText,
   Activity,
+  Package,
+  ShoppingCart,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -58,6 +60,8 @@ const primaryNavItems = [
 const secondaryNavItems = [
   { label: "Agreements",        href: "/admin/service-agreements",      icon: ScrollText,     adminOnly: false },
   { label: "Asset Lifecycle",  href: "/admin/asset-lifecycle",         icon: Activity,       adminOnly: false },
+  { label: "Inventory",        href: "/admin/inventory",               icon: Package,        adminOnly: false },
+  { label: "Parts Requests",   href: "/admin/parts-requests",          icon: ShoppingCart,   adminOnly: false },
   { label: "Approved Work",    href: "/admin/approved-work",          icon: CheckSquare,    adminOnly: false },
   { label: "Auto Schedule",   href: "/admin/scheduling-automation",  icon: Zap,            adminOnly: false },
   { label: "AI Assistant",    href: "/admin/ai-assistant",           icon: Bot,            adminOnly: false },

@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
-  Plus, Package, Pencil, X, Check, ChevronDown, ChevronRight, Search, Filter,
+  Plus, Package, Pencil, X, Check, ChevronDown, ChevronRight, Search, Filter, PackagePlus,
 } from "lucide-react";
 import {
   Select,
@@ -55,6 +55,21 @@ export default function PartsCatalog() {
   const [filterCategory, setFilterCategory] = useState("all");
 
   const { data: parts = [], refetch } = trpc.partsCatalog.list.useQuery({ includeInactive: showInactive });
+  const { data: inventoryItems = [] } = trpc.inventory.listInventory.useQuery({ includeInactive: false });
+  const catalogInventoryIds = useMemo(
+    () => new Set((inventoryItems as any[]).filter((i) => i.partsCatalogId).map((i) => i.partsCatalogId as number)),
+    [inventoryItems],
+  );
+
+  const utils = trpc.useUtils();
+  const addToInventoryMut = trpc.inventory.createFromPartsCatalog.useMutation({
+    onSuccess: () => {
+      toast.success("Added to inventory. Adjust stock from the Inventory page.");
+      utils.inventory.listInventory.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const createMut = trpc.partsCatalog.create.useMutation({
     onSuccess: () => { refetch(); setShowAdd(false); setForm(EMPTY_FORM); toast.success("Part added"); },
   });
@@ -382,6 +397,21 @@ export default function PartsCatalog() {
                               <span className="text-sm font-semibold tabular-nums">
                                 {CAD.format(parseFloat(String(part.unitPrice)))}
                               </span>
+                              {catalogInventoryIds.has(part.id) ? (
+                                <Badge variant="secondary" className="text-xs gap-1 shrink-0">
+                                  <Package className="h-3 w-3" /> In Stock
+                                </Badge>
+                              ) : part.isActive ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs gap-1 shrink-0"
+                                  disabled={addToInventoryMut.isPending}
+                                  onClick={() => addToInventoryMut.mutate({ partsCatalogId: part.id })}
+                                >
+                                  <PackagePlus className="h-3.5 w-3.5" /> Add to Inventory
+                                </Button>
+                              ) : null}
                               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => startEdit(part)}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
