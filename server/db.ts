@@ -1972,13 +1972,14 @@ export async function getAiReviewById(id: number): Promise<AiReview | null> {
   return rows[0] ?? null;
 }
 
-export async function getAiReviewsByJobScoped(jobId: number, companyId: number): Promise<AiReview[]> {
+export async function getAiReviewsByJobScoped(jobId: number, companyId: number, reviewType?: string): Promise<AiReview[]> {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(aiReviews)
     .where(and(
       eq(aiReviews.jobId, jobId),
       eq(aiReviews.companyId as any, companyId),
+      reviewType ? eq(aiReviews.reviewType as any, reviewType) : undefined,
     ))
     .orderBy(desc(aiReviews.createdAt))
     .limit(10);
