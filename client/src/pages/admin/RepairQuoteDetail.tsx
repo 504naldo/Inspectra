@@ -14,7 +14,8 @@ import { ActivityTimeline } from "@/components/ActivityTimeline";
 import {
   Plus, Trash2, Pencil, Loader2, FileText, CheckCircle,
   Send, Lock, ChevronDown, ChevronUp, ExternalLink, Bot, Copy,
-  Sparkles, ArrowRight, Package,
+  Sparkles, ArrowRight, Package, ThumbsUp, ThumbsDown, Eye,
+  ClipboardCheck, AlertTriangle, XCircle, HelpCircle,
 } from "lucide-react";
 import {
   Dialog,
@@ -30,10 +31,48 @@ const fmtDate = (d: Date | string | null | undefined) =>
   d ? new Date(d).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" }) : "—";
 
 const STATUS_BADGE: Record<string, string> = {
-  draft:    "bg-gray-100 text-gray-600 border-gray-200",
-  sent:     "bg-blue-50 text-blue-700 border-blue-200",
-  accepted: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  declined: "bg-red-50 text-red-700 border-red-200",
+  draft:                     "bg-gray-100 text-gray-600 border-gray-200",
+  ready_to_send:             "bg-violet-50 text-violet-700 border-violet-200",
+  sent:                      "bg-blue-50 text-blue-700 border-blue-200",
+  viewed:                    "bg-sky-50 text-sky-700 border-sky-200",
+  partially_approved:        "bg-amber-50 text-amber-700 border-amber-200",
+  approved:                  "bg-emerald-50 text-emerald-700 border-emerald-200",
+  accepted:                  "bg-emerald-50 text-emerald-700 border-emerald-200",
+  declined:                  "bg-red-50 text-red-700 border-red-200",
+  expired:                   "bg-orange-50 text-orange-700 border-orange-200",
+  converted_to_approved_work:"bg-teal-50 text-teal-700 border-teal-200",
+  cancelled:                 "bg-gray-100 text-gray-500 border-gray-200",
+};
+
+const ITEM_STATUS_BADGE: Record<string, string> = {
+  pending:                   "bg-gray-100 text-gray-500 border-gray-200",
+  approved:                  "bg-emerald-50 text-emerald-700 border-emerald-200",
+  declined:                  "bg-red-50 text-red-600 border-red-200",
+  needs_review:              "bg-amber-50 text-amber-700 border-amber-200",
+  converted_to_approved_work:"bg-teal-50 text-teal-700 border-teal-200",
+};
+
+const APPROVAL_SOURCE_LABELS: Record<string, string> = {
+  email: "Email",
+  phone: "Phone",
+  signed_pdf: "Signed PDF",
+  in_person: "In Person",
+  portal_later: "Portal (later)",
+  internal_entry: "Internal Entry",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  ready_to_send: "Ready to Send",
+  sent: "Sent",
+  viewed: "Viewed",
+  partially_approved: "Partially Approved",
+  approved: "Approved",
+  accepted: "Accepted",
+  declined: "Declined",
+  expired: "Expired",
+  converted_to_approved_work: "Converted to Work",
+  cancelled: "Cancelled",
 };
 
 const SYSTEM_OPTIONS = [
@@ -104,6 +143,15 @@ export default function RepairQuoteDetail() {
   const [partsOpen, setPartsOpen] = useState(false);
   const [partsDefId, setPartsDefId] = useState<number | null>(null);
 
+  // Approval workflow state
+  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [approvalForm, setApprovalForm] = useState({
+    approvedByName: "",
+    approvedByEmail: "",
+    approvalSource: "internal_entry" as "email" | "phone" | "signed_pdf" | "in_person" | "portal_later" | "internal_entry",
+    approvedAt: "",
+  });
+
   const aiAsk = trpc.aiAssistant.ask.useMutation({
     onSuccess: (d) => { setAiContent(d.answer); setAiOpen(true); },
     onError: (e) => toast.error(e.message || "AI request failed"),
@@ -172,6 +220,52 @@ export default function RepairQuoteDetail() {
     onError: (e) => toast.error(e.message),
   });
 
+  const invalidate = () => utils.repairQuote.getRepairQuote.invalidate({ id: quoteId });
+
+  const markReadyMut = trpc.repairQuote.markReadyToSend.useMutation({
+    onSuccess: () => { invalidate(); toast.success("Marked ready to send"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const markSentMut = trpc.repairQuote.markSent.useMutation({
+    onSuccess: () => { invalidate(); toast.success("Marked as sent"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const markViewedMut = trpc.repairQuote.markViewed.useMutation({
+    onSuccess: () => { invalidate(); toast.success("Marked as viewed"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const recordApprovalMut = trpc.repairQuote.recordApproval.useMutation({
+    onSuccess: () => { invalidate(); setApprovalDialogOpen(false); toast.success("Approval recorded"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const approveAllMut = trpc.repairQuote.approveAllItems.useMutation({
+    onSuccess: () => { invalidate(); toast.success("All items approved"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const declineAllMut = trpc.repairQuote.declineAllItems.useMutation({
+    onSuccess: () => { invalidate(); toast.success("All items declined"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const itemStatusMut = trpc.repairQuote.updateItemApprovalStatus.useMutation({
+    onSuccess: () => { invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const convertItemsMut = trpc.repairQuote.convertApprovedItemsToApprovedWork.useMutation({
+    onSuccess: (d) => {
+      invalidate();
+      toast.success(`${d.created} item(s) converted to Approved Work${d.skipped ? ` (${d.skipped} already existed)` : ""}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const expireMut = trpc.repairQuote.expireQuote.useMutation({
+    onSuccess: () => { invalidate(); toast.success("Quote expired"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const cancelMut = trpc.repairQuote.cancelQuote.useMutation({
+    onSuccess: () => { invalidate(); toast.success("Quote cancelled"); },
+    onError: (e) => toast.error(e.message),
+  });
+
   if (isLoading) {
     return (
       <AdminLayout title="Repair Quote">
@@ -192,6 +286,20 @@ export default function RepairQuoteDetail() {
   const canEdit = !isFinalized && quote.status === "draft";
   const techRate = String(q.techLabourRate ?? "75");
   const fitterRate = String(q.fitterLabourRate ?? "65");
+
+  // Approval computed values
+  const approvedItems = items.filter((i) => (i as any).approvalStatus === "approved" || (i as any).approvalStatus === "converted_to_approved_work");
+  const declinedItems = items.filter((i) => (i as any).approvalStatus === "declined");
+  const pendingItems = items.filter((i) => ["pending", "needs_review"].includes((i as any).approvalStatus ?? "pending"));
+  const convertibleItems = items.filter((i) => (i as any).approvalStatus === "approved");
+  const approvedTotal = approvedItems.reduce((s, i) => s + parseFloat(String(i.total)), 0);
+  const declinedTotal = declinedItems.reduce((s, i) => s + parseFloat(String(i.total)), 0);
+  const pendingTotal = pendingItems.reduce((s, i) => s + parseFloat(String(i.total)), 0);
+
+  const inApprovalFlow = ["sent", "viewed", "partially_approved", "approved", "accepted",
+    "converted_to_approved_work"].includes(q.status ?? "");
+  const canRecordApproval = ["sent", "viewed", "partially_approved"].includes(q.status ?? "");
+  const canConvertItems = convertibleItems.length > 0 && ["approved", "accepted", "partially_approved", "converted_to_approved_work"].includes(q.status ?? "");
 
   function handlePartSelect(partId: string, setter: (fn: (f: ItemForm) => ItemForm) => void) {
     const part = parts.find((p) => String(p.id) === partId);
@@ -469,23 +577,38 @@ export default function RepairQuoteDetail() {
                 <Lock className="h-3.5 w-3.5" /> Finalize
               </Button>
             )}
-            {isFinalized && quote.status === "draft" && (
-              <Button size="sm" onClick={() => statusMut.mutate({ id: quoteId, status: "sent" })} disabled={statusMut.isPending} className="gap-1.5">
+            {/* New workflow: Ready to Send → Sent → Viewed → Approve/Decline → Convert */}
+            {isFinalized && q.status === "draft" && (
+              <Button size="sm" variant="outline" onClick={() => markReadyMut.mutate({ id: quoteId })} disabled={markReadyMut.isPending} className="gap-1.5">
+                <ClipboardCheck className="h-3.5 w-3.5" /> Mark Ready
+              </Button>
+            )}
+            {(q.status === "draft" || q.status === "ready_to_send") && isFinalized && (
+              <Button size="sm" onClick={() => markSentMut.mutate({ id: quoteId })} disabled={markSentMut.isPending} className="gap-1.5">
                 <Send className="h-3.5 w-3.5" /> Mark Sent
               </Button>
             )}
-            {quote.status === "sent" && (
-              <>
-                <Button size="sm" variant="outline" onClick={() => statusMut.mutate({ id: quoteId, status: "accepted" })} disabled={statusMut.isPending} className="gap-1.5 text-emerald-700 border-emerald-300 hover:bg-emerald-50">
-                  <CheckCircle className="h-3.5 w-3.5" /> Accepted
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => statusMut.mutate({ id: quoteId, status: "declined" })} disabled={statusMut.isPending} className="gap-1.5 text-red-600 border-red-300 hover:bg-red-50">
-                  Declined
-                </Button>
-              </>
+            {q.status === "sent" && (
+              <Button size="sm" variant="outline" onClick={() => markViewedMut.mutate({ id: quoteId })} disabled={markViewedMut.isPending} className="gap-1.5">
+                <Eye className="h-3.5 w-3.5" /> Mark Viewed
+              </Button>
             )}
-            {quote.status === "accepted" && (
-              <Button size="sm" onClick={() => convertWOMut.mutate({ id: quoteId })} disabled={convertWOMut.isPending} className="gap-1.5">
+            {canRecordApproval && (
+              <Button size="sm" className="gap-1.5" onClick={() => setApprovalDialogOpen(true)}>
+                <CheckCircle className="h-3.5 w-3.5" /> Record Approval
+              </Button>
+            )}
+            {canConvertItems && (
+              <Button size="sm" className="gap-1.5 bg-teal-600 hover:bg-teal-700 text-white"
+                onClick={() => convertItemsMut.mutate({ id: quoteId, approvalSource: q.approvalSource ?? "internal_entry" })}
+                disabled={convertItemsMut.isPending}
+              >
+                {convertItemsMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
+                Convert to Work ({convertibleItems.length})
+              </Button>
+            )}
+            {(q.status === "approved" || q.status === "accepted" || q.status === "partially_approved" || q.status === "converted_to_approved_work") && (
+              <Button size="sm" variant="outline" onClick={() => convertWOMut.mutate({ id: quoteId })} disabled={convertWOMut.isPending} className="gap-1.5">
                 <CheckCircle className="h-3.5 w-3.5" /> Create Work Order
               </Button>
             )}
@@ -516,6 +639,102 @@ export default function RepairQuoteDetail() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Approval section */}
+        {(inApprovalFlow || q.status === "ready_to_send") && (
+          <Card>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4" /> Approval Status
+              </CardTitle>
+              {inApprovalFlow && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm" variant="outline"
+                    className="gap-1.5 h-7 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                    disabled={approveAllMut.isPending}
+                    onClick={() => approveAllMut.mutate({ id: quoteId })}
+                  >
+                    {approveAllMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsUp className="h-3 w-3" />}
+                    Approve All
+                  </Button>
+                  <Button
+                    size="sm" variant="outline"
+                    className="gap-1.5 h-7 text-xs text-red-700 border-red-200 hover:bg-red-50"
+                    disabled={declineAllMut.isPending}
+                    onClick={() => declineAllMut.mutate({ id: quoteId })}
+                  >
+                    {declineAllMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsDown className="h-3 w-3" />}
+                    Decline All
+                  </Button>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Sent</p>
+                  <p className="font-medium">{fmtDate(q.sentAt)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Viewed</p>
+                  <p className="font-medium">{fmtDate(q.viewedAt)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Approved</p>
+                  <p className="font-medium">{fmtDate(q.approvedAt)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Valid Until</p>
+                  <p className="font-medium">{fmtDate(q.validUntil)}</p>
+                </div>
+              </div>
+
+              {(q.approvedByName || q.approvedByEmail || q.approvalSource) && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs border-t pt-3">
+                  {q.approvedByName && (
+                    <div>
+                      <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Approved By</p>
+                      <p className="font-medium">{q.approvedByName}</p>
+                    </div>
+                  )}
+                  {q.approvedByEmail && (
+                    <div>
+                      <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Contact Email</p>
+                      <p className="font-medium">{q.approvedByEmail}</p>
+                    </div>
+                  )}
+                  {q.approvalSource && (
+                    <div>
+                      <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Approval Method</p>
+                      <p className="font-medium">{APPROVAL_SOURCE_LABELS[q.approvalSource] ?? q.approvalSource}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {items.length > 0 && (
+                <div className="grid grid-cols-3 gap-3 border-t pt-3">
+                  <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs">
+                    <p className="text-emerald-700 font-medium uppercase tracking-wide mb-1">Approved</p>
+                    <p className="text-emerald-800 font-semibold tabular-nums text-sm">{CAD.format(approvedTotal)}</p>
+                    <p className="text-emerald-600 mt-0.5">{approvedItems.length} item{approvedItems.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs">
+                    <p className="text-red-700 font-medium uppercase tracking-wide mb-1">Declined</p>
+                    <p className="text-red-800 font-semibold tabular-nums text-sm">{CAD.format(declinedTotal)}</p>
+                    <p className="text-red-600 mt-0.5">{declinedItems.length} item{declinedItems.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs">
+                    <p className="text-gray-600 font-medium uppercase tracking-wide mb-1">Pending</p>
+                    <p className="text-gray-800 font-semibold tabular-nums text-sm">{CAD.format(pendingTotal)}</p>
+                    <p className="text-gray-500 mt-0.5">{pendingItems.length} item{pendingItems.length !== 1 ? "s" : ""}</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Line items */}
         <Card>
@@ -585,6 +804,11 @@ export default function RepairQuoteDetail() {
                           )}
                         </div>
                         <div className="flex items-center gap-3 shrink-0 ml-3">
+                          {inApprovalFlow && (item as any).approvalStatus && (
+                            <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 ${ITEM_STATUS_BADGE[(item as any).approvalStatus] ?? ""}`}>
+                              {(item as any).approvalStatus === "converted_to_approved_work" ? "Converted" : (item as any).approvalStatus}
+                            </span>
+                          )}
                           <span className="text-sm font-semibold tabular-nums">{CAD.format(lineTotal)}</span>
                           {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                         </div>
@@ -650,6 +874,50 @@ export default function RepairQuoteDetail() {
                               </Button>
                             )}
                           </div>
+
+                          {/* Per-item approval controls */}
+                          {inApprovalFlow && (item as any).approvalStatus !== "converted_to_approved_work" && (
+                            <div className="border-t pt-3 space-y-2">
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm" variant="outline"
+                                  className={`gap-1 h-7 text-xs ${(item as any).approvalStatus === "approved" ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "text-emerald-700 border-emerald-200 hover:bg-emerald-50"}`}
+                                  disabled={itemStatusMut.isPending || (item as any).approvalStatus === "approved"}
+                                  onClick={() => itemStatusMut.mutate({ itemId: item.id, quoteId, approvalStatus: "approved" })}
+                                >
+                                  <ThumbsUp className="h-3 w-3" /> Approve
+                                </Button>
+                                <Button
+                                  size="sm" variant="outline"
+                                  className={`gap-1 h-7 text-xs ${(item as any).approvalStatus === "declined" ? "bg-red-50 text-red-700 border-red-300" : "text-red-700 border-red-200 hover:bg-red-50"}`}
+                                  disabled={itemStatusMut.isPending || (item as any).approvalStatus === "declined"}
+                                  onClick={() => itemStatusMut.mutate({ itemId: item.id, quoteId, approvalStatus: "declined" })}
+                                >
+                                  <ThumbsDown className="h-3 w-3" /> Decline
+                                </Button>
+                                <Button
+                                  size="sm" variant="outline"
+                                  className={`gap-1 h-7 text-xs ${(item as any).approvalStatus === "needs_review" ? "bg-amber-50 text-amber-700 border-amber-300" : "text-amber-700 border-amber-200 hover:bg-amber-50"}`}
+                                  disabled={itemStatusMut.isPending || (item as any).approvalStatus === "needs_review"}
+                                  onClick={() => itemStatusMut.mutate({ itemId: item.id, quoteId, approvalStatus: "needs_review" })}
+                                >
+                                  <HelpCircle className="h-3 w-3" /> Needs Review
+                                </Button>
+                              </div>
+                              {(item as any).customerNotes && (
+                                <p className="text-xs text-muted-foreground italic bg-muted/30 rounded px-2 py-1.5">
+                                  <span className="font-medium not-italic text-foreground">Customer note:</span> {(item as any).customerNotes}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          {(item as any).approvalStatus === "converted_to_approved_work" && (
+                            <div className="border-t pt-2">
+                              <span className="inline-flex items-center gap-1 text-xs text-teal-700">
+                                <CheckCircle className="h-3 w-3" /> Converted to Approved Work
+                              </span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </>
@@ -778,6 +1046,79 @@ export default function RepairQuoteDetail() {
           })()}
           <DialogFooter>
             <Button variant="ghost" size="sm" onClick={() => setSummaryOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Record Approval dialog */}
+      <Dialog open={approvalDialogOpen} onOpenChange={setApprovalDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-emerald-600" /> Record Approval
+            </DialogTitle>
+            <DialogDescription>Log who approved this quote and how the approval was received.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Approved By (Name)</Label>
+              <Input
+                placeholder="Contact name"
+                value={approvalForm.approvedByName}
+                onChange={(e) => setApprovalForm((f) => ({ ...f, approvedByName: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Contact Email</Label>
+              <Input
+                type="email"
+                placeholder="contact@example.com"
+                value={approvalForm.approvedByEmail}
+                onChange={(e) => setApprovalForm((f) => ({ ...f, approvedByEmail: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Approval Method</Label>
+              <Select
+                value={approvalForm.approvalSource}
+                onValueChange={(v) => setApprovalForm((f) => ({ ...f, approvalSource: v as typeof f.approvalSource }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(APPROVAL_SOURCE_LABELS).map(([val, label]) => (
+                    <SelectItem key={val} value={val}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Approval Date (leave blank for today)</Label>
+              <Input
+                type="date"
+                value={approvalForm.approvedAt}
+                onChange={(e) => setApprovalForm((f) => ({ ...f, approvedAt: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setApprovalDialogOpen(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              disabled={recordApprovalMut.isPending}
+              onClick={() => recordApprovalMut.mutate({
+                id: quoteId,
+                approvedByName: approvalForm.approvedByName || undefined,
+                approvedByEmail: approvalForm.approvedByEmail || undefined,
+                approvalSource: approvalForm.approvalSource,
+                approvedAt: approvalForm.approvedAt || undefined,
+              })}
+            >
+              {recordApprovalMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Save Approval
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
