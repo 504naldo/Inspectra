@@ -6,6 +6,12 @@ import { TRPCError } from "@trpc/server";
 import { JOB_FINALIZED_IMMUTABLE } from "../shared/_core/errors";
 import type { TrpcContext } from "./_core/context";
 import {
+  vendors, InsertVendor, Vendor,
+  purchaseOrders, InsertPurchaseOrder, PurchaseOrder,
+  purchaseOrderItems, InsertPurchaseOrderItem, PurchaseOrderItem,
+  PURCHASE_ORDER_STATUSES, PURCHASE_ORDER_PRIORITIES,
+} from "../drizzle/schema";
+import {
   InsertUser, users, User,
   companies, InsertCompany, Company,
   customerOrgs, InsertCustomerOrg, CustomerOrg,
@@ -3121,4 +3127,174 @@ export async function deletePartsRequestItem(id: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.delete(partsRequestItems).where(eq(partsRequestItems.id, id));
+}
+
+// ============================================
+// VENDORS
+// ============================================
+
+export async function getVendorsByCompany(
+  companyId: number,
+  includeInactive = false,
+): Promise<Vendor[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = includeInactive
+    ? [eq(vendors.companyId, companyId)]
+    : [eq(vendors.companyId, companyId), eq(vendors.isActive, true)];
+  return db.select().from(vendors).where(and(...conditions)).orderBy(asc(vendors.name));
+}
+
+export async function getVendorById(id: number): Promise<Vendor | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(vendors).where(eq(vendors.id, id));
+  return rows[0] ?? null;
+}
+
+export async function createVendor(data: InsertVendor): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.insert(vendors).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function updateVendor(id: number, data: Partial<InsertVendor>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(vendors).set(data).where(eq(vendors.id, id));
+}
+
+// ============================================
+// PURCHASE ORDERS
+// ============================================
+
+export async function generatePONumber(companyId: number): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const year = new Date().getFullYear();
+  const prefix = `PO-${year}-`;
+  const rows = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(purchaseOrders)
+    .where(
+      and(
+        eq(purchaseOrders.companyId, companyId),
+        like(purchaseOrders.poNumber, `${prefix}%`),
+      ),
+    );
+  const count = Number(rows[0]?.count ?? 0) + 1;
+  return `${prefix}${String(count).padStart(4, "0")}`;
+}
+
+export async function getPurchaseOrdersByCompany(
+  companyId: number,
+  status?: PurchaseOrder["status"],
+): Promise<PurchaseOrder[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = status
+    ? [eq(purchaseOrders.companyId, companyId), eq(purchaseOrders.status, status)]
+    : [eq(purchaseOrders.companyId, companyId)];
+  return db
+    .select()
+    .from(purchaseOrders)
+    .where(and(...conditions))
+    .orderBy(desc(purchaseOrders.createdAt));
+}
+
+export async function getPurchaseOrderById(id: number): Promise<PurchaseOrder | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+  return rows[0] ?? null;
+}
+
+export async function getPurchaseOrderByPartsRequest(
+  partsRequestId: number,
+): Promise<PurchaseOrder | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.partsRequestId, partsRequestId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createPurchaseOrder(data: InsertPurchaseOrder): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.insert(purchaseOrders).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function updatePurchaseOrder(
+  id: number,
+  data: Partial<InsertPurchaseOrder>,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(purchaseOrders).set(data).where(eq(purchaseOrders.id, id));
+}
+
+export async function getPurchaseOrderItemsByPO(
+  purchaseOrderId: number,
+): Promise<PurchaseOrderItem[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(purchaseOrderItems)
+    .where(eq(purchaseOrderItems.purchaseOrderId, purchaseOrderId))
+    .orderBy(asc(purchaseOrderItems.createdAt));
+}
+
+export async function getPurchaseOrderItemById(id: number): Promise<PurchaseOrderItem | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(purchaseOrderItems)
+    .where(eq(purchaseOrderItems.id, id));
+  return rows[0] ?? null;
+}
+
+export async function createPurchaseOrderItem(data: InsertPurchaseOrderItem): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.insert(purchaseOrderItems).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function updatePurchaseOrderItem(
+  id: number,
+  data: Partial<InsertPurchaseOrderItem>,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(purchaseOrderItems).set(data).where(eq(purchaseOrderItems.id, id));
+}
+
+export async function deletePurchaseOrderItem(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.id, id));
+}
+
+export async function recalculatePOTotals(
+  poId: number,
+  tax: number,
+  shipping: number,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const items = await getPurchaseOrderItemsByPO(poId);
+  const subtotal = items.reduce((sum, i) => sum + Number(i.lineTotal ?? 0), 0);
+  const total = subtotal + tax + shipping;
+  await updatePurchaseOrder(poId, {
+    subtotal: subtotal.toFixed(2) as any,
+    total: total.toFixed(2) as any,
+  });
 }

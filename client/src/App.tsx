@@ -67,6 +67,9 @@ import AssetLifecycle from "./pages/admin/AssetLifecycle";
 import Inventory from "./pages/admin/Inventory";
 import PartsRequests from "./pages/admin/PartsRequests";
 import PartsRequestDetail from "./pages/admin/PartsRequestDetail";
+import Vendors from "./pages/admin/Vendors";
+import PurchaseOrders from "./pages/admin/PurchaseOrders";
+import PurchaseOrderDetail from "./pages/admin/PurchaseOrderDetail";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -458,6 +461,23 @@ function Router() {
       <Route path="/admin/parts-requests">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <PartsRequests />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/vendors">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <Vendors />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/purchase-orders/:id">
+        {(params) => (
+          <ProtectedRoute allowedRoles={['admin', 'office']}>
+            <PurchaseOrderDetail id={parseInt(params.id)} />
+          </ProtectedRoute>
+        )}
+      </Route>
+      <Route path="/admin/purchase-orders">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <PurchaseOrders />
         </ProtectedRoute>
       </Route>
 

@@ -53,6 +53,7 @@ import { knowledgeBaseRouter } from "./routers/knowledgeBaseRouter";
 import { serviceAgreementRouter } from "./routers/serviceAgreementRouter";
 import { assetLifecycleRouter } from "./routers/assetLifecycleRouter";
 import { inventoryRouter } from "./routers/inventoryRouter";
+import { vendorPurchaseRouter } from "./routers/vendorPurchaseRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -135,6 +136,7 @@ export const appRouter = router({
   serviceAgreement: serviceAgreementRouter,
   assetLifecycle: assetLifecycleRouter,
   inventory: inventoryRouter,
+  vendorPurchase: vendorPurchaseRouter,
 });
 
 export type AppRouter = typeof appRouter;

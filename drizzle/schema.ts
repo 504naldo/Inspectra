@@ -1962,3 +1962,95 @@ export const inventoryTransactions = mysqlTable("inventory_transactions", {
 
 export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;
 export type InsertInventoryTransaction = typeof inventoryTransactions.$inferInsert;
+
+// ─── Vendors ──────────────────────────────────────────────────────────────────
+
+export const vendors = mysqlTable("vendors", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  contactName: varchar("contactName", { length: 255 }),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  website: varchar("website", { length: 500 }),
+  address: text("address"),
+  notes: text("notes"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("vendors_companyId_idx").on(table.companyId),
+}));
+
+export type Vendor = typeof vendors.$inferSelect;
+export type InsertVendor = typeof vendors.$inferInsert;
+
+// ─── Purchase Orders ──────────────────────────────────────────────────────────
+
+export const PURCHASE_ORDER_STATUSES = [
+  "draft",
+  "ready_to_order",
+  "ordered",
+  "partially_received",
+  "received",
+  "cancelled",
+] as const;
+export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
+
+export const PURCHASE_ORDER_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export type PurchaseOrderPriority = (typeof PURCHASE_ORDER_PRIORITIES)[number];
+
+export const purchaseOrders = mysqlTable("purchase_orders", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  poNumber: varchar("poNumber", { length: 50 }).notNull(),
+  vendorId: int("vendorId"),
+  status: mysqlEnum("status", PURCHASE_ORDER_STATUSES).notNull().default("draft"),
+  priority: mysqlEnum("priority", PURCHASE_ORDER_PRIORITIES).notNull().default("medium"),
+  partsRequestId: int("partsRequestId"),
+  orderDate: date("orderDate"),
+  expectedDate: date("expectedDate"),
+  receivedDate: date("receivedDate"),
+  requestedById: int("requestedById"),
+  createdById: int("createdById").notNull(),
+  notes: text("notes"),
+  internalNotes: text("internalNotes"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).default("0"),
+  tax: decimal("tax", { precision: 10, scale: 2 }).default("0"),
+  shipping: decimal("shipping", { precision: 10, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).default("0"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("purchase_orders_companyId_idx").on(table.companyId),
+  statusIdx: index("purchase_orders_status_idx").on(table.companyId, table.status),
+  vendorIdIdx: index("purchase_orders_vendorId_idx").on(table.vendorId),
+  partsRequestIdIdx: index("purchase_orders_partsRequestId_idx").on(table.partsRequestId),
+}));
+
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type InsertPurchaseOrder = typeof purchaseOrders.$inferInsert;
+
+export const purchaseOrderItems = mysqlTable("purchase_order_items", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  purchaseOrderId: int("purchaseOrderId").notNull(),
+  inventoryItemId: int("inventoryItemId"),
+  partsCatalogId: int("partsCatalogId"),
+  partsRequestItemId: int("partsRequestItemId"),
+  description: varchar("description", { length: 500 }).notNull(),
+  quantityOrdered: int("quantityOrdered").notNull().default(1),
+  quantityReceived: int("quantityReceived").notNull().default(0),
+  unitCost: decimal("unitCost", { precision: 10, scale: 2 }).default("0"),
+  lineTotal: decimal("lineTotal", { precision: 10, scale: 2 }).default("0"),
+  supplierPartNumber: varchar("supplierPartNumber", { length: 100 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  purchaseOrderIdIdx: index("po_items_purchaseOrderId_idx").on(table.purchaseOrderId),
+  companyIdIdx: index("po_items_companyId_idx").on(table.companyId),
+}));
+
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
+export type InsertPurchaseOrderItem = typeof purchaseOrderItems.$inferInsert;

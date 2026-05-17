@@ -36,6 +36,8 @@ import {
   Activity,
   Package,
   ShoppingCart,
+  Store,
+  ClipboardPen,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -62,6 +64,8 @@ const secondaryNavItems = [
   { label: "Asset Lifecycle",  href: "/admin/asset-lifecycle",         icon: Activity,       adminOnly: false },
   { label: "Inventory",        href: "/admin/inventory",               icon: Package,        adminOnly: false },
   { label: "Parts Requests",   href: "/admin/parts-requests",          icon: ShoppingCart,   adminOnly: false },
+  { label: "Vendors",          href: "/admin/vendors",                 icon: Store,          adminOnly: false },
+  { label: "Purchase Orders",  href: "/admin/purchase-orders",         icon: ClipboardPen,   adminOnly: false },
   { label: "Approved Work",    href: "/admin/approved-work",          icon: CheckSquare,    adminOnly: false },
   { label: "Auto Schedule",   href: "/admin/scheduling-automation",  icon: Zap,            adminOnly: false },
   { label: "AI Assistant",    href: "/admin/ai-assistant",           icon: Bot,            adminOnly: false },
