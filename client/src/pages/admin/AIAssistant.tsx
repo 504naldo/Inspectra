@@ -416,12 +416,12 @@ export default function AIAssistant() {
               <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Context (optional)</CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4 space-y-2">
-              <Select value={contextType} onValueChange={(v) => setContextType(v as ContextType)}>
+              <Select value={contextType || "_none"} onValueChange={(v) => setContextType(v === "_none" ? "" : v as ContextType)}>
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue placeholder="Record type…" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="_none">None</SelectItem>
                   {CONTEXT_TYPE_OPTIONS.map(o => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}

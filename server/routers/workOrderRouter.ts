@@ -40,7 +40,10 @@ export const workOrderRouter = router({
         status: z.string().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (input.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
       return db.getWorkOrdersByCompany(input.companyId, input.status);
     }),
 
