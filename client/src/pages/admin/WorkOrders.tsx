@@ -14,6 +14,8 @@ import {
   AlertCircle,
   Clock,
   ChevronRight,
+  FileCheck,
+  ReceiptText,
 } from "lucide-react";
 
 const STATUS_OPTIONS = [
@@ -54,6 +56,18 @@ export default function AdminWorkOrders() {
       status: statusFilter === "all" ? undefined : statusFilter,
     },
     { enabled: !!user?.companyId }
+  );
+
+  const { data: approvedWorkList = [] } = trpc.approvedWork.list.useQuery(
+    { companyId: user!.companyId! },
+    { enabled: !!user?.companyId }
+  );
+
+  // workOrderId → { approvedWorkId, invoiceNumber, invoicedAt }
+  const awByWorkOrder = new Map(
+    (approvedWorkList as any[])
+      .filter((r) => r.workOrderId)
+      .map((r) => [r.workOrderId as number, { id: r.id as number, invoiceNumber: r.invoiceNumber as string | null, invoicedAt: r.invoicedAt }])
   );
 
   return (
@@ -115,51 +129,74 @@ export default function AdminWorkOrders() {
                 <p className="text-muted-foreground">No work orders found.</p>
               </div>
             ) : (
-              <div className="divide-y">
-                {workOrders.map((wo) => (
-                  <Link key={wo.id} href={`/admin/jobs/${wo.jobId}`}>
-                    <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-xs text-muted-foreground">{wo.workOrderNumber}</span>
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusBadgeClass(wo.status)}`}>
-                            {wo.status.replace(/_/g, " ")}
-                          </span>
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${priorityBadgeClass(wo.priority)}`}>
-                            {wo.priority}
-                          </span>
-                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent">
-                            {wo.workType.replace(/_/g, " ")}
-                          </span>
+              <div>
+                {workOrders.map((wo) => {
+                  const aw = awByWorkOrder.get(wo.id);
+                  return (
+                    <div key={wo.id} className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0">
+                      <Link href={`/admin/jobs/${wo.jobId}`} className="flex-1 min-w-0 hover:bg-muted/30 rounded -mx-1 px-1 transition-colors">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs text-muted-foreground">{wo.workOrderNumber}</span>
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusBadgeClass(wo.status)}`}>
+                                {wo.status.replace(/_/g, " ")}
+                              </span>
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${priorityBadgeClass(wo.priority)}`}>
+                                {wo.priority}
+                              </span>
+                              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent">
+                                {wo.workType.replace(/_/g, " ")}
+                              </span>
+                            </div>
+                            <p className="font-medium mt-0.5 truncate">{wo.title}</p>
+                            <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
+                              {wo.scheduledDate && (
+                                <span>{formatDate(wo.scheduledDate)}</span>
+                              )}
+                              {wo.estimatedHours && (
+                                <span className="flex items-center gap-0.5">
+                                  <Clock className="h-3 w-3" />
+                                  {parseFloat(wo.estimatedHours).toFixed(1)} h est.
+                                </span>
+                              )}
+                              {wo.actualHours && (
+                                <span className="flex items-center gap-0.5">
+                                  <Clock className="h-3 w-3" />
+                                  {parseFloat(wo.actualHours).toFixed(1)} h actual
+                                </span>
+                              )}
+                              {parseFloat(wo.total) > 0 && (
+                                <span className="font-mono">
+                                  ${parseFloat(wo.total).toLocaleString("en-CA", { minimumFractionDigits: 2 })}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-1" />
                         </div>
-                        <p className="font-medium mt-0.5 truncate">{wo.title}</p>
-                        <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
-                          {wo.scheduledDate && (
-                            <span>{formatDate(wo.scheduledDate)}</span>
-                          )}
-                          {wo.estimatedHours && (
-                            <span className="flex items-center gap-0.5">
-                              <Clock className="h-3 w-3" />
-                              {parseFloat(wo.estimatedHours).toFixed(1)} h est.
-                            </span>
-                          )}
-                          {wo.actualHours && (
-                            <span className="flex items-center gap-0.5">
-                              <Clock className="h-3 w-3" />
-                              {parseFloat(wo.actualHours).toFixed(1)} h actual
-                            </span>
-                          )}
-                          {parseFloat(wo.total) > 0 && (
-                            <span className="font-mono">
-                              ${parseFloat(wo.total).toLocaleString("en-CA", { minimumFractionDigits: 2 })}
-                            </span>
+                      </Link>
+                      {aw && (
+                        <div className="flex gap-1.5 shrink-0">
+                          <Link href={`/admin/approved-work/${aw.id}`}>
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1">
+                              <FileCheck className="h-3.5 w-3.5" />
+                              Approved Work
+                            </Button>
+                          </Link>
+                          {aw.invoiceNumber && (
+                            <Link href="/admin/invoices">
+                              <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1 text-green-700 border-green-300">
+                                <ReceiptText className="h-3.5 w-3.5" />
+                                {aw.invoiceNumber}
+                              </Button>
+                            </Link>
                           )}
                         </div>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      )}
                     </div>
-                  </Link>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>
