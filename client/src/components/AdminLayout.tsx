@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { APP_NAME } from "../../../shared/constants";
 import { Button } from "@/components/ui/button";
@@ -5,6 +6,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -13,6 +16,7 @@ import {
   Menu,
   X,
   ChevronDown,
+  ChevronRight,
   ClipboardList,
   Users,
   Building2,
@@ -44,58 +48,124 @@ import {
   CalendarOff,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type NavItem = {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  adminOnly?: boolean;
+};
+
+type NavGroup = {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  items: NavItem[];
+};
+
+// ─── Navigation groups ────────────────────────────────────────────────────────
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: "operations",
+    label: "Operations",
+    icon: CalendarDays,
+    items: [
+      { label: "Dashboard",     href: "/admin",                          icon: TrendingUp   },
+      { label: "Schedule",      href: "/admin/schedule",                 icon: CalendarDays },
+      { label: "Jobs",          href: "/admin/jobs",                     icon: ClipboardList },
+      { label: "Approved Work", href: "/admin/approved-work",            icon: CheckSquare  },
+      { label: "Work Orders",   href: "/admin/work-orders",              icon: Wrench       },
+      { label: "Auto-Schedule", href: "/admin/scheduling-automation",    icon: Zap          },
+    ],
+  },
+  {
+    id: "customers",
+    label: "Customers",
+    icon: Building2,
+    items: [
+      { label: "Customers",        href: "/admin/customers",        icon: Building2   },
+      { label: "Sites",            href: "/admin/sites",            icon: Building2   },
+      { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen  },
+      { label: "Agreements",       href: "/admin/service-agreements", icon: ScrollText },
+    ],
+  },
+  {
+    id: "field",
+    label: "Field Work",
+    icon: Clock,
+    items: [
+      { label: "Devices",        href: "/admin/devices",          icon: AlertTriangle },
+      { label: "Asset Lifecycle",href: "/admin/asset-lifecycle",  icon: Activity      },
+      { label: "Timesheets",     href: "/admin/timesheets",       icon: Clock         },
+      { label: "Payroll Hours",  href: "/admin/payroll-hours",    icon: CalendarCheck },
+      { label: "Payroll Review", href: "/admin/payroll-review",   icon: FileCheck2    },
+      { label: "Availability",   href: "/admin/availability",     icon: CalendarOff   },
+    ],
+  },
+  {
+    id: "reports",
+    label: "Reports",
+    icon: FileText,
+    items: [
+      { label: "Reports",      href: "/admin/reports",      icon: FileText     },
+      { label: "Report QA",    href: "/admin/report-qa",    icon: ClipboardCheck },
+      { label: "Compliance",   href: "/admin/compliance",   icon: ShieldAlert  },
+      { label: "Documents",    href: "/admin/documents",    icon: FolderOpen   },
+      { label: "Data Quality", href: "/admin/data-quality", icon: ShieldAlert  },
+    ],
+  },
+  {
+    id: "financial",
+    label: "Financial",
+    icon: ReceiptText,
+    items: [
+      { label: "Invoices",        href: "/admin/invoices",        icon: FileText    },
+      { label: "Quotes",          href: "/admin/quotes",          icon: ReceiptText },
+      { label: "Purchase Orders", href: "/admin/purchase-orders", icon: ClipboardPen },
+    ],
+  },
+  {
+    id: "inventory",
+    label: "Inventory",
+    icon: Package,
+    items: [
+      { label: "Inventory",      href: "/admin/inventory",       icon: Package     },
+      { label: "Parts Catalog",  href: "/admin/parts-catalog",   icon: Package     },
+      { label: "Parts Requests", href: "/admin/parts-requests",  icon: ShoppingCart },
+      { label: "Vendors",        href: "/admin/vendors",         icon: Store       },
+    ],
+  },
+  {
+    id: "tools",
+    label: "Tools",
+    icon: Settings,
+    items: [
+      { label: "Users",          href: "/admin/users",          icon: Users,    adminOnly: true },
+      { label: "Settings",       href: "/admin/settings",       icon: Settings                  },
+      { label: "Imports",        href: "/admin/imports",        icon: Upload                    },
+      { label: "Notifications",  href: "/admin/notifications",  icon: Bell                      },
+      { label: "AI Assistant",   href: "/admin/ai-assistant",   icon: Bot                       },
+      { label: "Knowledge Base", href: "/admin/knowledge-base", icon: BookOpen                  },
+    ],
+  },
+];
+
+// ─── Layout ───────────────────────────────────────────────────────────────────
 
 interface AdminLayoutProps {
   children: React.ReactNode;
   title?: string;
 }
 
-// Primary nav — always visible in the desktop header (kept short so they fit at lg/1024px)
-const primaryNavItems = [
-  { label: "Dashboard",  href: "/admin",           icon: TrendingUp   },
-  { label: "Jobs",       href: "/admin/jobs",       icon: ClipboardList },
-  { label: "Customers",  href: "/admin/customers",  icon: Building2    },
-  { label: "Sites",      href: "/admin/sites",      icon: Building2    },
-  { label: "Schedule",   href: "/admin/schedule",   icon: CalendarDays },
-  { label: "Reports",    href: "/admin/reports",    icon: FileText     },
-];
-
-// Secondary nav — collapsed into "More" on desktop, visible in mobile drawer
-const secondaryNavItems = [
-  { label: "Agreements",        href: "/admin/service-agreements",      icon: ScrollText,     adminOnly: false },
-  { label: "Asset Lifecycle",  href: "/admin/asset-lifecycle",         icon: Activity,       adminOnly: false },
-  { label: "Inventory",        href: "/admin/inventory",               icon: Package,        adminOnly: false },
-  { label: "Parts Requests",   href: "/admin/parts-requests",          icon: ShoppingCart,   adminOnly: false },
-  { label: "Vendors",          href: "/admin/vendors",                 icon: Store,          adminOnly: false },
-  { label: "Purchase Orders",  href: "/admin/purchase-orders",         icon: ClipboardPen,   adminOnly: false },
-  { label: "Timesheets",       href: "/admin/timesheets",              icon: Clock,          adminOnly: false },
-  { label: "Payroll Hours",    href: "/admin/payroll-hours",           icon: CalendarCheck,  adminOnly: false },
-  { label: "Payroll Review",  href: "/admin/payroll-review",          icon: FileCheck2,     adminOnly: false },
-  { label: "Availability",    href: "/admin/availability",            icon: CalendarOff,    adminOnly: false },
-  { label: "Approved Work",    href: "/admin/approved-work",          icon: CheckSquare,    adminOnly: false },
-  { label: "Auto Schedule",   href: "/admin/scheduling-automation",  icon: Zap,            adminOnly: false },
-  { label: "AI Assistant",    href: "/admin/ai-assistant",           icon: Bot,            adminOnly: false },
-  { label: "AI Knowledge",    href: "/admin/knowledge-base",         icon: BookOpen,       adminOnly: false },
-  { label: "Report QA",       href: "/admin/report-qa",              icon: ClipboardCheck, adminOnly: false },
-  { label: "Compliance",      href: "/admin/compliance",             icon: ShieldAlert,    adminOnly: false },
-  { label: "Documents",       href: "/admin/documents",        icon: FolderOpen,     adminOnly: false },
-  { label: "Quotes",           href: "/admin/quotes",           icon: ReceiptText,   adminOnly: false },
-  { label: "Work Orders",      href: "/admin/work-orders",      icon: Wrench,        adminOnly: false },
-  { label: "Invoices",         href: "/admin/invoices",         icon: FileText,      adminOnly: false },
-  { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen,   adminOnly: false },
-  { label: "Devices",          href: "/admin/devices",          icon: AlertTriangle, adminOnly: false },
-  { label: "Data Quality",     href: "/admin/data-quality",     icon: ShieldAlert,   adminOnly: false },
-  { label: "Imports",          href: "/admin/imports",          icon: Upload,        adminOnly: false },
-  { label: "Users",            href: "/admin/users",            icon: Users,         adminOnly: true  },
-  { label: "Settings",         href: "/admin/settings",         icon: Settings,      adminOnly: false },
-];
-
 export default function AdminLayout({ children, title }: AdminLayoutProps) {
   const { user, logout } = useAuth();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set<string>());
 
   const { data: unreadCount = 0 } = trpc.notifications.getUnreadCount.useQuery(undefined, {
     refetchInterval: 60_000,
@@ -107,17 +177,39 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
     window.location.href = "/";
   };
 
-  const visibleSecondary = secondaryNavItems.filter(
-    (item) => !item.adminOnly || user?.role === "admin"
-  );
+  // Filter admin-only items for non-admin users
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.adminOnly || user?.role === "admin"),
+  })).filter((group) => group.items.length > 0);
 
-  const allNavItems = [...primaryNavItems, ...visibleSecondary];
+  // Active detection — exact match preserves existing behavior for sub-pages
+  const isItemActive = (href: string) => location === href;
+  const isGroupActive = (group: NavGroup) =>
+    group.items.some((item) => isItemActive(item.href));
+
+  // Mobile menu open: expand active group, close rest
+  const handleMobileToggle = () => {
+    if (!mobileMenuOpen) {
+      const activeGroupId = visibleGroups.find((g) => isGroupActive(g))?.id;
+      setOpenGroups(activeGroupId ? new Set([activeGroupId]) : new Set());
+    }
+    setMobileMenuOpen((v) => !v);
+  };
+
+  const toggleMobileGroup = (id: string) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-card border-b">
-        <div className="container flex h-16 items-center gap-4">
+        <div className="container flex h-16 items-center gap-3">
 
           {/* Brand */}
           <Link href="/admin">
@@ -127,56 +219,46 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             </div>
           </Link>
 
-          {/* Desktop nav — fills available space; overflow-hidden hard-stops spill */}
+          {/* Desktop nav — one dropdown per group */}
           <nav className="hidden lg:flex items-center gap-0.5 flex-1 min-w-0 overflow-hidden">
-            {primaryNavItems.map((item) => (
-              <Link key={item.href} href={item.href}>
-                <Button
-                  variant={location === item.href ? "secondary" : "ghost"}
-                  size="sm"
-                  className="whitespace-nowrap shrink-0"
-                >
-                  {item.label}
-                </Button>
-              </Link>
-            ))}
-
-            {/* "More" overflow dropdown */}
-            {visibleSecondary.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant={
-                      visibleSecondary.some((i) => location === i.href)
-                        ? "secondary"
-                        : "ghost"
-                    }
-                    size="sm"
-                    className="whitespace-nowrap shrink-0"
-                  >
-                    More
-                    <ChevronDown className="h-3.5 w-3.5 ml-1 opacity-60" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {visibleSecondary.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <Link key={item.href} href={item.href}>
-                        <DropdownMenuItem
-                          className={
-                            location === item.href ? "bg-accent font-medium" : ""
-                          }
-                        >
-                          <Icon className="h-4 w-4 mr-2 opacity-70" />
-                          {item.label}
-                        </DropdownMenuItem>
-                      </Link>
-                    );
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            {visibleGroups.map((group) => {
+              const GroupIcon = group.icon;
+              const active = isGroupActive(group);
+              return (
+                <DropdownMenu key={group.id}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant={active ? "secondary" : "ghost"}
+                      size="sm"
+                      className="whitespace-nowrap shrink-0"
+                    >
+                      {group.label}
+                      <ChevronDown className="h-3.5 w-3.5 ml-1 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[180px]">
+                    <DropdownMenuLabel className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium py-1">
+                      <GroupIcon className="h-3.5 w-3.5" />
+                      {group.label}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {group.items.map((item) => {
+                      const ItemIcon = item.icon;
+                      return (
+                        <Link key={item.href} href={item.href}>
+                          <DropdownMenuItem
+                            className={isItemActive(item.href) ? "bg-accent font-medium" : ""}
+                          >
+                            <ItemIcon className="h-4 w-4 mr-2 opacity-70" />
+                            {item.label}
+                          </DropdownMenuItem>
+                        </Link>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            })}
           </nav>
 
           {/* Right side: user name + bell + logout + mobile toggle */}
@@ -201,30 +283,64 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
               variant="ghost"
               size="icon"
               className="lg:hidden"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              onClick={handleMobileToggle}
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
           </div>
         </div>
 
-        {/* ── Mobile nav drawer ─────────────────────────────────────────── */}
+        {/* ── Mobile nav drawer — grouped + collapsible ──────────────────── */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t bg-card">
-            <nav className="container py-4 space-y-1">
-              {allNavItems.map((item) => {
-                const Icon = item.icon;
+          <div className="lg:hidden border-t bg-card max-h-[80vh] overflow-y-auto">
+            <nav className="container py-3 space-y-0.5">
+              {visibleGroups.map((group) => {
+                const GroupIcon = group.icon;
+                const groupActive = isGroupActive(group);
+                const isOpen = openGroups.has(group.id) || groupActive;
+
                 return (
-                  <Link key={item.href} href={item.href}>
-                    <Button
-                      variant={location === item.href ? "secondary" : "ghost"}
-                      className="w-full justify-start"
-                      onClick={() => setMobileMenuOpen(false)}
+                  <div key={group.id}>
+                    {/* Group header */}
+                    <button
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                        groupActive
+                          ? "text-foreground bg-accent/40"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent/30"
+                      }`}
+                      onClick={() => toggleMobileGroup(group.id)}
                     >
-                      <Icon className="h-4 w-4 mr-2" />
-                      {item.label}
-                    </Button>
-                  </Link>
+                      <span className="flex items-center gap-2">
+                        <GroupIcon className="h-4 w-4" />
+                        {group.label}
+                      </span>
+                      <ChevronRight
+                        className={`h-4 w-4 transition-transform duration-150 ${isOpen ? "rotate-90" : ""}`}
+                      />
+                    </button>
+
+                    {/* Group items */}
+                    {isOpen && (
+                      <div className="ml-3 pl-3 border-l border-border/50 mt-0.5 mb-1 space-y-0.5">
+                        {group.items.map((item) => {
+                          const ItemIcon = item.icon;
+                          return (
+                            <Link key={item.href} href={item.href}>
+                              <Button
+                                variant={isItemActive(item.href) ? "secondary" : "ghost"}
+                                size="sm"
+                                className="w-full justify-start font-normal"
+                                onClick={() => setMobileMenuOpen(false)}
+                              >
+                                <ItemIcon className="h-4 w-4 mr-2 opacity-70" />
+                                {item.label}
+                              </Button>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </nav>
