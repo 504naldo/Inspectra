@@ -36,6 +36,7 @@ import {
   notifications, InsertNotification, Notification,
   serviceAgreements, InsertServiceAgreement, ServiceAgreement,
   agreementSites, InsertAgreementSite, AgreementSite,
+  assetLifecycleEvents, InsertAssetLifecycleEvent, AssetLifecycleEvent,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2778,4 +2779,108 @@ export async function getActiveAgreementForSite(
   if (!agreement) return null;
   const agreementSite = siteRows.find((s) => s.agreementId === agreement.id)!;
   return { agreement, agreementSite };
+}
+
+// ============================================
+// ASSET LIFECYCLE
+// ============================================
+
+export async function getDevicesByCompany(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(devices)
+    .where(and(eq(devices.companyId, companyId), eq(devices.isActive, true)))
+    .orderBy(asc(devices.siteId), asc(devices.deviceType));
+}
+
+export async function getOpenDeficienciesByDeviceIds(deviceIds: number[]) {
+  const db = await getDb();
+  if (!db) return [];
+  if (!deviceIds.length) return [];
+  return db
+    .select()
+    .from(deficiencies)
+    .where(and(
+      inArray(deficiencies.deviceId, deviceIds),
+      inArray(deficiencies.status, ["open", "in_progress"]),
+    ));
+}
+
+export async function getAllDeficienciesByDeviceIds(deviceIds: number[]) {
+  const db = await getDb();
+  if (!db) return [];
+  if (!deviceIds.length) return [];
+  return db
+    .select()
+    .from(deficiencies)
+    .where(inArray(deficiencies.deviceId, deviceIds));
+}
+
+export async function getDeficienciesByDevice(deviceId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(deficiencies)
+    .where(eq(deficiencies.deviceId, deviceId))
+    .orderBy(desc(deficiencies.createdAt));
+}
+
+export async function getInspectionResultsByDevice(deviceId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: inspectionResults.id,
+      jobId: inspectionResults.jobId,
+      result: inspectionResults.result,
+      notes: inspectionResults.notes,
+      testedAt: inspectionResults.testedAt,
+      createdAt: inspectionResults.createdAt,
+      jobNumber: jobs.jobNumber,
+      jobTitle: jobs.title,
+      jobType: jobs.jobType,
+      scheduledDate: jobs.scheduledDate,
+      completedAt: jobs.completedAt,
+    })
+    .from(inspectionResults)
+    .innerJoin(jobs, eq(inspectionResults.jobId, jobs.id))
+    .where(and(
+      eq(inspectionResults.deviceId, deviceId),
+      ne(inspectionResults.result, "not_tested"),
+    ))
+    .orderBy(desc(inspectionResults.testedAt));
+}
+
+export async function getLifecycleEventsByDevice(deviceId: number): Promise<AssetLifecycleEvent[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(assetLifecycleEvents)
+    .where(eq(assetLifecycleEvents.deviceId, deviceId))
+    .orderBy(desc(assetLifecycleEvents.eventDate), desc(assetLifecycleEvents.createdAt));
+}
+
+export async function createLifecycleEvent(data: InsertAssetLifecycleEvent): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(assetLifecycleEvents).values(data);
+  return Number((result as any).insertId);
+}
+
+export async function getRecentLifecycleEventsByCompany(
+  companyId: number,
+  limit = 50,
+): Promise<AssetLifecycleEvent[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(assetLifecycleEvents)
+    .where(eq(assetLifecycleEvents.companyId, companyId))
+    .orderBy(desc(assetLifecycleEvents.createdAt))
+    .limit(limit);
 }

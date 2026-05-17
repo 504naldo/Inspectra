@@ -63,6 +63,7 @@ import AIAssistant from "./pages/admin/AIAssistant";
 import KnowledgeBase from "./pages/admin/KnowledgeBase";
 import ServiceAgreements from "./pages/admin/ServiceAgreements";
 import ServiceAgreementDetail from "./pages/admin/ServiceAgreementDetail";
+import AssetLifecycle from "./pages/admin/AssetLifecycle";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -432,6 +433,11 @@ function Router() {
       <Route path="/admin/service-agreements">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <ServiceAgreements />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/asset-lifecycle">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <AssetLifecycle />
         </ProtectedRoute>
       </Route>
 

@@ -229,6 +229,13 @@ export const devices = mysqlTable("devices", {
   lampCount: int("lampCount"),
   isActive: boolean("isActive").default(true).notNull(),
   sortOrder: int("sortOrder"),
+  // Asset lifecycle fields
+  lifecycleStatus: mysqlEnum("lifecycleStatus", ["active", "needs_service", "repair_required", "replacement_recommended", "replaced", "removed"]),
+  assetCondition: mysqlEnum("assetCondition", ["good", "fair", "poor", "failed", "unknown"]),
+  replacementRecommended: boolean("replacementRecommended").default(false),
+  replacementRecommendedAt: timestamp("replacementRecommendedAt"),
+  nextServiceDate: date("nextServiceDate"),
+  serviceNotes: text("serviceNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1731,3 +1738,74 @@ export const agreementSites = mysqlTable("agreement_sites", {
 
 export type AgreementSite = typeof agreementSites.$inferSelect;
 export type InsertAgreementSite = typeof agreementSites.$inferInsert;
+
+// ============================================
+// ASSET LIFECYCLE
+// Adds lifecycle fields to devices and a standalone
+// event log for manual and system lifecycle entries.
+// ============================================
+
+export const LIFECYCLE_STATUSES = [
+  "active",
+  "needs_service",
+  "repair_required",
+  "replacement_recommended",
+  "replaced",
+  "removed",
+] as const;
+export type LifecycleStatus = (typeof LIFECYCLE_STATUSES)[number];
+
+export const ASSET_CONDITIONS = ["good", "fair", "poor", "failed", "unknown"] as const;
+export type AssetCondition = (typeof ASSET_CONDITIONS)[number];
+
+export const LIFECYCLE_EVENT_TYPES = [
+  "installed",
+  "inspected",
+  "passed",
+  "failed",
+  "deficiency_created",
+  "repaired",
+  "replaced",
+  "removed_from_service",
+  "maintenance_completed",
+  "parts_replaced",
+  "recommended_replacement",
+  "warranty_expired",
+  "other",
+] as const;
+export type LifecycleEventType = (typeof LIFECYCLE_EVENT_TYPES)[number];
+
+export const LIFECYCLE_SOURCE_TYPES = [
+  "job",
+  "inspection_result",
+  "deficiency",
+  "repair_quote",
+  "approved_work",
+  "work_order",
+  "manual",
+] as const;
+export type LifecycleSourceType = (typeof LIFECYCLE_SOURCE_TYPES)[number];
+
+export const assetLifecycleEvents = mysqlTable("asset_lifecycle_events", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  siteId: int("siteId").notNull(),
+  deviceId: int("deviceId").notNull(),
+  eventType: mysqlEnum("eventType", LIFECYCLE_EVENT_TYPES).notNull(),
+  eventDate: date("eventDate").notNull(),
+  sourceType: mysqlEnum("sourceType", LIFECYCLE_SOURCE_TYPES).default("manual"),
+  sourceId: int("sourceId"),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  performedById: int("performedById"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  deviceIdIdx: index("asset_lifecycle_events_deviceId_idx").on(table.deviceId),
+  companyIdIdx: index("asset_lifecycle_events_companyId_idx").on(table.companyId),
+  siteIdIdx: index("asset_lifecycle_events_siteId_idx").on(table.siteId),
+}));
+
+export type AssetLifecycleEvent = typeof assetLifecycleEvents.$inferSelect;
+export type InsertAssetLifecycleEvent = typeof assetLifecycleEvents.$inferInsert;
