@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import {
   PlusCircle,
   History,
   Link2,
+  ShoppingCart,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -452,10 +454,12 @@ function InventoryRow({
   item,
   onAdjust,
   onHistory,
+  onRestock,
 }: {
   item: any;
   onAdjust: (item: any) => void;
   onHistory: (item: any) => void;
+  onRestock: (item: any) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const utils = trpc.useUtils();
@@ -518,6 +522,11 @@ function InventoryRow({
             <Button size="sm" variant="outline" onClick={() => onHistory(item)}>
               <History className="h-4 w-4 mr-1" /> Transactions
             </Button>
+            {isLowStock && (
+              <Button size="sm" variant="outline" className="text-yellow-700 border-yellow-300" onClick={() => onRestock(item)}>
+                <ShoppingCart className="h-4 w-4 mr-1" /> Restock PO
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"
@@ -541,6 +550,7 @@ export default function Inventory() {
   const [showFromCatalog, setShowFromCatalog] = useState(false);
   const [adjustItem, setAdjustItem] = useState<any>(null);
   const [historyItem, setHistoryItem] = useState<any>(null);
+  const [, navigate] = useLocation();
   const [filterCategory, setFilterCategory] = useState("");
   const [filterSupplier, setFilterSupplier] = useState("");
   const [filterLowStock, setFilterLowStock] = useState(false);
@@ -552,6 +562,18 @@ export default function Inventory() {
   const { data: items = [], isLoading, refetch } = trpc.inventory.listInventory.useQuery({
     includeInactive: showInactive,
   });
+
+  const restockMut = trpc.vendorPurchase.createRestockPO.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Restock PO ${data.poNumber} created.`);
+      navigate(`/admin/purchase-orders/${data.id}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleRestock = (item: any) => {
+    restockMut.mutate({ inventoryItemIds: [item.id] });
+  };
 
   const categories = [...new Set(items.map((i: any) => i.category))].sort();
   const suppliers = [...new Set(items.map((i: any) => i.supplierName).filter(Boolean))].sort() as string[];
@@ -684,6 +706,7 @@ export default function Inventory() {
             item={item}
             onAdjust={setAdjustItem}
             onHistory={setHistoryItem}
+            onRestock={handleRestock}
           />
         ))}
       </div>

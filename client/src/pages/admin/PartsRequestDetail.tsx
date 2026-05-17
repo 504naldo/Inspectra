@@ -14,6 +14,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import {
@@ -26,6 +33,8 @@ import {
   ShoppingCart,
   AlertTriangle,
   Calendar,
+  ClipboardPen,
+  ExternalLink,
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -424,6 +433,29 @@ export default function PartsRequestDetail({ id }: { id: number }) {
     onError: (e) => toast.error(e.message),
   });
 
+  const { data: linkedPO } = trpc.vendorPurchase.getPOForPartsRequest.useQuery(
+    { partsRequestId: id },
+    { enabled: true },
+  );
+  const { data: vendors = [] } = trpc.vendorPurchase.listVendors.useQuery(
+    { includeInactive: false },
+    { enabled: true },
+  );
+
+  const [showCreatePO, setShowCreatePO] = useState(false);
+  const [poVendorId, setPOVendorId] = useState("");
+  const [poPriority, setPOPriority] = useState("medium");
+  const [poExpectedDate, setPOExpectedDate] = useState("");
+
+  const createPOMut = trpc.vendorPurchase.createPOFromPartsRequest.useMutation({
+    onSuccess: (data) => {
+      toast.success(`PO ${data.poNumber} created.`);
+      utils.vendorPurchase.getPOForPartsRequest.invalidate({ partsRequestId: id });
+      setShowCreatePO(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   if (isLoading) {
     return (
       <AdminLayout>
@@ -495,6 +527,20 @@ export default function PartsRequestDetail({ id }: { id: number }) {
             <Button size="sm" onClick={() => submitMut.mutate({ id })} disabled={submitMut.isPending}>
               <ShoppingCart className="h-4 w-4 mr-1" /> Submit
             </Button>
+          )}
+          {["approved", "ordered", "partially_received"].includes(status) && !linkedPO && (
+            <Button size="sm" variant="outline" onClick={() => setShowCreatePO(true)}>
+              <ClipboardPen className="h-4 w-4 mr-1" /> Create PO
+            </Button>
+          )}
+          {linkedPO && !["cancelled"].includes(linkedPO.status as string) && (
+            <Link href={`/admin/purchase-orders/${linkedPO.id}`}>
+              <Button size="sm" variant="outline" className="text-primary gap-1">
+                <ClipboardPen className="h-4 w-4" />
+                PO: {(linkedPO as any).poNumber}
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </Link>
           )}
           {canApprove && (
             <Button size="sm" variant="outline" onClick={() => setShowApprove(true)}>
@@ -644,6 +690,33 @@ export default function PartsRequestDetail({ id }: { id: number }) {
             </Card>
           )}
 
+          {/* Linked PO */}
+          {linkedPO && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ClipboardPen className="h-4 w-4" /> Purchase Order
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm space-y-1">
+                <Link href={`/admin/purchase-orders/${linkedPO.id}`}>
+                  <div className="flex items-center gap-2 text-primary hover:underline cursor-pointer">
+                    <span className="font-mono font-semibold">{(linkedPO as any).poNumber}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                      linkedPO.status === "received" ? "bg-green-100 text-green-700" :
+                      linkedPO.status === "ordered" ? "bg-indigo-100 text-indigo-700" :
+                      linkedPO.status === "cancelled" ? "bg-red-100 text-red-600" :
+                      "bg-gray-100 text-gray-700"
+                    }`}>
+                      {linkedPO.status.replace(/_/g, " ")}
+                    </span>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </div>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Notes */}
           {req.notes && (
             <Card>
@@ -677,6 +750,73 @@ export default function PartsRequestDetail({ id }: { id: number }) {
         open={showReceived}
         onClose={() => setShowReceived(false)}
       />
+
+      {/* Create PO dialog */}
+      <Dialog open={showCreatePO} onOpenChange={(v) => !v && setShowCreatePO(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Purchase Order</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Create a PO from this parts request. Items with status requested, approved, or ordered will be included.
+            </p>
+            <div>
+              <Label>Vendor (optional)</Label>
+              <Select value={poVendorId || "_none"} onValueChange={(v) => setPOVendorId(v === "_none" ? "" : v)}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="No vendor yet" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">No vendor yet</SelectItem>
+                  {(vendors as any[]).map((v) => (
+                    <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Priority</Label>
+                <Select value={poPriority} onValueChange={setPOPriority}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Expected Date</Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={poExpectedDate}
+                  onChange={(e) => setPOExpectedDate(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setShowCreatePO(false)}>Cancel</Button>
+            <Button
+              disabled={createPOMut.isPending}
+              onClick={() =>
+                createPOMut.mutate({
+                  partsRequestId: id,
+                  vendorId: poVendorId ? parseInt(poVendorId) : undefined,
+                  priority: poPriority as any,
+                  expectedDate: poExpectedDate || undefined,
+                })
+              }
+            >
+              <ClipboardPen className="h-4 w-4 mr-1" /> Create PO
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }
