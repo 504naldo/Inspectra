@@ -1674,3 +1674,60 @@ export const notifications = mysqlTable("notifications", {
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+// ============================================
+// SERVICE AGREEMENTS
+// Internal tracking of customer service contracts.
+// ============================================
+
+export const SERVICE_AGREEMENT_STATUSES = ["draft", "active", "expiring_soon", "expired", "cancelled"] as const;
+export type ServiceAgreementStatus = (typeof SERVICE_AGREEMENT_STATUSES)[number];
+
+export const SERVICE_AGREEMENT_BILLING_CYCLES = ["monthly", "quarterly", "semi_annual", "annual", "per_service", "custom"] as const;
+export type ServiceAgreementBillingCycle = (typeof SERVICE_AGREEMENT_BILLING_CYCLES)[number];
+
+export const serviceAgreements = mysqlTable("service_agreements", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  customerOrgId: int("customerOrgId").notNull(),
+  agreementNumber: varchar("agreementNumber", { length: 50 }),
+  name: varchar("name", { length: 255 }).notNull(),
+  status: mysqlEnum("status", SERVICE_AGREEMENT_STATUSES).default("draft").notNull(),
+  startDate: date("startDate"),
+  endDate: date("endDate"),
+  renewalDate: date("renewalDate"),
+  billingCycle: mysqlEnum("billingCycle", SERVICE_AGREEMENT_BILLING_CYCLES).default("annual"),
+  billingNotes: text("billingNotes"),
+  internalNotes: text("internalNotes"),
+  includedServicesJson: json("includedServicesJson").$type<string[]>(),
+  excludedServicesJson: json("excludedServicesJson").$type<string[]>(),
+  documentUrl: varchar("documentUrl", { length: 500 }),
+  createdById: int("createdById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("service_agreements_companyId_idx").on(table.companyId),
+  customerOrgIdIdx: index("service_agreements_customerOrgId_idx").on(table.customerOrgId),
+  statusIdx: index("service_agreements_status_idx").on(table.status),
+}));
+
+export type ServiceAgreement = typeof serviceAgreements.$inferSelect;
+export type InsertServiceAgreement = typeof serviceAgreements.$inferInsert;
+
+export const agreementSites = mysqlTable("agreement_sites", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  agreementId: int("agreementId").notNull(),
+  siteId: int("siteId").notNull(),
+  includedServicesJson: json("includedServicesJson").$type<string[]>(),
+  siteSpecificNotes: text("siteSpecificNotes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  agreementIdIdx: index("agreement_sites_agreementId_idx").on(table.agreementId),
+  companyIdIdx: index("agreement_sites_companyId_idx").on(table.companyId),
+  uniqueSiteAgreement: unique("agreement_sites_unique").on(table.agreementId, table.siteId),
+}));
+
+export type AgreementSite = typeof agreementSites.$inferSelect;
+export type InsertAgreementSite = typeof agreementSites.$inferInsert;

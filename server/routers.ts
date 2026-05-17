@@ -50,6 +50,7 @@ import { schedulingAutomationRouter } from "./routers/schedulingAutomationRouter
 import { technicianRouter } from "./routers/technicianRouter";
 import { aiAssistantRouter } from "./routers/aiAssistantRouter";
 import { knowledgeBaseRouter } from "./routers/knowledgeBaseRouter";
+import { serviceAgreementRouter } from "./routers/serviceAgreementRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -129,6 +130,7 @@ export const appRouter = router({
   technician: technicianRouter,
   aiAssistant: aiAssistantRouter,
   knowledgeBase: knowledgeBaseRouter,
+  serviceAgreement: serviceAgreementRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, sql, inArray, like, or, isNull, isNotNull, lt, ne, gt } from "drizzle-orm";
+import { eq, and, desc, asc, sql, inArray, like, or, isNull, isNotNull, lt, lte, ne, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import * as schema from "../drizzle/schema";
@@ -34,6 +34,8 @@ import {
   companySettings, InsertCompanySettings, CompanySettings,
   activityEvents, ActivityEvent,
   notifications, InsertNotification, Notification,
+  serviceAgreements, InsertServiceAgreement, ServiceAgreement,
+  agreementSites, InsertAgreementSite, AgreementSite,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2636,4 +2638,144 @@ export async function hasUndismissedNotification(companyId: number, dedupeKey: s
     ))
     .limit(1);
   return !!row;
+}
+
+// ============================================
+// SERVICE AGREEMENTS
+// ============================================
+
+export async function getServiceAgreementsByCompany(
+  companyId: number,
+  status?: string,
+): Promise<ServiceAgreement[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: ReturnType<typeof eq>[] = [eq(serviceAgreements.companyId, companyId)];
+  if (status) conditions.push(eq(serviceAgreements.status, status as any));
+  return db
+    .select()
+    .from(serviceAgreements)
+    .where(and(...conditions))
+    .orderBy(desc(serviceAgreements.createdAt));
+}
+
+export async function getServiceAgreementById(id: number): Promise<ServiceAgreement | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db
+    .select()
+    .from(serviceAgreements)
+    .where(eq(serviceAgreements.id, id))
+    .limit(1);
+  return row;
+}
+
+export async function createServiceAgreement(data: InsertServiceAgreement): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(serviceAgreements).values(data);
+  return Number((result as any).insertId);
+}
+
+export async function updateServiceAgreement(
+  id: number,
+  data: Partial<InsertServiceAgreement>,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(serviceAgreements).set(data).where(eq(serviceAgreements.id, id));
+}
+
+export async function getAgreementSitesByAgreement(agreementId: number): Promise<AgreementSite[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(agreementSites)
+    .where(eq(agreementSites.agreementId, agreementId))
+    .orderBy(asc(agreementSites.createdAt));
+}
+
+export async function getAgreementSiteById(id: number): Promise<AgreementSite | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db
+    .select()
+    .from(agreementSites)
+    .where(eq(agreementSites.id, id))
+    .limit(1);
+  return row;
+}
+
+export async function createAgreementSite(data: InsertAgreementSite): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(agreementSites).values(data);
+  return Number((result as any).insertId);
+}
+
+export async function updateAgreementSite(
+  id: number,
+  data: Partial<InsertAgreementSite>,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(agreementSites).set(data).where(eq(agreementSites.id, id));
+}
+
+export async function deleteAgreementSite(id: number, companyId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .delete(agreementSites)
+    .where(and(eq(agreementSites.id, id), eq(agreementSites.companyId, companyId)));
+}
+
+export async function getExpiringSoonAgreements(
+  companyId: number,
+  daysAhead: number,
+): Promise<ServiceAgreement[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const future = new Date();
+  future.setDate(future.getDate() + daysAhead);
+  const futureStr = future.toISOString().slice(0, 10);
+  return db
+    .select()
+    .from(serviceAgreements)
+    .where(and(
+      eq(serviceAgreements.companyId, companyId),
+      inArray(serviceAgreements.status, ["active", "expiring_soon"]),
+      lte(serviceAgreements.endDate as any, futureStr),
+    ))
+    .orderBy(asc(serviceAgreements.endDate));
+}
+
+export async function getActiveAgreementForSite(
+  siteId: number,
+  companyId: number,
+): Promise<{ agreement: ServiceAgreement; agreementSite: AgreementSite } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const siteRows = await db
+    .select()
+    .from(agreementSites)
+    .where(and(
+      eq(agreementSites.siteId, siteId),
+      eq(agreementSites.companyId, companyId),
+    ));
+  if (!siteRows.length) return null;
+  const agreementIds = siteRows.map((s) => s.agreementId);
+  const [agreement] = await db
+    .select()
+    .from(serviceAgreements)
+    .where(and(
+      inArray(serviceAgreements.id, agreementIds),
+      inArray(serviceAgreements.status, ["active", "expiring_soon"]),
+    ))
+    .orderBy(desc(serviceAgreements.createdAt))
+    .limit(1);
+  if (!agreement) return null;
+  const agreementSite = siteRows.find((s) => s.agreementId === agreement.id)!;
+  return { agreement, agreementSite };
 }

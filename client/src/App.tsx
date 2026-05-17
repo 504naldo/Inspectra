@@ -61,6 +61,8 @@ import ComplianceDashboard from "./pages/admin/ComplianceDashboard";
 import SchedulingAutomation from "./pages/admin/SchedulingAutomation";
 import AIAssistant from "./pages/admin/AIAssistant";
 import KnowledgeBase from "./pages/admin/KnowledgeBase";
+import ServiceAgreements from "./pages/admin/ServiceAgreements";
+import ServiceAgreementDetail from "./pages/admin/ServiceAgreementDetail";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -418,6 +420,18 @@ function Router() {
       <Route path="/admin/knowledge-base">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <KnowledgeBase />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/service-agreements/:id">
+        {(params) => (
+          <ProtectedRoute allowedRoles={['admin', 'office']}>
+            <ServiceAgreementDetail id={parseInt(params.id)} />
+          </ProtectedRoute>
+        )}
+      </Route>
+      <Route path="/admin/service-agreements">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <ServiceAgreements />
         </ProtectedRoute>
       </Route>
 
