@@ -2054,3 +2054,49 @@ export const purchaseOrderItems = mysqlTable("purchase_order_items", {
 
 export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
 export type InsertPurchaseOrderItem = typeof purchaseOrderItems.$inferInsert;
+
+// ============================================
+// TIME ENTRIES
+// ============================================
+
+export const TIME_ENTRY_LABOUR_TYPES = [
+  "inspection", "repair", "service_call", "travel", "admin", "parts_run", "other",
+] as const;
+export type TimeEntryLabourType = (typeof TIME_ENTRY_LABOUR_TYPES)[number];
+
+export const TIME_ENTRY_STATUSES = [
+  "draft", "submitted", "approved", "rejected", "invoiced",
+] as const;
+export type TimeEntryStatus = (typeof TIME_ENTRY_STATUSES)[number];
+
+export const timeEntries = mysqlTable("time_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  userId: int("userId").notNull(),
+  jobId: int("jobId"),
+  workOrderId: int("workOrderId"),
+  approvedWorkId: int("approvedWorkId"),
+  siteId: int("siteId"),
+  customerOrgId: int("customerOrgId"),
+  entryDate: date("entryDate").notNull(),
+  startTime: varchar("startTime", { length: 8 }),
+  endTime: varchar("endTime", { length: 8 }),
+  durationMinutes: int("durationMinutes").notNull(),
+  labourType: mysqlEnum("labourType", TIME_ENTRY_LABOUR_TYPES).notNull().default("inspection"),
+  status: mysqlEnum("status", TIME_ENTRY_STATUSES).notNull().default("draft"),
+  description: varchar("description", { length: 1000 }).notNull().default(""),
+  internalNotes: text("internalNotes"),
+  approvedById: int("approvedById"),
+  approvedAt: timestamp("approvedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("time_entries_companyId_idx").on(table.companyId),
+  userIdIdx: index("time_entries_userId_idx").on(table.userId),
+  jobIdIdx: index("time_entries_jobId_idx").on(table.jobId),
+  entryDateIdx: index("time_entries_entryDate_idx").on(table.entryDate),
+  statusIdx: index("time_entries_status_idx").on(table.status),
+}));
+
+export type TimeEntry = typeof timeEntries.$inferSelect;
+export type InsertTimeEntry = typeof timeEntries.$inferInsert;

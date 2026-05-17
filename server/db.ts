@@ -10,6 +10,7 @@ import {
   purchaseOrders, InsertPurchaseOrder, PurchaseOrder,
   purchaseOrderItems, InsertPurchaseOrderItem, PurchaseOrderItem,
   PURCHASE_ORDER_STATUSES, PURCHASE_ORDER_PRIORITIES,
+  timeEntries, InsertTimeEntry, TimeEntry,
 } from "../drizzle/schema";
 import {
   InsertUser, users, User,
@@ -3297,4 +3298,90 @@ export async function recalculatePOTotals(
     subtotal: subtotal.toFixed(2) as any,
     total: total.toFixed(2) as any,
   });
+}
+
+// ─── Time Entries ─────────────────────────────────────────────────────────────
+
+export async function getTimeEntriesByCompany(
+  companyId: number,
+  filters?: { status?: string; userId?: number; jobId?: number; workOrderId?: number; approvedWorkId?: number; from?: string; to?: string },
+): Promise<TimeEntry[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(timeEntries.companyId, companyId)];
+  if (filters?.status) conditions.push(eq(timeEntries.status, filters.status as any));
+  if (filters?.userId) conditions.push(eq(timeEntries.userId, filters.userId));
+  if (filters?.jobId) conditions.push(eq(timeEntries.jobId, filters.jobId));
+  if (filters?.workOrderId) conditions.push(eq(timeEntries.workOrderId, filters.workOrderId));
+  if (filters?.approvedWorkId) conditions.push(eq(timeEntries.approvedWorkId, filters.approvedWorkId));
+  if (filters?.from) conditions.push(sql`${timeEntries.entryDate} >= ${filters.from}`);
+  if (filters?.to) conditions.push(sql`${timeEntries.entryDate} <= ${filters.to}`);
+  return db.select().from(timeEntries).where(and(...conditions)).orderBy(desc(timeEntries.entryDate), desc(timeEntries.createdAt));
+}
+
+export async function getTimeEntriesByUser(
+  userId: number,
+  companyId: number,
+  filters?: { jobId?: number; from?: string; to?: string; status?: string },
+): Promise<TimeEntry[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(timeEntries.userId, userId), eq(timeEntries.companyId, companyId)];
+  if (filters?.jobId) conditions.push(eq(timeEntries.jobId, filters.jobId));
+  if (filters?.status) conditions.push(eq(timeEntries.status, filters.status as any));
+  if (filters?.from) conditions.push(sql`${timeEntries.entryDate} >= ${filters.from}`);
+  if (filters?.to) conditions.push(sql`${timeEntries.entryDate} <= ${filters.to}`);
+  return db.select().from(timeEntries).where(and(...conditions)).orderBy(desc(timeEntries.entryDate), desc(timeEntries.createdAt));
+}
+
+export async function getTimeEntryById(id: number): Promise<TimeEntry | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createTimeEntry(data: InsertTimeEntry): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.insert(timeEntries).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function updateTimeEntry(id: number, data: Partial<InsertTimeEntry>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(timeEntries).set(data).where(eq(timeEntries.id, id));
+}
+
+export async function deleteTimeEntry(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(timeEntries).where(eq(timeEntries.id, id));
+}
+
+export async function getTimesheetSummary(
+  companyId: number,
+  weekStart: string,
+  weekEnd: string,
+): Promise<{ submittedMinutes: number; approvedMinutes: number; pendingCount: number; rejectedCount: number }> {
+  const db = await getDb();
+  if (!db) return { submittedMinutes: 0, approvedMinutes: 0, pendingCount: 0, rejectedCount: 0 };
+  const rows = await db.select().from(timeEntries).where(
+    and(
+      eq(timeEntries.companyId, companyId),
+      sql`${timeEntries.entryDate} >= ${weekStart}`,
+      sql`${timeEntries.entryDate} <= ${weekEnd}`,
+    )
+  );
+  let submittedMinutes = 0;
+  let approvedMinutes = 0;
+  let pendingCount = 0;
+  let rejectedCount = 0;
+  for (const row of rows) {
+    if (row.status === "submitted") { submittedMinutes += row.durationMinutes; pendingCount++; }
+    if (row.status === "approved") approvedMinutes += row.durationMinutes;
+    if (row.status === "rejected") rejectedCount++;
+  }
+  return { submittedMinutes, approvedMinutes, pendingCount, rejectedCount };
 }

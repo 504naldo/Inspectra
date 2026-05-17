@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -19,6 +19,15 @@ import { SignaturePad } from "@/components/SignaturePad";
 import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
 import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending } from "@shared/deviceHelpers";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ArrowLeft,
   MapPin,
@@ -46,6 +55,8 @@ import {
   ShoppingCart,
   Plus,
   Package,
+  Timer,
+  StopCircle,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -183,6 +194,90 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     },
     onError: (e) => toast.error(e.message || "Failed to submit parts request"),
   });
+
+  // Time tracking
+  const TIMER_KEY = `inspectra_timer_${jobId}`;
+  const [timerRunning, setTimerRunning] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(TIMER_KEY + "_running") ?? "false"); } catch { return false; }
+  });
+  const [timerStart, setTimerStart] = useState<number | null>(() => {
+    try { const v = localStorage.getItem(TIMER_KEY + "_start"); return v ? parseInt(v) : null; } catch { return null; }
+  });
+  const [timerElapsed, setTimerElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [showTimeForm, setShowTimeForm] = useState(false);
+  const [timeLabourType, setTimeLabourType] = useState("inspection");
+  const [timeDurationMinutes, setTimeDurationMinutes] = useState("");
+  const [timeDescription, setTimeDescription] = useState("");
+  const [timeDate, setTimeDate] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const { data: myTimeEntries = [], refetch: refetchTimeEntries } = trpc.timeTracking.listMine.useQuery(
+    { jobId },
+    { enabled: true, retry: 1 },
+  );
+
+  const createTimeMut = trpc.timeTracking.create.useMutation({
+    onSuccess: () => {
+      toast.success("Time entry saved.");
+      refetchTimeEntries();
+      setShowTimeForm(false);
+      setTimeDurationMinutes("");
+      setTimeDescription("");
+      setTimeDate(new Date().toISOString().slice(0, 10));
+    },
+    onError: (e) => toast.error(e.message || "Failed to save time entry"),
+  });
+
+  const submitTimeMut = trpc.timeTracking.submit.useMutation({
+    onSuccess: () => { toast.success("Time entry submitted for approval."); refetchTimeEntries(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  useEffect(() => {
+    if (timerRunning && timerStart) {
+      timerRef.current = setInterval(() => {
+        setTimerElapsed(Math.floor((Date.now() - timerStart) / 1000));
+      }, 1000);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [timerRunning, timerStart]);
+
+  function startTimer() {
+    const now = Date.now();
+    localStorage.setItem(TIMER_KEY + "_running", "true");
+    localStorage.setItem(TIMER_KEY + "_start", String(now));
+    setTimerStart(now);
+    setTimerElapsed(0);
+    setTimerRunning(true);
+  }
+
+  function stopTimer() {
+    if (!timerStart) return;
+    const mins = Math.max(1, Math.round((Date.now() - timerStart) / 60000));
+    localStorage.removeItem(TIMER_KEY + "_running");
+    localStorage.removeItem(TIMER_KEY + "_start");
+    setTimerRunning(false);
+    setTimerStart(null);
+    setTimerElapsed(0);
+    setTimeDurationMinutes(String(mins));
+    setShowTimeForm(true);
+  }
+
+  function fmtTimer(secs: number) {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return h > 0
+      ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+      : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function fmtEntryDuration(minutes: number) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return h > 0 ? `${h}h ${m > 0 ? `${m}m` : ""}`.trim() : `${m}m`;
+  }
 
   // Submit for QA
   const [qaDialogOpen, setQaDialogOpen] = useState(false);
@@ -1025,6 +1120,168 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Time Tracking */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between text-base">
+              <span className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Time Tracking
+              </span>
+              {!showTimeForm && !timerRunning && (
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowTimeForm(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Time
+                </Button>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Timer */}
+            <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
+              {timerRunning ? (
+                <>
+                  <div>
+                    <div className="text-2xl font-mono font-bold tabular-nums text-primary">
+                      {fmtTimer(timerElapsed)}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">Timer running…</div>
+                  </div>
+                  <Button size="sm" variant="destructive" className="h-9" onClick={stopTimer}>
+                    <StopCircle className="h-4 w-4 mr-1.5" /> Stop
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm text-muted-foreground">Track time automatically</div>
+                  <Button size="sm" variant="outline" className="h-9" onClick={startTimer}>
+                    <Timer className="h-4 w-4 mr-1.5" /> Start Timer
+                  </Button>
+                </>
+              )}
+            </div>
+
+            {/* Manual entry form */}
+            {showTimeForm && (
+              <div className="border rounded-lg p-3 space-y-3 bg-card">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Log Time Entry</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Duration (minutes)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="1440"
+                      className="mt-1 h-8 text-sm"
+                      placeholder="e.g. 90"
+                      value={timeDurationMinutes}
+                      onChange={(e) => setTimeDurationMinutes(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Date</Label>
+                    <Input
+                      type="date"
+                      className="mt-1 h-8 text-sm"
+                      value={timeDate}
+                      onChange={(e) => setTimeDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Labour Type</Label>
+                  <Select value={timeLabourType} onValueChange={setTimeLabourType}>
+                    <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="inspection">Inspection</SelectItem>
+                      <SelectItem value="repair">Repair</SelectItem>
+                      <SelectItem value="service_call">Service Call</SelectItem>
+                      <SelectItem value="travel">Travel</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="parts_run">Parts Run</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Description (optional)</Label>
+                  <Textarea
+                    className="mt-1 text-sm"
+                    rows={2}
+                    placeholder="What did you work on?"
+                    value={timeDescription}
+                    onChange={(e) => setTimeDescription(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1 h-8 text-xs"
+                    disabled={createTimeMut.isPending || !timeDurationMinutes}
+                    onClick={() => createTimeMut.mutate({
+                      jobId,
+                      entryDate: timeDate,
+                      durationMinutes: parseInt(timeDurationMinutes),
+                      labourType: timeLabourType as any,
+                      description: timeDescription.trim(),
+                    })}
+                  >
+                    Save as Draft
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => { setShowTimeForm(false); setTimeDurationMinutes(""); }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Today's entries */}
+            {(myTimeEntries as any[]).length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">My Entries — This Job</p>
+                {(myTimeEntries as any[]).map((entry: any) => (
+                  <div key={entry.id} className="flex items-center justify-between rounded border bg-muted/20 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-semibold tabular-nums">{fmtEntryDuration(entry.durationMinutes)}</span>
+                        <span className="text-muted-foreground">{entry.labourType.replace("_", " ")}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+                          entry.status === "approved" ? "bg-green-100 text-green-700" :
+                          entry.status === "submitted" ? "bg-yellow-100 text-yellow-700" :
+                          entry.status === "rejected" ? "bg-red-100 text-red-600" :
+                          "bg-gray-100 text-gray-600"
+                        }`}>{entry.status}</span>
+                      </div>
+                      {entry.description && (
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{entry.description}</p>
+                      )}
+                    </div>
+                    {entry.status === "draft" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-xs ml-2 shrink-0"
+                        disabled={submitTimeMut.isPending}
+                        onClick={() => submitTimeMut.mutate({ id: entry.id })}
+                      >
+                        Submit
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(myTimeEntries as any[]).length === 0 && !showTimeForm && !timerRunning && (
+              <p className="text-center text-xs text-muted-foreground py-2">No time entries for this job yet.</p>
+            )}
           </CardContent>
         </Card>
 

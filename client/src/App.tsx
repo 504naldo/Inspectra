@@ -70,6 +70,7 @@ import PartsRequestDetail from "./pages/admin/PartsRequestDetail";
 import Vendors from "./pages/admin/Vendors";
 import PurchaseOrders from "./pages/admin/PurchaseOrders";
 import PurchaseOrderDetail from "./pages/admin/PurchaseOrderDetail";
+import Timesheets from "./pages/admin/Timesheets";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -458,6 +459,11 @@ function Router() {
       <Route path="/admin/purchase-orders">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <PurchaseOrders />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/timesheets">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <Timesheets />
         </ProtectedRoute>
       </Route>
 
