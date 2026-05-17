@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure, technicianProcedure, adminProcedure } from "../_core/trpc";
+
 import * as db from "../db";
 
 // User management router
@@ -10,7 +11,10 @@ const userRouter = router({
     return db.getAllUsers(input.companyId ?? ctx.user.companyId ?? undefined);
   }),
   
-  listTechnicians: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+  listTechnicians: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
     const users = await db.getAllUsers(input.companyId);
     return users.filter((u: any) => ['technician', 'admin', 'office'].includes(u.role) && u.isActive === 1);
   }),
@@ -32,14 +36,20 @@ const userRouter = router({
 
 // Dashboard router
 const dashboardRouter = router({
-  getStats: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+  getStats: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
     return db.getDashboardStats(input.companyId);
   }),
 
   getRecentJobs: officeProcedure.input(z.object({
     companyId: z.number(),
     limit: z.number().optional()
-  })).query(async ({ input }) => {
+  })).query(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
     const jobs = await db.getJobsByCompany(input.companyId);
     return jobs.slice(0, input.limit || 10);
   }),
