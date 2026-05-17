@@ -19,7 +19,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Link } from "wouter";
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 // ── Risk level helpers ────────────────────────────────────────────────────────
 
@@ -74,6 +74,7 @@ function MetricCard({
   icon: Icon,
   urgent,
   href,
+  onClick,
 }: {
   label: string;
   count: number;
@@ -81,15 +82,17 @@ function MetricCard({
   icon: React.ElementType;
   urgent?: boolean;
   href?: string;
+  onClick?: () => void;
 }) {
+  const interactive = !!(href || onClick);
   const inner = (
-    <Card className={`h-full ${urgent && count > 0 ? "border-red-300 dark:border-red-800" : ""}`}>
+    <Card className={`h-full ${urgent && count > 0 ? "border-red-300 dark:border-red-800" : ""} ${interactive ? "cursor-pointer hover:shadow-md transition-shadow" : ""}`}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           <div className={`p-2 rounded-lg ${urgent && count > 0 ? "bg-red-100 dark:bg-red-900/30" : "bg-primary/10"}`}>
             <Icon className={`h-4 w-4 ${urgent && count > 0 ? "text-red-600 dark:text-red-400" : "text-primary"}`} />
           </div>
-          {href && <ArrowRight className="h-4 w-4 text-muted-foreground" />}
+          {interactive && <ArrowRight className="h-4 w-4 text-muted-foreground" />}
         </div>
         <div className={`text-2xl font-bold mt-3 ${urgent && count > 0 ? "text-red-600 dark:text-red-400" : ""}`}>{count}</div>
         <p className="text-sm font-medium mt-0.5">{label}</p>
@@ -97,7 +100,9 @@ function MetricCard({
       </CardContent>
     </Card>
   );
-  return href ? <Link href={href}><div className="cursor-pointer hover:shadow-md transition-shadow h-full">{inner}</div></Link> : inner;
+  if (href) return <Link href={href}><div className="h-full">{inner}</div></Link>;
+  if (onClick) return <div className="h-full" onClick={onClick}>{inner}</div>;
+  return inner;
 }
 
 // ── Compliance section card ───────────────────────────────────────────────────
@@ -146,6 +151,12 @@ function StatRow({ label, value, color }: { label: string; value: number; color?
 export default function ComplianceDashboard() {
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [search, setSearch] = useState("");
+  const siteRiskRef = useRef<HTMLDivElement>(null);
+
+  function filterAndScroll(filter: RiskFilter) {
+    setRiskFilter(filter);
+    setTimeout(() => siteRiskRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
 
   const { data, isLoading, refetch, error } = trpc.compliance.getSummary.useQuery(undefined, {
     staleTime: 60_000,
@@ -235,13 +246,13 @@ export default function ComplianceDashboard() {
             Compliance Overview
           </h2>
           <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-            <MetricCard icon={ShieldCheck}   label="Sites Compliant"         count={ov?.compliantSites ?? 0}         sub={`of ${ov?.totalSites ?? 0} total`} />
-            <MetricCard icon={ShieldAlert}   label="Sites At Risk"           count={ov?.sitesAtRisk ?? 0}            urgent href="/admin/compliance" />
-            <MetricCard icon={Clock}         label="Overdue Inspections"     count={ov?.overdueInspections ?? 0}     urgent href="/admin/compliance" />
-            <MetricCard icon={AlertOctagon}  label="Critical Deficiencies"   count={ov?.criticalDeficiencies ?? 0}   urgent href="/admin/compliance" />
+            <MetricCard icon={ShieldCheck}   label="Sites Compliant"         count={ov?.compliantSites ?? 0}         sub={`of ${ov?.totalSites ?? 0} total`} onClick={() => filterAndScroll("compliant")} />
+            <MetricCard icon={ShieldAlert}   label="Sites At Risk"           count={ov?.sitesAtRisk ?? 0}            urgent onClick={() => filterAndScroll("at_risk")} />
+            <MetricCard icon={Clock}         label="Overdue Inspections"     count={ov?.overdueInspections ?? 0}     urgent onClick={() => filterAndScroll("overdue")} />
+            <MetricCard icon={AlertOctagon}  label="Critical Deficiencies"   count={ov?.criticalDeficiencies ?? 0}   urgent onClick={() => filterAndScroll("critical")} />
           </div>
           <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 mt-3">
-            <MetricCard icon={AlertTriangle} label="Open Deficiencies"       count={ov?.openDeficiencies ?? 0}       urgent={!!ov && ov.openDeficiencies > 0} href="/admin/compliance" />
+            <MetricCard icon={AlertTriangle} label="Open Deficiencies"       count={ov?.openDeficiencies ?? 0}       urgent={!!ov && ov.openDeficiencies > 0} onClick={() => filterAndScroll("open_deficiency")} />
             <MetricCard icon={FileText}      label="Reports Pending Review"  count={ov?.reportsPendingReview ?? 0}   href="/admin/report-qa" />
             <MetricCard icon={CheckSquare}   label="Approved Work Open"      count={ov?.approvedWorkNotCompleted ?? 0} href="/admin/approved-work" />
             <MetricCard icon={Database}      label="Data Issues"             count={(ov?.sitesMissingBuildingId ?? 0) + (ov?.sitesMissingWorkSiteInfo ?? 0)} href="/admin/data-quality" />
@@ -249,7 +260,7 @@ export default function ComplianceDashboard() {
         </div>
 
         {/* ── Site Risk List ── */}
-        <div>
+        <div ref={siteRiskRef}>
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
             Site Risk
             <span className="ml-2 text-primary font-bold normal-case">{filteredSites.length}</span>
