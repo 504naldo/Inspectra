@@ -71,6 +71,8 @@ import Vendors from "./pages/admin/Vendors";
 import PurchaseOrders from "./pages/admin/PurchaseOrders";
 import PurchaseOrderDetail from "./pages/admin/PurchaseOrderDetail";
 import Timesheets from "./pages/admin/Timesheets";
+import AdminPayrollHours from "./pages/admin/PayrollHours";
+import TechPayrollHours from "./pages/technician/PayrollHours";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -211,6 +213,11 @@ function Router() {
       <Route path="/tech/sync">
         <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
           <SyncScreen />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/tech/payroll-hours">
+        <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
+          <TechPayrollHours />
         </ProtectedRoute>
       </Route>
 
@@ -464,6 +471,11 @@ function Router() {
       <Route path="/admin/timesheets">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <Timesheets />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/payroll-hours">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <AdminPayrollHours />
         </ProtectedRoute>
       </Route>
 

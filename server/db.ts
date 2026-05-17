@@ -11,6 +11,7 @@ import {
   purchaseOrderItems, InsertPurchaseOrderItem, PurchaseOrderItem,
   PURCHASE_ORDER_STATUSES, PURCHASE_ORDER_PRIORITIES,
   timeEntries, InsertTimeEntry, TimeEntry,
+  payrollTimeEntries, InsertPayrollTimeEntry, PayrollTimeEntry,
 } from "../drizzle/schema";
 import {
   InsertUser, users, User,
@@ -3384,4 +3385,118 @@ export async function getTimesheetSummary(
     if (row.status === "rejected") rejectedCount++;
   }
   return { submittedMinutes, approvedMinutes, pendingCount, rejectedCount };
+}
+
+// ─── Payroll Time Entries ─────────────────────────────────────────────────────
+
+export async function getPayrollEntriesByCompany(
+  companyId: number,
+  filters?: { status?: string; userId?: number; workType?: string; from?: string; to?: string },
+): Promise<PayrollTimeEntry[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(payrollTimeEntries.companyId, companyId)];
+  if (filters?.status) conditions.push(eq(payrollTimeEntries.status, filters.status as any));
+  if (filters?.userId) conditions.push(eq(payrollTimeEntries.userId, filters.userId));
+  if (filters?.workType) conditions.push(eq(payrollTimeEntries.workType, filters.workType as any));
+  if (filters?.from) conditions.push(sql`${payrollTimeEntries.entryDate} >= ${filters.from}`);
+  if (filters?.to) conditions.push(sql`${payrollTimeEntries.entryDate} <= ${filters.to}`);
+  return db.select().from(payrollTimeEntries)
+    .where(and(...conditions))
+    .orderBy(desc(payrollTimeEntries.entryDate), desc(payrollTimeEntries.createdAt));
+}
+
+export async function getPayrollEntriesByUser(
+  userId: number,
+  companyId: number,
+  filters?: { from?: string; to?: string; status?: string },
+): Promise<PayrollTimeEntry[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [
+    eq(payrollTimeEntries.userId, userId),
+    eq(payrollTimeEntries.companyId, companyId),
+  ];
+  if (filters?.status) conditions.push(eq(payrollTimeEntries.status, filters.status as any));
+  if (filters?.from) conditions.push(sql`${payrollTimeEntries.entryDate} >= ${filters.from}`);
+  if (filters?.to) conditions.push(sql`${payrollTimeEntries.entryDate} <= ${filters.to}`);
+  return db.select().from(payrollTimeEntries)
+    .where(and(...conditions))
+    .orderBy(desc(payrollTimeEntries.entryDate), desc(payrollTimeEntries.createdAt));
+}
+
+export async function getPayrollEntryById(id: number): Promise<PayrollTimeEntry | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(payrollTimeEntries).where(eq(payrollTimeEntries.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createPayrollEntry(data: InsertPayrollTimeEntry): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.insert(payrollTimeEntries).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function updatePayrollEntry(id: number, data: Partial<InsertPayrollTimeEntry>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(payrollTimeEntries).set(data).where(eq(payrollTimeEntries.id, id));
+}
+
+export async function bulkUpdatePayrollEntries(ids: number[], data: Partial<InsertPayrollTimeEntry>): Promise<void> {
+  const db = await getDb();
+  if (!db || ids.length === 0) return;
+  await db.update(payrollTimeEntries).set(data).where(inArray(payrollTimeEntries.id, ids));
+}
+
+export async function getPayrollSummary(
+  companyId: number,
+  from: string,
+  to: string,
+): Promise<{ submittedMinutes: number; approvedMinutes: number; pendingCount: number; exportedMinutes: number; uniqueEmployees: number }> {
+  const db = await getDb();
+  if (!db) return { submittedMinutes: 0, approvedMinutes: 0, pendingCount: 0, exportedMinutes: 0, uniqueEmployees: 0 };
+  const rows = await db.select().from(payrollTimeEntries).where(
+    and(
+      eq(payrollTimeEntries.companyId, companyId),
+      sql`${payrollTimeEntries.entryDate} >= ${from}`,
+      sql`${payrollTimeEntries.entryDate} <= ${to}`,
+    )
+  );
+  let submittedMinutes = 0;
+  let approvedMinutes = 0;
+  let pendingCount = 0;
+  let exportedMinutes = 0;
+  const employeeIds = new Set<number>();
+  for (const row of rows) {
+    employeeIds.add(row.userId);
+    if (row.status === "submitted") { submittedMinutes += row.totalMinutes; pendingCount++; }
+    if (row.status === "approved") approvedMinutes += row.totalMinutes;
+    if (row.status === "exported" || row.status === "locked") exportedMinutes += row.totalMinutes;
+  }
+  return { submittedMinutes, approvedMinutes, pendingCount, exportedMinutes, uniqueEmployees: employeeIds.size };
+}
+
+export async function deletePayrollEntry(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(payrollTimeEntries).where(eq(payrollTimeEntries.id, id));
+}
+
+export async function getPayrollExportData(
+  companyId: number,
+  filters?: { from?: string; to?: string; userId?: number; status?: string },
+): Promise<PayrollTimeEntry[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(payrollTimeEntries.companyId, companyId)];
+  if (filters?.status) conditions.push(eq(payrollTimeEntries.status, filters.status as any));
+  if (filters?.userId) conditions.push(eq(payrollTimeEntries.userId, filters.userId));
+  if (filters?.from) conditions.push(sql`${payrollTimeEntries.entryDate} >= ${filters.from}`);
+  if (filters?.to) conditions.push(sql`${payrollTimeEntries.entryDate} <= ${filters.to}`);
+  return db.select().from(payrollTimeEntries)
+    .where(and(...conditions))
+    .orderBy(asc(payrollTimeEntries.entryDate), asc(payrollTimeEntries.userId));
 }

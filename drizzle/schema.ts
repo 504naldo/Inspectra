@@ -2100,3 +2100,63 @@ export const timeEntries = mysqlTable("time_entries", {
 
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type InsertTimeEntry = typeof timeEntries.$inferInsert;
+
+// ============================================
+// PAYROLL TIME ENTRIES
+// ============================================
+
+export const PAYROLL_WORK_TYPES = [
+  "regular_work", "job_site", "travel", "office_admin", "shop_time",
+  "inventory", "training", "meeting", "sick_time", "vacation",
+  "stat_holiday", "unpaid_time", "other",
+] as const;
+export type PayrollWorkType = (typeof PAYROLL_WORK_TYPES)[number];
+
+export const PAYROLL_ENTRY_STATUSES = [
+  "draft", "submitted", "approved", "rejected", "exported", "locked",
+] as const;
+export type PayrollEntryStatus = (typeof PAYROLL_ENTRY_STATUSES)[number];
+
+export const payrollTimeEntries = mysqlTable("payroll_time_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  userId: int("userId").notNull(),
+  entryDate: date("entryDate").notNull(),
+  payPeriodStart: date("payPeriodStart"),
+  payPeriodEnd: date("payPeriodEnd"),
+  startTime: varchar("startTime", { length: 8 }),
+  endTime: varchar("endTime", { length: 8 }),
+  breakMinutes: int("breakMinutes").notNull().default(0),
+  regularMinutes: int("regularMinutes").notNull(),
+  overtimeMinutes: int("overtimeMinutes"),
+  totalMinutes: int("totalMinutes").notNull(),
+  workType: mysqlEnum("workType", PAYROLL_WORK_TYPES).notNull().default("regular_work"),
+  status: mysqlEnum("status", PAYROLL_ENTRY_STATUSES).notNull().default("draft"),
+  jobId: int("jobId"),
+  workOrderId: int("workOrderId"),
+  approvedWorkId: int("approvedWorkId"),
+  siteId: int("siteId"),
+  customerOrgId: int("customerOrgId"),
+  description: varchar("description", { length: 1000 }).notNull().default(""),
+  employeeNotes: text("employeeNotes"),
+  adminNotes: text("adminNotes"),
+  submittedAt: timestamp("submittedAt"),
+  approvedById: int("approvedById"),
+  approvedAt: timestamp("approvedAt"),
+  rejectedById: int("rejectedById"),
+  rejectedAt: timestamp("rejectedAt"),
+  rejectionReason: text("rejectionReason"),
+  exportedAt: timestamp("exportedAt"),
+  exportedById: int("exportedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("payroll_te_companyId_idx").on(table.companyId),
+  userIdIdx: index("payroll_te_userId_idx").on(table.userId),
+  entryDateIdx: index("payroll_te_entryDate_idx").on(table.entryDate),
+  statusIdx: index("payroll_te_status_idx").on(table.status),
+  payPeriodIdx: index("payroll_te_payPeriod_idx").on(table.payPeriodStart, table.payPeriodEnd),
+}));
+
+export type PayrollTimeEntry = typeof payrollTimeEntries.$inferSelect;
+export type InsertPayrollTimeEntry = typeof payrollTimeEntries.$inferInsert;

@@ -55,6 +55,7 @@ import { assetLifecycleRouter } from "./routers/assetLifecycleRouter";
 import { inventoryRouter } from "./routers/inventoryRouter";
 import { vendorPurchaseRouter } from "./routers/vendorPurchaseRouter";
 import { timeTrackingRouter } from "./routers/timeTrackingRouter";
+import { payrollHoursRouter } from "./routers/payrollHoursRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -139,6 +140,7 @@ export const appRouter = router({
   inventory: inventoryRouter,
   vendorPurchase: vendorPurchaseRouter,
   timeTracking: timeTrackingRouter,
+  payrollHours: payrollHoursRouter,
 });
 
 export type AppRouter = typeof appRouter;
