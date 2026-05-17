@@ -599,6 +599,19 @@ export async function clearJobAssignments(jobId: number) {
   await db.delete(jobAssignments).where(eq(jobAssignments.jobId, jobId));
 }
 
+export async function isUserAssignedToJob(jobId: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const job = await db.select({ leadTechnicianId: jobs.leadTechnicianId })
+    .from(jobs).where(eq(jobs.id, jobId)).limit(1);
+  if (job[0]?.leadTechnicianId === userId) return true;
+  const assignment = await db.select({ id: jobAssignments.id })
+    .from(jobAssignments)
+    .where(and(eq(jobAssignments.jobId, jobId), eq(jobAssignments.userId, userId)))
+    .limit(1);
+  return assignment.length > 0;
+}
+
 export async function getJobTechnicians(jobId: number) {
   const db = await getDb();
   if (!db) return { lead: null, additional: [] };
@@ -1071,12 +1084,12 @@ export async function getRelevantKnowledgeContext(
   if (!db) return [];
 
   const limit = opts.limit ?? 3;
+  const visibilities = (opts as any).visibilities ?? ["admin_office", "ai_only"];
 
   const conditions = [
     eq(knowledgeBase.companyId, companyId),
     eq(knowledgeBase.isActive, true),
-    // Only include items visible to office staff or AI (not technician-only)
-    inArray(knowledgeBase.visibility, ["admin_office", "ai_only"]),
+    inArray(knowledgeBase.visibility, visibilities),
     isNotNull(knowledgeBase.content),
   ];
 

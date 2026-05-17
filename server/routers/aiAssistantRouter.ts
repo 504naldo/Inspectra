@@ -16,7 +16,7 @@ import * as db from "../db";
 import { invokeLLM } from "../_core/llm";
 import { logActivity } from "../activityLogger";
 
-// ── System prompt ─────────────────────────────────────────────────────────────
+// ── System prompts ────────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are Inspectra AI, an internal assistant for fire protection inspection companies.
 You help admin and office staff work faster by summarizing records, drafting text, and recommending next actions.
@@ -30,6 +30,20 @@ Rules you must always follow:
 - Be concise. Prefer bullet points over long paragraphs.
 - You are not a public chatbot. Only respond to fire protection operations questions.
 - Use knowledge base content as internal reference material. If it is missing or unclear, say so instead of inventing.`;
+
+const FIELD_COPILOT_SYSTEM_PROMPT = `You are Inspectra AI Field Copilot, an assistant for fire protection technicians working in the field.
+
+Rules you must always follow:
+- Only report facts from the data provided. Never invent device serial numbers, locations, or test results.
+- Do not claim a job is complete or compliant unless the data clearly supports it.
+- Do not tell a technician to skip any required inspection steps.
+- Do not guarantee code compliance or pass/fail outcomes.
+- Label any drafted text as a draft requiring review before saving.
+- Be brief. Technicians are on-site on mobile — short clear answers only.
+- Recommend actions but do not perform them.
+- When data is missing, say so explicitly rather than guessing.
+- Remind technicians to verify information before saving or submitting.
+- You are not a public chatbot. Only respond to fire protection field operations questions.`;
 
 // ── Context builders ──────────────────────────────────────────────────────────
 
@@ -175,6 +189,75 @@ async function fetchContext(type: ContextType, id: number, companyId: number): P
     case "approved_work": return buildApprovedWorkContext(id, companyId);
     default: return `(context type '${type}' not supported — summarize based on the question alone)`;
   }
+}
+
+// ── Technician-safe context builder ──────────────────────────────────────────
+// Excludes: invoices, pricing, Sage data, admin-only notes, customer billing
+
+async function buildTechnicianJobContext(jobId: number, companyId: number): Promise<string> {
+  const job = await db.getJobById(jobId);
+  if (!job || job.companyId !== companyId) return "(job not found or access denied)";
+
+  const [site, wsi, stats, deficiencies, technicians] = await Promise.all([
+    db.getSiteById(job.siteId),
+    db.getWorkSiteInfoBySiteId(job.siteId),
+    db.getInspectionStats(jobId),
+    db.getDeficienciesByJob(jobId),
+    db.getJobTechnicians(jobId),
+  ]);
+
+  const devices = await db.getDevicesBySite(job.siteId);
+  const openDefs = deficiencies.filter(d => d.status === "open" || d.status === "in_progress");
+  const critDefs = openDefs.filter(d => d.severity === "critical");
+
+  // Previous deficiencies from last finalized job at this site
+  let prevDefSummary = "";
+  const lastJob = await db.getLastCompletedJobForSite(job.siteId);
+  if (lastJob && lastJob.id !== jobId) {
+    const prevDefs = await db.getDeficienciesByJob(lastJob.id);
+    const unresolvedPrev = prevDefs.filter(d => d.status !== "resolved" && d.status !== "closed");
+    if (unresolvedPrev.length > 0) {
+      prevDefSummary = `Previous unresolved deficiencies (from ${lastJob.jobNumber}): ${unresolvedPrev.length} — ${unresolvedPrev.slice(0, 3).map(d => d.title).join("; ")}`;
+    }
+  }
+
+  const keyInfo = [
+    wsi?.keyNumber ? `Key #${wsi.keyNumber}` : "",
+    wsi?.keyLocation ? `at ${wsi.keyLocation}` : "",
+    wsi?.lockboxCode ? `lockbox: ${wsi.lockboxCode}` : "",
+  ].filter(Boolean).join(", ");
+
+  return [
+    `JOB: ${job.jobNumber} — ${job.title}`,
+    `Type: ${job.jobType} | Status: ${job.status}`,
+    `Scheduled: ${job.scheduledDate ? new Date(job.scheduledDate).toDateString() : "not scheduled"}`,
+    `Site: ${site?.name ?? "Unknown"}, ${site?.address ?? ""}, ${site?.city ?? ""}`,
+    site?.contactPhone ? `Site phone: ${site.contactPhone}` : "",
+    wsi?.accessNotes ? `Access notes: ${wsi.accessNotes}` : "",
+    keyInfo ? `Key/access info: ${keyInfo}` : "",
+    wsi?.fireAlarmPanelLocation ? `FA panel: ${wsi.fireAlarmPanelLocation}${wsi.annunciatorLocation ? ` · Annunciator: ${wsi.annunciatorLocation}` : ""}` : "",
+    wsi?.monitoringCompany ? `Monitoring: ${wsi.monitoringCompany}${wsi.monitoringPhone ? ` (${wsi.monitoringPhone})` : ""}` : "",
+    wsi?.sprinklerNotes ? `Sprinkler notes: ${wsi.sprinklerNotes}` : "",
+    wsi?.emergencyLightingNotes ? `Emergency lighting: ${wsi.emergencyLightingNotes}` : "",
+    `Devices at site: ${devices.length} total`,
+    `Inspection progress: ${stats.pass + stats.fail + stats.na}/${devices.length} tested (${stats.pass} pass, ${stats.fail} fail, ${stats.na} N/A, ${stats.notTested} not tested)`,
+    `Open deficiencies: ${openDefs.length} (${critDefs.length} critical)`,
+    openDefs.length > 0 ? `Open deficiency list: ${openDefs.slice(0, 5).map(d => `[${d.severity}] ${d.title}`).join("; ")}` : "",
+    prevDefSummary,
+    technicians.lead ? `Lead technician: ${technicians.lead.name}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+// ── Job access verification for field copilot ─────────────────────────────────
+
+async function verifyJobAccessForCopilot(jobId: number, userId: number, role: string, companyId: number) {
+  const job = await db.getJobById(jobId);
+  if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+  if (job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (role === "admin" || role === "office") return job;
+  const assigned = await db.isUserAssignedToJob(jobId, userId);
+  if (!assigned) throw new TRPCError({ code: "FORBIDDEN", message: "You are not assigned to this job" });
+  return job;
 }
 
 // ── Helper: extract text from LLM response ────────────────────────────────────
@@ -1125,5 +1208,212 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
         notes,
         disclaimer: "AI suggestions — verify against current catalog pricing before adding to quote.",
       };
+    }),
+
+  // ── Field Copilot (technician-safe) ────────────────────────────────────────
+
+  /**
+   * askFieldCopilot — General-purpose Q&A for technicians in the field.
+   * Builds technician-safe job context (no pricing, no invoices).
+   * Verifies the calling technician is assigned to the job.
+   */
+  askFieldCopilot: technicianProcedure
+    .input(z.object({
+      jobId: z.number().int().positive(),
+      message: z.string().min(1).max(1000),
+      contextType: z.enum(["job", "device", "deficiency", "work_site_info", "inspection_progress"]).optional(),
+      contextId: z.number().int().positive().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      await verifyJobAccessForCopilot(input.jobId, ctx.user.id, ctx.user.role, companyId);
+
+      const jobCtx = await buildTechnicianJobContext(input.jobId, companyId);
+
+      let extraCtx = "";
+      if (input.contextType === "deficiency" && input.contextId) {
+        extraCtx = "\n\n" + await buildDeficiencyContext(input.contextId, companyId);
+      }
+
+      const kbSnippets = await db.getRelevantKnowledgeContext(companyId, input.message, { limit: 2, visibilities: ["technician", "ai_only"] } as any);
+      const kbBlock = kbSnippets.length > 0
+        ? `\n\nKNOWLEDGE BASE:\n${kbSnippets.map(k => `[${k.title}]: ${k.excerpt}`).join("\n\n")}`
+        : "";
+
+      const result = await invokeLLM({
+        messages: [
+          { role: "system", content: FIELD_COPILOT_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `JOB CONTEXT:\n${jobCtx}${extraCtx}${kbBlock}\n\nTECHNICIAN QUESTION: ${input.message}\n\nReturn JSON only.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "copilot_answer",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                answer: { type: "string" },
+                warnings: { type: "array", items: { type: "string" } },
+                suggestedActions: { type: "array", items: { type: "string" } },
+                contextUsed: { type: "string" },
+              },
+              required: ["answer", "warnings", "suggestedActions", "contextUsed"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 500,
+      });
+
+      const raw = extractText(result);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const parsed = JSON.parse(raw);
+
+      void logActivity({
+        ctx,
+        entityType: "job",
+        entityId: input.jobId,
+        eventType: "ai_assistant.fieldCopilotAsked",
+        title: "Field copilot question asked",
+        metadata: { jobId: input.jobId, contextType: input.contextType },
+      });
+
+      return parsed as { answer: string; warnings: string[]; suggestedActions: string[]; contextUsed: string };
+    }),
+
+  /**
+   * summarizeJobForTechnician — Returns a structured job briefing for the technician.
+   * Includes access notes, open deficiencies, and inspection progress.
+   * Excludes all pricing, invoices, and admin-only data.
+   */
+  summarizeJobForTechnician: technicianProcedure
+    .input(z.object({
+      jobId: z.number().int().positive(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      await verifyJobAccessForCopilot(input.jobId, ctx.user.id, ctx.user.role, companyId);
+
+      const contextBlock = await buildTechnicianJobContext(input.jobId, companyId);
+
+      const kbSnippets = await db.getRelevantKnowledgeContext(companyId, "job summary site access technician preparation", { limit: 2, visibilities: ["technician", "ai_only"] } as any);
+      const kbBlock = kbSnippets.length > 0
+        ? `\n\nKNOWLEDGE:\n${kbSnippets.map(k => k.excerpt).join("\n---\n")}`
+        : "";
+
+      const result = await invokeLLM({
+        messages: [
+          { role: "system", content: FIELD_COPILOT_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `Summarize this job for the technician arriving on site:\n\n${contextBlock}${kbBlock}\n\nReturn JSON only.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "job_summary",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                jobSummary: { type: "string" },
+                accessNotes: { type: "string" },
+                importantSiteInfo: { type: "string" },
+                openDeficiencies: { type: "array", items: { type: "string" } },
+                inspectionProgress: { type: "string" },
+                warnings: { type: "array", items: { type: "string" } },
+              },
+              required: ["jobSummary", "accessNotes", "importantSiteInfo", "openDeficiencies", "inspectionProgress", "warnings"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 600,
+      });
+
+      const raw = extractText(result);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const parsed = JSON.parse(raw);
+
+      void logActivity({
+        ctx,
+        entityType: "job",
+        entityId: input.jobId,
+        eventType: "ai_assistant.jobSummarized",
+        title: "Job summarized for technician",
+        metadata: { jobId: input.jobId },
+      });
+
+      return { ...parsed, isDraft: true as const, disclaimer: "AI summary — verify all access details before entering the site." };
+    }),
+
+  /**
+   * checkBeforeSubmitForQA — Pre-flight check before submitting a job for QA.
+   * Computes readiness from real data (no LLM). Fast and reliable.
+   * Does NOT submit for QA — that requires explicit technician action.
+   */
+  checkBeforeSubmitForQA: technicianProcedure
+    .input(z.object({
+      jobId: z.number().int().positive(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const job = await verifyJobAccessForCopilot(input.jobId, ctx.user.id, ctx.user.role, companyId);
+
+      const [devices, stats, deficiencies] = await Promise.all([
+        db.getDevicesBySite(job.siteId),
+        db.getInspectionStats(input.jobId),
+        db.getDeficienciesByJob(input.jobId),
+      ]);
+
+      const testedCount = stats.pass + stats.fail + stats.na;
+      const untestedDevicesCount = devices.length - testedCount;
+      const openDefs = deficiencies.filter(d => d.status !== "resolved" && d.status !== "closed");
+      const deficiencyCount = openDefs.length;
+      const criticalDefs = openDefs.filter(d => d.severity === "critical");
+
+      const missingItems: string[] = [];
+      if (job.status !== "in_progress") {
+        missingItems.push(`Job must be in_progress to submit (current status: ${job.status})`);
+      }
+      if (untestedDevicesCount > 0) {
+        missingItems.push(`${untestedDevicesCount} device${untestedDevicesCount !== 1 ? "s" : ""} not yet tested`);
+      }
+
+      const criticalWarnings: string[] = [];
+      if (criticalDefs.length > 0) {
+        criticalWarnings.push(`${criticalDefs.length} critical deficiency${criticalDefs.length !== 1 ? "ies" : "y"} open — ensure each is fully documented`);
+      }
+      if ((job as any).finalizedAt) {
+        criticalWarnings.push("Job is already finalized — no further changes allowed");
+      }
+
+      const suggestedNextSteps: string[] = [];
+      if (untestedDevicesCount > 0) suggestedNextSteps.push(`Test the remaining ${untestedDevicesCount} device${untestedDevicesCount !== 1 ? "s" : ""}`);
+      if (criticalDefs.length > 0) suggestedNextSteps.push("Review and fully document all critical deficiencies");
+      if (openDefs.some(d => !d.description || !d.correctiveAction)) {
+        suggestedNextSteps.push("Complete description and corrective action for all open deficiencies");
+      }
+      if (missingItems.length === 0 && criticalWarnings.length === 0) {
+        suggestedNextSteps.push("All checks passed — tap 'Submit for QA' when ready");
+      }
+
+      const readyForQA = missingItems.length === 0;
+
+      void logActivity({
+        ctx,
+        entityType: "job",
+        entityId: input.jobId,
+        eventType: "ai_assistant.preQAChecked",
+        title: "Pre-QA check run",
+        metadata: { jobId: input.jobId, readyForQA, untestedDevicesCount, deficiencyCount },
+      });
+
+      return { readyForQA, missingItems, untestedDevicesCount, deficiencyCount, criticalWarnings, suggestedNextSteps };
     }),
 });
