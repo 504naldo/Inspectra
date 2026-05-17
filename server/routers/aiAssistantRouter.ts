@@ -441,20 +441,20 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
         throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
       }
 
-      // 2. Build inspection context package
-      const [site, stats, deficiencies, reports, inspectionResults] = await Promise.all([
+      // 2. Build inspection context package — wsi/technician don't depend on site result
+      const [site, stats, deficiencies, reports, inspectionResults, wsi, technician] = await Promise.all([
         db.getSiteById(job.siteId),
         db.getInspectionStats(input.jobId),
         db.getDeficienciesByJob(input.jobId),
         db.getReportsByJob(input.jobId),
         db.getInspectionResultsByJob(input.jobId),
-      ]);
-
-      const [customer, wsi, technician] = await Promise.all([
-        site?.customerOrgId ? db.getCustomerOrgById(site.customerOrgId) : Promise.resolve(null),
         db.getWorkSiteInfoBySiteId(job.siteId),
         job.leadTechnicianId ? db.getUserById(job.leadTechnicianId) : Promise.resolve(undefined),
       ]);
+
+      const customer = site?.customerOrgId
+        ? await db.getCustomerOrgById(site.customerOrgId)
+        : null;
 
       const report = input.reportId
         ? reports.find(r => r.id === input.reportId) ?? reports[0]
@@ -464,10 +464,8 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
       const missingFlags: string[] = [];
       if (stats.notTested > 0) missingFlags.push(`${stats.notTested} device(s) not tested`);
 
-      // Failed results without a linked deficiency
-      const failedResults = inspectionResults.filter(r => r.result === "fail");
       const deficiencyDeviceIds = new Set(deficiencies.map(d => d.deviceId).filter(Boolean));
-      const failedWithoutDef = failedResults.filter(r => !deficiencyDeviceIds.has(r.deviceId));
+      const failedWithoutDef = inspectionResults.filter(r => r.result === "fail" && !deficiencyDeviceIds.has(r.deviceId));
       if (failedWithoutDef.length > 0) {
         missingFlags.push(`${failedWithoutDef.length} failed device(s) with no deficiency record`);
       }
@@ -658,8 +656,7 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
       const companyId = ctx.user.companyId!;
       const job = await db.getJobById(input.jobId);
       if (!job || job.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
-      const reviews = await db.getAiReviewsByJobScoped(input.jobId, companyId);
-      return reviews.filter(r => (r as any).reviewType === "report_qa");
+      return db.getAiReviewsByJobScoped(input.jobId, companyId, "report_qa");
     }),
 
   /**

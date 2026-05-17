@@ -25,7 +25,6 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
-  Wrench,
   XCircle,
   Archive,
   StickyNote,
@@ -38,21 +37,16 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  type AiReviewResult,
+  riskBadge,
+  findingSeverityClass,
+  FindingIcon,
+} from "@/lib/aiReviewHelpers";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type QaFilter = "all" | "generated" | "corrections_required" | "approved" | "sent" | "archived" | "field_complete";
-
-type AiReviewFinding = { severity: "info" | "warning" | "blocker"; category: string; issue: string };
-type AiReviewResult = {
-  reviewId: number;
-  riskLevel: "low" | "medium" | "high" | "critical";
-  summary: string;
-  findings: AiReviewFinding[];
-  suggestedQaNote: string | null;
-  suggestedActions: string[];
-  missingDataWarnings: string[];
-};
 
 type QueueItem = {
   reportId: number | null;
@@ -104,29 +98,6 @@ function statusIcon(status: string) {
     case "field_complete":       return <AlertTriangle className="h-4 w-4 text-amber-500" />;
     default:                     return <Info className="h-4 w-4 text-muted-foreground" />;
   }
-}
-
-function riskBadge(level: string) {
-  switch (level) {
-    case "critical": return <Badge className="bg-red-100 text-red-700 border-red-300 text-xs">Critical Risk</Badge>;
-    case "high":     return <Badge className="bg-orange-100 text-orange-700 border-orange-300 text-xs">High Risk</Badge>;
-    case "medium":   return <Badge className="bg-amber-100 text-amber-700 border-amber-300 text-xs">Medium Risk</Badge>;
-    default:         return <Badge className="bg-green-100 text-green-700 border-green-300 text-xs">Low Risk</Badge>;
-  }
-}
-
-function findingSeverityClass(severity: string): string {
-  switch (severity) {
-    case "blocker": return "border-red-200 bg-red-50 text-red-800";
-    case "warning": return "border-amber-200 bg-amber-50 text-amber-800";
-    default:        return "border-blue-200 bg-blue-50 text-blue-800";
-  }
-}
-
-function findingIcon(severity: string) {
-  if (severity === "blocker") return <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-red-600" />;
-  if (severity === "warning") return <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />;
-  return <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-blue-600" />;
 }
 
 function jobTypeLabel(t: string | null): string {
@@ -252,7 +223,6 @@ function QueueCard({
   const [aiOpen, setAiOpen] = useState(false);
   const [aiContent, setAiContent] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [reviewResult, setReviewResult] = useState<AiReviewResult | null>(null);
 
   const aiAsk = trpc.aiAssistant.ask.useMutation({
     onSuccess: (d) => { setAiContent(d.answer); setAiOpen(true); },
@@ -260,14 +230,16 @@ function QueueCard({
   });
 
   const aiReview = trpc.aiAssistant.runReportQAReview.useMutation({
-    onSuccess: (d) => { setReviewResult(d as AiReviewResult); setReviewOpen(true); },
+    onSuccess: () => setReviewOpen(true),
     onError: (e) => toast.error(e.message || "AI review failed"),
   });
 
   const dismissReview = trpc.aiAssistant.dismissReview.useMutation({
-    onSuccess: () => { toast.success("Review dismissed"); setReviewOpen(false); setReviewResult(null); },
+    onSuccess: () => { toast.success("Review dismissed"); setReviewOpen(false); aiReview.reset(); },
     onError: (e) => toast.error(e.message || "Failed to dismiss"),
   });
+
+  const reviewResult = aiReview.data as AiReviewResult | undefined;
 
   return (
     <Card className={`border ${item.status === "corrections_required" ? "border-red-200" : item.status === "generated" ? "border-blue-200" : ""}`}>
@@ -502,7 +474,7 @@ function QueueCard({
                     if (!group.length) return null;
                     return group.map((f, i) => (
                       <div key={`${sev}-${i}`} className={`flex items-start gap-2 rounded border px-3 py-2 text-xs ${findingSeverityClass(f.severity)}`}>
-                        {findingIcon(f.severity)}
+                        <FindingIcon severity={f.severity} />
                         <span>{f.issue}</span>
                       </div>
                     ));
