@@ -3500,3 +3500,42 @@ export async function getPayrollExportData(
     .where(and(...conditions))
     .orderBy(asc(payrollTimeEntries.entryDate), asc(payrollTimeEntries.userId));
 }
+
+export async function getPayrollReviewSummary(
+  companyId: number,
+  from: string,
+  to: string,
+): Promise<{
+  pendingCount: number; pendingMinutes: number;
+  approvedCount: number; approvedMinutes: number; exportReadyCount: number;
+  rejectedCount: number; draftCount: number;
+  exportedCount: number; exportedMinutes: number;
+  totalMinutes: number; totalRegularMinutes: number; totalOvertimeMinutes: number;
+  uniqueEmployees: number;
+}> {
+  const db = await getDb();
+  const zero = { pendingCount: 0, pendingMinutes: 0, approvedCount: 0, approvedMinutes: 0, exportReadyCount: 0, rejectedCount: 0, draftCount: 0, exportedCount: 0, exportedMinutes: 0, totalMinutes: 0, totalRegularMinutes: 0, totalOvertimeMinutes: 0, uniqueEmployees: 0 };
+  if (!db) return zero;
+  const rows = await db.select().from(payrollTimeEntries).where(
+    and(
+      eq(payrollTimeEntries.companyId, companyId),
+      sql`${payrollTimeEntries.entryDate} >= ${from}`,
+      sql`${payrollTimeEntries.entryDate} <= ${to}`,
+    )
+  );
+  const result = { ...zero };
+  const employeeIds = new Set<number>();
+  for (const row of rows) {
+    employeeIds.add(row.userId);
+    result.totalMinutes += row.totalMinutes;
+    result.totalRegularMinutes += row.regularMinutes;
+    result.totalOvertimeMinutes += (row.overtimeMinutes ?? 0);
+    if (row.status === "submitted") { result.pendingCount++; result.pendingMinutes += row.totalMinutes; }
+    if (row.status === "approved") { result.approvedCount++; result.approvedMinutes += row.totalMinutes; result.exportReadyCount++; }
+    if (row.status === "rejected") result.rejectedCount++;
+    if (row.status === "draft") result.draftCount++;
+    if (row.status === "exported" || row.status === "locked") { result.exportedCount++; result.exportedMinutes += row.totalMinutes; }
+  }
+  result.uniqueEmployees = employeeIds.size;
+  return result;
+}

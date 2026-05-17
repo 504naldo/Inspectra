@@ -72,6 +72,7 @@ import PurchaseOrders from "./pages/admin/PurchaseOrders";
 import PurchaseOrderDetail from "./pages/admin/PurchaseOrderDetail";
 import Timesheets from "./pages/admin/Timesheets";
 import AdminPayrollHours from "./pages/admin/PayrollHours";
+import PayrollReview from "./pages/admin/PayrollReview";
 import TechPayrollHours from "./pages/technician/PayrollHours";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
@@ -476,6 +477,11 @@ function Router() {
       <Route path="/admin/payroll-hours">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <AdminPayrollHours />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/payroll-review">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <PayrollReview />
         </ProtectedRoute>
       </Route>
 

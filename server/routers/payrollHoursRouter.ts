@@ -4,6 +4,7 @@ import { router, protectedProcedure, officeProcedure, technicianProcedure } from
 import * as db from "../db";
 import { logActivity } from "../activityLogger";
 import { PAYROLL_WORK_TYPES, PAYROLL_ENTRY_STATUSES } from "../../drizzle/schema";
+import { getAllUsers } from "../db";
 
 const WORK_TYPE_ENUM = z.enum(PAYROLL_WORK_TYPES);
 const STATUS_ENUM = z.enum(PAYROLL_ENTRY_STATUSES);
@@ -300,5 +301,81 @@ export const payrollHoursRouter = router({
       }
       await db.deletePayrollEntry(input.id);
       return { success: true };
+    }),
+
+  // ─── Review-specific procedures ────────────────────────────────────────────
+
+  setAdminNotes: officeProcedure
+    .input(z.object({ id: z.number().int().positive(), adminNotes: z.string().max(2000) }))
+    .mutation(async ({ input, ctx }) => {
+      if (!ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await requirePayrollEntry(input.id, ctx.user.companyId);
+      await db.updatePayrollEntry(input.id, { adminNotes: input.adminNotes || null });
+      return { success: true };
+    }),
+
+  bulkReject: officeProcedure
+    .input(z.object({
+      ids: z.array(z.number().int().positive()).min(1).max(100),
+      reason: z.string().max(1000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (!ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const entries = await Promise.all(input.ids.map((id) => requirePayrollEntry(id, ctx.user.companyId!)));
+      const notSubmitted = entries.filter((e) => e.status !== "submitted");
+      if (notSubmitted.length > 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `${notSubmitted.length} entries are not in submitted status.` });
+      }
+      await db.bulkUpdatePayrollEntries(input.ids, {
+        status: "rejected",
+        rejectedById: ctx.user.id,
+        rejectedAt: new Date(),
+        rejectionReason: input.reason ?? null,
+      });
+      void logActivity({
+        ctx,
+        entityType: "payroll_entry",
+        entityId: input.ids[0],
+        eventType: "bulk_rejected",
+        title: `Bulk rejected ${input.ids.length} payroll entries${input.reason ? `: ${input.reason}` : ""}`,
+      });
+      return { count: input.ids.length };
+    }),
+
+  getReviewSummary: officeProcedure
+    .input(z.object({ from: z.string(), to: z.string() }))
+    .query(async ({ input, ctx }) => {
+      if (!ctx.user.companyId) return null;
+      return db.getPayrollReviewSummary(ctx.user.companyId, input.from, input.to);
+    }),
+
+  getMissingHoursSummary: officeProcedure
+    .input(z.object({ from: z.string(), to: z.string() }))
+    .query(async ({ input, ctx }) => {
+      if (!ctx.user.companyId) return [];
+      const allUsers = await getAllUsers(ctx.user.companyId);
+      const employees = allUsers.filter(
+        (u: any) => ["admin", "office", "technician"].includes(u.role) && u.isActive === 1,
+      );
+      const entries = await db.getPayrollEntriesByCompany(ctx.user.companyId, {
+        from: input.from,
+        to: input.to,
+      });
+      return employees.map((emp: any) => {
+        const empEntries = entries.filter((e) => e.userId === emp.id);
+        const hasSubmitted = empEntries.some((e) =>
+          ["submitted", "approved", "exported", "locked"].includes(e.status),
+        );
+        return {
+          userId: emp.id as number,
+          name: (emp.name ?? `User #${emp.id}`) as string,
+          email: (emp.email ?? "") as string,
+          role: emp.role as string,
+          hasSubmitted,
+          hasAnyEntries: empEntries.length > 0,
+          draftCount: empEntries.filter((e) => e.status === "draft").length,
+          rejectedCount: empEntries.filter((e) => e.status === "rejected").length,
+        };
+      }).filter((e: any) => !e.hasSubmitted);
     }),
 });

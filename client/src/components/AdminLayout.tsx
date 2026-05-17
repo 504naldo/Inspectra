@@ -40,6 +40,7 @@ import {
   ClipboardPen,
   Clock,
   CalendarCheck,
+  FileCheck2,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -70,6 +71,7 @@ const secondaryNavItems = [
   { label: "Purchase Orders",  href: "/admin/purchase-orders",         icon: ClipboardPen,   adminOnly: false },
   { label: "Timesheets",       href: "/admin/timesheets",              icon: Clock,          adminOnly: false },
   { label: "Payroll Hours",    href: "/admin/payroll-hours",           icon: CalendarCheck,  adminOnly: false },
+  { label: "Payroll Review",  href: "/admin/payroll-review",          icon: FileCheck2,     adminOnly: false },
   { label: "Approved Work",    href: "/admin/approved-work",          icon: CheckSquare,    adminOnly: false },
   { label: "Auto Schedule",   href: "/admin/scheduling-automation",  icon: Zap,            adminOnly: false },
   { label: "AI Assistant",    href: "/admin/ai-assistant",           icon: Bot,            adminOnly: false },
