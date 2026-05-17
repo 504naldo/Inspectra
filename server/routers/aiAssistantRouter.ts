@@ -45,6 +45,19 @@ Rules you must always follow:
 - Remind technicians to verify information before saving or submitting.
 - You are not a public chatbot. Only respond to fire protection field operations questions.`;
 
+const ADMIN_COPILOT_SYSTEM_PROMPT = `You are Inspectra AI Admin Copilot, an assistant for fire protection company office and admin staff.
+
+Rules you must always follow:
+- Only report facts from the data provided. Never invent record counts, IDs, or status values.
+- Do not approve reports, quotes, or invoices. Do not close deficiencies.
+- Do not send emails, create records, or mark anything as paid or exported.
+- Recommend actions but do not perform them.
+- Be concise. Prefer bullet points over long paragraphs.
+- Always label customer-facing text as drafts requiring human review before sending.
+- Flag compliance risks as requiring human judgment — you are not the final authority.
+- You are not a public chatbot. Only respond to fire protection operations questions.
+- Use knowledge base content as internal reference material.`;
+
 // ── Context builders ──────────────────────────────────────────────────────────
 
 async function buildJobContext(jobId: number, companyId: number): Promise<string> {
@@ -178,6 +191,59 @@ async function buildApprovedWorkContext(awId: number, companyId: number): Promis
 }
 
 type ContextType = "job" | "site" | "deficiency" | "report" | "repair_quote" | "approved_work" | "work_order" | "invoice" | "compliance";
+
+// ── Admin briefing context builder ────────────────────────────────────────────
+// Converts getOperationsSummary into a compact text block for AI context.
+// Excludes secrets, raw DB dumps, and cross-company data.
+
+async function buildAdminBriefingContext(companyId: number): Promise<string> {
+  const ops = await db.getOperationsSummary(companyId);
+  if (!ops) return "(operations data unavailable)";
+
+  const { snapshot, attentionQueue, invoiceSummary, approvedWorkByStatus, dataQuality } = ops;
+
+  const topItems = attentionQueue.slice(0, 10).map(item =>
+    `  [${item.type.replace(/_/g, " ").toUpperCase()}] ${item.title}${item.siteName ? ` — ${item.siteName}` : ""}${item.severity ? ` — ${item.severity}` : ""} — ${item.ageInDays}d old — ${item.status}`
+  ).join("\n");
+
+  const awSummary = Object.entries(approvedWorkByStatus)
+    .filter(([, n]) => (n as number) > 0)
+    .map(([k, n]) => `${k.replace(/_/g, " ")}: ${n}`)
+    .join(", ");
+
+  const invSummary = Object.entries(invoiceSummary)
+    .filter(([, n]) => (n as number) > 0)
+    .map(([k, n]) => `${k}: ${n}`)
+    .join(", ");
+
+  const dqLines: string[] = [];
+  if (dataQuality.sitesMissingBuildingId > 0) dqLines.push(`  - ${dataQuality.sitesMissingBuildingId} sites missing Building ID`);
+  if (dataQuality.sitesMissingFileNumber > 0) dqLines.push(`  - ${dataQuality.sitesMissingFileNumber} sites missing File Number`);
+  if (dataQuality.sitesMissingCustomerOrg > 0) dqLines.push(`  - ${dataQuality.sitesMissingCustomerOrg} sites missing Customer Org`);
+
+  return [
+    `OPERATIONS SUMMARY — ${new Date().toDateString()}`,
+    "---",
+    "SNAPSHOT:",
+    `  Jobs today: ${snapshot.jobsToday}`,
+    `  Overdue jobs: ${snapshot.overdueJobs}`,
+    `  Reports pending QA review: ${snapshot.reportsPendingReview}`,
+    `  Open deficiencies: ${snapshot.openDeficiencies}`,
+    `  Approved work ready to schedule: ${snapshot.approvedWorkReadyToSchedule}`,
+    `  Repair quotes pending: ${snapshot.repairQuotesPending}`,
+    `  Invoices ready for Sage export: ${snapshot.invoicesReadyForExport}`,
+    `  Completed this week: ${snapshot.completedThisWeek}`,
+    "",
+    `ATTENTION QUEUE (${attentionQueue.length} total items, showing top 10):`,
+    topItems || "  (none)",
+    "",
+    `INVOICE SUMMARY: ${invSummary || "none"}`,
+    `APPROVED WORK STATUS: ${awSummary || "none"}`,
+    dqLines.length > 0 ? `DATA QUALITY ISSUES:\n${dqLines.join("\n")}` : "DATA QUALITY: no issues detected",
+    "",
+    `TOTALS: ${ops.totalSites} sites, ${ops.totalJobs} jobs`,
+  ].join("\n");
+}
 
 async function fetchContext(type: ContextType, id: number, companyId: number): Promise<string> {
   switch (type) {
@@ -1415,5 +1481,242 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
       });
 
       return { readyForQA, missingItems, untestedDevicesCount, deficiencyCount, criticalWarnings, suggestedNextSteps };
+    }),
+
+  // ── Admin Copilot (office/admin only) ──────────────────────────────────────
+
+  /**
+   * getAdminBriefing — Generates a structured daily operations briefing.
+   * Uses getOperationsSummary as context. Never modifies records.
+   */
+  getAdminBriefing: officeProcedure
+    .input(z.object({
+      timeframe: z.enum(["today", "week", "overdue", "all"]).default("today"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const contextBlock = await buildAdminBriefingContext(companyId);
+
+      const kbSnippets = await db.getRelevantKnowledgeContext(companyId, "operations priorities follow up scheduling", { limit: 2 });
+      const kbBlock = kbSnippets.length > 0
+        ? `\n\nKNOWLEDGE BASE:\n${kbSnippets.map(k => `[${k.title}]: ${k.excerpt}`).join("\n\n")}`
+        : "";
+
+      const timeframeGuide: Record<string, string> = {
+        today: "Focus on what needs attention TODAY — overdue items, today's jobs, critical deficiencies, pending reports.",
+        week: "Summarize this week's priorities — upcoming jobs, pending reviews, approvals needed, invoices.",
+        overdue: "Focus specifically on OVERDUE items — jobs past schedule, outstanding invoices, unreviewed reports.",
+        all: "Give a comprehensive operations overview — all open items, risks, and recommended priorities.",
+      };
+
+      const VALID_HREFS = ["/admin/jobs", "/admin/report-qa", "/admin/approved-work", "/admin/invoices", "/admin/compliance", "/admin/data-quality", "/admin/repair-quotes", "/admin/sites", "/admin/schedule"];
+
+      const result = await invokeLLM({
+        messages: [
+          { role: "system", content: ADMIN_COPILOT_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `Generate an admin briefing. Timeframe focus: ${input.timeframe}. ${timeframeGuide[input.timeframe]}\n\n${contextBlock}${kbBlock}\n\nFor relatedLinks.href only use: ${VALID_HREFS.join(", ")}\n\nReturn JSON only.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "admin_briefing",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                summary: { type: "string" },
+                topPriorities: { type: "array", items: { type: "string" } },
+                risks: { type: "array", items: { type: "string" } },
+                suggestedActions: { type: "array", items: { type: "string" } },
+                relatedLinks: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      label: { type: "string" },
+                      href: { type: "string" },
+                      reason: { type: "string" },
+                    },
+                    required: ["label", "href", "reason"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["summary", "topPriorities", "risks", "suggestedActions", "relatedLinks"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 800,
+      });
+
+      const raw = extractText(result);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const parsed = JSON.parse(raw);
+
+      void logActivity({
+        ctx,
+        entityType: "company",
+        entityId: companyId,
+        eventType: "ai_assistant.adminBriefingGenerated",
+        title: "Admin briefing generated",
+        metadata: { timeframe: input.timeframe },
+      });
+
+      return parsed as {
+        summary: string;
+        topPriorities: string[];
+        risks: string[];
+        suggestedActions: string[];
+        relatedLinks: { label: string; href: string; reason: string }[];
+      };
+    }),
+
+  /**
+   * askAdminCopilot — Admin Q&A with full operations context built in.
+   * Always grounded in the live getOperationsSummary snapshot.
+   */
+  askAdminCopilot: officeProcedure
+    .input(z.object({
+      message: z.string().min(1).max(2000),
+      mode: z.enum(["daily_briefing", "follow_up", "compliance", "reports", "invoices", "approved_work", "scheduling", "data_quality", "customer_message", "workflow_help"]).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const contextBlock = await buildAdminBriefingContext(companyId);
+
+      const kbSnippets = await db.getRelevantKnowledgeContext(companyId, input.message, { limit: 3 });
+      const kbBlock = kbSnippets.length > 0
+        ? `\n\nKNOWLEDGE BASE:\n${kbSnippets.map(k => `[${k.title}]: ${k.excerpt}`).join("\n\n")}`
+        : "";
+
+      const VALID_HREFS = ["/admin/jobs", "/admin/report-qa", "/admin/approved-work", "/admin/invoices", "/admin/compliance", "/admin/data-quality", "/admin/repair-quotes", "/admin/sites", "/admin/schedule", "/admin/ai-assistant"];
+
+      const result = await invokeLLM({
+        messages: [
+          { role: "system", content: ADMIN_COPILOT_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `OPERATIONS CONTEXT:\n${contextBlock}${kbBlock}\n\nQUESTION: ${input.message}${input.mode ? `\n(Context mode: ${input.mode})` : ""}\n\nFor relatedRecords.href only use: ${VALID_HREFS.join(", ")}\n\nReturn JSON only.`,
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "admin_copilot_answer",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                answer: { type: "string" },
+                suggestedActions: { type: "array", items: { type: "string" } },
+                relatedRecords: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      type: { type: "string" },
+                      label: { type: "string" },
+                      href: { type: "string" },
+                    },
+                    required: ["type", "label", "href"],
+                    additionalProperties: false,
+                  },
+                },
+                warnings: { type: "array", items: { type: "string" } },
+                contextUsed: { type: "string" },
+              },
+              required: ["answer", "suggestedActions", "relatedRecords", "warnings", "contextUsed"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 600,
+      });
+
+      const raw = extractText(result);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const parsed = JSON.parse(raw);
+
+      void logActivity({
+        ctx,
+        entityType: "company",
+        entityId: companyId,
+        eventType: "ai_assistant.adminCopilotAsked",
+        title: "Admin copilot asked",
+        metadata: { mode: input.mode },
+      });
+
+      return parsed as {
+        answer: string;
+        suggestedActions: string[];
+        relatedRecords: { type: string; label: string; href: string }[];
+        warnings: string[];
+        contextUsed: string;
+      };
+    }),
+
+  /**
+   * draftCustomerFollowUp — Drafts a customer-facing follow-up email by purpose.
+   * Never sends. Uses existing record context builders.
+   */
+  draftCustomerFollowUp: officeProcedure
+    .input(z.object({
+      entityType: z.enum(["job", "site", "deficiency", "repair_quote", "invoice", "approved_work"]),
+      entityId: z.number().int().positive(),
+      purpose: z.enum(["report_ready", "quote_followup", "invoice_reminder", "deficiency_followup", "approved_work_scheduling", "compliance_notice"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+
+      const ctxTypeMap: Record<string, ContextType> = {
+        job: "job", site: "site", deficiency: "deficiency",
+        repair_quote: "repair_quote", invoice: "invoice", approved_work: "approved_work",
+      };
+      const contextBlock = await fetchContext(ctxTypeMap[input.entityType] as ContextType, input.entityId, companyId);
+      if (contextBlock.startsWith("(")) throw new TRPCError({ code: "NOT_FOUND", message: contextBlock });
+
+      const purposeInstructions: Record<string, string> = {
+        report_ready: "Write a professional email notifying the customer their inspection report is ready for review. Summarize key findings if data is available.",
+        quote_followup: "Write a professional follow-up email about an outstanding repair quote awaiting customer approval. Summarize scope and total if available.",
+        invoice_reminder: "Write a professional invoice reminder email. Mention the amount and due date if available. Be courteous.",
+        deficiency_followup: "Write a professional follow-up about an outstanding fire safety deficiency requiring attention. Be factual about severity and corrective action.",
+        approved_work_scheduling: "Write a professional email to coordinate scheduling of approved repair or inspection work.",
+        compliance_notice: "Write a professional compliance notice about outstanding fire protection requirements at the site. Be factual, not alarmist.",
+      };
+
+      const result = await invokeLLM({
+        messages: [
+          { role: "system", content: `${SYSTEM_PROMPT}\n\nDraft a customer-facing email. Be professional. Always label as a draft requiring review before sending.` },
+          {
+            role: "user",
+            content: `${purposeInstructions[input.purpose]}\n\nCONTEXT:\n${contextBlock}\n\nFormat your response as:\nSubject: <subject line>\n---\n<email body>`,
+          },
+        ],
+        maxTokens: 700,
+      });
+
+      const raw = extractText(result);
+      const subjectMatch = raw.match(/Subject:\s*(.+)/);
+      const bodyPart = raw.split("---").slice(1).join("---").trim() || raw;
+
+      void logActivity({
+        ctx,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        eventType: "ai_assistant.customerFollowUpDrafted",
+        title: `AI customer follow-up drafted (${input.purpose})`,
+        metadata: { entityType: input.entityType, purpose: input.purpose },
+      });
+
+      return {
+        subject: subjectMatch ? subjectMatch[1].trim() : "Follow-up from Your Fire Protection Company",
+        body: bodyPart,
+        warnings: ["AI-generated draft. Review carefully before sending."],
+        isDraft: true as const,
+      };
     }),
 });

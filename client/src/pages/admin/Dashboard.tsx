@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AdminLayout from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +26,8 @@ import {
   ShieldAlert,
   Info,
   Zap,
+  BrainCircuit,
+  Loader2,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -186,6 +189,12 @@ export default function AdminDashboard() {
     },
   });
   const utils = trpc.useUtils();
+
+  const [dashboardBriefing, setDashboardBriefing] = useState<{ summary: string; topPriorities: string[] } | null>(null);
+  const dashboardBriefingMutation = trpc.aiAssistant.getAdminBriefing.useMutation({
+    onSuccess: (data) => setDashboardBriefing({ summary: data.summary, topPriorities: data.topPriorities }),
+    onError: () => setDashboardBriefing(null),
+  });
 
   const lastUpdated = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -562,6 +571,53 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* ── AI Copilot Widget ── */}
+        <Card className="border-primary/20">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <BrainCircuit className="h-4 w-4 text-primary" />
+                AI Copilot
+              </CardTitle>
+              <Link href="/admin/ai-assistant">
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+                  Open <ArrowRight className="h-3 w-3" />
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            {dashboardBriefing ? (
+              <div className="space-y-2 mb-3">
+                <p className="text-xs text-muted-foreground">{dashboardBriefing.summary}</p>
+                {dashboardBriefing.topPriorities.slice(0, 2).map((p, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                    {p}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground mb-3">
+                Get an AI summary of today's priorities, risks, and recommended actions.
+              </p>
+            )}
+            <Button
+              size="sm"
+              variant={dashboardBriefing ? "outline" : "default"}
+              className="gap-1.5 text-xs h-7"
+              onClick={() => dashboardBriefingMutation.mutate({ timeframe: "today" })}
+              disabled={dashboardBriefingMutation.isPending}
+            >
+              {dashboardBriefingMutation.isPending
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : <BrainCircuit className="h-3 w-3" />
+              }
+              {dashboardBriefing ? "Refresh Briefing" : "Generate Daily Briefing"}
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* ── Footer Summary ── */}
         {ops && (
