@@ -347,6 +347,11 @@ export default function TechPayrollHours() {
     to: week.to,
   });
 
+  const { data: approvedBlocks = [] } = trpc.availability.getMyApprovedBlocksForPeriod.useQuery({
+    from: week.from,
+    to: week.to,
+  });
+
   const submitMut = trpc.payrollHours.submit.useMutation({
     onSuccess: () => { toast.success("Hours submitted for approval."); utils.payrollHours.listMine.invalidate(); },
     onError: (e) => toast.error(e.message),
@@ -411,6 +416,20 @@ export default function TechPayrollHours() {
             <div className="text-xs text-muted-foreground">Unsubmitted</div>
           </CardContent></Card>
         </div>
+
+        {/* Approved time-off hint */}
+        {(approvedBlocks as any[]).length > 0 && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs space-y-1">
+            <p className="font-semibold text-blue-700">Approved time off this week:</p>
+            {(approvedBlocks as any[]).map((b: any) => (
+              <p key={b.id} className="text-blue-600">
+                {b.type.replace(/_/g, " ")} · {String(b.startDate).slice(0, 10)}{String(b.startDate).slice(0, 10) !== String(b.endDate).slice(0, 10) ? ` – ${String(b.endDate).slice(0, 10)}` : ""}
+                {b.reason ? ` (${b.reason})` : ""}
+              </p>
+            ))}
+            <p className="text-blue-500 mt-1">Remember to log vacation / sick / stat holiday entries in your payroll hours.</p>
+          </div>
+        )}
 
         {/* Submit all drafts shortcut */}
         {draftCount > 1 && (

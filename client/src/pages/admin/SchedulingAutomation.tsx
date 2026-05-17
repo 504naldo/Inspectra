@@ -123,6 +123,29 @@ function parseDateInput(s: string): Date {
   return d;
 }
 
+// ── Availability conflict warning ─────────────────────────────────────────────
+
+function AvailabilityConflictWarning({ userIds, date }: { userIds: number[]; date: string }) {
+  const { data: conflicts = [] } = trpc.availability.checkSchedulingConflicts.useQuery(
+    { userIds, startDate: date, endDate: date },
+    { enabled: userIds.length > 0 && !!date },
+  );
+  if ((conflicts as any[]).length === 0) return null;
+  return (
+    <div className="rounded border border-orange-200 bg-orange-50 p-2 space-y-0.5">
+      {(conflicts as any[]).map((c: any, i: number) => (
+        <div key={i} className="flex items-start gap-1.5 text-xs text-orange-700">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            <strong>{c.userName}</strong> has approved {c.type} ({c.startDate}{c.startDate !== c.endDate ? ` – ${c.endDate}` : ""})
+            {c.reason ? `: ${c.reason}` : ""}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Schedule Dialog ───────────────────────────────────────────────────────────
 
 function ScheduleDialog({
@@ -248,6 +271,12 @@ function ScheduleDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Availability conflict warning */}
+          <AvailabilityConflictWarning
+            userIds={selectedTechId !== "none" ? [Number(selectedTechId)] : []}
+            date={dateStr}
+          />
 
           {/* Overwrite */}
           {overwrite && (

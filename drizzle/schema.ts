@@ -2160,3 +2160,47 @@ export const payrollTimeEntries = mysqlTable("payroll_time_entries", {
 
 export type PayrollTimeEntry = typeof payrollTimeEntries.$inferSelect;
 export type InsertPayrollTimeEntry = typeof payrollTimeEntries.$inferInsert;
+
+// ============================================
+// EMPLOYEE AVAILABILITY / TIME OFF
+// ============================================
+
+export const AVAILABILITY_BLOCK_TYPES = [
+  "vacation", "sick", "personal", "training", "stat_holiday",
+  "unavailable", "available_override", "other",
+] as const;
+export type AvailabilityBlockType = (typeof AVAILABILITY_BLOCK_TYPES)[number];
+
+export const AVAILABILITY_BLOCK_STATUSES = [
+  "requested", "approved", "rejected", "cancelled",
+] as const;
+export type AvailabilityBlockStatus = (typeof AVAILABILITY_BLOCK_STATUSES)[number];
+
+export const employeeAvailabilityBlocks = mysqlTable("employee_availability_blocks", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  userId: int("userId").notNull(),
+  type: mysqlEnum("type", AVAILABILITY_BLOCK_TYPES).notNull().default("vacation"),
+  status: mysqlEnum("status", AVAILABILITY_BLOCK_STATUSES).notNull().default("requested"),
+  startDate: date("startDate").notNull(),
+  endDate: date("endDate").notNull(),
+  startTime: varchar("startTime", { length: 8 }),
+  endTime: varchar("endTime", { length: 8 }),
+  allDay: tinyint("allDay").notNull().default(1),
+  reason: varchar("reason", { length: 500 }).notNull().default(""),
+  employeeNotes: text("employeeNotes"),
+  adminNotes: text("adminNotes"),
+  requestedAt: timestamp("requestedAt"),
+  reviewedById: int("reviewedById"),
+  reviewedAt: timestamp("reviewedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("avail_companyId_idx").on(table.companyId),
+  userIdIdx: index("avail_userId_idx").on(table.userId),
+  startDateIdx: index("avail_startDate_idx").on(table.startDate),
+  statusIdx: index("avail_status_idx").on(table.status),
+}));
+
+export type EmployeeAvailabilityBlock = typeof employeeAvailabilityBlocks.$inferSelect;
+export type InsertEmployeeAvailabilityBlock = typeof employeeAvailabilityBlocks.$inferInsert;

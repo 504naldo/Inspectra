@@ -313,6 +313,22 @@ export default function TechnicianDashboard() {
                 </CardContent>
               </Card>
             </Link>
+            <Link href="/tech/time-off">
+              <Card className="active:scale-[0.98] transition-transform cursor-pointer hover:bg-accent/30">
+                <CardContent className="flex items-center justify-between p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-50 rounded-lg">
+                      <Calendar className="h-5 w-5 text-blue-700" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm">My Time Off</p>
+                      <p className="text-xs text-muted-foreground">Request and track time off</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                </CardContent>
+              </Card>
+            </Link>
             <Link href="/tech/sync">
               <Card className="active:scale-[0.98] transition-transform cursor-pointer hover:bg-accent/30">
                 <CardContent className="flex items-center justify-between p-4">

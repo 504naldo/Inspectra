@@ -73,7 +73,9 @@ import PurchaseOrderDetail from "./pages/admin/PurchaseOrderDetail";
 import Timesheets from "./pages/admin/Timesheets";
 import AdminPayrollHours from "./pages/admin/PayrollHours";
 import PayrollReview from "./pages/admin/PayrollReview";
+import AdminAvailability from "./pages/admin/Availability";
 import TechPayrollHours from "./pages/technician/PayrollHours";
+import TechTimeOff from "./pages/technician/TimeOff";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -219,6 +221,11 @@ function Router() {
       <Route path="/tech/payroll-hours">
         <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
           <TechPayrollHours />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/tech/time-off">
+        <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
+          <TechTimeOff />
         </ProtectedRoute>
       </Route>
 
@@ -482,6 +489,11 @@ function Router() {
       <Route path="/admin/payroll-review">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <PayrollReview />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/availability">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <AdminAvailability />
         </ProtectedRoute>
       </Route>
 
