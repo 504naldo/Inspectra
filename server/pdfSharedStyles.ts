@@ -55,9 +55,18 @@ export const PDF_SPACING = {
 // ============================================
 
 /**
- * Draw company logo at specified position
+ * Draw company logo at specified position.
+ * If logoBuffer is provided (S3/URL pre-fetched), it takes priority over the local disk file.
  */
-export function drawLogo(doc: PDFKit.PDFDocument, x: number, y: number, width: number): void {
+export function drawLogo(doc: PDFKit.PDFDocument, x: number, y: number, width: number, logoBuffer?: Buffer): void {
+  if (logoBuffer) {
+    try {
+      doc.image(logoBuffer, x, y, { width });
+    } catch {
+      // Ignore corrupt/unsupported buffer
+    }
+    return;
+  }
   const logoPath = path.join(process.cwd(), 'assets/ewf-logo.png');
   if (fs.existsSync(logoPath)) {
     doc.image(logoPath, x, y, { width });
@@ -153,6 +162,10 @@ export function drawEnhancedCoverPage(
     companyName: string;
     companyPhone?: string;
     companyEmail?: string;
+    /** Pre-fetched company logo buffer (S3/URL). Falls back to local disk file if omitted. */
+    logoBuffer?: Buffer;
+    /** Optional tagline shown below the company name on the cover (e.g. "Fire Protection Services"). */
+    companyTagline?: string;
   }
 ): void {
   // Subtle textured background (light gray with pattern)
@@ -172,7 +185,7 @@ export function drawEnhancedCoverPage(
   // Centered company logo (increased size by 25%)
   const logoWidth = 225; // Was ~180, now 225 (25% increase)
   const centerX = (PDF_SIZES.pageWidth - logoWidth) / 2;
-  drawLogo(doc, centerX, 110, logoWidth);
+  drawLogo(doc, centerX, 110, logoWidth, options.logoBuffer);
   
   // Report title (centered, unified block with logo)
   const titleY = 280;
@@ -248,15 +261,22 @@ export function drawEnhancedCoverPage(
      .font(PDF_FONTS.bold)
      .fillColor(PDF_COLORS.brandNavy)
      .text(options.companyName, 0, 700, { width: PDF_SIZES.pageWidth, align: 'center' });
-  
-  doc.fontSize(9)
-     .font(PDF_FONTS.regular)
-     .fillColor(PDF_COLORS.grayDark)
-     .text('Fire Protection Services', 0, 715, { width: PDF_SIZES.pageWidth, align: 'center' });
-  
+
+  const tagline = options.companyTagline ?? '';
+  if (tagline) {
+    doc.fontSize(9)
+       .font(PDF_FONTS.regular)
+       .fillColor(PDF_COLORS.grayDark)
+       .text(tagline, 0, 715, { width: PDF_SIZES.pageWidth, align: 'center' });
+  }
+
   const contactInfo = [options.companyPhone, options.companyEmail].filter(Boolean).join(' | ');
   if (contactInfo) {
-    doc.text(contactInfo, 0, 730, { width: PDF_SIZES.pageWidth, align: 'center' });
+    const contactY = tagline ? 730 : 715;
+    doc.fontSize(9)
+       .font(PDF_FONTS.regular)
+       .fillColor(PDF_COLORS.grayDark)
+       .text(contactInfo, 0, contactY, { width: PDF_SIZES.pageWidth, align: 'center' });
   }
 }
 

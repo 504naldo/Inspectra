@@ -8,6 +8,7 @@ import { assertJobNotFinalized } from "../db";
 import { storagePut } from "../storage";
 import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
+import { fetchImageBuffer } from "../pdfSharedStyles";
 import * as checklists from "../complianceChecklists";
 import { sendReportEmail } from "../emailService";
 import {
@@ -296,11 +297,20 @@ const reportRouter = router({
       ...stats
     }));
     
-    // Get technician details + template checklist responses (parallel)
-    const [technician, rawTemplateData] = await Promise.all([
+    // Get technician details + template checklist responses + company settings (parallel)
+    const [technician, rawTemplateData, companySettings] = await Promise.all([
       db.getUserById(job.assignedTechnicianId || ctx.user.id),
       fetchTemplateReportData(input.jobId, job.companyId),
+      db.getCompanySettings(job.companyId),
     ]);
+
+    // Pre-fetch company logo buffer before entering the synchronous PDF callback
+    const companyLogoBuffer = companySettings.logoUrl
+      ? await fetchImageBuffer(companySettings.logoUrl)
+      : undefined;
+
+    const companyDisplayName = companySettings.companyDisplayName || company?.name || 'Earth Wind & Fire Protection';
+
 
     // Generate PDF with Fire-Pro style
     const pdfBuffer = await generateInspectionReportPDF({
@@ -323,10 +333,12 @@ const reportRouter = router({
       technicianTitle: (technician as any)?.certificationLevel || 'Fire Alarm Technician',
       technicianCertNumber: (technician as any)?.certNumber || '',
       technicianEmail: technician?.email || ctx.user.email || undefined,
-      companyName: company?.name || 'Earth Wind & Fire Protection',
-      companyAddress: company?.address || '15-3871 North Fraser Way, Burnaby BC V5G 5J6',
-      companyPhone: company?.phone || '604-299-1030',
-      companyEmail: company?.email || 'info@ewf.ca',
+      companyName: companyDisplayName,
+      companyAddress: company?.address || '',
+      companyPhone: company?.phone || undefined,
+      companyEmail: company?.email || undefined,
+      companyLogoBuffer,
+      reportFooterText: companySettings.reportFooterText || undefined,
       summary: input.summary,
       deviceSummaries,
       deficiencies: await Promise.all(deficiencies.map(async (d) => {
