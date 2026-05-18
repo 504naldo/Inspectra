@@ -57,6 +57,7 @@ import { vendorPurchaseRouter } from "./routers/vendorPurchaseRouter";
 import { timeTrackingRouter } from "./routers/timeTrackingRouter";
 import { payrollHoursRouter } from "./routers/payrollHoursRouter";
 import { availabilityRouter } from "./routers/availabilityRouter";
+import { globalSearchRouter } from "./routers/globalSearchRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -143,6 +144,7 @@ export const appRouter = router({
   timeTracking: timeTrackingRouter,
   payrollHours: payrollHoursRouter,
   availability: availabilityRouter,
+  globalSearch: globalSearchRouter,
 });
 
 export type AppRouter = typeof appRouter;

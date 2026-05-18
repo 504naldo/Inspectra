@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { APP_NAME } from "../../../shared/constants";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -261,8 +262,13 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             })}
           </nav>
 
+          {/* Global search */}
+          <div className="ml-auto shrink-0">
+            <GlobalSearch />
+          </div>
+
           {/* Right side: user name + bell + logout + mobile toggle */}
-          <div className="flex items-center gap-2 ml-auto shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <span className="text-sm text-muted-foreground hidden sm:inline truncate max-w-[140px]">
               {user?.name}
             </span>
