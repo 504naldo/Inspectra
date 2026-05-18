@@ -261,7 +261,7 @@ Format your response as JSON with keys: caption (short, 10 words max), inspectio
    * Returns structured issues with severity: "warning" | "blocker".
    * Persists result to ai_reviews table.
    */
-  prePublishReview: protectedProcedure.input(z.object({
+  prePublishReview: technicianProcedure.input(z.object({
     jobId: z.number(),
   })).mutation(async ({ input }) => {
     const job = await db.getJobById(input.jobId);
@@ -419,7 +419,7 @@ Return JSON array only. No prose.`;
     };
   }),
 
-  saveReviewOverrides: protectedProcedure.input(z.object({
+  saveReviewOverrides: technicianProcedure.input(z.object({
     reviewId: z.number(),
     dismissedIndices: z.array(z.number()),
   })).mutation(async ({ input }) => {
