@@ -131,10 +131,16 @@ export function useOfflineStorage() {
 
   const markDeficienciesSynced = useCallback((localIds: string[]) => {
     const deficiencies = getOfflineDeficiencies();
-    const updated = deficiencies.map(d => 
+    const updated = deficiencies.map(d =>
       localIds.includes(d.localId) ? { ...d, synced: true } : d
     );
     localStorage.setItem(STORAGE_KEYS.DEFICIENCIES, JSON.stringify(updated));
+    updateSyncStatus();
+  }, [getOfflineDeficiencies, updateSyncStatus]);
+
+  const clearSyncedDeficiencies = useCallback(() => {
+    const deficiencies = getOfflineDeficiencies().filter(d => !d.synced);
+    localStorage.setItem(STORAGE_KEYS.DEFICIENCIES, JSON.stringify(deficiencies));
     updateSyncStatus();
   }, [getOfflineDeficiencies, updateSyncStatus]);
 
@@ -185,6 +191,7 @@ export function useOfflineStorage() {
     saveOfflineDeficiency,
     getDeficienciesForJob,
     markDeficienciesSynced,
+    clearSyncedDeficiencies,
     // Job caching
     cacheJobData,
     getCachedJobData,

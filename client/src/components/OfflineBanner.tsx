@@ -2,23 +2,29 @@ import { useEffect, useRef, useState } from "react";
 import { WifiOff, RefreshCw, CheckCircle } from "lucide-react";
 import { mutationQueue } from "@/lib/mutationQueue";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
 type SyncState = "idle" | "syncing" | "done" | "error";
 
 export function OfflineBanner() {
   const isOnline = useOnlineStatus();
-  const [pending, setPending] = useState(() => mutationQueue.count());
+  const { syncStatus } = useOfflineStorage();
+  const [mqPending, setMqPending] = useState(() => mutationQueue.count());
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const syncingRef = useRef(false);
 
-  // Refresh pending count every 2 seconds
+  const offlineStorePending = syncStatus.pendingResults + syncStatus.pendingDeficiencies;
+  const totalPending = mqPending + offlineStorePending;
+
+  // Refresh mutationQueue count every 2 seconds
   useEffect(() => {
-    const id = setInterval(() => setPending(mutationQueue.count()), 2000);
+    const id = setInterval(() => setMqPending(mutationQueue.count()), 2000);
     return () => clearInterval(id);
   }, []);
 
-  // Auto-flush when coming back online
+  // Auto-flush mutationQueue when coming back online
   useEffect(() => {
     if (isOnline && mutationQueue.count() > 0 && !syncingRef.current) {
       handleSync();
@@ -61,11 +67,17 @@ export function OfflineBanner() {
     }
 
     syncingRef.current = false;
-    setPending(mutationQueue.count());
+    setMqPending(mutationQueue.count());
     setSyncState(failed === 0 ? "done" : "error");
   };
 
-  const isVisible = !isOnline || pending > 0 || syncState === "syncing" || syncState === "done" || syncState === "error";
+  const isVisible =
+    !isOnline ||
+    totalPending > 0 ||
+    syncState === "syncing" ||
+    syncState === "done" ||
+    syncState === "error";
+
   if (!isVisible) return null;
 
   if (syncState === "done") {
@@ -90,21 +102,36 @@ export function OfflineBanner() {
     <div
       className={cn(
         "fixed bottom-0 inset-x-0 z-50 text-xs px-4 py-2.5 flex items-center justify-center gap-2",
-        isOnline && pending > 0 ? "bg-amber-500 text-white" : "bg-gray-800 text-white"
+        isOnline && totalPending > 0 ? "bg-amber-500 text-white" : "bg-gray-800 text-white"
       )}
     >
       <WifiOff className="h-3.5 w-3.5 shrink-0" />
       {!isOnline ? (
         <span>
-          No connection — {pending > 0 ? `${pending} change${pending !== 1 ? "s" : ""} saved locally` : "changes will be saved locally"}
+          No connection —{" "}
+          {totalPending > 0
+            ? `${totalPending} item${totalPending !== 1 ? "s" : ""} saved locally`
+            : "changes will be saved locally"}
         </span>
       ) : (
-        <span>
+        <span className="flex items-center gap-1.5">
           Back online —{" "}
-          <button className="underline font-medium" onClick={handleSync}>
-            sync {pending} pending change{pending !== 1 ? "s" : ""}
-          </button>
+          {mqPending > 0 ? (
+            <button className="underline font-medium" onClick={handleSync}>
+              sync {mqPending} pending change{mqPending !== 1 ? "s" : ""}
+            </button>
+          ) : null}
+          {offlineStorePending > 0 && (
+            <Link href="/tech/sync" className="underline font-medium">
+              {mqPending > 0 ? `+ ${offlineStorePending} in sync queue` : `${offlineStorePending} item${offlineStorePending !== 1 ? "s" : ""} ready to sync →`}
+            </Link>
+          )}
           {syncState === "error" && " (some failed — tap to retry)"}
+        </span>
+      )}
+      {syncStatus.lastSyncAt && !totalPending && isOnline && (
+        <span className="text-white/60 ml-1">
+          · last synced {new Date(syncStatus.lastSyncAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </span>
       )}
     </div>

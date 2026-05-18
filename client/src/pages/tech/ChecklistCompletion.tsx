@@ -4,17 +4,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { 
-  CheckCircle2, 
-  XCircle, 
-  MinusCircle, 
-  ChevronDown, 
+import {
+  CheckCircle2,
+  XCircle,
+  MinusCircle,
+  ChevronDown,
   ChevronRight,
   Loader2,
   AlertCircle,
-  Check
+  Check,
+  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 // Define checklist sections based on existing complianceChecklists.ts
 interface ChecklistItem {
@@ -250,6 +252,7 @@ export default function ChecklistCompletion() {
   const params = useParams();
   const jobId = parseInt(params.id || '0');
   const [, setLocation] = useLocation();
+  const isOnline = useOnlineStatus();
   
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['22.1']));
   const [responses, setResponses] = useState<Map<string, { status: 'PASS' | 'DEFICIENT' | 'NA'; comment?: string }>>(new Map());
@@ -308,14 +311,16 @@ export default function ChecklistCompletion() {
     const newResponse = { status, comment: current?.comment };
     setResponses(new Map(responses.set(key, newResponse)));
     
-    // Auto-save
-    saveResponse.mutate({
-      jobId,
-      sectionNumber,
-      itemId,
-      status,
-      comment: current?.comment,
-    });
+    // Auto-save (skip when offline — local state is preserved)
+    if (isOnline) {
+      saveResponse.mutate({
+        jobId,
+        sectionNumber,
+        itemId,
+        status,
+        comment: current?.comment,
+      });
+    }
     
     // Show comment box if DEFICIENT or NA
     if (status === 'DEFICIENT' || status === 'NA') {
@@ -335,7 +340,7 @@ export default function ChecklistCompletion() {
   const handleCommentBlur = (sectionNumber: string, itemId: string) => {
     const key = `${sectionNumber}-${itemId}`;
     const current = responses.get(key);
-    if (current) {
+    if (current && isOnline) {
       saveResponse.mutate({
         jobId,
         sectionNumber,
@@ -397,6 +402,14 @@ export default function ChecklistCompletion() {
   
   return (
     <div className="container max-w-5xl py-6 space-y-6">
+      {/* Offline warning */}
+      {!isOnline && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-300">
+          <WifiOff className="h-4 w-4 shrink-0" />
+          You are offline. Selections are saved locally but will not be uploaded until you reconnect and use Save All.
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -430,9 +443,10 @@ export default function ChecklistCompletion() {
                 {getCompletedItems()} of {getTotalItems()} items completed ({completionPercentage}%)
               </span>
             </div>
-            <Button 
+            <Button
               onClick={handleSaveAll}
-              disabled={bulkSave.isPending || responses.size === 0}
+              disabled={bulkSave.isPending || responses.size === 0 || !isOnline}
+              title={!isOnline ? "Connect to the internet to save" : undefined}
             >
               {bulkSave.isPending ? (
                 <>
