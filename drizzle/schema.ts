@@ -2204,3 +2204,44 @@ export const employeeAvailabilityBlocks = mysqlTable("employee_availability_bloc
 
 export type EmployeeAvailabilityBlock = typeof employeeAvailabilityBlocks.$inferSelect;
 export type InsertEmployeeAvailabilityBlock = typeof employeeAvailabilityBlocks.$inferInsert;
+
+// ============================================
+// SETUP PROGRESS
+// Tracks admin setup wizard step completion per company.
+// ============================================
+
+export const SETUP_STEP_KEYS = [
+  "company_profile",
+  "business_settings",
+  "users_roles",
+  "customers_sites",
+  "imports",
+  "parts_inventory",
+  "reports_documents",
+  "invoices_sage",
+  "payroll_time",
+  "ai_knowledge",
+  "final_review",
+] as const;
+export type SetupStepKey = (typeof SETUP_STEP_KEYS)[number];
+
+export const SETUP_STEP_STATUSES = ["not_started", "in_progress", "completed", "skipped"] as const;
+export type SetupStepStatus = (typeof SETUP_STEP_STATUSES)[number];
+
+export const setupProgress = mysqlTable("setup_progress", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  stepKey: varchar("stepKey", { length: 50 }).notNull(),
+  status: mysqlEnum("status", SETUP_STEP_STATUSES).notNull().default("not_started"),
+  completedAt: timestamp("completedAt"),
+  completedById: int("completedById"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyStepUnique: unique("setup_progress_company_step_unique").on(table.companyId, table.stepKey),
+  companyIdIdx: index("setup_progress_companyId_idx").on(table.companyId),
+}));
+
+export type SetupProgressRow = typeof setupProgress.$inferSelect;
+export type InsertSetupProgressRow = typeof setupProgress.$inferInsert;

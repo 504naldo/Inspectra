@@ -174,6 +174,11 @@ export default function AdminDashboard() {
     { staleTime: 60_000 }
   );
 
+  const { data: setupData } = trpc.setup.getOverview.useQuery(undefined, {
+    staleTime: 120_000,
+    enabled: !!user?.companyId,
+  });
+
   const { data: topAlerts = [] } = trpc.notifications.list.useQuery(
     { filter: "all", limit: 5 },
     { staleTime: 60_000 }
@@ -255,6 +260,27 @@ export default function AdminDashboard() {
             </Link>
           </div>
         </div>
+
+        {/* ── Setup Progress Banner ── */}
+        {setupData && !setupData.isComplete && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium flex items-center gap-2">
+                <Zap className="h-4 w-4 text-primary" />
+                Setup {setupData.completedCount}/{setupData.totalSteps} steps complete
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Complete setup to fully configure Inspectra for your company.
+              </p>
+            </div>
+            <Link href="/admin/setup">
+              <Button size="sm" variant="outline" className="shrink-0">
+                Continue Setup
+                <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+              </Button>
+            </Link>
+          </div>
+        )}
 
         {/* ── Snapshot Cards ── */}
         <div>

@@ -147,6 +147,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Users",           href: "/admin/users",           icon: Users,    adminOnly: true },
       { label: "Settings",        href: "/admin/settings",        icon: Settings                  },
+      { label: "Setup Wizard",    href: "/admin/setup",           icon: CheckSquare               },
       { label: "Access Control",  href: "/admin/access-control",  icon: ShieldAlert               },
       { label: "Imports",         href: "/admin/imports",         icon: Upload                    },
       { label: "Notifications",   href: "/admin/notifications",   icon: Bell                      },

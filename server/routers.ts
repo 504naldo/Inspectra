@@ -59,6 +59,7 @@ import { payrollHoursRouter } from "./routers/payrollHoursRouter";
 import { availabilityRouter } from "./routers/availabilityRouter";
 import { globalSearchRouter } from "./routers/globalSearchRouter";
 import { accessControlRouter } from "./routers/accessControlRouter";
+import { setupRouter } from "./routers/setupRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -147,6 +148,7 @@ export const appRouter = router({
   availability: availabilityRouter,
   globalSearch: globalSearchRouter,
   accessControl: accessControlRouter,
+  setup: setupRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -77,6 +77,7 @@ import AdminAvailability from "./pages/admin/Availability";
 import TechPayrollHours from "./pages/technician/PayrollHours";
 import TechTimeOff from "./pages/technician/TimeOff";
 import AccessControl from "./pages/admin/AccessControl";
+import SetupWizard from "./pages/admin/SetupWizard";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -500,6 +501,11 @@ function Router() {
       <Route path="/admin/access-control">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <AccessControl />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/setup">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <SetupWizard />
         </ProtectedRoute>
       </Route>
 
