@@ -1,5 +1,6 @@
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import { WorkflowHint } from "@/components/help/WorkflowHint";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -410,6 +411,7 @@ export default function InvoiceDetail({ id }: Props) {
   return (
     <AdminLayout>
       <div className="space-y-6 max-w-4xl mx-auto">
+        <WorkflowHint hint="Exported or paid invoices are locked for accounting integrity. Edit line items and amounts before exporting or recording payment." />
         {/* Back + Header */}
         <div>
           <Button variant="ghost" size="sm" className="mb-3 -ml-2 text-muted-foreground" onClick={() => navigate("/admin/invoices")}>

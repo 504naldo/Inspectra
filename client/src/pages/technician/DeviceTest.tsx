@@ -24,6 +24,7 @@ import {
   Flag,
   Image,
 } from "lucide-react";
+import { PageHelpButton } from "@/components/help/PageHelpButton";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { nanoid } from "nanoid";
@@ -252,6 +253,7 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
             <h1 className="font-bold text-lg truncate">Device Test</h1>
             <p className="text-xs text-muted-foreground">{device?.deviceType || 'Device'}</p>
           </div>
+          <PageHelpButton size="icon" routeKey="tech_device_test" />
           {isOnline ? (
             <span className="online-badge flex items-center gap-1 text-xs">
               <Wifi className="h-3 w-3" />

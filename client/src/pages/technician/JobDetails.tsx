@@ -9,6 +9,7 @@ import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { SiteDetails } from "@/components/SiteDetails";
 import { FieldCopilotPanel } from "@/components/FieldCopilotPanel";
+import { PageHelpButton } from "@/components/help/PageHelpButton";
 import { InspectionHeader } from "@/components/inspection/InspectionHeader";
 import { IndividualDeviceGrid } from "@/components/inspection/IndividualDeviceGrid";
 import { ExtinguisherGrid } from "@/components/inspection/ExtinguisherGrid";
@@ -349,6 +350,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <p className="text-xs text-muted-foreground safe-text">{job.jobNumber}</p>
           </div>
           <FieldCopilotPanel jobId={jobId} isOnline={isOnline} jobStatus={job.status} />
+          <PageHelpButton size="icon" routeKey="tech_job_detail" />
           {isOnline ? (
             <span className="online-badge flex items-center gap-1 text-xs flex-shrink-0">
               <Wifi className="h-3 w-3" />

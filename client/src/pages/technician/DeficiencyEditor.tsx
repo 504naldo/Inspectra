@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   WifiOff,
 } from "lucide-react";
+import { PageHelpButton } from "@/components/help/PageHelpButton";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -314,9 +315,10 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="font-bold text-lg">
+          <h1 className="font-bold text-lg flex-1">
             {isEditing ? 'Edit Deficiency' : 'New Deficiency'}
           </h1>
+          <PageHelpButton size="icon" routeKey="tech_deficiency_editor" />
         </div>
       </header>
 
