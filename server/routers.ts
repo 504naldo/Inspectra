@@ -54,6 +54,7 @@ import { serviceAgreementRouter } from "./routers/serviceAgreementRouter";
 import { assetLifecycleRouter } from "./routers/assetLifecycleRouter";
 import { inventoryRouter } from "./routers/inventoryRouter";
 import { vendorPurchaseRouter } from "./routers/vendorPurchaseRouter";
+import { feedbackRouter } from "./routers/feedbackRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -107,6 +108,7 @@ export const appRouter = router({
   sprinkler: sprinklerRouter,
   jobAssignment: jobAssignmentRouter,
   assetImport: assetImportRouter,
+  feedback: feedbackRouter,
   files: filesRouter,
   compliance: complianceRouter,
   gmail: gmailRouter,

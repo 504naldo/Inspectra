@@ -38,10 +38,12 @@ import {
   ShoppingCart,
   Store,
   ClipboardPen,
+  MessageSquare,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { FeedbackButton } from "@/components/FeedbackButton";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -82,6 +84,7 @@ const secondaryNavItems = [
   { label: "Imports",          href: "/admin/imports",          icon: Upload,        adminOnly: false },
   { label: "Users",            href: "/admin/users",            icon: Users,         adminOnly: true  },
   { label: "Settings",         href: "/admin/settings",         icon: Settings,      adminOnly: false },
+  { label: "Feedback Center",  href: "/admin/feedback",          icon: MessageSquare, adminOnly: false },
 ];
 
 export default function AdminLayout({ children, title }: AdminLayoutProps) {
@@ -176,6 +179,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             <span className="text-sm text-muted-foreground hidden sm:inline truncate max-w-[140px]">
               {user?.name}
             </span>
+            <FeedbackButton variant="outline" size="sm" className="hidden sm:flex shrink-0" />
             <Link href="/admin/notifications">
               <Button variant="ghost" size="icon" title="Notifications" className="relative">
                 <Bell className="h-5 w-5" />
