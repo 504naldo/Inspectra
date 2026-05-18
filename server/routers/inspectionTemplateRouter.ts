@@ -10,6 +10,8 @@ import {
   inspectionTemplateAssignments,
   inspectionTemplateResponses,
   jobs,
+  users,
+  deficiencies,
   TEMPLATE_STATUSES,
 } from "../../drizzle/schema";
 import { logActivity } from "../activityLogger";
@@ -569,7 +571,7 @@ export const inspectionTemplateRouter = router({
       return { ok: true };
     }),
 
-  // ── Report QA / Admin — response summary ──────────────────────────────────
+  // ── Report QA / Admin — lightweight response summary ─────────────────────
 
   getResponseSummary: officeProcedure
     .input(z.object({ jobId: z.number() }))
@@ -597,5 +599,122 @@ export const inspectionTemplateRouter = router({
         templates: templates.filter((t) => templateIds.includes(t.id)),
         responses,
       };
+    }),
+
+  // ── Report QA / PDF — rich structured summary ─────────────────────────────
+
+  getReportResponseSummary: officeProcedure
+    .input(z.object({ jobId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+
+      const [job] = await db.select({ companyId: jobs.companyId })
+        .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
+      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const responses = await db
+        .select()
+        .from(inspectionTemplateResponses)
+        .where(eq(inspectionTemplateResponses.jobId, input.jobId));
+
+      if (responses.length === 0) return [];
+
+      const templateIds = [...new Set(responses.map((r) => r.templateId))];
+
+      // Fetch all needed data in parallel
+      const [allTemplates, allSections, allItems, allUsers, allDeficiencies] = await Promise.all([
+        db.select().from(inspectionTemplates)
+          .where(eq(inspectionTemplates.companyId, ctx.user.companyId!)),
+        db.select().from(inspectionTemplateSections)
+          .where(eq(inspectionTemplateSections.companyId, ctx.user.companyId!))
+          .orderBy(asc(inspectionTemplateSections.sortOrder)),
+        db.select().from(inspectionTemplateItems)
+          .where(eq(inspectionTemplateItems.companyId, ctx.user.companyId!))
+          .orderBy(asc(inspectionTemplateItems.sectionId), asc(inspectionTemplateItems.sortOrder)),
+        db.select({ id: users.id, name: users.name }).from(users)
+          .where(eq(users.companyId, ctx.user.companyId!)),
+        db.select({ id: deficiencies.id, title: deficiencies.title })
+          .from(deficiencies)
+          .where(eq(deficiencies.jobId, input.jobId)),
+      ]);
+
+      const userMap = new Map(allUsers.map((u) => [u.id, u.name ?? "Unknown"]));
+      const defMap = new Map(allDeficiencies.map((d) => [d.id, d.title]));
+      const responseMap = new Map(responses.map((r) => [r.itemId, r]));
+
+      return templateIds.map((templateId) => {
+        const template = allTemplates.find((t) => t.id === templateId);
+        if (!template) return null;
+
+        const templateSections = allSections.filter((s) => s.templateId === templateId);
+        const templateItems = allItems.filter((i) => i.templateId === templateId);
+        const templateResponses = responses.filter((r) => r.templateId === templateId);
+
+        const totalItems = templateItems.length;
+        const answeredItems = templateItems.filter((i) => {
+          const r = responseMap.get(i.id);
+          return r && (r.responseValue || r.responseText);
+        }).length;
+        const requiredItems = templateItems.filter((i) => i.isRequired === 1).length;
+        const unansweredRequiredItems = templateItems.filter((i) => {
+          if (i.isRequired !== 1) return false;
+          const r = responseMap.get(i.id);
+          return !r || (!r.responseValue && !r.responseText);
+        }).length;
+
+        let passCount = 0;
+        let failCount = 0;
+        let naCount = 0;
+        for (const r of templateResponses) {
+          const v = (r.responseValue ?? "").toLowerCase();
+          if (v === "pass" || v === "yes" || v === "checked") passCount++;
+          else if (v === "fail" || v === "no") failCount++;
+          else if (v === "na") naCount++;
+        }
+
+        const sections = templateSections.map((section) => {
+          const sectionItems = templateItems
+            .filter((i) => i.sectionId === section.id)
+            .map((item) => {
+              const resp = responseMap.get(item.id);
+              return {
+                itemCode: item.itemCode,
+                questionText: item.questionText,
+                responseType: item.responseType,
+                responseValue: resp?.responseValue ?? null,
+                responseText: resp?.responseText ?? null,
+                notes: resp?.notes ?? null,
+                codeReference: item.codeReference,
+                isRequired: item.isRequired === 1,
+                deficiencyId: resp?.deficiencyId ?? null,
+                deficiencyTitle: resp?.deficiencyId ? (defMap.get(resp.deficiencyId) ?? null) : null,
+                answeredByName: resp?.answeredById ? (userMap.get(resp.answeredById) ?? null) : null,
+                answeredAt: resp?.answeredAt ?? null,
+              };
+            });
+          return {
+            sectionId: section.id,
+            sectionTitle: section.title,
+            sectionSortOrder: section.sortOrder,
+            items: sectionItems,
+          };
+        });
+
+        return {
+          templateId,
+          templateName: template.name,
+          systemType: template.systemType,
+          inspectionType: template.inspectionType,
+          completionPercent: totalItems > 0 ? Math.round((answeredItems / totalItems) * 100) : 0,
+          totalItems,
+          answeredItems,
+          requiredItems,
+          unansweredRequiredItems,
+          passCount,
+          failCount,
+          naCount,
+          sections,
+        };
+      }).filter((t): t is NonNullable<typeof t> => t !== null);
     }),
 });

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
 import {
   ArrowLeft,
@@ -15,6 +16,8 @@ import {
   Info,
   Copy,
   ArrowRight,
+  ClipboardList,
+  ExternalLink,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -82,6 +85,11 @@ export default function QACheck({ jobId }: QACheckProps) {
 
   const { job, deficiencies, stats } = jobData;
   const r = aiReview.data as AiReviewResult | undefined;
+
+  const { data: templateSummaries = [] } = trpc.inspectionTemplate.getReportResponseSummary.useQuery(
+    { jobId },
+    { enabled: !!jobId, staleTime: 60_000 }
+  );
 
   return (
     <AdminLayout>
@@ -317,6 +325,127 @@ export default function QACheck({ jobId }: QACheckProps) {
               ))}
             </CardContent>
           </Card>
+        )}
+
+        {/* Template Inspection Summary */}
+        {templateSummaries.length > 0 && (
+          <div className="space-y-4">
+            {templateSummaries.map((tmpl) => {
+              const failedNoDeficiency = tmpl.sections
+                .flatMap((s) => s.items)
+                .filter((i) => {
+                  const v = (i.responseValue ?? "").toLowerCase();
+                  return (v === "fail" || v === "no") && !i.deficiencyId;
+                });
+              const hasWarnings = tmpl.unansweredRequiredItems > 0 || failedNoDeficiency.length > 0;
+
+              return (
+                <Card key={tmpl.templateId} className={hasWarnings ? "border-amber-300" : ""}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <ClipboardList className="h-4 w-4 text-primary" />
+                        {tmpl.templateName}
+                      </CardTitle>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="outline" className="text-xs capitalize">{tmpl.systemType.replace(/_/g, " ")}</Badge>
+                        <Badge variant="outline" className="text-xs capitalize">{tmpl.inspectionType}</Badge>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 mt-2">
+                      <Progress value={tmpl.completionPercent} className="flex-1 h-2" />
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {tmpl.completionPercent}% ({tmpl.answeredItems}/{tmpl.totalItems})
+                      </span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3 pt-0">
+                    {/* Stats row */}
+                    <div className="flex flex-wrap gap-3 text-sm">
+                      <span className="flex items-center gap-1 text-green-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Pass: {tmpl.passCount}
+                      </span>
+                      <span className="flex items-center gap-1 text-red-600">
+                        <XCircle className="h-3.5 w-3.5" />
+                        Fail: {tmpl.failCount}
+                      </span>
+                      <span className="text-muted-foreground">N/A: {tmpl.naCount}</span>
+                    </div>
+
+                    {/* Warning banners */}
+                    {tmpl.unansweredRequiredItems > 0 && (
+                      <div className="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 rounded px-3 py-2 text-amber-800">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        {tmpl.unansweredRequiredItems} required item{tmpl.unansweredRequiredItems !== 1 ? "s" : ""} not answered
+                      </div>
+                    )}
+                    {failedNoDeficiency.length > 0 && (
+                      <div className="flex items-start gap-2 text-xs bg-red-50 border border-red-200 rounded px-3 py-2 text-red-800">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span>
+                          {failedNoDeficiency.length} failed response{failedNoDeficiency.length !== 1 ? "s" : ""} without linked deficiency:{" "}
+                          {failedNoDeficiency.slice(0, 3).map((i) => i.questionText.slice(0, 50)).join("; ")}
+                          {failedNoDeficiency.length > 3 ? ` +${failedNoDeficiency.length - 3} more` : ""}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Section breakdown */}
+                    {tmpl.sections.map((sec) => {
+                      const secAnswered = sec.items.filter((i) => i.responseValue || i.responseText).length;
+                      return (
+                        <div key={sec.sectionId} className="border rounded-md overflow-hidden">
+                          <div className="flex items-center justify-between px-3 py-1.5 bg-muted/40 text-xs font-medium">
+                            <span>{sec.sectionTitle}</span>
+                            <span className="text-muted-foreground">{secAnswered}/{sec.items.length}</span>
+                          </div>
+                          <div className="divide-y">
+                            {sec.items.map((item, idx) => {
+                              const v = (item.responseValue ?? "").toLowerCase();
+                              const isFail = v === "fail" || v === "no";
+                              const isMissing = !item.responseValue && !item.responseText;
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`flex items-center gap-2 px-3 py-1.5 text-xs ${
+                                    isFail ? "bg-red-50" : isMissing && item.isRequired ? "bg-amber-50" : ""
+                                  }`}
+                                >
+                                  <span className="flex-1 truncate text-muted-foreground">{item.questionText}</span>
+                                  {isFail ? (
+                                    <Badge variant="destructive" className="text-xs px-1.5 py-0.5 h-5">Fail</Badge>
+                                  ) : isMissing && item.isRequired ? (
+                                    <Badge variant="outline" className="text-xs px-1.5 py-0.5 h-5 border-amber-400 text-amber-700">Missing</Badge>
+                                  ) : item.responseValue ? (
+                                    <Badge variant="outline" className="text-xs px-1.5 py-0.5 h-5 border-green-400 text-green-700 capitalize">{item.responseValue}</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                  {item.deficiencyId && (
+                                    <span className="text-xs text-muted-foreground">Def #{item.deficiencyId}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" asChild>
+                        <a href={`/admin/inspection-templates/${tmpl.templateId}`} target="_blank" rel="noreferrer">
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          Open Template
+                        </a>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         )}
 
         <Card>

@@ -119,6 +119,38 @@ interface ReportData {
   // Set to true only for report types that include the CAN/ULC-S536 checklist.
   // Deficiency reports must set this to false (or omit it) to suppress the section.
   includeFireAlarmChecklist?: boolean;
+
+  // Inspection Template checklist sections (optional — only when template responses exist)
+  templateChecklistSections?: TemplatePdfSection[];
+}
+
+// ─── Template checklist types ─────────────────────────────────────────────────
+
+interface TemplatePdfItem {
+  itemCode?: string | null;
+  questionText: string;
+  responseValue?: string | null;
+  responseText?: string | null;
+  notes?: string | null;
+  codeReference?: string | null;
+  isRequired: boolean;
+  deficiencyId?: number | null;
+}
+
+interface TemplatePdfSection {
+  templateName: string;
+  systemType: string;
+  completionPercent: number;
+  totalItems: number;
+  answeredItems: number;
+  passCount: number;
+  failCount: number;
+  naCount: number;
+  unansweredRequiredItems: number;
+  sections: Array<{
+    sectionTitle: string;
+    items: TemplatePdfItem[];
+  }>;
 }
 
 // ─── Local constants ──────────────────────────────────────────────────────────
@@ -514,6 +546,173 @@ function drawDefTableHeader(doc: any, y: number, colWidths: number[]): number {
   return y + 20;
 }
 
+// ─── Template checklist section ───────────────────────────────────────────────
+
+const RESP_COLORS: Record<string, string> = {
+  pass: '#16a34a', yes: '#16a34a', checked: '#16a34a',
+  fail: '#dc2626', no: '#dc2626',
+  na: '#6b7280',
+};
+
+function responseLabel(value: string | null | undefined): { text: string; color: string } {
+  if (!value) return { text: '—', color: '#9ca3af' };
+  const v = value.toLowerCase();
+  return {
+    text: v === 'pass' ? 'PASS'
+        : v === 'fail' ? 'FAIL'
+        : v === 'yes' ? 'YES'
+        : v === 'no' ? 'NO'
+        : v === 'na' ? 'N/A'
+        : v === 'checked' ? '✓'
+        : value.toUpperCase(),
+    color: RESP_COLORS[v] ?? '#374151',
+  };
+}
+
+function drawTemplateChecklistSection(
+  doc: any,
+  section: TemplatePdfSection,
+  getHeaderY: () => number,
+): void {
+  const RESP_COL = 72;
+  const CODE_COL = 90;
+  const ITEM_COL = CW - RESP_COL - CODE_COL;
+  const ROW_H = 22;
+  const MIN_Y_FOR_NEW_ROW = 730;
+
+  let y = getHeaderY();
+
+  // ── Section title ──────────────────────────────────────────────────────────
+  doc.rect(M, y, CW, 18).fill(NAVY);
+  doc.fontSize(9).font('Helvetica-Bold').fillColor(WHITE)
+     .text('Inspection Checklist', M + 6, y + 4, { lineBreak: false });
+  doc.text(section.templateName, M + 130, y + 4, { width: CW - 136, align: 'right', lineBreak: false });
+  y += 22;
+
+  // ── Summary bar ───────────────────────────────────────────────────────────
+  const summaryItems = [
+    `${section.completionPercent}% complete`,
+    `${section.answeredItems}/${section.totalItems} answered`,
+    `Pass: ${section.passCount}`,
+    `Fail: ${section.failCount}`,
+    `N/A: ${section.naCount}`,
+  ];
+  if (section.unansweredRequiredItems > 0) {
+    summaryItems.push(`⚠ ${section.unansweredRequiredItems} required unanswered`);
+  }
+
+  doc.rect(M, y, CW, 16).fill('#f3f4f6');
+  doc.fontSize(7.5).font('Helvetica').fillColor('#374151')
+     .text(summaryItems.join('   |   '), M + 6, y + 4, { width: CW - 12, lineBreak: false });
+  y += 20;
+
+  // ── Column headers ────────────────────────────────────────────────────────
+  doc.rect(M, y, ITEM_COL, 14).fill('#374151');
+  doc.rect(M + ITEM_COL, y, CODE_COL, 14).fill('#374151');
+  doc.rect(M + ITEM_COL + CODE_COL, y, RESP_COL, 14).fill('#374151');
+  doc.fontSize(7).font('Helvetica-Bold').fillColor(WHITE);
+  doc.text('Inspection Item', M + 4, y + 3, { width: ITEM_COL - 6, lineBreak: false });
+  doc.text('Reference', M + ITEM_COL + 4, y + 3, { width: CODE_COL - 6, lineBreak: false });
+  doc.text('Response', M + ITEM_COL + CODE_COL + 4, y + 3, { width: RESP_COL - 6, lineBreak: false });
+  y += 14;
+
+  for (const sec of section.sections) {
+    // Add page break if near bottom
+    if (y > MIN_Y_FOR_NEW_ROW - 20) {
+      doc.addPage();
+      y = getHeaderY();
+      // Repeat column headers on new page
+      doc.rect(M, y, ITEM_COL, 14).fill('#374151');
+      doc.rect(M + ITEM_COL, y, CODE_COL, 14).fill('#374151');
+      doc.rect(M + ITEM_COL + CODE_COL, y, RESP_COL, 14).fill('#374151');
+      doc.fontSize(7).font('Helvetica-Bold').fillColor(WHITE);
+      doc.text('Inspection Item (cont.)', M + 4, y + 3, { width: ITEM_COL - 6, lineBreak: false });
+      doc.text('Reference', M + ITEM_COL + 4, y + 3, { width: CODE_COL - 6, lineBreak: false });
+      doc.text('Response', M + ITEM_COL + CODE_COL + 4, y + 3, { width: RESP_COL - 6, lineBreak: false });
+      y += 14;
+    }
+
+    // Section sub-header
+    doc.rect(M, y, CW, 13).fill('#e5e7eb');
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#111827')
+       .text(sec.sectionTitle, M + 4, y + 3, { width: CW - 8, lineBreak: false });
+    y += 13;
+
+    sec.items.forEach((item, idx) => {
+      if (y > MIN_Y_FOR_NEW_ROW) {
+        doc.addPage();
+        y = getHeaderY();
+        doc.rect(M, y, ITEM_COL, 14).fill('#374151');
+        doc.rect(M + ITEM_COL, y, CODE_COL, 14).fill('#374151');
+        doc.rect(M + ITEM_COL + CODE_COL, y, RESP_COL, 14).fill('#374151');
+        doc.fontSize(7).font('Helvetica-Bold').fillColor(WHITE);
+        doc.text('Inspection Item (cont.)', M + 4, y + 3, { lineBreak: false });
+        doc.text('Reference', M + ITEM_COL + 4, y + 3, { lineBreak: false });
+        doc.text('Response', M + ITEM_COL + CODE_COL + 4, y + 3, { lineBreak: false });
+        y += 14;
+      }
+
+      const bg = idx % 2 === 0 ? WHITE : '#f9fafb';
+      const { text: respText, color: respColor } = responseLabel(item.responseValue ?? item.responseText);
+      const isFail = (item.responseValue ?? '').toLowerCase() === 'fail' ||
+                     (item.responseValue ?? '').toLowerCase() === 'no';
+      const isMissing = !item.responseValue && !item.responseText;
+
+      // Row background — highlight failures and missing required
+      if (isFail) {
+        doc.rect(M, y, CW, ROW_H).fill('#fff1f2');
+      } else if (isMissing && item.isRequired) {
+        doc.rect(M, y, CW, ROW_H).fill('#fffbeb');
+      } else {
+        doc.rect(M, y, CW, ROW_H).fill(bg);
+      }
+
+      // Borders
+      doc.rect(M, y, ITEM_COL, ROW_H).lineWidth(0.2).stroke('#e5e7eb');
+      doc.rect(M + ITEM_COL, y, CODE_COL, ROW_H).lineWidth(0.2).stroke('#e5e7eb');
+      doc.rect(M + ITEM_COL + CODE_COL, y, RESP_COL, ROW_H).lineWidth(0.2).stroke('#e5e7eb');
+
+      // Item code + question
+      const code = item.itemCode ? `${item.itemCode} ` : '';
+      doc.fontSize(7).font('Helvetica').fillColor(isMissing && item.isRequired ? '#92400e' : '#111827')
+         .text(`${code}${item.questionText}`, M + 4, y + 4, {
+           width: ITEM_COL - 8,
+           height: ROW_H - 6,
+           lineBreak: true,
+           ellipsis: true,
+         });
+
+      // Deficiency reference (small, below question)
+      if (item.deficiencyId) {
+        doc.fontSize(6).font('Helvetica').fillColor('#6b7280')
+           .text(`↳ Def #${item.deficiencyId}`, M + 4, y + ROW_H - 8, { lineBreak: false });
+      }
+
+      // Code reference
+      doc.fontSize(6.5).font('Helvetica').fillColor('#6b7280')
+         .text(item.codeReference ?? '', M + ITEM_COL + 4, y + 4, {
+           width: CODE_COL - 8,
+           height: ROW_H - 6,
+           lineBreak: true,
+           ellipsis: true,
+         });
+
+      // Response value
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(respColor)
+         .text(respText, M + ITEM_COL + CODE_COL + 4, y + 6, {
+           width: RESP_COL - 8,
+           align: 'center',
+           lineBreak: false,
+         });
+
+      y += ROW_H;
+    });
+  }
+
+  // Bottom padding
+  y += 8;
+}
+
 // ─── Main export ─────────────────────────────────────────────────────────────
 
 export async function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
@@ -588,6 +787,16 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
         doc.addPage();
         const faHeaderY = drawPageHeader(doc, data);
         drawFireAlarmChecklistSection(doc, data, faHeaderY);
+      }
+
+      // ════════════════════════════════════════════════════════════════════
+      // INSPECTION TEMPLATE CHECKLIST — one page per template if responses exist
+      // ════════════════════════════════════════════════════════════════════
+      if (data.templateChecklistSections && data.templateChecklistSections.length > 0) {
+        for (const tmplSection of data.templateChecklistSections) {
+          doc.addPage();
+          drawTemplateChecklistSection(doc, tmplSection, () => drawPageHeader(doc, data));
+        }
       }
 
       // ════════════════════════════════════════════════════════════════════

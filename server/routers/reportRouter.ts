@@ -1,13 +1,120 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { eq, and, asc } from "drizzle-orm";
 import { router, officeProcedure, customerProcedure, protectedProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { getDb } from "../db";
 import { assertJobNotFinalized } from "../db";
 import { storagePut } from "../storage";
 import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
 import * as checklists from "../complianceChecklists";
 import { sendReportEmail } from "../emailService";
+import {
+  inspectionTemplates,
+  inspectionTemplateSections,
+  inspectionTemplateItems,
+  inspectionTemplateResponses,
+  deficiencies,
+  users,
+  jobs as jobsTable,
+} from "../../drizzle/schema";
+
+// ─── Template data helper ─────────────────────────────────────────────────────
+// Fetches and structures template response data for PDF inclusion.
+// Returns empty array when no template responses exist — PDF skips the section.
+
+async function fetchTemplateReportData(jobId: number, companyId: number) {
+  const drizzle = getDb();
+
+  const responses = await drizzle
+    .select()
+    .from(inspectionTemplateResponses)
+    .where(eq(inspectionTemplateResponses.jobId, jobId));
+
+  if (responses.length === 0) return [];
+
+  const templateIds = [...new Set(responses.map((r) => r.templateId))];
+
+  const [allTemplates, allSections, allItems, allDeficiencies] = await Promise.all([
+    drizzle.select().from(inspectionTemplates)
+      .where(eq(inspectionTemplates.companyId, companyId)),
+    drizzle.select().from(inspectionTemplateSections)
+      .where(eq(inspectionTemplateSections.companyId, companyId))
+      .orderBy(asc(inspectionTemplateSections.sortOrder)),
+    drizzle.select().from(inspectionTemplateItems)
+      .where(eq(inspectionTemplateItems.companyId, companyId))
+      .orderBy(asc(inspectionTemplateItems.sectionId), asc(inspectionTemplateItems.sortOrder)),
+    drizzle.select({ id: deficiencies.id, title: deficiencies.title })
+      .from(deficiencies)
+      .where(eq(deficiencies.jobId, jobId)),
+  ]);
+
+  const defMap = new Map(allDeficiencies.map((d) => [d.id, d.title]));
+  const responseMap = new Map(responses.map((r) => [r.itemId, r]));
+
+  return templateIds.map((templateId) => {
+    const template = allTemplates.find((t) => t.id === templateId);
+    if (!template) return null;
+
+    const templateSections = allSections.filter((s) => s.templateId === templateId);
+    const templateItems = allItems.filter((i) => i.templateId === templateId);
+    const templateResponses = responses.filter((r) => r.templateId === templateId);
+
+    const totalItems = templateItems.length;
+    const answeredItems = templateItems.filter((i) => {
+      const r = responseMap.get(i.id);
+      return r && (r.responseValue || r.responseText);
+    }).length;
+    const unansweredRequiredItems = templateItems.filter((i) => {
+      if (i.isRequired !== 1) return false;
+      const r = responseMap.get(i.id);
+      return !r || (!r.responseValue && !r.responseText);
+    }).length;
+
+    let passCount = 0;
+    let failCount = 0;
+    let naCount = 0;
+    for (const r of templateResponses) {
+      const v = (r.responseValue ?? "").toLowerCase();
+      if (v === "pass" || v === "yes" || v === "checked") passCount++;
+      else if (v === "fail" || v === "no") failCount++;
+      else if (v === "na") naCount++;
+    }
+
+    const sections = templateSections.map((section) => ({
+      sectionTitle: section.title,
+      items: templateItems
+        .filter((i) => i.sectionId === section.id)
+        .map((item) => {
+          const resp = responseMap.get(item.id);
+          return {
+            itemCode: item.itemCode,
+            questionText: item.questionText,
+            responseValue: resp?.responseValue ?? null,
+            responseText: resp?.responseText ?? null,
+            notes: resp?.notes ?? null,
+            codeReference: item.codeReference,
+            isRequired: item.isRequired === 1,
+            deficiencyId: resp?.deficiencyId ?? null,
+          };
+        }),
+    }));
+
+    return {
+      templateName: template.name,
+      systemType: template.systemType,
+      completionPercent: totalItems > 0 ? Math.round((answeredItems / totalItems) * 100) : 0,
+      totalItems,
+      answeredItems,
+      passCount,
+      failCount,
+      naCount,
+      unansweredRequiredItems,
+      sections,
+    };
+  }).filter((t): t is NonNullable<typeof t> => t !== null);
+}
 
 const reportRouter = router({
   listByCompany: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input, ctx }) => {
@@ -189,9 +296,12 @@ const reportRouter = router({
       ...stats
     }));
     
-    // Get technician details
-    const technician = await db.getUserById(job.assignedTechnicianId || ctx.user.id);
-    
+    // Get technician details + template checklist responses (parallel)
+    const [technician, rawTemplateData] = await Promise.all([
+      db.getUserById(job.assignedTechnicianId || ctx.user.id),
+      fetchTemplateReportData(input.jobId, job.companyId),
+    ]);
+
     // Generate PDF with Fire-Pro style
     const pdfBuffer = await generateInspectionReportPDF({
       jobNumber: job.jobNumber,
@@ -262,6 +372,8 @@ const reportRouter = router({
       includeFireAlarmChecklist: false,
       fireAlarmChecklist: undefined,
       fireAlarmSystem: undefined,
+      // Inspection template checklist — included when technician completed template forms
+      templateChecklistSections: rawTemplateData.length > 0 ? rawTemplateData : undefined,
     });
 
     // Upload to S3
