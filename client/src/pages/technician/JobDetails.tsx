@@ -61,6 +61,53 @@ import {
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 
+// ─── Template inspection cards ─────────────────────────────────────────────────
+
+function TemplateInspectionCards({
+  jobId,
+  setLocation,
+}: {
+  jobId: number;
+  setLocation: (path: string) => void;
+}) {
+  const { data: templates = [], isLoading } = trpc.inspectionTemplate.getTemplatesForJob.useQuery(
+    { jobId },
+    { enabled: !!jobId }
+  );
+
+  if (isLoading || templates.length === 0) return null;
+
+  return (
+    <>
+      {templates.map((t) => (
+        <Card key={t.id} className="border-teal-200 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-950/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-sm flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4 text-teal-600" />
+                  {t.name}
+                </h3>
+                {t.description && (
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{t.description}</p>
+                )}
+              </div>
+              <Button
+                size="sm"
+                className="bg-teal-600 hover:bg-teal-700 text-white shrink-0"
+                onClick={() => setLocation(`/tech/jobs/${jobId}/template/${t.id}`)}
+              >
+                Start
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </>
+  );
+}
+
 interface JobDetailsProps {
   jobId: number;
 }
@@ -841,6 +888,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Inspection Templates — dynamic templates assigned to this job */}
+        <TemplateInspectionCards jobId={parseInt(jobId!)} setLocation={setLocation} />
 
         {/* Work Order */}
         {workOrder && (

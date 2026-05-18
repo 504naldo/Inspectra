@@ -78,6 +78,9 @@ import TechPayrollHours from "./pages/technician/PayrollHours";
 import TechTimeOff from "./pages/technician/TimeOff";
 import AccessControl from "./pages/admin/AccessControl";
 import SetupWizard from "./pages/admin/SetupWizard";
+import InspectionTemplates from "./pages/admin/InspectionTemplates";
+import InspectionTemplateDetail from "./pages/admin/InspectionTemplateDetail";
+import TemplateFormRenderer from "./pages/technician/TemplateFormRenderer";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -506,6 +509,21 @@ function Router() {
       <Route path="/admin/setup">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <SetupWizard />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/inspection-templates/:id">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <InspectionTemplateDetail />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/inspection-templates">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <InspectionTemplates />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/tech/jobs/:jobId/template/:templateId">
+        <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
+          <TemplateFormRenderer />
         </ProtectedRoute>
       </Route>
 

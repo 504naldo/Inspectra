@@ -2245,3 +2245,134 @@ export const setupProgress = mysqlTable("setup_progress", {
 
 export type SetupProgressRow = typeof setupProgress.$inferSelect;
 export type InsertSetupProgressRow = typeof setupProgress.$inferInsert;
+
+// ============================================
+// INSPECTION TEMPLATE / FORM LIBRARY
+// ============================================
+
+export const TEMPLATE_SYSTEM_TYPES = [
+  "fire_alarm", "sprinkler", "emergency_lighting", "fire_extinguisher",
+  "backflow", "smoke_alarm", "smoke_control", "fire_pump", "standpipe", "general",
+] as const;
+export type TemplateSystemType = (typeof TEMPLATE_SYSTEM_TYPES)[number];
+
+export const TEMPLATE_INSPECTION_TYPES = [
+  "annual", "semi_annual", "quarterly", "monthly", "service", "verification", "custom",
+] as const;
+export type TemplateInspectionType = (typeof TEMPLATE_INSPECTION_TYPES)[number];
+
+export const TEMPLATE_STATUSES = ["draft", "active", "archived"] as const;
+export type TemplateStatus = (typeof TEMPLATE_STATUSES)[number];
+
+export const TEMPLATE_RESPONSE_TYPES = [
+  "pass_fail_na", "yes_no_na", "text", "number", "date", "select", "multi_select",
+  "checkbox", "pressure_reading", "time_duration",
+] as const;
+export type TemplateResponseType = (typeof TEMPLATE_RESPONSE_TYPES)[number];
+
+export const TEMPLATE_FREQUENCIES = ["monthly", "quarterly", "semi_annual", "annual", "other"] as const;
+export type TemplateFrequency = (typeof TEMPLATE_FREQUENCIES)[number];
+
+export const inspectionTemplates = mysqlTable("inspection_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+  description: text("description"),
+  systemType: varchar("systemType", { length: 50 }).notNull().default("general"),
+  inspectionType: varchar("inspectionType", { length: 50 }).notNull().default("annual"),
+  frequency: varchar("frequency", { length: 50 }).notNull().default("annual"),
+  version: int("version").notNull().default(1),
+  status: mysqlEnum("status", TEMPLATE_STATUSES).notNull().default("draft"),
+  isDefault: tinyint("isDefault").notNull().default(0),
+  createdById: int("createdById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("it_companyId_idx").on(table.companyId),
+  companySystemIdx: index("it_company_system_idx").on(table.companyId, table.systemType),
+}));
+export type InspectionTemplate = typeof inspectionTemplates.$inferSelect;
+export type InsertInspectionTemplate = typeof inspectionTemplates.$inferInsert;
+
+export const inspectionTemplateSections = mysqlTable("inspection_template_sections", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  templateId: int("templateId").notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description"),
+  sortOrder: int("sortOrder").notNull().default(0),
+  isRequired: tinyint("isRequired").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  templateIdIdx: index("its_templateId_idx").on(table.templateId),
+  companyIdIdx: index("its_companyId_idx").on(table.companyId),
+}));
+export type InspectionTemplateSection = typeof inspectionTemplateSections.$inferSelect;
+export type InsertInspectionTemplateSection = typeof inspectionTemplateSections.$inferInsert;
+
+export const inspectionTemplateItems = mysqlTable("inspection_template_items", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  templateId: int("templateId").notNull(),
+  sectionId: int("sectionId").notNull(),
+  itemCode: varchar("itemCode", { length: 50 }),
+  questionText: text("questionText").notNull(),
+  helpText: text("helpText"),
+  responseType: varchar("responseType", { length: 50 }).notNull().default("pass_fail_na"),
+  isRequired: tinyint("isRequired").notNull().default(1),
+  sortOrder: int("sortOrder").notNull().default(0),
+  deficiencyTrigger: json("deficiencyTrigger"),
+  options: json("options"),
+  codeReference: varchar("codeReference", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  templateIdIdx: index("iti_templateId_idx").on(table.templateId),
+  sectionIdIdx: index("iti_sectionId_idx").on(table.sectionId),
+  companyIdIdx: index("iti_companyId_idx").on(table.companyId),
+}));
+export type InspectionTemplateItem = typeof inspectionTemplateItems.$inferSelect;
+export type InsertInspectionTemplateItem = typeof inspectionTemplateItems.$inferInsert;
+
+export const inspectionTemplateAssignments = mysqlTable("inspection_template_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  templateId: int("templateId").notNull(),
+  jobType: varchar("jobType", { length: 50 }),
+  systemType: varchar("systemType", { length: 50 }),
+  siteId: int("siteId"),
+  customerOrgId: int("customerOrgId"),
+  isActive: tinyint("isActive").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  templateIdIdx: index("ita_templateId_idx").on(table.templateId),
+  companyIdIdx: index("ita_companyId_idx").on(table.companyId),
+}));
+export type InspectionTemplateAssignment = typeof inspectionTemplateAssignments.$inferSelect;
+export type InsertInspectionTemplateAssignment = typeof inspectionTemplateAssignments.$inferInsert;
+
+export const inspectionTemplateResponses = mysqlTable("inspection_template_responses", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  jobId: int("jobId").notNull(),
+  templateId: int("templateId").notNull(),
+  sectionId: int("sectionId").notNull(),
+  itemId: int("itemId").notNull(),
+  responseValue: varchar("responseValue", { length: 100 }),
+  responseText: text("responseText"),
+  notes: text("notes"),
+  deficiencyId: int("deficiencyId"),
+  answeredById: int("answeredById"),
+  answeredAt: timestamp("answeredAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  jobItemUnique: unique("itr_job_item_unique").on(table.jobId, table.itemId),
+  jobIdIdx: index("itr_jobId_idx").on(table.jobId),
+  templateIdIdx: index("itr_templateId_idx").on(table.templateId),
+  companyIdIdx: index("itr_companyId_idx").on(table.companyId),
+}));
+export type InspectionTemplateResponse = typeof inspectionTemplateResponses.$inferSelect;
+export type InsertInspectionTemplateResponse = typeof inspectionTemplateResponses.$inferInsert;

@@ -60,6 +60,7 @@ import { availabilityRouter } from "./routers/availabilityRouter";
 import { globalSearchRouter } from "./routers/globalSearchRouter";
 import { accessControlRouter } from "./routers/accessControlRouter";
 import { setupRouter } from "./routers/setupRouter";
+import { inspectionTemplateRouter } from "./routers/inspectionTemplateRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -149,6 +150,7 @@ export const appRouter = router({
   globalSearch: globalSearchRouter,
   accessControl: accessControlRouter,
   setup: setupRouter,
+  inspectionTemplate: inspectionTemplateRouter,
 });
 
 export type AppRouter = typeof appRouter;
