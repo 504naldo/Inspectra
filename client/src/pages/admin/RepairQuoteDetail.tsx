@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
+import { WorkflowHint } from "@/components/help/WorkflowHint";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -518,6 +519,7 @@ export default function RepairQuoteDetail() {
   return (
     <AdminLayout title={`Repair Quote ${q.quoteNumber ?? `#${quoteId}`}`}>
       <div className="space-y-6">
+        <WorkflowHint hint="Once the customer approves this quote, use 'Convert to Approved Work' to begin scheduling the repair." />
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>

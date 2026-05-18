@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/AdminLayout";
+import { WorkflowHint } from "@/components/help/WorkflowHint";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -634,6 +635,8 @@ export default function ReportQA() {
   return (
     <AdminLayout title="Report QA Queue">
       <div className="space-y-5">
+
+        <WorkflowHint hint="Status flow: Generated → Review → Approve (or Request Corrections) → Send to customer. Check deficiency documentation before approving." />
 
         {/* ── Overview cards ── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">

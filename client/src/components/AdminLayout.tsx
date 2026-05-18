@@ -52,6 +52,7 @@ import {
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { FeedbackButton } from "@/components/FeedbackButton";
+import { PageHelpButton } from "@/components/help/PageHelpButton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -278,6 +279,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             <span className="text-sm text-muted-foreground hidden sm:inline truncate max-w-[140px]">
               {user?.name}
             </span>
+            <PageHelpButton variant="ghost" size="sm" className="hidden sm:flex shrink-0" />
             <FeedbackButton variant="outline" size="sm" className="hidden sm:flex shrink-0" />
             <Link href="/admin/notifications">
               <Button variant="ghost" size="icon" title="Notifications" className="relative">
