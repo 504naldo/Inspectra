@@ -22,9 +22,11 @@ import {
   CheckCircle2,
   Wand2,
   AlertTriangle,
+  WifiOff,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useTrackInspectionProgress } from "@/hooks/useInspectionProgress";
 
 type DraftResult = {
@@ -55,6 +57,7 @@ interface DeficiencyEditorProps {
 
 export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEditorProps) {
   const [location, setLocation] = useLocation();
+  const isOnline = useOnlineStatus();
   const isEditing = !!deficiencyId;
   
   // Track inspection progress for resume functionality
@@ -318,6 +321,14 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       </header>
 
       <main className="container py-4 space-y-6">
+        {/* Offline warning */}
+        {!isOnline && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-300">
+            <WifiOff className="h-4 w-4 shrink-0" />
+            You are offline. Connect to the internet to save deficiencies.
+          </div>
+        )}
+
         {/* Device Info */}
         {device && (
           <Card className="bg-muted/50">
@@ -679,7 +690,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
               className="w-full"
               variant="outline"
               onClick={() => doSave(true)}
-              disabled={isSaving || !title}
+              disabled={isSaving || !title || !isOnline}
             >
               {isSaving ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -692,7 +703,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
           <Button
             className="w-full action-btn"
             onClick={handleSave}
-            disabled={isSaving || !title}
+            disabled={isSaving || !title || !isOnline}
           >
             {isSaving ? (
               <Loader2 className="h-5 w-5 mr-2 animate-spin" />

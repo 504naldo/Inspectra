@@ -56,7 +56,7 @@ interface JobDetailsProps {
 
 export default function JobDetails({ jobId }: JobDetailsProps) {
   const [location, setLocation] = useLocation();
-  const { isOnline, getCachedJobData } = useOfflineStorage();
+  const { isOnline, getCachedJobData, syncStatus } = useOfflineStorage();
   const [openGridSection, setOpenGridSection] = useState<string | null>(null);
   const [woTechNotes, setWoTechNotes] = useState("");
   const [woActualHours, setWoActualHours] = useState("");
@@ -1171,6 +1171,22 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 </p>
               )}
             </div>
+            {(syncStatus.pendingResults > 0 || syncStatus.pendingDeficiencies > 0) && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-1">
+                <p className="text-amber-800 dark:text-amber-300 font-medium text-xs">
+                  ⚠ You have unsynced field data
+                </p>
+                <p className="text-amber-700 dark:text-amber-400 text-xs">
+                  {syncStatus.pendingResults > 0 && `${syncStatus.pendingResults} device test result${syncStatus.pendingResults !== 1 ? "s" : ""}`}
+                  {syncStatus.pendingResults > 0 && syncStatus.pendingDeficiencies > 0 && " and "}
+                  {syncStatus.pendingDeficiencies > 0 && `${syncStatus.pendingDeficiencies} deficienc${syncStatus.pendingDeficiencies !== 1 ? "ies" : "y"}`}
+                  {" are saved locally and not yet uploaded. Sync first so the report is accurate."}
+                </p>
+                <Link href="/tech/sync" className="text-xs underline text-amber-800 dark:text-amber-300 font-medium">
+                  Go to Sync →
+                </Link>
+              </div>
+            )}
             <p className="text-muted-foreground text-xs">The job will remain in progress. You can still make changes after submitting.</p>
           </div>
           <DialogFooter className="gap-2">

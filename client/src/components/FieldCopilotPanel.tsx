@@ -271,6 +271,8 @@ export function FieldCopilotPanel({ jobId, isOnline, jobStatus }: FieldCopilotPa
         size="sm"
         onClick={() => { setOpen(true); resetAll(); }}
         className="flex items-center gap-1.5 h-9"
+        disabled={!isOnline}
+        title={!isOnline ? "AI requires an internet connection" : undefined}
       >
         <Bot className="h-4 w-4" />
         Ask AI
