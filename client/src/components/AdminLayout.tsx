@@ -47,9 +47,11 @@ import {
   CalendarCheck,
   FileCheck2,
   CalendarOff,
+  MessageSquare,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { FeedbackButton } from "@/components/FeedbackButton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -154,6 +156,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Notifications",   href: "/admin/notifications",   icon: Bell                      },
       { label: "AI Assistant",    href: "/admin/ai-assistant",    icon: Bot                       },
       { label: "Knowledge Base",  href: "/admin/knowledge-base",  icon: BookOpen                  },
+      { label: "Feedback Center", href: "/admin/feedback",        icon: MessageSquare             },
     ],
   },
 ];
@@ -275,6 +278,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             <span className="text-sm text-muted-foreground hidden sm:inline truncate max-w-[140px]">
               {user?.name}
             </span>
+            <FeedbackButton variant="outline" size="sm" className="hidden sm:flex shrink-0" />
             <Link href="/admin/notifications">
               <Button variant="ghost" size="icon" title="Notifications" className="relative">
                 <Bell className="h-5 w-5" />

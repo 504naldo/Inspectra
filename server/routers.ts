@@ -61,6 +61,7 @@ import { globalSearchRouter } from "./routers/globalSearchRouter";
 import { accessControlRouter } from "./routers/accessControlRouter";
 import { setupRouter } from "./routers/setupRouter";
 import { inspectionTemplateRouter } from "./routers/inspectionTemplateRouter";
+import { feedbackRouter } from "./routers/feedbackRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -114,6 +115,7 @@ export const appRouter = router({
   sprinkler: sprinklerRouter,
   jobAssignment: jobAssignmentRouter,
   assetImport: assetImportRouter,
+  feedback: feedbackRouter,
   files: filesRouter,
   compliance: complianceRouter,
   gmail: gmailRouter,

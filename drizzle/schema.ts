@@ -2376,3 +2376,51 @@ export const inspectionTemplateResponses = mysqlTable("inspection_template_respo
 }));
 export type InspectionTemplateResponse = typeof inspectionTemplateResponses.$inferSelect;
 export type InsertInspectionTemplateResponse = typeof inspectionTemplateResponses.$inferInsert;
+
+// ============================================
+// FEEDBACK ITEMS (Internal bug / feature feedback)
+// ============================================
+
+export const FEEDBACK_TYPES = [
+  'bug', 'feature_request', 'confusing_workflow', 'data_issue',
+  'report_output_issue', 'mobile_issue', 'performance_issue', 'other',
+] as const;
+export type FeedbackType = typeof FEEDBACK_TYPES[number];
+
+export const FEEDBACK_STATUSES = [
+  'new', 'reviewed', 'in_progress', 'resolved', 'closed', 'wont_fix',
+] as const;
+export type FeedbackStatus = typeof FEEDBACK_STATUSES[number];
+
+export const FEEDBACK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
+export type FeedbackPriority = typeof FEEDBACK_PRIORITIES[number];
+
+export const feedbackItems = mysqlTable("feedback_items", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  submittedById: int("submittedById").notNull(),
+  assignedToId: int("assignedToId"),
+  type: mysqlEnum("type", FEEDBACK_TYPES).notNull().default("other"),
+  status: mysqlEnum("status", FEEDBACK_STATUSES).notNull().default("new"),
+  priority: mysqlEnum("priority", FEEDBACK_PRIORITIES).notNull().default("medium"),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  pageUrl: varchar("pageUrl", { length: 500 }),
+  routeName: varchar("routeName", { length: 200 }),
+  entityType: varchar("entityType", { length: 100 }),
+  entityId: int("entityId"),
+  browserInfo: varchar("browserInfo", { length: 500 }),
+  deviceInfo: varchar("deviceInfo", { length: 200 }),
+  adminNotes: text("adminNotes"),
+  resolvedAt: timestamp("resolvedAt"),
+  resolvedById: int("resolvedById"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("fi_companyId_idx").on(table.companyId),
+  submittedByIdx: index("fi_submittedBy_idx").on(table.submittedById),
+  statusIdx: index("fi_status_idx").on(table.companyId, table.status),
+}));
+
+export type FeedbackItem = typeof feedbackItems.$inferSelect;
+export type InsertFeedbackItem = typeof feedbackItems.$inferInsert;

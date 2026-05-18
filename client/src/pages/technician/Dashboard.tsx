@@ -19,8 +19,10 @@ import {
   Calendar,
   Play,
   Loader2,
+  MessageSquare,
 } from "lucide-react";
 import { Link } from "wouter";
+import { FeedbackButton } from "@/components/FeedbackButton";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -184,6 +186,7 @@ export default function TechnicianDashboard() {
                 {hasPendingSync && <span className="font-semibold">&nbsp;·&nbsp;{syncStatus.pendingResults + syncStatus.pendingDeficiencies} pending</span>}
               </span>
             </Link>
+            <FeedbackButton variant="ghost" size="icon" className="text-muted-foreground" />
             <Button variant="ghost" size="icon" onClick={handleLogout} title="Log out">
               <LogOut className="h-5 w-5" />
             </Button>
