@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { SiteDetails } from "@/components/SiteDetails";
 import { FieldCopilotPanel } from "@/components/FieldCopilotPanel";
@@ -58,6 +59,10 @@ import {
   Package,
   Timer,
   StopCircle,
+  Download,
+  RefreshCw,
+  Loader2,
+  CloudOff,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -116,6 +121,7 @@ interface JobDetailsProps {
 export default function JobDetails({ jobId }: JobDetailsProps) {
   const [location, setLocation] = useLocation();
   const { isOnline, getCachedJobData, syncStatus } = useOfflineStorage();
+  const { status: packetStatus, cachedAt: packetCachedAt, packet, isCaching, preload, refresh: refreshPacket, remove: removePacket, checkStale } = useOfflineJobPacket(jobId);
   const [openGridSection, setOpenGridSection] = useState<string | null>(null);
   const [woTechNotes, setWoTechNotes] = useState("");
   const [woActualHours, setWoActualHours] = useState("");
@@ -141,9 +147,25 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     }
   );
 
+  // Mark stale when live data has a newer updatedAt
+  useEffect(() => {
+    if (data?.job) checkStale((data.job as any).updatedAt);
+  }, [data, checkStale]);
+
+  // Adapt the richer offline packet to the same shape as getWithDetails
+  const packetAsJobData = packet ? {
+    job: packet.job,
+    site: packet.site,
+    devices: packet.devices ?? [],
+    inspectionResults: [],
+    deficiencies: packet.deficiencies ?? [],
+    stats: { pass: 0, fail: 0, na: 0 },
+  } : null;
+
   // Fall back to cached data only when the query actually errors (not just when browser thinks offline)
-  const cachedData = (error && !data) ? getCachedJobData(jobId) : null;
+  const cachedData = (error && !data) ? (packetAsJobData || getCachedJobData(jobId)) : null;
   const jobData = data || cachedData;
+  const isUsingOfflineCache = !data && !!cachedData;
 
   const startJob = trpc.job.start.useMutation({
     onSuccess: () => {
@@ -338,7 +360,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     onError: (err) => toast.error(err.message || 'Failed to submit for QA'),
   });
 
-  if (isLoading && !cachedData) {
+  if (isLoading && !cachedData && !packetAsJobData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
@@ -359,12 +381,18 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <h1 className="font-bold text-lg">Job Details</h1>
           </div>
         </header>
-        <main className="container py-8 text-center">
-          <p className="text-muted-foreground">
-            {isOnline ? 'Job not found' : 'Job not cached for offline use'}
-          </p>
+        <main className="container py-8 text-center space-y-3">
+          {!isOnline ? (
+            <>
+              <CloudOff className="mx-auto h-10 w-10 text-muted-foreground" />
+              <p className="font-semibold">Not available offline</p>
+              <p className="text-sm text-muted-foreground">This job is not cached. Connect to the internet to load it, or preload it next time you are online.</p>
+            </>
+          ) : (
+            <p className="text-muted-foreground">Job not found</p>
+          )}
           <Link href="/tech/jobs">
-            <Button className="mt-4">Back to Jobs</Button>
+            <Button className="mt-2">Back to Jobs</Button>
           </Link>
         </main>
       </div>
@@ -506,6 +534,22 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       </header>
 
       <main className="container py-4 space-y-4">
+        {/* Offline mode banner */}
+        {isUsingOfflineCache && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 flex items-start gap-2">
+            <CloudOff className="h-4 w-4 text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
+            <div className="text-sm text-amber-800 dark:text-amber-300">
+              <span className="font-semibold">Offline mode</span> — showing cached data.
+              {packetCachedAt && (
+                <span className="ml-1 text-amber-700 dark:text-amber-400">
+                  Cached {new Date(packetCachedAt).toLocaleDateString([], { month: "short", day: "numeric" })}.
+                </span>
+              )}
+              <span className="ml-1">Inspection results may not reflect the latest synced data.</span>
+            </div>
+          </div>
+        )}
+
         {/* Site Info */}
         <Card>
           <CardContent className="p-4">
@@ -638,6 +682,78 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </CardContent>
           </Card>
         )}
+
+        {/* Offline Readiness */}
+        <Card className="border-slate-200 dark:border-slate-700">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <CloudOff className="h-4 w-4 text-slate-500 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Offline Readiness</p>
+                  {packetStatus === "cached" && packetCachedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Cached {new Date(packetCachedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  )}
+                  {packetStatus === "stale" && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">Packet may be outdated — refresh before heading out</p>
+                  )}
+                  {packetStatus === "failed" && (
+                    <p className="text-xs text-red-600 dark:text-red-400">Last cache attempt failed</p>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0">
+                {packetStatus === "not_cached" && (
+                  <Badge variant="outline" className="text-xs text-muted-foreground">Not Cached</Badge>
+                )}
+                {packetStatus === "caching" && (
+                  <Badge className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />Caching…
+                  </Badge>
+                )}
+                {packetStatus === "cached" && (
+                  <Badge className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Offline Ready</Badge>
+                )}
+                {packetStatus === "stale" && (
+                  <Badge className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Stale</Badge>
+                )}
+                {packetStatus === "failed" && (
+                  <Badge className="text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Failed</Badge>
+                )}
+              </div>
+            </div>
+            {packet && (
+              <div className="mt-3 pt-3 border-t text-xs text-muted-foreground flex gap-4 flex-wrap">
+                <span>{packet.devices?.length ?? 0} devices</span>
+                <span>{(packet.deficiencies?.length ?? 0)} open deficiencies</span>
+                {packet.workSiteInfo && <span>Site info included</span>}
+              </div>
+            )}
+            {isOnline && (
+              <div className="mt-3 flex gap-2 flex-wrap">
+                {(packetStatus === "not_cached" || packetStatus === "failed") && (
+                  <Button size="sm" variant="outline" onClick={preload} disabled={isCaching}>
+                    <Download className="h-3.5 w-3.5 mr-1.5" />
+                    Make Available Offline
+                  </Button>
+                )}
+                {(packetStatus === "cached" || packetStatus === "stale") && (
+                  <Button size="sm" variant="outline" onClick={refreshPacket} disabled={isCaching}>
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    Refresh Packet
+                  </Button>
+                )}
+                {(packetStatus === "cached" || packetStatus === "stale") && (
+                  <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={removePacket}>
+                    Remove
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Smoke Alarms — inline spreadsheet grid (CAN/ULC-S552) */}
         <Card className="border-destructive/20">

@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { useAllCachedPackets, removePacketById } from "@/hooks/useOfflineJobPacket";
 import {
   ArrowLeft,
   RefreshCw,
@@ -13,6 +15,8 @@ import {
   Upload,
   Trash2,
   AlertTriangle,
+  CloudOff,
+  ChevronRight,
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -33,6 +37,7 @@ export default function SyncScreen() {
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const cachedPackets = useAllCachedPackets();
 
   const syncBatch = trpc.inspectionResult.syncBatch.useMutation();
   const createDeficiency = trpc.deficiency.create.useMutation();
@@ -292,6 +297,63 @@ export default function SyncScreen() {
                   +{totalPending - 16} more items
                 </p>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Cached Offline Packets */}
+        {Object.keys(cachedPackets).length > 0 && (
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <CloudOff className="h-4 w-4 text-muted-foreground" />
+                Offline Job Packets
+                <Badge className="ml-1 text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">
+                  {Object.keys(cachedPackets).length}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {Object.entries(cachedPackets).map(([jobIdStr, entry]) => {
+                const jobId = Number(jobIdStr);
+                const jobTitle = entry.packet?.job?.title ?? `Job #${jobIdStr}`;
+                const cachedDate = new Date(entry.cachedAt).toLocaleDateString([], { month: "short", day: "numeric" });
+                return (
+                  <div key={jobIdStr} className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{jobTitle}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Cached {cachedDate}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {entry.status === "cached" && (
+                        <Badge className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Ready</Badge>
+                      )}
+                      {entry.status === "stale" && (
+                        <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Stale</Badge>
+                      )}
+                      {entry.status === "failed" && (
+                        <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Failed</Badge>
+                      )}
+                      <Link href={`/tech/jobs/${jobId}`}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7">
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => {
+                          removePacketById(jobId);
+                          toast.success("Packet removed");
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
         )}

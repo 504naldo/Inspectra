@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
@@ -619,6 +619,145 @@ const jobRouter = router({
     });
     return { overdue, upcoming, all: jobs };
   }),
+
+  // ── Offline Job Packet ────────────────────────────────────────────────────────
+  // Returns a technician-safe snapshot of everything needed to work offline.
+  // Technicians must be assigned; admin/office can always fetch for testing.
+  getOfflineJobPacket: protectedProcedure
+    .input(z.object({ jobId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const rawDb = await db.getDb();
+      if (!rawDb) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const job = await db.getJobById(input.jobId);
+      if (!job) throw new TRPCError({ code: "NOT_FOUND" });
+      if (job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      // Technicians must be assigned to the job
+      if (ctx.user.role === "technician") {
+        const isAssigned = await db.isUserAssignedToJob(input.jobId, ctx.user.id);
+        if (!isAssigned) throw new TRPCError({ code: "FORBIDDEN", message: "Not assigned to this job" });
+      }
+
+      // Parallel-fetch all packet data
+      const [site, customerOrg, devices, workSiteInfo, currentDeficiencies] = await Promise.all([
+        db.getSiteById(job.siteId),
+        db.getCustomerOrgById(job.customerOrgId),
+        db.getDevicesBySite(job.siteId),
+        db.getWorkSiteInfoBySiteId(job.siteId),
+        db.getDeficienciesByJob(input.jobId),
+      ]);
+
+      // Previous unresolved deficiencies from last completed job at this site
+      let previousUnresolved: Awaited<ReturnType<typeof db.getDeficienciesByJob>> = [];
+      const lastJob = await db.getLastCompletedJobForSite(job.siteId);
+      if (lastJob && lastJob.id !== input.jobId) {
+        const prevDefs = await db.getDeficienciesByJob(lastJob.id);
+        previousUnresolved = prevDefs.filter((d) => d.status === "open" || d.status === "in_progress");
+      }
+
+      // Inspection template list for this job (metadata only — no sections/items in v1)
+      const assignments = await rawDb
+        .select({
+          templateId: schema.inspectionTemplateAssignments.templateId,
+          jobType: schema.inspectionTemplateAssignments.jobType,
+          siteId: schema.inspectionTemplateAssignments.siteId,
+          customerOrgId: schema.inspectionTemplateAssignments.customerOrgId,
+        })
+        .from(schema.inspectionTemplateAssignments)
+        .where(and(
+          eq(schema.inspectionTemplateAssignments.companyId, companyId),
+          eq(schema.inspectionTemplateAssignments.isActive, 1),
+        ));
+
+      const matchingIds = new Set<number>();
+      for (const a of assignments) {
+        const jobTypeOk = !a.jobType || a.jobType === job.jobType;
+        const siteOk    = !a.siteId || a.siteId === job.siteId;
+        const orgOk     = !a.customerOrgId || a.customerOrgId === job.customerOrgId;
+        if (jobTypeOk && siteOk && orgOk) matchingIds.add(a.templateId);
+      }
+
+      const templates = matchingIds.size > 0
+        ? await rawDb
+            .select({
+              id: schema.inspectionTemplates.id,
+              name: schema.inspectionTemplates.name,
+              description: schema.inspectionTemplates.description,
+              systemType: schema.inspectionTemplates.systemType,
+            })
+            .from(schema.inspectionTemplates)
+            .where(and(
+              eq(schema.inspectionTemplates.companyId, companyId),
+              eq(schema.inspectionTemplates.status, "active"),
+              inArray(schema.inspectionTemplates.id, [...matchingIds]),
+            ))
+        : [];
+
+      // lastUpdatedAt = latest of job.updatedAt and site.updatedAt
+      const timestamps: Date[] = [new Date(job.updatedAt)];
+      if (site?.updatedAt) timestamps.push(new Date(site.updatedAt));
+      const lastUpdatedAt = new Date(Math.max(...timestamps.map((t) => t.getTime())));
+
+      return {
+        job: {
+          id: job.id,
+          jobNumber: job.jobNumber,
+          title: job.title,
+          description: job.description,
+          jobType: job.jobType,
+          status: job.status,
+          priority: job.priority,
+          scheduledDate: job.scheduledDate,
+          startedAt: job.startedAt,
+          completedAt: job.completedAt,
+          finalizedAt: job.finalizedAt,
+          technicianNotes: job.technicianNotes,
+          siteId: job.siteId,
+          customerOrgId: job.customerOrgId,
+          companyId: job.companyId,
+          updatedAt: job.updatedAt,
+        },
+        site: site
+          ? { id: site.id, name: site.name, address: site.address, city: site.city,
+              state: site.state, postalCode: site.postalCode, phone: site.phone, notes: site.notes }
+          : null,
+        customerOrg: customerOrg
+          ? { name: customerOrg.name, phone: (customerOrg as any).phone ?? null }
+          : null,
+        workSiteInfo: workSiteInfo
+          ? {
+              siteContactName: workSiteInfo.siteContactName,
+              siteContactPhone: workSiteInfo.siteContactPhone,
+              accessNotes: workSiteInfo.accessNotes,
+              keyLocation: workSiteInfo.keyLocation,
+              keyNumber: workSiteInfo.keyNumber,
+              lockboxCode: workSiteInfo.lockboxCode,
+              parkingNotes: workSiteInfo.parkingNotes,
+              serviceEntranceNotes: workSiteInfo.serviceEntranceNotes,
+              fireAlarmPanelMake: workSiteInfo.fireAlarmPanelMake,
+              fireAlarmPanelModel: workSiteInfo.fireAlarmPanelModel,
+              fireAlarmPanelLocation: workSiteInfo.fireAlarmPanelLocation,
+              annunciatorLocation: workSiteInfo.annunciatorLocation,
+              monitoringCompany: workSiteInfo.monitoringCompany,
+              monitoringPhone: workSiteInfo.monitoringPhone,
+              monitoringAccount: workSiteInfo.monitoringAccount,
+              sprinklerNotes: workSiteInfo.sprinklerNotes,
+              backflowNotes: workSiteInfo.backflowNotes,
+              emergencyLightingNotes: workSiteInfo.emergencyLightingNotes,
+              fireExtinguisherNotes: workSiteInfo.fireExtinguisherNotes,
+              generalNotes: workSiteInfo.generalNotes,
+            }
+          : null,
+        devices,
+        templates,
+        deficiencies: currentDeficiencies.filter((d) => d.status === "open" || d.status === "in_progress"),
+        previousUnresolvedDeficiencies: previousUnresolved,
+        lastUpdatedAt: lastUpdatedAt.toISOString(),
+        cacheVersion: lastUpdatedAt.getTime().toString(),
+      };
+    }),
 });
 
 export { jobRouter };

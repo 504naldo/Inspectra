@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { useAllCachedPackets } from "@/hooks/useOfflineJobPacket";
 import {
   ClipboardList,
   RefreshCw,
@@ -20,6 +21,7 @@ import {
   Play,
   Loader2,
   MessageSquare,
+  CloudOff,
 } from "lucide-react";
 import { Link } from "wouter";
 import { FeedbackButton } from "@/components/FeedbackButton";
@@ -69,7 +71,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 // ── Job Card ──────────────────────────────────────────────────────────────────
 
-function JobCard({ job }: { job: any }) {
+function JobCard({ job, packetCached }: { job: any; packetCached?: "cached" | "stale" | "failed" }) {
   const priority = PRIORITY_COLORS[job.priority as string] ?? "";
   const status = STATUS_COLORS[job.status as string] ?? "bg-gray-100 text-gray-600";
 
@@ -85,6 +87,18 @@ function JobCard({ job }: { job: any }) {
               {priority && (
                 <Badge className={`text-[10px] px-1.5 py-0 ${priority}`}>
                   {job.priority}
+                </Badge>
+              )}
+              {packetCached === "cached" && (
+                <Badge className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 gap-0.5">
+                  <CloudOff className="h-2.5 w-2.5" />
+                  Offline Ready
+                </Badge>
+              )}
+              {packetCached === "stale" && (
+                <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-0.5">
+                  <CloudOff className="h-2.5 w-2.5" />
+                  Stale Cache
                 </Badge>
               )}
             </div>
@@ -121,6 +135,7 @@ function SectionHeader({ icon: Icon, title, count }: { icon: React.ComponentType
 export default function TechnicianDashboard() {
   const { user, logout } = useAuth();
   const { isOnline, syncStatus } = useOfflineStorage();
+  const cachedPackets = useAllCachedPackets();
 
   const { data: jobs, isLoading } = trpc.job.listByTechnician.useQuery({});
 
@@ -238,7 +253,7 @@ export default function TechnicianDashboard() {
           {inProgressJobs.length > 0 && (
             <div className="space-y-2">
               <SectionHeader icon={Play} title="Continue Inspection" count={inProgressJobs.length} />
-              {inProgressJobs.map(job => <JobCard key={job.id} job={job} />)}
+              {inProgressJobs.map(job => <JobCard key={job.id} job={job} packetCached={cachedPackets[String(job.id)]?.status} />)}
             </div>
           )}
 
@@ -246,7 +261,7 @@ export default function TechnicianDashboard() {
           {overdueJobs.length > 0 && (
             <div className="space-y-2">
               <SectionHeader icon={AlertTriangle} title="Overdue" count={overdueJobs.length} />
-              {overdueJobs.map(job => <JobCard key={job.id} job={job} />)}
+              {overdueJobs.map(job => <JobCard key={job.id} job={job} packetCached={cachedPackets[String(job.id)]?.status} />)}
             </div>
           )}
 
@@ -254,7 +269,7 @@ export default function TechnicianDashboard() {
           {todayJobs.length > 0 && (
             <div className="space-y-2">
               <SectionHeader icon={Calendar} title="Today" count={todayJobs.length} />
-              {todayJobs.map(job => <JobCard key={job.id} job={job} />)}
+              {todayJobs.map(job => <JobCard key={job.id} job={job} packetCached={cachedPackets[String(job.id)]?.status} />)}
             </div>
           )}
 
@@ -262,7 +277,7 @@ export default function TechnicianDashboard() {
           {urgentJobs.length > 0 && (
             <div className="space-y-2">
               <SectionHeader icon={AlertCircle} title="Urgent" count={urgentJobs.length} />
-              {urgentJobs.map(job => <JobCard key={job.id} job={job} />)}
+              {urgentJobs.map(job => <JobCard key={job.id} job={job} packetCached={cachedPackets[String(job.id)]?.status} />)}
             </div>
           )}
 
@@ -270,7 +285,7 @@ export default function TechnicianDashboard() {
           {upcomingJobs.length > 0 && (
             <div className="space-y-2">
               <SectionHeader icon={Clock} title="Upcoming" count={upcomingJobs.length} />
-              {upcomingJobs.map(job => <JobCard key={job.id} job={job} />)}
+              {upcomingJobs.map(job => <JobCard key={job.id} job={job} packetCached={cachedPackets[String(job.id)]?.status} />)}
             </div>
           )}
 
