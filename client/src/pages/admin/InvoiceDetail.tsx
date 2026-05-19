@@ -139,6 +139,36 @@ function AddLineItemDialog({
   );
 }
 
+function BillingContactSuggestion({
+  customerOrgId,
+  onSelect,
+}: { customerOrgId?: number; onSelect: (name: string, email: string) => void }) {
+  const { data } = trpc.contact.getRecipientsForWorkflow.useQuery(
+    { customerOrgId, workflowType: "invoice" },
+    { enabled: !!customerOrgId },
+  );
+  const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? [])].filter((c) => c.email);
+  if (suggestions.length === 0) return null;
+  return (
+    <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 p-2.5 space-y-1.5">
+      <p className="text-xs font-semibold text-green-800 dark:text-green-300 uppercase tracking-wide">Billing contacts</p>
+      <div className="flex flex-wrap gap-1.5">
+        {suggestions.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onSelect(c.name, c.email!)}
+            className="text-xs bg-white dark:bg-green-900/40 border border-green-200 dark:border-green-700 rounded px-2 py-0.5 hover:bg-green-100 dark:hover:bg-green-800/40 transition-colors"
+          >
+            <span className="font-medium">{c.name}</span>
+            <span className="text-muted-foreground ml-1">· {c.email}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EditHeaderDialog({
   invoice,
   onClose,
@@ -174,6 +204,10 @@ function EditHeaderDialog({
           <div className="space-y-3">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bill To</p>
             <div className="grid grid-cols-1 gap-3">
+              <BillingContactSuggestion
+                customerOrgId={invoice.customerOrgId}
+                onSelect={(name, email) => setForm((f) => ({ ...f, billToName: f.billToName || name, billToEmail: email }))}
+              />
               <div>
                 <Label>Name</Label>
                 <Input className="mt-1" value={form.billToName} onChange={set("billToName")} placeholder="Company or person name" />

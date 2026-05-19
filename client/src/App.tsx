@@ -83,6 +83,7 @@ import InspectionTemplates from "./pages/admin/InspectionTemplates";
 import InspectionTemplateDetail from "./pages/admin/InspectionTemplateDetail";
 import TemplateFormRenderer from "./pages/technician/TemplateFormRenderer";
 import FeedbackCenter from "./pages/admin/FeedbackCenter";
+import ContactsPage from "./pages/admin/Contacts";
 import QuoteAccept from "./pages/QuoteAccept";
 // Customer portal imports disabled — customer world not active in this release
 // import CustomerPortal from "./pages/customer/Portal";
@@ -536,6 +537,11 @@ function Router() {
       <Route path="/admin/feedback">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <FeedbackCenter />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/contacts">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <ContactsPage />
         </ProtectedRoute>
       </Route>
 

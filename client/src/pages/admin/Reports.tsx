@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,53 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+
+// ── Recipient suggestion for report email ─────────────────────────────────────
+
+function ReportRecipientSuggestion({
+  jobId,
+  jobs,
+  onSelect,
+}: {
+  jobId: number | null;
+  jobs: any[] | undefined;
+  onSelect: (email: string) => void;
+}) {
+  const job = useMemo(() => jobs?.find((j: any) => j.id === jobId), [jobs, jobId]);
+  const { data } = trpc.contact.getRecipientsForWorkflow.useQuery(
+    {
+      customerOrgId: job?.customerOrgId ?? undefined,
+      siteId: job?.siteId ?? undefined,
+      workflowType: "report",
+    },
+    { enabled: !!(job?.customerOrgId || job?.siteId) },
+  );
+
+  const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? [])].filter((c) => c.email);
+  if (suggestions.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-cyan-200 bg-cyan-50 dark:bg-cyan-950/20 dark:border-cyan-800 p-3 space-y-1.5">
+      <p className="text-xs font-semibold text-cyan-800 dark:text-cyan-300 uppercase tracking-wide">Suggested recipients</p>
+      <div className="flex flex-wrap gap-2">
+        {suggestions.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onSelect(c.email!)}
+            className="text-xs bg-white dark:bg-cyan-900/40 border border-cyan-200 dark:border-cyan-700 rounded px-2 py-1 hover:bg-cyan-100 dark:hover:bg-cyan-800/40 transition-colors text-left"
+          >
+            <span className="font-medium">{c.name}</span>
+            <span className="text-muted-foreground ml-1">· {c.email}</span>
+          </button>
+        ))}
+      </div>
+      {data?.warnings && data.warnings.length > 0 && (
+        <p className="text-xs text-amber-700 dark:text-amber-400">{data.warnings[0]}</p>
+      )}
+    </div>
+  );
+}
 
 export default function AdminReports() {
   const { user } = useAuth();
@@ -771,6 +818,11 @@ EWF Fire & Security`;
             <DialogTitle>Email Report to Client</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <ReportRecipientSuggestion
+              jobId={activeEmailJobId}
+              jobs={jobs}
+              onSelect={(email) => setEmailTo(email)}
+            />
             <div className="space-y-2">
               <Label htmlFor="email-to">Recipient Email *</Label>
               <Input

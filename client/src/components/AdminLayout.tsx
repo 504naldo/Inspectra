@@ -94,6 +94,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Customers",        href: "/admin/customers",        icon: Building2   },
       { label: "Sites",            href: "/admin/sites",            icon: Building2   },
+      { label: "Contacts",         href: "/admin/contacts",         icon: Users       },
       { label: "Customer Records", href: "/admin/customer-records", icon: FolderOpen  },
       { label: "Agreements",       href: "/admin/service-agreements", icon: ScrollText },
     ],

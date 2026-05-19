@@ -238,6 +238,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     { enabled: true, retry: 1 }
   );
 
+  // Site contacts (field-safe: site_contact, emergency_contact, isSiteAccessContact only)
+  const { data: siteContacts = [] } = trpc.contact.getSiteContactsForTechnician.useQuery(
+    { siteId: data?.site?.id ?? 0 },
+    { enabled: !!data?.site?.id, retry: 1 },
+  );
+
   // Parts requests
   const [showPartsForm, setShowPartsForm] = useState(false);
   const [partsDesc, setPartsDesc] = useState("");
@@ -679,6 +685,40 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   <p className="text-foreground">{wsi.emergencyLightingNotes}</p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Site Contacts */}
+        {siteContacts.length > 0 && (
+          <Card className="border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20">
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="text-sm text-green-800 dark:text-green-300 flex items-center gap-2">
+                <Phone className="h-4 w-4" /> Site Contacts
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-2 space-y-3">
+              {siteContacts.map((c) => (
+                <div key={c.id} className="flex items-start justify-between gap-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium">{c.name}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{c.role.replace(/_/g, " ")}</p>
+                    {c.notes && <p className="text-xs text-muted-foreground mt-0.5 italic">{c.notes}</p>}
+                  </div>
+                  <div className="text-right shrink-0 space-y-0.5">
+                    {c.phone && (
+                      <a href={`tel:${c.phone}`} className="text-xs text-blue-600 flex items-center gap-1 justify-end hover:underline">
+                        <Phone className="h-3 w-3" />{c.phone}
+                      </a>
+                    )}
+                    {c.mobile && (
+                      <a href={`tel:${c.mobile}`} className="text-xs text-blue-600 flex items-center gap-1 justify-end hover:underline">
+                        <Phone className="h-3 w-3" />{c.mobile}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
             </CardContent>
           </Card>
         )}

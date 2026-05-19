@@ -14,6 +14,7 @@ import {
   devices,
   reports,
   deficiencies,
+  customerContacts,
 } from "../../drizzle/schema";
 
 const PER_GROUP = 5;
@@ -39,6 +40,7 @@ export const globalSearchRouter = router({
         deviceResults,
         reportResults,
         deficiencyResults,
+        contactResults,
       ] = await Promise.all([
         db
           .select({
@@ -272,6 +274,32 @@ export const globalSearchRouter = router({
             ),
           )
           .limit(PER_GROUP),
+
+        db
+          .select({
+            id: customerContacts.id,
+            name: customerContacts.name,
+            email: customerContacts.email,
+            phone: customerContacts.phone,
+            role: customerContacts.role,
+            customerOrgId: customerContacts.customerOrgId,
+            siteId: customerContacts.siteId,
+          })
+          .from(customerContacts)
+          .where(
+            and(
+              eq(customerContacts.companyId, companyId),
+              eq(customerContacts.isActive, 1),
+              or(
+                like(customerContacts.name, pat),
+                like(customerContacts.email, pat),
+                like(customerContacts.phone, pat),
+                like(customerContacts.mobile, pat),
+                like(customerContacts.companyName, pat),
+              ),
+            ),
+          )
+          .limit(PER_GROUP),
       ]);
 
       return {
@@ -286,6 +314,7 @@ export const globalSearchRouter = router({
         devices: deviceResults,
         reports: reportResults,
         deficiencies: deficiencyResults,
+        contacts: contactResults,
       };
     }),
 });

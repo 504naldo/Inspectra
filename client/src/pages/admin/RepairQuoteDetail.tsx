@@ -128,6 +128,41 @@ function calcItemPreview(f: ItemForm) {
   return { partTotal, labourTotal, fuel, backflow, gst, pst, total };
 }
 
+function QuoteApproverSuggestion({
+  customerOrgId,
+  siteId,
+  onSelect,
+}: {
+  customerOrgId?: number;
+  siteId?: number;
+  onSelect: (name: string, email: string) => void;
+}) {
+  const { data } = trpc.contact.getRecipientsForWorkflow.useQuery(
+    { customerOrgId, siteId, workflowType: "repair_quote" },
+    { enabled: !!(customerOrgId || siteId) },
+  );
+  const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? [])].filter((c) => c.email);
+  if (suggestions.length === 0) return null;
+  return (
+    <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 space-y-1.5">
+      <p className="text-xs font-semibold text-violet-700">Quote approver contacts</p>
+      <div className="flex flex-wrap gap-1.5">
+        {suggestions.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onSelect(c.name, c.email!)}
+            className="inline-flex items-center text-xs bg-white border border-violet-200 rounded-full px-2.5 py-1 hover:bg-violet-100 transition-colors"
+          >
+            <span className="font-medium text-violet-900">{c.name}</span>
+            <span className="text-violet-500 ml-1">· {c.email}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function RepairQuoteDetail() {
   const [, params] = useRoute("/admin/repair-quotes/:id");
   const [, navigate] = useLocation();
@@ -1062,6 +1097,15 @@ export default function RepairQuoteDetail() {
             <DialogDescription>Log who approved this quote and how the approval was received.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <QuoteApproverSuggestion
+              customerOrgId={customer?.id}
+              siteId={site?.id}
+              onSelect={(name, email) => setApprovalForm((f) => ({
+                ...f,
+                approvedByName: f.approvedByName || name,
+                approvedByEmail: email,
+              }))}
+            />
             <div className="space-y-1">
               <Label className="text-xs">Approved By (Name)</Label>
               <Input

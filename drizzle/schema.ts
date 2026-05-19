@@ -2424,3 +2424,59 @@ export const feedbackItems = mysqlTable("feedback_items", {
 
 export type FeedbackItem = typeof feedbackItems.$inferSelect;
 export type InsertFeedbackItem = typeof feedbackItems.$inferInsert;
+
+// ============================================
+// CUSTOMER CONTACTS (Contact Intelligence v1)
+// ============================================
+
+export const CONTACT_ROLES = [
+  "property_manager",
+  "strata_manager",
+  "building_manager",
+  "site_contact",
+  "billing_contact",
+  "quote_approver",
+  "report_recipient",
+  "emergency_contact",
+  "tenant_contact",
+  "other",
+] as const;
+export type ContactRole = typeof CONTACT_ROLES[number];
+
+export const CONTACT_PREFERRED_METHODS = ["email", "phone", "mobile", "none", "other"] as const;
+export type ContactPreferredMethod = typeof CONTACT_PREFERRED_METHODS[number];
+
+export const customerContacts = mysqlTable("customer_contacts", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  customerOrgId: int("customerOrgId"),
+  siteId: int("siteId"),
+  name: varchar("name", { length: 255 }).notNull(),
+  title: varchar("title", { length: 255 }),
+  companyName: varchar("companyName", { length: 255 }),
+  email: varchar("email", { length: 320 }),
+  phone: varchar("phone", { length: 50 }),
+  mobile: varchar("mobile", { length: 50 }),
+  role: mysqlEnum("role", CONTACT_ROLES).notNull().default("other"),
+  isPrimary: tinyint("isPrimary").default(0).notNull(),
+  receivesReports: tinyint("receivesReports").default(0).notNull(),
+  receivesQuotes: tinyint("receivesQuotes").default(0).notNull(),
+  receivesInvoices: tinyint("receivesInvoices").default(0).notNull(),
+  receivesServiceUpdates: tinyint("receivesServiceUpdates").default(0).notNull(),
+  receivesComplianceNotices: tinyint("receivesComplianceNotices").default(0).notNull(),
+  isSiteAccessContact: tinyint("isSiteAccessContact").default(0).notNull(),
+  preferredMethod: mysqlEnum("preferredMethod", CONTACT_PREFERRED_METHODS).default("email").notNull(),
+  notes: text("notes"),
+  isActive: tinyint("isActive").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdx: index("cc_companyId_idx").on(table.companyId),
+  customerOrgIdx: index("cc_customerOrgId_idx").on(table.customerOrgId),
+  siteIdx: index("cc_siteId_idx").on(table.siteId),
+  roleIdx: index("cc_role_idx").on(table.companyId, table.role),
+  activeIdx: index("cc_active_idx").on(table.companyId, table.isActive),
+}));
+
+export type CustomerContact = typeof customerContacts.$inferSelect;
+export type InsertCustomerContact = typeof customerContacts.$inferInsert;
