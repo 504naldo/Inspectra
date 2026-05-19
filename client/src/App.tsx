@@ -59,6 +59,7 @@ import ReportQA from "./pages/admin/ReportQA";
 import DocumentCenter from "./pages/admin/DocumentCenter";
 import ComplianceDashboard from "./pages/admin/ComplianceDashboard";
 import SchedulingAutomation from "./pages/admin/SchedulingAutomation";
+import WorkflowHealth from "./pages/admin/WorkflowHealth";
 import AIAssistant from "./pages/admin/AIAssistant";
 import KnowledgeBase from "./pages/admin/KnowledgeBase";
 import ServiceAgreements from "./pages/admin/ServiceAgreements";
@@ -419,6 +420,11 @@ function Router() {
       <Route path="/admin/scheduling-automation">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <SchedulingAutomation />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/workflow-health">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <WorkflowHealth />
         </ProtectedRoute>
       </Route>
       <Route path="/admin/ai-assistant">

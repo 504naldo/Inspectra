@@ -62,6 +62,7 @@ import { accessControlRouter } from "./routers/accessControlRouter";
 import { setupRouter } from "./routers/setupRouter";
 import { inspectionTemplateRouter } from "./routers/inspectionTemplateRouter";
 import { feedbackRouter } from "./routers/feedbackRouter";
+import { workflowHealthRouter } from "./routers/workflowHealthRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -153,6 +154,7 @@ export const appRouter = router({
   accessControl: accessControlRouter,
   setup: setupRouter,
   inspectionTemplate: inspectionTemplateRouter,
+  workflowHealth: workflowHealthRouter,
 });
 
 export type AppRouter = typeof appRouter;
