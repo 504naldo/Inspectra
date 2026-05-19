@@ -83,7 +83,8 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Jobs",          href: "/admin/jobs",                     icon: ClipboardList },
       { label: "Approved Work", href: "/admin/approved-work",            icon: CheckSquare  },
       { label: "Work Orders",   href: "/admin/work-orders",              icon: Wrench       },
-      { label: "Auto-Schedule", href: "/admin/scheduling-automation",    icon: Zap          },
+      { label: "Auto-Schedule",     href: "/admin/scheduling-automation", icon: Zap          },
+      { label: "Workflow Health",   href: "/admin/workflow-health",       icon: Activity     },
     ],
   },
   {

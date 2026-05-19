@@ -28,6 +28,7 @@ import {
   Zap,
   BrainCircuit,
   Loader2,
+  Activity,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -151,6 +152,75 @@ function SnapshotCard({
         </CardContent>
       </Card>
     </Link>
+  );
+}
+
+// ── Workflow Health Card ──────────────────────────────────────────────────────
+
+function WorkflowHealthCard() {
+  const { data, isLoading } = trpc.workflowHealth.getSummary.useQuery(undefined, { staleTime: 120_000 });
+  const ov = data?.overview;
+  const totalBottlenecks = ov?.totalBottlenecks ?? 0;
+  const criticalBottlenecks = ov?.criticalBottlenecks ?? 0;
+
+  return (
+    <Card className={criticalBottlenecks > 0 ? "border-red-200 dark:border-red-800" : undefined}>
+      <CardHeader className="pb-2 pt-4 px-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Activity className={`h-4 w-4 ${criticalBottlenecks > 0 ? "text-red-500" : "text-primary"}`} />
+            Workflow Health
+            {criticalBottlenecks > 0 && (
+              <span className="bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                {criticalBottlenecks}
+              </span>
+            )}
+          </CardTitle>
+          <Link href="/admin/workflow-health">
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+              View all <ArrowRight className="h-3 w-3" />
+            </Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 pb-4">
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground">Scanning…</p>
+        ) : totalBottlenecks === 0 ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+            All workflows are on track — no stuck or overdue items.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground text-xs">Total bottlenecks</span>
+              <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">{totalBottlenecks}</Badge>
+            </div>
+            {criticalBottlenecks > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground text-xs flex items-center gap-1">
+                  <AlertOctagon className="h-3 w-3 text-red-500" />
+                  Critical
+                </span>
+                <Badge variant="outline" className="text-xs text-red-600 border-red-300">{criticalBottlenecks}</Badge>
+              </div>
+            )}
+            {(ov?.revenueBlocked ?? 0) > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground text-xs">Revenue blocked</span>
+                <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">{ov!.revenueBlocked}</Badge>
+              </div>
+            )}
+            <Link href="/admin/workflow-health">
+              <Button variant="outline" size="sm" className="w-full mt-2 text-xs">
+                View Workflow Health
+              </Button>
+            </Link>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -597,6 +667,9 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* ── Workflow Health Card ── */}
+        <WorkflowHealthCard />
 
         {/* ── AI Copilot Widget ── */}
         <Card className="border-primary/20">
