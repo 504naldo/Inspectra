@@ -366,7 +366,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
       </header>
 
       <main className="container py-6">
-        {title && <h1 className="text-2xl font-bold mb-6">{title}</h1>}
+        {title && <h1 className="text-2xl sm:text-3xl font-bold tracking-tight break-words mb-6">{title}</h1>}
         {children}
       </main>
 

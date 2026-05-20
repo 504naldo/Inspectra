@@ -295,17 +295,17 @@ export default function AdminDashboard() {
       <div className="space-y-6">
 
         {/* ── Header ── */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight break-words">
               Welcome back, {user?.name?.split(" ")[0] || "Admin"}
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground break-words">
               {new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
               {lastUpdated && <span className="ml-2">· Updated {lastUpdated}</span>}
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-wrap gap-2 shrink-0">
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
               Refresh

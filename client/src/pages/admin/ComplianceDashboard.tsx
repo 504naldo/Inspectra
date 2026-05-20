@@ -227,17 +227,19 @@ export default function ComplianceDashboard() {
       <div className="space-y-6">
 
         {/* ── Header ── */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">Compliance Dashboard</h1>
-            <p className="text-sm text-muted-foreground">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight break-words">Compliance Dashboard</h1>
+            <p className="text-sm text-muted-foreground break-words">
               Site risk, deficiency aging, report QA, and approved work status
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            Refresh
-          </Button>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* ── Overview cards ── */}
