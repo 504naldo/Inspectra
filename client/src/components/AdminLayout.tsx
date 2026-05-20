@@ -230,7 +230,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
           </Link>
 
           {/* Desktop nav — one dropdown per group */}
-          <nav className="hidden lg:flex items-center gap-0.5 flex-1 min-w-0 overflow-hidden">
+          <nav className="hidden lg:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
             {visibleGroups.map((group) => {
               const GroupIcon = group.icon;
               const active = isGroupActive(group);
@@ -278,11 +278,11 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
 
           {/* Right side: user name + bell + logout + mobile toggle */}
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-sm text-muted-foreground hidden sm:inline truncate max-w-[140px]">
+            <span className="text-sm text-muted-foreground hidden sm:inline lg:hidden xl:inline truncate max-w-[140px]">
               {user?.name}
             </span>
-            <PageHelpButton variant="ghost" size="sm" className="hidden sm:flex shrink-0" />
-            <FeedbackButton variant="outline" size="sm" className="hidden sm:flex shrink-0" />
+            <PageHelpButton variant="ghost" size="sm" className="hidden sm:flex lg:hidden xl:flex shrink-0" />
+            <FeedbackButton variant="outline" size="sm" className="hidden sm:flex lg:hidden xl:flex shrink-0" />
             <Link href="/admin/notifications">
               <Button variant="ghost" size="icon" title="Notifications" className="relative">
                 <Bell className="h-5 w-5" />
