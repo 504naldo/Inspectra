@@ -1,70 +1,203 @@
 /**
  * scripts/seedSitesFromCustomerRecords.ts
  *
- * Seed the `sites` table from the Google Drive customer-records folder tree
- * (the same tree that powers the Customer Records page at /admin/customer-records).
+ * Seed and reconcile Sites from Customer Records (Google Drive folder tree).
  *
- * Folder structure expected under GOOGLE_DRIVE_CUSTOMER_ROOT_ID:
+ * Customer Records = the Google Drive folder tree under GOOGLE_DRIVE_CUSTOMER_ROOT_ID.
+ * Folder structure:
  *   <Customer Org Name>/
- *     #0007 - 1407 E. Georgia Street/    ← site folder
- *     #0012 - Some Other Building/
- *   <Another Customer Org>/
- *     ...
+ *     #0007 - 1407 E. Georgia Street/
+ *     #0012 - 123 Main St, Vancouver, BC V5L 2S4/
  *
- * For each site sub-folder, this script:
- *   1. Parses the fileNumber (#NNNN) and site name from the folder name.
- *   2. Matches the parent folder to a `customerOrgs` row (normalized name).
- *   3. Upserts the site: creates if absent, updates only empty fields if present.
+ * Workflow:
+ *   Drive org folder → match customerOrg in DB by normalized name
+ *   Drive site folder → parse fileNumber + siteName
+ *   Match to existing Site by buildingId > fileNumber > address > name
+ *   Detect mismatches, plan creates/updates, apply or report in dry-run
  *
- * Safety rules (idempotent):
- *   - Match existing sites by fileNumber or buildingId (normalized).
- *   - NEVER overwrite a non-null name, address, or customerOrgId.
- *   - Folders that don't match the #NNNN pattern are skipped with a warning.
- *   - Customer org folders that don't match any DB org are listed for review.
+ * Matching confidence:
+ *   HIGH   — normBldg(fileNumber) matches site.fileNumber or site.buildingId
+ *   MEDIUM — normAddress prefix match OR normName match within same org
+ *   LOW    — token overlap ≥ 0.5 (reported for manual review only, never acted on)
  *
- * Authentication:
- *   Provide EITHER --admin-user-id N (looks up stored Google token in DB)
- *   OR --access-token TOKEN (paste directly from browser DevTools).
- *
- * Org-name overrides (when Drive folder names don't match DB org names):
- *   --org-map "Drive Folder Name=DB Org Name"   (repeatable)
- *   --org-map-file ./org-map.json               (JSON: {"Drive Name": "DB Org Name"})
+ * Safe update rules:
+ *   - Default: fill blank/null Site fields only
+ *   - --update-existing: same (no overwrite of populated conflicting fields)
+ *   - Mismatches between Drive and populated Site fields are always reported
  *
  * Usage:
- *   # Dry-run report (no DB writes)
- *   pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts \
- *     --company 1 --admin-user-id 1 --dry-run
+ *   # Dry-run
+ *   pnpm seed:sites-from-customer-records:dry -- \
+ *     --company 1 --reconcile-existing --output-mismatches
  *
- *   # Live run with stored token
- *   pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts \
- *     --company 1 --admin-user-id 1
+ *   # Live seed + reconcile
+ *   pnpm seed:sites-from-customer-records -- \
+ *     --company 1 --update-existing --reconcile-existing --output-mismatches
  *
- *   # Live run with explicit token
- *   pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts \
- *     --company 1 --access-token "ya29.xxx..."
+ * Authentication (Google Drive):
+ *   --admin-user-id N   Use stored Google token for DB user N
+ *   --access-token T    Use an OAuth token obtained manually
  *
- *   # Override a folder name that doesn't match any DB org
- *   pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts \
- *     --company 1 --admin-user-id 1 \
- *     --org-map "Acme Property Mgmt=Acme Properties Inc." \
- *     --org-map "Old Name Ltd=New Name Ltd"
- *
- *   # Same via JSON file
- *   pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts \
- *     --company 1 --admin-user-id 1 --org-map-file ./org-map.json
+ * Do NOT pass --default-org. customerOrgId must always be derived from the
+ * Drive org folder name matched to a real customerOrgs row in the DB.
  */
 
-import { readFileSync } from "fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { drizzle } from "drizzle-orm/mysql2";
-import { eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import * as schema from "../drizzle/schema.js";
 import { config } from "dotenv";
+import { normName, normBldg, normAddress, parseAddressComponents, tokenOverlap } from "../lib/import/normalize.js";
 
 config();
 
-// ─── Drive helpers ─────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Confidence = "high" | "medium" | "low";
+
+interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+}
+
+interface DriveCustomerRecord {
+  orgFolderName: string;
+  orgFolderId: string;
+  siteFolderName: string;
+  siteFolderId: string;
+  fileNumber: string;
+  siteName: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+}
+
+type DbSite = typeof schema.sites.$inferSelect;
+type DbOrg = typeof schema.customerOrgs.$inferSelect;
+
+interface SiteMatch {
+  site: DbSite;
+  confidence: Confidence;
+  matchedBy: string;
+}
+
+interface MismatchRow {
+  customerRecordId: string;
+  siteId?: number;
+  customerOrgId?: number;
+  matchConfidence: Confidence | "none";
+  fieldName: string;
+  siteValue: string | null;
+  customerRecordValue: string | null;
+  recommendedAction: string;
+  reason: string;
+}
+
+type ActionType =
+  | "create"
+  | "update"
+  | "skip-exists"
+  | "skip-no-org"
+  | "skip-no-name"
+  | "skip-low-confidence"
+  | "mismatch-only"
+  | "dry-run-create"
+  | "dry-run-update";
+
+interface ProcessResult {
+  record: DriveCustomerRecord;
+  orgId?: number;
+  orgName?: string;
+  orgMatched: boolean;
+  matchedSiteId?: number;
+  confidence: Confidence | "none";
+  action: ActionType;
+  fieldsSet?: string[];
+  mismatches: MismatchRow[];
+}
+
+interface CliArgs {
+  companyId: number;
+  dryRun: boolean;
+  updateExisting: boolean;
+  reconcileExisting: boolean;
+  limit?: number;
+  customerOrgId?: number;
+  outputUnmatched: boolean;
+  outputMismatches: boolean;
+  adminUserId?: number;
+  accessToken?: string;
+  orgMap: Record<string, string>;
+}
+
+// ─── CLI ──────────────────────────────────────────────────────────────────────
+
+function parseArgs(): CliArgs {
+  const argv = process.argv.slice(2);
+  const args: CliArgs = {
+    companyId: 1,
+    dryRun: false,
+    updateExisting: false,
+    reconcileExisting: false,
+    outputUnmatched: false,
+    outputMismatches: false,
+    orgMap: {},
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case "--company":         args.companyId = parseInt(argv[++i], 10); break;
+      case "--dry-run":         args.dryRun = true; break;
+      case "--update-existing": args.updateExisting = true; break;
+      case "--reconcile-existing": args.reconcileExisting = true; break;
+      case "--limit":           args.limit = parseInt(argv[++i], 10); break;
+      case "--customer-org":    args.customerOrgId = parseInt(argv[++i], 10); break;
+      case "--output-unmatched": args.outputUnmatched = true; break;
+      case "--output-mismatches": args.outputMismatches = true; break;
+      case "--admin-user-id":   args.adminUserId = parseInt(argv[++i], 10); break;
+      case "--access-token":    args.accessToken = argv[++i]; break;
+      case "--org-map": {
+        const raw = argv[++i];
+        const eqIdx = raw.indexOf("=");
+        if (eqIdx < 1) {
+          console.error(`--org-map must be "Drive Folder Name=DB Org Name", got: ${raw}`);
+          process.exit(1);
+        }
+        args.orgMap[normName(raw.slice(0, eqIdx))] = raw.slice(eqIdx + 1).trim();
+        break;
+      }
+      case "--org-map-file": {
+        const filePath = argv[++i];
+        try {
+          const raw = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, string>;
+          for (const [k, v] of Object.entries(raw)) args.orgMap[normName(k)] = v;
+        } catch (e) {
+          console.error(`Failed to read --org-map-file "${filePath}": ${e}`);
+          process.exit(1);
+        }
+        break;
+      }
+      case "--default-org":
+        console.error("ERROR: --default-org is not supported. customerOrgId must be derived from the");
+        console.error("       Drive folder name matched to a real customerOrgs row. See the audit doc.");
+        process.exit(1);
+      default:
+        if (argv[i].startsWith("--")) {
+          console.error(`Unknown option: ${argv[i]}`);
+          process.exit(1);
+        }
+    }
+  }
+
+  return args;
+}
+
+// ─── Drive helpers ────────────────────────────────────────────────────────────
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
+const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 function sharedDriveParams(): Record<string, string> {
   if (process.env.GOOGLE_DRIVE_USE_SHARED_DRIVE !== "true") return {};
@@ -79,16 +212,7 @@ function sharedDriveParams(): Record<string, string> {
   return extra;
 }
 
-interface DriveFile {
-  id: string;
-  name: string;
-  mimeType: string;
-}
-
-async function driveList(
-  accessToken: string,
-  params: Record<string, string>
-): Promise<DriveFile[]> {
+async function driveList(token: string, params: Record<string, string>): Promise<DriveFile[]> {
   const base = new URL(`${DRIVE_API}/files`);
   for (const [k, v] of Object.entries(params)) base.searchParams.set(k, v);
 
@@ -100,18 +224,15 @@ async function driveList(
     if (pageToken) url.searchParams.set("pageToken", pageToken);
 
     const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${token}` },
     });
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`Drive API error (${res.status}): ${body}`);
+      throw new Error(`Drive API error (${res.status}): ${body.slice(0, 300)}`);
     }
 
-    const data = (await res.json()) as {
-      files: DriveFile[];
-      nextPageToken?: string;
-    };
+    const data = (await res.json()) as { files: DriveFile[]; nextPageToken?: string };
     all.push(...(data.files ?? []));
     pageToken = data.nextPageToken ?? null;
   } while (pageToken);
@@ -119,12 +240,9 @@ async function driveList(
   return all;
 }
 
-async function listFolders(
-  parentId: string,
-  accessToken: string
-): Promise<DriveFile[]> {
-  return driveList(accessToken, {
-    q: `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed=false`,
+async function listFolders(parentId: string, token: string): Promise<DriveFile[]> {
+  return driveList(token, {
+    q: `'${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed=false`,
     fields: "nextPageToken,files(id,name,mimeType)",
     orderBy: "name",
     pageSize: "500",
@@ -132,30 +250,23 @@ async function listFolders(
   });
 }
 
-// ─── Token helpers ─────────────────────────────────────────────────────────────
+// ─── Token resolution ─────────────────────────────────────────────────────────
 
-async function resolveAccessToken(
-  args: CliArgs,
-  db: ReturnType<typeof drizzle>
-): Promise<string> {
+async function resolveToken(args: CliArgs, db: ReturnType<typeof drizzle>): Promise<string> {
   if (args.accessToken) return args.accessToken;
 
   const userId = args.adminUserId!;
-  const rows = await db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.id, userId));
-
+  const rows = await db.select().from(schema.users).where(eq(schema.users.id, userId));
   if (!rows.length) throw new Error(`User ${userId} not found in DB`);
   const user = rows[0];
 
-  if (!user.googleAccessToken)
+  if (!user.googleAccessToken) {
     throw new Error(
-      `User ${userId} has no stored Google token. ` +
-        `Have them log in to the app first, or pass --access-token directly.`
+      `User ${userId} has no stored Google token. Have them log in to the app first, ` +
+      `or pass --access-token directly.`
     );
+  }
 
-  // Return current token if still valid (with 5-min buffer)
   if (user.googleTokenExpiry) {
     const bufferMs = 5 * 60 * 1000;
     if (new Date(user.googleTokenExpiry).getTime() - bufferMs > Date.now()) {
@@ -163,13 +274,13 @@ async function resolveAccessToken(
     }
   }
 
-  if (!user.googleRefreshToken)
+  if (!user.googleRefreshToken) {
     throw new Error(
       `Token for user ${userId} is expired and no refresh token is stored. ` +
-        `Have them re-authenticate in the app.`
+      `Have them re-authenticate in the app.`
     );
+  }
 
-  // Refresh
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -183,496 +294,792 @@ async function resolveAccessToken(
 
   if (!tokenRes.ok) {
     const body = await tokenRes.text().catch(() => "");
-    throw new Error(`Failed to refresh Google token: ${body}`);
+    throw new Error(`Failed to refresh Google token: ${body.slice(0, 300)}`);
   }
 
-  const tokenData = (await tokenRes.json()) as {
-    access_token: string;
-    expires_in: number;
-  };
-
+  const tokenData = (await tokenRes.json()) as { access_token: string; expires_in: number };
   const newExpiry = new Date(Date.now() + tokenData.expires_in * 1000);
+
   if (!args.dryRun) {
     await db
       .update(schema.users)
-      .set({
-        googleAccessToken: tokenData.access_token,
-        googleTokenExpiry: newExpiry,
-      })
+      .set({ googleAccessToken: tokenData.access_token, googleTokenExpiry: newExpiry })
       .where(eq(schema.users.id, userId));
   }
 
-  console.log(`  Refreshed Google token for user ${userId} (expires ${newExpiry.toISOString()})`);
+  console.log(`  Refreshed Google token for user ${userId}`);
   return tokenData.access_token;
 }
 
-// ─── Parsing ───────────────────────────────────────────────────────────────────
+// ─── Parsing ──────────────────────────────────────────────────────────────────
 
-/**
- * Parses a Drive folder name like "#0007 - 1407 E. Georgia Street"
- * → { fileNumber: "#0007", siteName: "1407 E. Georgia Street" }
- *
- * Also handles variants like "#0330-1 - Name" or "#007 — Name" (em dash).
- */
-function parseSiteFolder(
-  folderName: string
-): { fileNumber: string; siteName: string } | null {
-  const match = folderName.match(/^(#[\w-]+)\s*[-–—]+\s*(.+)$/);
-  if (!match) return null;
-  return { fileNumber: match[1].trim(), siteName: match[2].trim() };
+function parseSiteFolder(name: string): { fileNumber: string; siteName: string } | null {
+  // Handles: "#0007 - Name", "#0330-1 - Name", "#007 — Name" (em dash)
+  const m = name.match(/^(#[\w-]+)\s*[-–—]+\s*(.+)$/);
+  if (!m) return null;
+  return { fileNumber: m[1].trim(), siteName: m[2].trim() };
 }
 
-/** Normalize for fuzzy matching: lowercase, collapse non-alphanumeric to spaces */
-function normName(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+// ─── Site matching ────────────────────────────────────────────────────────────
 
-/** Normalize a buildingId/fileNumber: strip leading #, leading zeros, dashes */
-function normBldg(s: string): string {
-  const a = s.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return /^\d+$/.test(a) ? String(parseInt(a, 10)) : a;
-}
+function matchSite(
+  record: DriveCustomerRecord,
+  orgId: number | undefined,
+  allSites: DbSite[]
+): SiteMatch | null {
+  const normFN = normBldg(record.fileNumber);
+  const companySites = allSites; // already filtered to company
 
-interface AddressComponents {
-  streetAddress: string;
-  city?: string;
-  state?: string;
-  postalCode?: string;
-}
-
-const RE_CA_POSTAL = /\b([A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d)\b/;
-const RE_US_POSTAL = /\b(\d{5}(?:-\d{4})?)\b/;
-
-/**
- * Splits a siteName like "1407 E. Georgia St, Vancouver, BC V5L 2S4"
- * into structured address components.  Handles Canadian and US postal codes.
- * Falls back gracefully when components are absent.
- */
-function parseAddressComponents(siteName: string): AddressComponents {
-  const parts = siteName.split(",").map((p) => p.trim());
-  const streetAddress = parts[0];
-  if (parts.length === 1) return { streetAddress };
-
-  let tail = parts.slice(1).join(", ");
-
-  // Extract postal code
-  let postalCode: string | undefined;
-  let m = RE_CA_POSTAL.exec(tail);
-  if (m) {
-    let raw = m[1].toUpperCase().replace(/\s/g, "");
-    postalCode = raw.slice(0, 3) + " " + raw.slice(3);
-    tail = (tail.slice(0, m.index) + tail.slice(m.index + m[0].length)).trim();
-  } else {
-    m = RE_US_POSTAL.exec(tail);
-    if (m) {
-      postalCode = m[1];
-      tail = (tail.slice(0, m.index) + tail.slice(m.index + m[0].length)).trim();
+  // HIGH: fileNumber matches site.fileNumber within company
+  for (const s of companySites) {
+    if (s.fileNumber && normBldg(s.fileNumber) === normFN) {
+      return { site: s, confidence: "high", matchedBy: "fileNumber" };
     }
   }
 
-  // Clean residual punctuation
-  tail = tail.replace(/^[,\s]+|[,\s]+$/g, "").replace(/\s{2,}/g, " ");
-
-  if (!tail) return { streetAddress, postalCode };
-
-  // Find 2-letter state/province at the end of tail
-  const stateMatch = /(?:^|[\s,])([A-Z]{2})(?:\s*,?\s*)$/i.exec(tail);
-  if (stateMatch) {
-    const state = stateMatch[1].toUpperCase();
-    const city = tail.slice(0, stateMatch.index).replace(/[,\s]+$/, "").trim() || undefined;
-    return { streetAddress, city, state, postalCode };
+  // HIGH: fileNumber matches site.buildingId within company
+  for (const s of companySites) {
+    if (s.buildingId && normBldg(s.buildingId) === normFN) {
+      return { site: s, confidence: "high", matchedBy: "buildingId" };
+    }
   }
 
-  return { streetAddress, city: tail || undefined, postalCode };
-}
-
-// ─── CLI args ──────────────────────────────────────────────────────────────────
-
-interface CliArgs {
-  companyId: number;
-  dryRun: boolean;
-  adminUserId?: number;
-  accessToken?: string;
-  /** normalized Drive folder name → exact DB org name */
-  orgMap: Record<string, string>;
-}
-
-function parseArgs(): CliArgs {
-  const argv = process.argv.slice(2);
-  const a: CliArgs = { companyId: 1, dryRun: false, orgMap: {} };
-  for (let i = 0; i < argv.length; i++) {
-    switch (argv[i]) {
-      case "--company":
-        a.companyId = parseInt(argv[++i], 10);
-        break;
-      case "--dry-run":
-        a.dryRun = true;
-        break;
-      case "--admin-user-id":
-        a.adminUserId = parseInt(argv[++i], 10);
-        break;
-      case "--access-token":
-        a.accessToken = argv[++i];
-        break;
-      case "--org-map": {
-        const raw = argv[++i];
-        const eq = raw.indexOf("=");
-        if (eq < 1) {
-          console.error(`--org-map value must be "Drive Folder Name=DB Org Name", got: ${raw}`);
-          process.exit(1);
+  // MEDIUM: normalized address prefix match within company
+  if (record.address) {
+    const normAddr = normAddress(record.address);
+    if (normAddr.length >= 8) {
+      const prefix = normAddr.slice(0, 20);
+      for (const s of companySites) {
+        if (s.address && normAddress(s.address).startsWith(prefix)) {
+          return { site: s, confidence: "medium", matchedBy: "address" };
         }
-        a.orgMap[normName(raw.slice(0, eq))] = raw.slice(eq + 1).trim();
-        break;
-      }
-      case "--org-map-file": {
-        const filePath = argv[++i];
-        let raw: Record<string, string>;
-        try {
-          raw = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, string>;
-        } catch (e) {
-          console.error(`Failed to read --org-map-file "${filePath}": ${e}`);
-          process.exit(1);
-        }
-        for (const [k, v] of Object.entries(raw)) {
-          a.orgMap[normName(k)] = v;
-        }
-        break;
       }
     }
   }
-  return a;
+
+  // MEDIUM: normalized name match + same org
+  if (orgId !== undefined) {
+    const normSiteName = normName(record.siteName);
+    for (const s of companySites) {
+      if (s.customerOrgId === orgId && normName(s.name) === normSiteName) {
+        return { site: s, confidence: "medium", matchedBy: "name+org" };
+      }
+    }
+  }
+
+  // LOW: token overlap ≥ 0.5 (report only, never act on)
+  const normSiteName = normName(record.siteName);
+  let bestOverlap = 0;
+  let bestSite: DbSite | null = null;
+  for (const s of companySites) {
+    const score = tokenOverlap(normSiteName, normName(s.name));
+    if (score > bestOverlap) { bestOverlap = score; bestSite = s; }
+  }
+  if (bestOverlap >= 0.5 && bestSite) {
+    return { site: bestSite, confidence: "low", matchedBy: `token-overlap(${bestOverlap.toFixed(2)})` };
+  }
+
+  return null;
 }
 
-// ─── Main ──────────────────────────────────────────────────────────────────────
+// ─── Mismatch detection ───────────────────────────────────────────────────────
 
-interface SiteResult {
-  orgName: string;
-  folderName: string;
-  fileNumber: string;
-  siteName: string;
-  action: "created" | "updated" | "skipped-exists" | "dry-run-create" | "dry-run-update";
-  siteId?: number;
-  note?: string;
+function detectMismatches(
+  record: DriveCustomerRecord,
+  orgId: number | undefined,
+  site: DbSite,
+  confidence: Confidence
+): MismatchRow[] {
+  const rows: MismatchRow[] = [];
+
+  function check(fieldName: string, siteVal: string | null | undefined, crVal: string | null | undefined) {
+    const sv = siteVal?.trim() || null;
+    const cv = crVal?.trim() || null;
+    if (!sv || !cv) return; // one side blank — not a mismatch, just a gap
+    const normSv = normName(sv);
+    const normCv = normName(cv);
+    if (normSv === normCv) return; // match after normalization
+    rows.push({
+      customerRecordId: record.siteFolderId,
+      siteId: site.id,
+      customerOrgId: orgId,
+      matchConfidence: confidence,
+      fieldName,
+      siteValue: sv,
+      customerRecordValue: cv,
+      recommendedAction: "manual-review",
+      reason: `Site ${fieldName} differs from Customer Record value`,
+    });
+  }
+
+  // customerOrgId
+  if (orgId !== undefined && site.customerOrgId !== orgId) {
+    rows.push({
+      customerRecordId: record.siteFolderId,
+      siteId: site.id,
+      customerOrgId: orgId,
+      matchConfidence: confidence,
+      fieldName: "customerOrgId",
+      siteValue: String(site.customerOrgId),
+      customerRecordValue: String(orgId),
+      recommendedAction: "manual-review",
+      reason: "Site customerOrgId differs from Drive org folder match",
+    });
+  }
+
+  // fileNumber
+  if (record.fileNumber && site.fileNumber) {
+    if (normBldg(site.fileNumber) !== normBldg(record.fileNumber)) {
+      rows.push({
+        customerRecordId: record.siteFolderId,
+        siteId: site.id,
+        customerOrgId: orgId,
+        matchConfidence: confidence,
+        fieldName: "fileNumber",
+        siteValue: site.fileNumber,
+        customerRecordValue: record.fileNumber,
+        recommendedAction: "manual-review",
+        reason: "Site fileNumber differs from Drive folder file number",
+      });
+    }
+  }
+
+  // buildingId vs fileNumber
+  if (record.fileNumber && site.buildingId && site.fileNumber !== record.fileNumber) {
+    if (normBldg(site.buildingId) !== normBldg(record.fileNumber)) {
+      rows.push({
+        customerRecordId: record.siteFolderId,
+        siteId: site.id,
+        customerOrgId: orgId,
+        matchConfidence: confidence,
+        fieldName: "buildingId",
+        siteValue: site.buildingId,
+        customerRecordValue: record.fileNumber,
+        recommendedAction: "manual-review",
+        reason: "Site buildingId differs from Drive folder file number",
+      });
+    }
+  }
+
+  // name
+  check("name", site.name, record.siteName);
+
+  // address
+  if (record.address) check("address", site.address, record.address);
+
+  // city
+  if (record.city) check("city", site.city, record.city);
+
+  return rows;
 }
+
+// ─── Output helpers ───────────────────────────────────────────────────────────
+
+function pad(s: string, n: number): string {
+  return s.length >= n ? s : s + " ".repeat(n - s.length);
+}
+
+function ensureExportsDir() {
+  mkdirSync("data/exports", { recursive: true });
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   const args = parseArgs();
 
-  if (!args.adminUserId && !args.accessToken) {
-    console.error(
-      [
-        "Usage: pnpm exec tsx scripts/seedSitesFromCustomerRecords.ts",
-        "  --company <id>",
-        "  (--admin-user-id <id> | --access-token <token>)",
-        "  [--dry-run]",
-        "  [--org-map \"Drive Folder Name=DB Org Name\"]  (repeatable)",
-        "  [--org-map-file ./org-map.json]",
-        "",
-        "Authentication:",
-        "  --admin-user-id N   Looks up user N in the DB and uses their stored Google token.",
-        "  --access-token T    Use an OAuth token you obtained manually (paste from app).",
-        "",
-        "Org-name overrides:",
-        "  --org-map           Map a Drive folder name to a DB org when fuzzy matching fails.",
-        "  --org-map-file      JSON file: {\"Drive Name\": \"DB Org Name\", ...}",
-      ].join("\n")
-    );
+  // Validate DATABASE_URL
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    console.error("ERROR: DATABASE_URL is not set in .env");
+    process.exit(1);
+  }
+  if (!dbUrl.startsWith("mysql://") && !dbUrl.startsWith("mysql2://")) {
+    console.error("ERROR: DATABASE_URL must be a mysql:// or mysql2:// connection string");
     process.exit(1);
   }
 
   const rootId = process.env.GOOGLE_DRIVE_CUSTOMER_ROOT_ID;
   if (!rootId) {
-    console.error("GOOGLE_DRIVE_CUSTOMER_ROOT_ID is not set in .env");
+    console.error("ERROR: GOOGLE_DRIVE_CUSTOMER_ROOT_ID is not set in .env");
+    console.error("       Customer Records are stored in Google Drive. Set this variable to the");
+    console.error("       root Drive folder ID that contains the customer org folders.");
     process.exit(1);
   }
 
-  if (!process.env.DATABASE_URL) {
-    console.error("DATABASE_URL is not set in .env");
+  if (!args.adminUserId && !args.accessToken) {
+    console.error("ERROR: Google Drive authentication required.");
+    console.error("  --admin-user-id N   Use stored Google token for DB user N");
+    console.error("  --access-token T    Paste an OAuth token from the app's DevTools");
     process.exit(1);
   }
 
-  if (args.dryRun) console.log("\nDRY RUN — no DB writes\n");
+  console.log(`\n${"=".repeat(60)}`);
+  console.log(`  Customer Records → Site Seed + Reconcile`);
+  console.log(`${"=".repeat(60)}`);
+  console.log(`  company      : ${args.companyId}`);
+  console.log(`  dry-run      : ${args.dryRun}`);
+  console.log(`  update-existing : ${args.updateExisting}`);
+  console.log(`  reconcile-existing : ${args.reconcileExisting}`);
+  if (args.customerOrgId) console.log(`  customer-org : ${args.customerOrgId}`);
+  if (args.limit) console.log(`  limit        : ${args.limit}`);
+  console.log();
 
-  const db = drizzle(process.env.DATABASE_URL, { schema, mode: "default" });
+  if (args.dryRun) console.log("  DRY RUN — no DB writes\n");
 
-  // ── Resolve access token ────────────────────────────────────────────────────
+  // ── DB connection ───────────────────────────────────────────────────────────
+  const db = drizzle(dbUrl, { schema, mode: "default" });
+
+  // ── Google token ────────────────────────────────────────────────────────────
   console.log("Resolving Google access token...");
-  const accessToken = await resolveAccessToken(args, db);
+  const token = await resolveToken(args, db);
   console.log("  Token OK\n");
 
   // ── Load DB snapshot ────────────────────────────────────────────────────────
-  const [allOrgs, allSites] = await Promise.all([
-    db
-      .select()
-      .from(schema.customerOrgs)
-      .where(eq(schema.customerOrgs.companyId, args.companyId)),
-    db
-      .select()
-      .from(schema.sites)
-      .where(eq(schema.sites.companyId, args.companyId)),
+  console.log("Loading database snapshot...");
+  let [allOrgs, allSites] = await Promise.all([
+    db.select().from(schema.customerOrgs).where(eq(schema.customerOrgs.companyId, args.companyId)),
+    db.select().from(schema.sites).where(eq(schema.sites.companyId, args.companyId)),
   ]);
 
-  console.log(
-    `DB snapshot: ${allOrgs.length} customer orgs, ${allSites.length} sites for company ${args.companyId}`
-  );
-
-  // Build lookup maps
-  const orgByNormName = new Map<string, (typeof allOrgs)[0]>();
-  for (const org of allOrgs) orgByNormName.set(normName(org.name), org);
-
-  // Index existing sites by normalized fileNumber / buildingId
-  const siteByNormFile = new Map<string, (typeof allSites)[0]>();
-  for (const s of allSites) {
-    if (s.fileNumber) siteByNormFile.set(normBldg(s.fileNumber), s);
-    if (s.buildingId && !siteByNormFile.has(normBldg(s.buildingId))) {
-      siteByNormFile.set(normBldg(s.buildingId), s);
+  // If --customer-org is given, restrict orgs (but keep all sites for cross-org mismatch detection)
+  if (args.customerOrgId !== undefined) {
+    allOrgs = allOrgs.filter((o) => o.id === args.customerOrgId);
+    if (allOrgs.length === 0) {
+      console.error(`ERROR: No customerOrg with id=${args.customerOrgId} found for company ${args.companyId}`);
+      process.exit(1);
     }
   }
 
-  // ── Walk the Drive tree ─────────────────────────────────────────────────────
-  console.log(`\nListing root folders under ${rootId}...`);
-  const orgFolders = await listFolders(rootId, accessToken);
-  console.log(`  Found ${orgFolders.length} customer org folders\n`);
+  console.log(`  ${allOrgs.length} customer orgs, ${allSites.length} sites\n`);
 
-  const results: SiteResult[] = [];
-  const unmatchedOrgs: string[] = [];
-  const unparsedFolders: { orgName: string; folderName: string }[] = [];
+  // Build org lookup by normalized name
+  const orgByNorm = new Map<string, DbOrg>();
+  for (const org of allOrgs) orgByNorm.set(normName(org.name), org);
 
-  let created = 0;
-  let updated = 0;
-  let skipped = 0;
+  // ── Walk Drive tree ─────────────────────────────────────────────────────────
+  console.log(`Listing customer org folders under Drive root ${rootId}...`);
+  const orgFolders = await listFolders(rootId, token);
+  console.log(`  Found ${orgFolders.length} org folders\n`);
+
+  // Collect all Drive records
+  const allDriveRecords: DriveCustomerRecord[] = [];
+  const unmatchedOrgFolders: string[] = [];
+  const unparsedFolders: { orgFolder: string; siteName: string }[] = [];
+  const orgFolderToOrgId = new Map<string, number>();
 
   for (const orgFolder of orgFolders) {
-    const normOrgFolder = normName(orgFolder.name);
-
-    let matchedOrg: (typeof allOrgs)[0] | undefined;
-
-    // --org-map override takes highest priority
-    const orgMapTarget = args.orgMap[normOrgFolder];
-    if (orgMapTarget) {
-      matchedOrg = [...orgByNormName.values()].find(
-        (o) => normName(o.name) === normName(orgMapTarget) || o.name === orgMapTarget
-      );
-      if (!matchedOrg) {
-        const note = `${orgFolder.name} (mapped to "${orgMapTarget}" — not found in DB)`;
-        unmatchedOrgs.push(note);
-        console.log(`  [ORG MAP ERROR] "${orgFolder.name}" mapped to "${orgMapTarget}" but no matching DB org — skipping`);
-        continue;
+    // Restrict to specific org if --customer-org
+    if (args.customerOrgId !== undefined) {
+      const matchedOrgInScope = allOrgs[0]; // already filtered
+      if (!matchedOrgInScope) continue;
+      // Only walk this folder if it matches the restricted org
+      const normFolderName = normName(orgFolder.name);
+      const orgMapTarget = args.orgMap[normFolderName];
+      let matched: DbOrg | undefined;
+      if (orgMapTarget) {
+        matched = [...orgByNorm.values()].find((o) => normName(o.name) === normName(orgMapTarget));
+      } else {
+        matched = orgByNorm.get(normFolderName)
+          ?? [...orgByNorm.values()].find((o) => {
+            const on = normName(o.name);
+            return on.includes(normFolderName) || normFolderName.includes(on);
+          });
       }
-      console.log(`  [ORG MAP] "${orgFolder.name}" → org "${matchedOrg.name}" (id=${matchedOrg.id})`);
-    } else {
-      // Exact normalized match, then partial
-      matchedOrg = orgByNormName.get(normOrgFolder);
-      if (!matchedOrg) {
-        for (const [normDbName, org] of orgByNormName) {
-          if (normDbName.includes(normOrgFolder) || normOrgFolder.includes(normDbName)) {
-            matchedOrg = org;
-            break;
-          }
-        }
-      }
-      if (!matchedOrg) {
-        unmatchedOrgs.push(orgFolder.name);
-        console.log(`  [ORG UNMATCHED] "${orgFolder.name}" — skipping all sites under this folder`);
-        continue;
-      }
-      console.log(`  Processing: "${orgFolder.name}" → org "${matchedOrg.name}" (id=${matchedOrg.id})`);
+      if (!matched || matched.id !== args.customerOrgId) continue;
     }
 
-    const siteFolders = await listFolders(orgFolder.id, accessToken);
+    const normFolder = normName(orgFolder.name);
+    const orgMapTarget = args.orgMap[normFolder];
 
-    for (const siteFolder of siteFolders) {
-      const parsed = parseSiteFolder(siteFolder.name);
+    let matchedOrg: DbOrg | undefined;
+    if (orgMapTarget) {
+      matchedOrg = [...orgByNorm.values()].find((o) => normName(o.name) === normName(orgMapTarget));
+      if (!matchedOrg) {
+        unmatchedOrgFolders.push(`${orgFolder.name} (--org-map target "${orgMapTarget}" not found in DB)`);
+        continue;
+      }
+    } else {
+      matchedOrg = orgByNorm.get(normFolder);
+      if (!matchedOrg) {
+        // Partial match fallback
+        matchedOrg = [...orgByNorm.values()].find((o) => {
+          const on = normName(o.name);
+          return on.includes(normFolder) || normFolder.includes(on);
+        });
+      }
+    }
+
+    if (!matchedOrg) {
+      unmatchedOrgFolders.push(orgFolder.name);
+      continue;
+    }
+
+    orgFolderToOrgId.set(orgFolder.id, matchedOrg.id);
+
+    const siteFolders = await listFolders(orgFolder.id, token);
+    for (const sf of siteFolders) {
+      const parsed = parseSiteFolder(sf.name);
       if (!parsed) {
-        unparsedFolders.push({ orgName: orgFolder.name, folderName: siteFolder.name });
+        unparsedFolders.push({ orgFolder: orgFolder.name, siteName: sf.name });
         continue;
       }
 
-      const { fileNumber, siteName } = parsed;
-      const normFile = normBldg(fileNumber);
-      const addrParts = parseAddressComponents(siteName);
+      const addrParts = parseAddressComponents(parsed.siteName);
+      allDriveRecords.push({
+        orgFolderName: orgFolder.name,
+        orgFolderId: orgFolder.id,
+        siteFolderName: sf.name,
+        siteFolderId: sf.id,
+        fileNumber: parsed.fileNumber,
+        siteName: parsed.siteName,
+        address: addrParts.streetAddress,
+        city: addrParts.city,
+        state: addrParts.state,
+        postalCode: addrParts.postalCode,
+      });
+    }
+  }
 
-      const existingSite = siteByNormFile.get(normFile);
+  // Apply --limit
+  const records = args.limit !== undefined ? allDriveRecords.slice(0, args.limit) : allDriveRecords;
+  console.log(`Drive records to process: ${records.length} of ${allDriveRecords.length} found\n`);
 
-      if (existingSite) {
-        // Site already exists — update only empty fields
-        const patch: Partial<schema.InsertSite> = {};
-        if (!existingSite.fileNumber) patch.fileNumber = fileNumber;
-        if (!existingSite.buildingId) patch.buildingId = fileNumber;
-        if (!existingSite.name) patch.name = addrParts.streetAddress;
-        if (!existingSite.address) patch.address = addrParts.streetAddress;
-        if (!existingSite.city && addrParts.city) patch.city = addrParts.city;
-        if (!existingSite.state && addrParts.state) patch.state = addrParts.state;
-        if (!existingSite.postalCode && addrParts.postalCode) patch.postalCode = addrParts.postalCode;
+  // ── Process each Drive record ───────────────────────────────────────────────
+  const results: ProcessResult[] = [];
+  const allMismatches: MismatchRow[] = [];
+  let created = 0, updated = 0, skipped = 0, skippedNoOrg = 0, skippedNoName = 0;
+  let highConf = 0, medConf = 0, lowConf = 0;
+  let dupFileConflicts = 0, dupBldgConflicts = 0;
 
-        if (Object.keys(patch).length === 0) {
-          results.push({
-            orgName: matchedOrg.name,
-            folderName: siteFolder.name,
-            fileNumber,
-            siteName,
-            action: "skipped-exists",
-            siteId: existingSite.id,
-          });
-          skipped++;
-          continue;
-        }
+  // Track in-memory new sites to avoid duplicate creates within this run
+  const seenNormFile = new Set<string>();
+  for (const s of allSites) {
+    if (s.fileNumber) seenNormFile.add(normBldg(s.fileNumber));
+    if (s.buildingId) seenNormFile.add(normBldg(s.buildingId));
+  }
 
+  for (const record of records) {
+    const orgId = orgFolderToOrgId.get(record.orgFolderId);
+    const orgName = orgId !== undefined
+      ? allOrgs.find((o) => o.id === orgId)?.name
+      : undefined;
+
+    const match = matchSite(record, orgId, allSites);
+    const confidence: Confidence | "none" = match?.confidence ?? "none";
+
+    if (match) {
+      if (match.confidence === "high") highConf++;
+      else if (match.confidence === "medium") medConf++;
+      else lowConf++;
+    }
+
+    // LOW confidence: report only, never create or update
+    if (match?.confidence === "low") {
+      const result: ProcessResult = {
+        record,
+        orgId,
+        orgName,
+        orgMatched: orgId !== undefined,
+        matchedSiteId: match.site.id,
+        confidence: "low",
+        action: "skip-low-confidence",
+        mismatches: [],
+      };
+      results.push(result);
+      skipped++;
+      continue;
+    }
+
+    // HIGH/MEDIUM match: detect mismatches, plan update
+    if (match && (match.confidence === "high" || match.confidence === "medium")) {
+      const mismatches = detectMismatches(record, orgId, match.site, match.confidence);
+      allMismatches.push(...mismatches);
+
+      // Plan fields to update (blank/null only)
+      const patch: Partial<schema.InsertSite> = {};
+      if (!match.site.fileNumber && record.fileNumber) patch.fileNumber = record.fileNumber;
+      if (!match.site.buildingId && record.fileNumber) patch.buildingId = record.fileNumber;
+      if (!match.site.address && record.address) patch.address = record.address;
+      if (!match.site.city && record.city) patch.city = record.city;
+      if (!match.site.state && record.state) patch.state = record.state;
+      if (!match.site.postalCode && record.postalCode) patch.postalCode = record.postalCode;
+
+      const hasUpdate = Object.keys(patch).length > 0;
+      const shouldUpdate = hasUpdate && args.updateExisting;
+
+      let action: ActionType;
+      if (!hasUpdate) {
+        action = "skip-exists";
+        skipped++;
+      } else if (shouldUpdate) {
+        action = args.dryRun ? "dry-run-update" : "update";
         if (!args.dryRun) {
-          await db
-            .update(schema.sites)
-            .set(patch)
-            .where(eq(schema.sites.id, existingSite.id));
+          await db.update(schema.sites).set(patch).where(eq(schema.sites.id, match.site.id));
+          // Refresh in-memory site
+          const idx = allSites.findIndex((s) => s.id === match.site.id);
+          if (idx !== -1) allSites[idx] = { ...allSites[idx], ...patch };
         }
-
-        results.push({
-          orgName: matchedOrg.name,
-          folderName: siteFolder.name,
-          fileNumber,
-          siteName,
-          action: args.dryRun ? "dry-run-update" : "updated",
-          siteId: existingSite.id,
-          note: `set: ${Object.keys(patch).join(", ")}`,
-        });
         updated++;
       } else {
-        // Create new site
-        if (!args.dryRun) {
-          const [inserted] = await db.insert(schema.sites).values({
-            companyId: args.companyId,
-            customerOrgId: matchedOrg.id,
-            name: addrParts.streetAddress,
-            address: addrParts.streetAddress,
-            city: addrParts.city ?? null,
-            state: addrParts.state ?? null,
-            postalCode: addrParts.postalCode ?? null,
-            fileNumber,
-            buildingId: fileNumber,
-          });
-
-          const newSiteId = (inserted as { insertId: number }).insertId;
-          // Add to local index so later duplicate folders don't re-create
-          const newSite = {
-            id: newSiteId,
-            fileNumber,
-            buildingId: fileNumber,
-            name: siteName,
-            companyId: args.companyId,
-            customerOrgId: matchedOrg.id,
-          } as (typeof allSites)[0];
-          siteByNormFile.set(normFile, newSite);
-
-          results.push({
-            orgName: matchedOrg.name,
-            folderName: siteFolder.name,
-            fileNumber,
-            siteName,
-            action: "created",
-            siteId: newSiteId,
-          });
-        } else {
-          results.push({
-            orgName: matchedOrg.name,
-            folderName: siteFolder.name,
-            fileNumber,
-            siteName,
-            action: "dry-run-create",
-          });
-        }
-        created++;
+        action = mismatches.length > 0 ? "mismatch-only" : "skip-exists";
+        skipped++;
       }
+
+      results.push({
+        record,
+        orgId,
+        orgName,
+        orgMatched: orgId !== undefined,
+        matchedSiteId: match.site.id,
+        confidence: match.confidence,
+        action,
+        fieldsSet: Object.keys(patch),
+        mismatches,
+      });
+      continue;
     }
+
+    // No match — plan to create
+    if (orgId === undefined) {
+      results.push({
+        record,
+        orgMatched: false,
+        confidence: "none",
+        action: "skip-no-org",
+        mismatches: [],
+      });
+      skippedNoOrg++;
+      continue;
+    }
+
+    const siteName = record.address || record.siteName;
+    if (!siteName) {
+      results.push({
+        record,
+        orgId,
+        orgName,
+        orgMatched: true,
+        confidence: "none",
+        action: "skip-no-name",
+        mismatches: [],
+      });
+      skippedNoName++;
+      continue;
+    }
+
+    // Duplicate guard
+    const normFN = normBldg(record.fileNumber);
+    if (seenNormFile.has(normFN)) {
+      dupFileConflicts++;
+      results.push({
+        record,
+        orgId,
+        orgName,
+        orgMatched: true,
+        confidence: "none",
+        action: "skip-exists",
+        mismatches: [],
+      });
+      skipped++;
+      continue;
+    }
+
+    // Create
+    const action: ActionType = args.dryRun ? "dry-run-create" : "create";
+    let newSiteId: number | undefined;
+
+    if (!args.dryRun) {
+      const [res] = await db.insert(schema.sites).values({
+        companyId: args.companyId,
+        customerOrgId: orgId,
+        name: siteName,
+        address: record.address ?? null,
+        city: record.city ?? null,
+        state: record.state ?? null,
+        postalCode: record.postalCode ?? null,
+        fileNumber: record.fileNumber,
+        buildingId: record.fileNumber,
+      });
+      newSiteId = (res as { insertId: number }).insertId;
+
+      // Add to in-memory structures so later records don't re-create
+      const newSite: DbSite = {
+        id: newSiteId,
+        companyId: args.companyId,
+        customerOrgId: orgId,
+        name: siteName,
+        address: record.address ?? null,
+        city: record.city ?? null,
+        state: record.state ?? null,
+        postalCode: record.postalCode ?? null,
+        fileNumber: record.fileNumber,
+        buildingId: record.fileNumber,
+        contactName: null,
+        contactPhone: null,
+        notes: null,
+        summary: null,
+        keyLocation: null,
+        keyNumber: null,
+        keySignOutDate: null,
+        keySignedOutBy: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      allSites.push(newSite);
+    }
+
+    seenNormFile.add(normFN);
+    created++;
+    results.push({
+      record,
+      orgId,
+      orgName,
+      orgMatched: true,
+      matchedSiteId: newSiteId,
+      confidence: "none",
+      action,
+      fieldsSet: ["name", "address", "city", "state", "postalCode", "fileNumber", "buildingId"],
+      mismatches: [],
+    });
   }
 
-  // ── Report ─────────────────────────────────────────────────────────────────
-  console.log("\n── Summary ──────────────────────────────────────────────────────");
-  console.log(`  Customer org folders in Drive : ${orgFolders.length}`);
-  console.log(`  Matched to DB orgs            : ${orgFolders.length - unmatchedOrgs.length}`);
-  console.log(`  Unmatched org folders         : ${unmatchedOrgs.length}`);
-  console.log(`  Site folders processed        : ${results.length + unparsedFolders.length}`);
-  console.log(`  Folders with no #NNNN pattern : ${unparsedFolders.length}`);
-  if (args.dryRun) {
-    console.log(`  Would create                  : ${created}`);
-    console.log(`  Would update                  : ${updated}`);
-  } else {
-    console.log(`  Created                       : ${created}`);
-    console.log(`  Updated (empty fields only)   : ${updated}`);
-  }
-  console.log(`  Skipped (already complete)    : ${skipped}`);
+  // ── Reconcile existing sites ────────────────────────────────────────────────
+  const orphanedSites: DbSite[] = [];
+  const reconciledSiteMismatches: MismatchRow[] = [];
 
-  if (unmatchedOrgs.length > 0) {
-    console.log(`\n── Unmatched customer org folders (${unmatchedOrgs.length}) ──────────────────`);
-    console.log(
-      "   These Drive folders had no matching customerOrg in the DB.\n" +
-        "   Create the missing orgs first, then re-run this script."
-    );
-    unmatchedOrgs.forEach((n) => console.log(`  "${n}"`));
+  if (args.reconcileExisting) {
+    console.log("\nReconciling existing sites against Customer Records...");
+
+    // Build a set of Drive site folder IDs that were matched to a DB site
+    const matchedSiteIds = new Set(results.filter((r) => r.matchedSiteId).map((r) => r.matchedSiteId!));
+
+    // For each existing site, find matching Drive record
+    const sitesInScope = args.customerOrgId !== undefined
+      ? allSites.filter((s) => s.customerOrgId === args.customerOrgId)
+      : allSites;
+
+    for (const site of sitesInScope) {
+      if (matchedSiteIds.has(site.id)) continue; // already matched above
+
+      // Try to find a Drive record for this site
+      let driveMatch: DriveCustomerRecord | null = null;
+      let driveConf: Confidence | null = null;
+
+      // HIGH: fileNumber match
+      if (site.fileNumber) {
+        const fn = normBldg(site.fileNumber);
+        driveMatch = allDriveRecords.find((r) => normBldg(r.fileNumber) === fn) ?? null;
+        if (driveMatch) driveConf = "high";
+      }
+
+      // HIGH: buildingId match
+      if (!driveMatch && site.buildingId) {
+        const bi = normBldg(site.buildingId);
+        driveMatch = allDriveRecords.find((r) => normBldg(r.fileNumber) === bi) ?? null;
+        if (driveMatch) driveConf = "high";
+      }
+
+      // MEDIUM: address prefix
+      if (!driveMatch && site.address) {
+        const normSiteAddr = normAddress(site.address);
+        if (normSiteAddr.length >= 8) {
+          const prefix = normSiteAddr.slice(0, 20);
+          driveMatch = allDriveRecords.find((r) => r.address && normAddress(r.address).startsWith(prefix)) ?? null;
+          if (driveMatch) driveConf = "medium";
+        }
+      }
+
+      // MEDIUM: name + org
+      if (!driveMatch) {
+        const normSiteName = normName(site.name);
+        const orgId = site.customerOrgId;
+        driveMatch = allDriveRecords.find((r) => {
+          const rOrgId = orgFolderToOrgId.get(r.orgFolderId);
+          return rOrgId === orgId && normName(r.siteName) === normSiteName;
+        }) ?? null;
+        if (driveMatch) driveConf = "medium";
+      }
+
+      if (!driveMatch) {
+        orphanedSites.push(site);
+        continue;
+      }
+
+      // Found a Drive match — detect mismatches
+      const orgId = orgFolderToOrgId.get(driveMatch.orgFolderId);
+      const mismatches = detectMismatches(driveMatch, orgId, site, driveConf!);
+      reconciledSiteMismatches.push(...mismatches);
+      allMismatches.push(...mismatches);
+    }
+
+    console.log(`  Orphaned sites (no Drive match): ${orphanedSites.length}`);
+    console.log(`  Reconciled mismatches found: ${reconciledSiteMismatches.length}`);
+  }
+
+  // ── Print summary ───────────────────────────────────────────────────────────
+  const line = "─".repeat(60);
+  console.log(`\n${line}`);
+  console.log("  SUMMARY");
+  console.log(line);
+
+  const total = allDriveRecords.length;
+  const orgFoldersTotal = orgFolders.length;
+  console.log(`  ${pad("Drive org folders found:", 40)} ${orgFoldersTotal}`);
+  console.log(`  ${pad("Org folders matched to DB customerOrg:", 40)} ${orgFoldersTotal - unmatchedOrgFolders.length}`);
+  console.log(`  ${pad("Org folders unmatched:", 40)} ${unmatchedOrgFolders.length}`);
+  console.log(`  ${pad("Total Customer Records (site folders):", 40)} ${total}`);
+  console.log(`  ${pad("Folders with no #NNNN pattern:", 40)} ${unparsedFolders.length}`);
+  console.log(`  ${pad("Processed (after limit):", 40)} ${records.length}`);
+  console.log();
+  console.log(`  ${pad("HIGH confidence matches:", 40)} ${highConf}`);
+  console.log(`  ${pad("MEDIUM confidence matches:", 40)} ${medConf}`);
+  console.log(`  ${pad("LOW confidence (review only):", 40)} ${lowConf}`);
+  console.log();
+
+  const createLabel = args.dryRun ? "Would create (dry-run):" : "Sites created:";
+  const updateLabel = args.dryRun ? "Would update (dry-run):" : "Sites updated (blank fields):";
+  console.log(`  ${pad(createLabel, 40)} ${created}`);
+  console.log(`  ${pad(updateLabel, 40)} ${updated}`);
+  console.log(`  ${pad("Skipped (already complete):", 40)} ${skipped}`);
+  console.log(`  ${pad("Skipped (no org matched):", 40)} ${skippedNoOrg}`);
+  console.log(`  ${pad("Skipped (no name/address):", 40)} ${skippedNoName}`);
+  console.log(`  ${pad("Duplicate fileNumber conflicts:", 40)} ${dupFileConflicts}`);
+  console.log(`  ${pad("Mismatches detected:", 40)} ${allMismatches.length}`);
+
+  if (args.reconcileExisting) {
+    console.log();
+    console.log(`  ${pad("Existing sites reconciled:", 40)} ${args.customerOrgId !== undefined
+      ? allSites.filter((s) => s.customerOrgId === args.customerOrgId).length
+      : allSites.length}`);
+    console.log(`  ${pad("Orphaned sites (no Drive record):", 40)} ${orphanedSites.length}`);
+    console.log(`  ${pad("Reconcile mismatches:", 40)} ${reconciledSiteMismatches.length}`);
+  }
+
+  // ── Detail sections ─────────────────────────────────────────────────────────
+
+  if (unmatchedOrgFolders.length > 0) {
+    console.log(`\n${line}`);
+    console.log(`  UNMATCHED ORG FOLDERS (${unmatchedOrgFolders.length})`);
+    console.log(`  Create these in customerOrgs first, then re-run.`);
+    console.log(line);
+    unmatchedOrgFolders.forEach((n) => console.log(`  • ${n}`));
   }
 
   if (unparsedFolders.length > 0) {
-    console.log(`\n── Folders without #NNNN pattern (${unparsedFolders.length}) ──────────────────`);
-    console.log(
-      "   These site-level folders were skipped (no file number to parse).\n" +
-        "   Review manually."
-    );
-    unparsedFolders.forEach((f) =>
-      console.log(`  org="${f.orgName}"  folder="${f.folderName}"`)
-    );
+    console.log(`\n${line}`);
+    console.log(`  FOLDERS WITHOUT #NNNN PATTERN (${unparsedFolders.length})`);
+    console.log(line);
+    unparsedFolders.forEach((f) => console.log(`  org="${f.orgFolder}"  folder="${f.siteName}"`));
   }
 
-  const createdList = results.filter((r) =>
-    r.action === "created" || r.action === "dry-run-create"
-  );
-  if (createdList.length > 0) {
-    const label = args.dryRun ? "Would create" : "Created";
-    console.log(`\n── ${label} (${createdList.length}) ──────────────────────────────────────────`);
-    createdList.forEach((r) =>
-      console.log(
-        `  ${r.fileNumber.padEnd(10)}  org="${r.orgName}"` +
-          (r.siteId ? `  siteId=${r.siteId}` : "") +
-          `  name="${r.siteName}"`
-      )
-    );
+  const creates = results.filter((r) => r.action === "create" || r.action === "dry-run-create");
+  if (creates.length > 0) {
+    const label = args.dryRun ? "WOULD CREATE" : "CREATED";
+    console.log(`\n${line}`);
+    console.log(`  ${label} (${creates.length})`);
+    console.log(line);
+    for (const r of creates) {
+      const orgLabel = r.orgName ? `org="${r.orgName}"` : "no-org";
+      const siteLabel = r.matchedSiteId ? ` siteId=${r.matchedSiteId}` : "";
+      console.log(`  ${pad(r.record.fileNumber, 12)} ${orgLabel}${siteLabel}  "${r.record.siteName}"`);
+    }
   }
 
-  const updatedList = results.filter((r) =>
-    r.action === "updated" || r.action === "dry-run-update"
-  );
-  if (updatedList.length > 0) {
-    const label = args.dryRun ? "Would update" : "Updated";
-    console.log(`\n── ${label} (${updatedList.length}) ──────────────────────────────────────────`);
-    updatedList.forEach((r) =>
-      console.log(
-        `  ${r.fileNumber.padEnd(10)}  siteId=${r.siteId}  (${r.note})`
-      )
-    );
+  const updates = results.filter((r) => r.action === "update" || r.action === "dry-run-update");
+  if (updates.length > 0) {
+    const label = args.dryRun ? "WOULD UPDATE (blank fields)" : "UPDATED (blank fields)";
+    console.log(`\n${line}`);
+    console.log(`  ${label} (${updates.length})`);
+    console.log(line);
+    for (const r of updates) {
+      const fields = r.fieldsSet?.join(", ") ?? "";
+      console.log(`  siteId=${r.matchedSiteId}  ${r.record.fileNumber}  set: ${fields}`);
+    }
   }
 
+  const lowConfs = results.filter((r) => r.action === "skip-low-confidence");
+  if (lowConfs.length > 0) {
+    console.log(`\n${line}`);
+    console.log(`  LOW CONFIDENCE — MANUAL REVIEW REQUIRED (${lowConfs.length})`);
+    console.log(`  These Drive records are similar to existing sites but not certain.`);
+    console.log(`  No action was taken. Review and use --org-map if needed.`);
+    console.log(line);
+    for (const r of lowConfs) {
+      console.log(`  ${pad(r.record.fileNumber, 12)} "${r.record.siteName}"  → siteId=${r.matchedSiteId}`);
+    }
+  }
+
+  if (allMismatches.length > 0) {
+    console.log(`\n${line}`);
+    console.log(`  MISMATCHES DETECTED (${allMismatches.length})`);
+    console.log(`  Populated Site fields differ from Customer Record values.`);
+    console.log(`  These were NOT overwritten. Review manually.`);
+    console.log(line);
+    for (const m of allMismatches) {
+      console.log(`  siteId=${m.siteId ?? "?"} [${m.matchConfidence}] field="${m.fieldName}"`);
+      console.log(`    site  : ${m.siteValue}`);
+      console.log(`    drive : ${m.customerRecordValue}`);
+    }
+  }
+
+  if (args.reconcileExisting && orphanedSites.length > 0) {
+    console.log(`\n${line}`);
+    console.log(`  ORPHANED SITES — No matching Customer Record (${orphanedSites.length})`);
+    console.log(`  These sites exist in DB but have no matching Drive folder.`);
+    console.log(line);
+    for (const s of orphanedSites) {
+      const fn = s.fileNumber ?? s.buildingId ?? "no-file#";
+      console.log(`  siteId=${s.id}  ${pad(fn, 12)} "${s.name}"`);
+    }
+  }
+
+  // ── Write output files ──────────────────────────────────────────────────────
+
+  if (args.outputUnmatched) {
+    ensureExportsDir();
+    const path = "data/exports/customer-records-site-seed-unmatched.json";
+    const unmatchedRecords = results
+      .filter((r) => r.action === "skip-no-org" || r.action === "skip-no-name")
+      .map((r) => ({
+        orgFolderName: r.record.orgFolderName,
+        siteFolderName: r.record.siteFolderName,
+        fileNumber: r.record.fileNumber,
+        siteName: r.record.siteName,
+        orgMatched: r.orgMatched,
+        skipReason: r.action,
+        customerOrgId: r.orgId ?? null,
+      }));
+    const unmatchedOrphans = orphanedSites.map((s) => ({
+      type: "orphaned-site",
+      siteId: s.id,
+      fileNumber: s.fileNumber ?? null,
+      buildingId: s.buildingId ?? null,
+      name: s.name,
+      customerOrgId: s.customerOrgId,
+    }));
+    writeFileSync(path, JSON.stringify({ unmatchedDriveRecords: unmatchedRecords, orphanedSites: unmatchedOrphans }, null, 2));
+    console.log(`\n  Written: ${path}`);
+  }
+
+  if (args.outputMismatches && allMismatches.length > 0) {
+    ensureExportsDir();
+    const path = "data/exports/customer-records-site-mismatches.json";
+    writeFileSync(path, JSON.stringify(allMismatches, null, 2));
+    console.log(`  Written: ${path}`);
+  }
+
+  // ── Final message ───────────────────────────────────────────────────────────
+  console.log();
   if (args.dryRun) {
-    console.log("\nDRY RUN complete — no changes were written to the DB.");
-    console.log(
-      "Re-run without --dry-run to apply.\n"
-    );
+    console.log("DRY RUN complete — no changes written to the database.");
+    console.log("Review the output above, then re-run without --dry-run to apply.");
   } else if (created + updated > 0) {
-    console.log(
-      "\nNext steps:"
-    );
-    console.log(
-      "  1. Run backfillSiteBuildingIds.ts to link workbook FILE#s to sites:"
-    );
-    console.log(
-      `     pnpm exec tsx scripts/backfillSiteBuildingIds.ts --file "..." --company ${args.companyId}`
-    );
-    console.log(
-      "  2. Then run seedMonthlyTracking.ts to create serviceSchedule rows."
-    );
+    console.log("Done. Review any mismatches above manually.");
+  } else {
+    console.log("Done. No changes applied.");
   }
-
-  console.log("");
+  console.log();
 }
 
 main()
