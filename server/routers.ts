@@ -64,6 +64,7 @@ import { inspectionTemplateRouter } from "./routers/inspectionTemplateRouter";
 import { feedbackRouter } from "./routers/feedbackRouter";
 import { workflowHealthRouter } from "./routers/workflowHealthRouter";
 import { contactRouter } from "./routers/contactRouter";
+import { mediaRouter } from "./routers/mediaRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -157,6 +158,7 @@ export const appRouter = router({
   inspectionTemplate: inspectionTemplateRouter,
   workflowHealth: workflowHealthRouter,
   contact: contactRouter,
+  media: mediaRouter,
 });
 
 export type AppRouter = typeof appRouter;

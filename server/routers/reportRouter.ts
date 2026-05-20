@@ -19,6 +19,7 @@ import {
   deficiencies,
   users,
   jobs as jobsTable,
+  attachments,
 } from "../../drizzle/schema";
 
 // ─── Template data helper ─────────────────────────────────────────────────────
@@ -352,6 +353,38 @@ const reportRouter = router({
             location = device.location || undefined;
           }
         }
+
+        // Pre-fetch customer-facing photo buffers for this deficiency
+        let photos: Array<{ buffer: Buffer; caption?: string | null; locationNote?: string | null }> = [];
+        try {
+          const drizzle = await getDb();
+          if (drizzle) {
+            const mediaRows = await drizzle
+              .select()
+              .from(attachments)
+              .where(
+                and(
+                  eq(attachments.entityType, "deficiency"),
+                  eq(attachments.entityId, d.id),
+                  eq(attachments.uploadStatus, "completed"),
+                  eq(attachments.isCustomerFacing, 1),
+                )
+              )
+              .orderBy(attachments.sortOrder, attachments.createdAt);
+
+            const buffers = await Promise.all(
+              mediaRows.map(async (row) => {
+                const buf = await fetchImageBuffer(row.fileUrl);
+                if (!buf) return null;
+                return { buffer: buf, caption: row.caption, locationNote: row.locationNote };
+              })
+            );
+            photos = buffers.filter((b): b is NonNullable<typeof b> => b !== null);
+          }
+        } catch {
+          // Non-fatal: photos are best-effort in PDF
+        }
+
         return {
           id: d.id,
           title: d.title,
@@ -363,6 +396,7 @@ const reportRouter = router({
           location,
           estimatedCost: d.estimatedCost, // Keep as string (MySQL decimal), PDF generator will convert when needed
           systemCategory: d.systemCategory,
+          photos,
         };
       })),
       inspectionResults: inspectionResults.map(r => ({

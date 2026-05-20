@@ -18,6 +18,9 @@ import {
   ArrowRight,
   ClipboardList,
   ExternalLink,
+  Camera,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -37,6 +40,8 @@ export default function QACheck({ jobId }: QACheckProps) {
   const [qaComments, setQaComments] = useState("");
 
   const { data: jobData, isLoading } = trpc.job.getWithDetails.useQuery({ id: jobId });
+  const { data: jobMedia = [] } = trpc.media.getMediaForJob.useQuery({ jobId }, { enabled: !!jobId });
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const aiQaCheck = trpc.ai.runQACheck.useMutation({
     onSuccess: () => toast.success("QA analysis complete"),
@@ -298,33 +303,93 @@ export default function QACheck({ jobId }: QACheckProps) {
           <Card>
             <CardHeader>
               <CardTitle>Deficiencies</CardTitle>
-              <CardDescription>Review all reported deficiencies</CardDescription>
+              <CardDescription>Review all reported deficiencies and attached photos</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {deficiencies.map((def: any) => (
-                <div key={def.id} className="p-4 border rounded-lg">
-                  <div className="flex items-start justify-between mb-2">
-                    <h4 className="font-medium">{def.title}</h4>
-                    <Badge variant={
-                      def.severity === "critical" ? "destructive" :
-                      def.severity === "major" ? "default" :
-                      "secondary"
-                    }>
-                      {def.severity}
-                    </Badge>
-                  </div>
-                  {def.description && (
-                    <p className="text-sm text-muted-foreground mb-2">{def.description}</p>
-                  )}
-                  {def.correctiveAction && (
-                    <div className="text-sm">
-                      <span className="font-medium">Corrective Action:</span> {def.correctiveAction}
+            <CardContent className="space-y-4">
+              {deficiencies.map((def: any) => {
+                const photos = jobMedia.filter((m) => m.entityId === def.id);
+                const hasNoPhoto = def.severity === "critical" && photos.length === 0;
+                return (
+                  <div key={def.id} className={`border rounded-lg overflow-hidden ${hasNoPhoto ? "border-amber-300" : ""}`}>
+                    <div className="p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <h4 className="font-medium">{def.title}</h4>
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          {hasNoPhoto && (
+                            <span className="flex items-center gap-1 text-xs text-amber-600">
+                              <Camera className="h-3 w-3" /> No photo
+                            </span>
+                          )}
+                          <Badge variant={
+                            def.severity === "critical" ? "destructive" :
+                            def.severity === "major" ? "default" :
+                            "secondary"
+                          }>
+                            {def.severity}
+                          </Badge>
+                        </div>
+                      </div>
+                      {def.description && (
+                        <p className="text-sm text-muted-foreground mb-2">{def.description}</p>
+                      )}
+                      {def.correctiveAction && (
+                        <div className="text-sm mb-2">
+                          <span className="font-medium">Corrective Action:</span> {def.correctiveAction}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {/* Photo gallery */}
+                    {photos.length > 0 && (
+                      <div className="border-t bg-muted/20 p-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                          <Camera className="h-3 w-3" /> {photos.length} photo{photos.length !== 1 ? "s" : ""}
+                        </p>
+                        <div className="flex gap-2 flex-wrap">
+                          {photos.map((photo) => (
+                            <div key={photo.id} className="relative group">
+                              <img
+                                src={photo.fileUrl}
+                                alt={photo.caption || photo.fileName}
+                                className="h-20 w-20 object-cover rounded cursor-pointer border"
+                                onClick={() => setLightboxUrl(photo.fileUrl)}
+                              />
+                              <div className="absolute top-0.5 right-0.5">
+                                {photo.isCustomerFacing ? (
+                                  <Eye className="h-3 w-3 text-green-500 drop-shadow" />
+                                ) : (
+                                  <EyeOff className="h-3 w-3 text-gray-400 drop-shadow" />
+                                )}
+                              </div>
+                              {photo.caption && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5 w-20 truncate">{photo.caption}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
+        )}
+
+        {/* Lightbox */}
+        {lightboxUrl && (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <img src={lightboxUrl} alt="Photo" className="max-w-full max-h-full object-contain rounded" />
+            <button
+              className="absolute top-4 right-4 bg-black/50 rounded-full p-2"
+              onClick={() => setLightboxUrl(null)}
+            >
+              <XCircle className="h-6 w-6 text-white" />
+            </button>
+          </div>
         )}
 
         {/* Template Inspection Summary */}

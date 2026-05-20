@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,12 +23,33 @@ import {
   Wand2,
   AlertTriangle,
   WifiOff,
+  Camera,
+  ImagePlus,
+  X,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { PageHelpButton } from "@/components/help/PageHelpButton";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useTrackInspectionProgress } from "@/hooks/useInspectionProgress";
+
+type PendingPhoto = {
+  file: File;
+  localUrl: string;
+  caption: string;
+  locationNote: string;
+};
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 type DraftResult = {
   suggestedTitle: string;
@@ -215,6 +236,74 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
     });
   };
 
+  // Photo capture
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  const utils = trpc.useUtils();
+
+  const { data: existingPhotos = [], refetch: refetchPhotos } = trpc.media.listDeficiencyMedia.useQuery(
+    { deficiencyId: deficiencyId! },
+    { enabled: isEditing }
+  );
+
+  const uploadMediaMut = trpc.media.uploadDeficiencyMedia.useMutation({
+    onSuccess: () => { refetchPhotos(); },
+    onError: (e) => toast.error(e.message || "Photo upload failed"),
+  });
+
+  const deleteMediaMut = trpc.media.deleteDeficiencyMedia.useMutation({
+    onSuccess: () => { refetchPhotos(); toast.success("Photo removed"); },
+    onError: (e) => toast.error(e.message || "Failed to remove photo"),
+  });
+
+  const updateMediaMut = trpc.media.updateDeficiencyMedia.useMutation({
+    onSuccess: () => refetchPhotos(),
+    onError: (e) => toast.error(e.message || "Failed to update photo"),
+  });
+
+  function handlePhotoFiles(files: FileList | null) {
+    if (!files) return;
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    Array.from(files).forEach((file) => {
+      if (!allowed.includes(file.type)) {
+        toast.error(`${file.name}: only JPEG, PNG, and WebP photos are supported`);
+        return;
+      }
+      if (file.size > 15 * 1024 * 1024) {
+        toast.error(`${file.name}: file exceeds 15 MB limit`);
+        return;
+      }
+      if (isEditing) {
+        // Edit mode: upload immediately
+        uploadPhotoNow(file);
+      } else {
+        // Create mode: queue for upload after save
+        const localUrl = URL.createObjectURL(file);
+        setPendingPhotos((prev) => [...prev, { file, localUrl, caption: "", locationNote: "" }]);
+      }
+    });
+  }
+
+  async function uploadPhotoNow(file: File, defId?: number) {
+    const targetId = defId ?? deficiencyId!;
+    try {
+      const base64 = await readFileAsBase64(file);
+      await uploadMediaMut.mutateAsync({
+        deficiencyId: targetId,
+        fileName: file.name,
+        mimeType: file.type as "image/jpeg" | "image/png" | "image/webp",
+        fileSize: file.size,
+        fileData: base64,
+      });
+    } catch {
+      // error handled by mutation onError
+    }
+  }
+
   // Save & Add Another mode
   const [addAnother, setAddAnother] = useState(false);
 
@@ -234,10 +323,33 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
 
   // Create deficiency
   const createDeficiency = trpc.deficiency.create.useMutation({
-    onSuccess: () => {
+    onSuccess: async (newDef) => {
+      // Upload any pending photos after the deficiency is created
+      if (pendingPhotos.length > 0 && isOnline) {
+        setIsUploadingPhotos(true);
+        for (const p of pendingPhotos) {
+          try {
+            const base64 = await readFileAsBase64(p.file);
+            await uploadMediaMut.mutateAsync({
+              deficiencyId: newDef.id,
+              fileName: p.file.name,
+              mimeType: p.file.type as "image/jpeg" | "image/png" | "image/webp",
+              fileSize: p.file.size,
+              fileData: base64,
+              caption: p.caption || undefined,
+              locationNote: p.locationNote || undefined,
+            });
+          } catch {
+            toast.error(`Photo "${p.file.name}" failed to upload`);
+          }
+        }
+        setIsUploadingPhotos(false);
+        setPendingPhotos([]);
+      }
       if (addAnother) {
         toast.success('Deficiency saved — add another');
         resetForm();
+        setPendingPhotos([]);
         setAddAnother(false);
       } else {
         toast.success('Deficiency created');
@@ -554,7 +666,184 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
             <p className="text-xs text-muted-foreground">Estimated cost to repair this deficiency (appears on reports).</p>
           </div>
         </div>
+
+        {/* Photos */}
+        <div className="space-y-3">
+          <Label>Photos</Label>
+
+          {!isOnline && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-300">
+              <WifiOff className="h-4 w-4 shrink-0" />
+              Photo upload requires a connection. Photos will not be saved while offline.
+            </div>
+          )}
+
+          {/* Existing photos — edit mode */}
+          {isEditing && existingPhotos.length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
+              {existingPhotos.map((photo) => (
+                <div key={photo.id} className="rounded-lg border overflow-hidden bg-muted/30">
+                  <div className="relative">
+                    <img
+                      src={photo.fileUrl}
+                      alt={photo.caption || photo.fileName}
+                      className="w-full h-32 object-cover cursor-pointer"
+                      onClick={() => setLightboxUrl(photo.fileUrl)}
+                    />
+                    <div className="absolute top-1 right-1 flex gap-1">
+                      {photo.isCustomerFacing ? (
+                        <span className="bg-green-600 text-white text-[10px] rounded px-1 py-0.5">Customer</span>
+                      ) : (
+                        <span className="bg-gray-600 text-white text-[10px] rounded px-1 py-0.5">Internal</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => deleteMediaMut.mutate({ id: photo.id })}
+                        className="bg-black/60 rounded p-0.5"
+                        disabled={deleteMediaMut.isPending}
+                      >
+                        <X className="h-3 w-3 text-white" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-1.5 space-y-1">
+                    <Input
+                      placeholder="Caption (optional)"
+                      className="h-7 text-xs"
+                      defaultValue={photo.caption ?? ""}
+                      onBlur={(e) => {
+                        if (e.target.value !== (photo.caption ?? "")) {
+                          updateMediaMut.mutate({ id: photo.id, caption: e.target.value || null });
+                        }
+                      }}
+                    />
+                    <Input
+                      placeholder="Location note (optional)"
+                      className="h-7 text-xs"
+                      defaultValue={photo.locationNote ?? ""}
+                      onBlur={(e) => {
+                        if (e.target.value !== (photo.locationNote ?? "")) {
+                          updateMediaMut.mutate({ id: photo.id, locationNote: e.target.value || null });
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pending photos — create mode */}
+          {pendingPhotos.length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
+              {pendingPhotos.map((p, i) => (
+                <div key={i} className="rounded-lg border overflow-hidden bg-muted/30">
+                  <div className="relative">
+                    <img src={p.localUrl} alt="Pending" className="w-full h-32 object-cover" />
+                    <div className="absolute top-1 right-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          URL.revokeObjectURL(p.localUrl);
+                          setPendingPhotos((prev) => prev.filter((_, j) => j !== i));
+                        }}
+                        className="bg-black/60 rounded p-0.5"
+                      >
+                        <X className="h-3 w-3 text-white" />
+                      </button>
+                    </div>
+                    <div className="absolute bottom-1 left-1">
+                      <span className="bg-amber-500 text-white text-[10px] rounded px-1 py-0.5">Queued</span>
+                    </div>
+                  </div>
+                  <div className="p-1.5 space-y-1">
+                    <Input
+                      placeholder="Caption (optional)"
+                      className="h-7 text-xs"
+                      value={p.caption}
+                      onChange={(e) => setPendingPhotos((prev) => prev.map((x, j) => j === i ? { ...x, caption: e.target.value } : x))}
+                    />
+                    <Input
+                      placeholder="Location note (optional)"
+                      className="h-7 text-xs"
+                      value={p.locationNote}
+                      onChange={(e) => setPendingPhotos((prev) => prev.map((x, j) => j === i ? { ...x, locationNote: e.target.value } : x))}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isEditing && pendingPhotos.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Photos will upload automatically when you save this deficiency.
+            </p>
+          )}
+
+          {/* Upload buttons */}
+          {isOnline && (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handlePhotoFiles(e.target.files)}
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                className="hidden"
+                onChange={(e) => handlePhotoFiles(e.target.files)}
+              />
+              <Button
+                variant="outline"
+                className="h-12 gap-2"
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={isUploadingPhotos || uploadMediaMut.isPending}
+              >
+                {(isUploadingPhotos || uploadMediaMut.isPending) ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Camera className="h-4 w-4" />
+                )}
+                Camera
+              </Button>
+              <Button
+                variant="outline"
+                className="h-12 gap-2"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingPhotos || uploadMediaMut.isPending}
+              >
+                <ImagePlus className="h-4 w-4" />
+                Gallery
+              </Button>
+            </div>
+          )}
+        </div>
       </main>
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <img src={lightboxUrl} alt="Photo" className="max-w-full max-h-full object-contain rounded" />
+          <button
+            className="absolute top-4 right-4 bg-black/50 rounded-full p-2"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <X className="h-5 w-5 text-white" />
+          </button>
+        </div>
+      )}
 
       {/* Draft from Notes dialog */}
       <Dialog open={draftOpen} onOpenChange={setDraftOpen}>

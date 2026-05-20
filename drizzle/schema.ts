@@ -420,6 +420,10 @@ export const attachments = mysqlTable("attachments", {
   caption: text("caption"),
   aiCaption: text("aiCaption"), // AI-generated caption
   tags: json("tags"), // Array of tag strings
+  // Photo-specific metadata
+  locationNote: varchar("locationNote", { length: 255 }),
+  isCustomerFacing: tinyint("isCustomerFacing").default(1).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
   // Upload tracking
   uploadStatus: mysqlEnum("uploadStatus", ["pending", "uploading", "completed", "failed"]).default("completed").notNull(),
   uploadProgress: int("uploadProgress").default(100),

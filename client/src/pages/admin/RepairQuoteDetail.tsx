@@ -16,7 +16,7 @@ import {
   Plus, Trash2, Pencil, Loader2, FileText, CheckCircle,
   Send, Lock, ChevronDown, ChevronUp, ExternalLink, Bot, Copy,
   Sparkles, ArrowRight, Package, ThumbsUp, ThumbsDown, Eye,
-  ClipboardCheck, AlertTriangle, XCircle, HelpCircle,
+  ClipboardCheck, AlertTriangle, XCircle, HelpCircle, Camera, EyeOff,
 } from "lucide-react";
 import {
   Dialog,
@@ -209,6 +209,7 @@ export default function RepairQuoteDetail() {
     { id: quoteId },
     { enabled: !!quoteId }
   );
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const { data: parts = [] } = trpc.repairQuote.listParts.useQuery({ includeInactive: false });
 
@@ -302,6 +303,17 @@ export default function RepairQuoteDetail() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Deficiency photos for linked job (populated after data loads)
+  const linkedJobId = (data as any)?.job?.id as number | undefined;
+  const { data: jobMedia = [] } = trpc.media.getMediaForJob.useQuery(
+    { jobId: linkedJobId ?? 0 },
+    { enabled: !!linkedJobId }
+  );
+  const markCustomerFacingMut = trpc.media.markCustomerFacing.useMutation({
+    onSuccess: () => utils.media.getMediaForJob.invalidate({ jobId: linkedJobId }),
+    onError: (e) => toast.error(e.message),
+  });
+
   if (isLoading) {
     return (
       <AdminLayout title="Repair Quote">
@@ -318,6 +330,7 @@ export default function RepairQuoteDetail() {
 
   const { quote, items, job, site, customer } = data;
   const q = quote as any;
+  const jobId = job?.id;
   const isFinalized = !!q.finalizedAt;
   const canEdit = !isFinalized && quote.status === "draft";
   const techRate = String(q.techLabourRate ?? "75");
@@ -964,6 +977,77 @@ export default function RepairQuoteDetail() {
             })}
           </CardContent>
         </Card>
+
+        {/* Deficiency photos */}
+        {jobMedia.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Camera className="h-4 w-4" /> Deficiency Photos
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">Photos from linked deficiencies. Toggle customer-facing to control what appears in customer-facing output.</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {items
+                .filter((item) => (item as any).deficiencyId)
+                .map((item) => {
+                  const photos = jobMedia.filter((m) => m.entityId === (item as any).deficiencyId);
+                  if (photos.length === 0) return null;
+                  return (
+                    <div key={item.id} className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">{item.description}</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {photos.map((photo) => (
+                          <div key={photo.id} className="relative group">
+                            <img
+                              src={photo.fileUrl}
+                              alt={photo.caption || photo.fileName}
+                              className="h-24 w-24 object-cover rounded border cursor-pointer"
+                              onClick={() => setLightboxUrl(photo.fileUrl)}
+                            />
+                            <div className="absolute top-0.5 right-0.5">
+                              <button
+                                type="button"
+                                title={photo.isCustomerFacing ? "Customer-facing — click to hide" : "Internal only — click to make customer-facing"}
+                                onClick={() => markCustomerFacingMut.mutate({ id: photo.id, isCustomerFacing: !photo.isCustomerFacing })}
+                                className="bg-black/60 rounded p-0.5"
+                              >
+                                {photo.isCustomerFacing ? (
+                                  <Eye className="h-3 w-3 text-green-400" />
+                                ) : (
+                                  <EyeOff className="h-3 w-3 text-gray-300" />
+                                )}
+                              </button>
+                            </div>
+                            {photo.caption && (
+                              <p className="text-[10px] text-muted-foreground mt-0.5 w-24 truncate">{photo.caption}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })
+                .filter(Boolean)}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Lightbox */}
+        {lightboxUrl && (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <img src={lightboxUrl} alt="Photo" className="max-w-full max-h-full object-contain rounded" />
+            <button
+              className="absolute top-4 right-4 bg-black/50 rounded-full p-2"
+              onClick={() => setLightboxUrl(null)}
+            >
+              <XCircle className="h-6 w-6 text-white" />
+            </button>
+          </div>
+        )}
 
         {/* Totals */}
         <Card>

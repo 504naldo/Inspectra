@@ -43,6 +43,7 @@ interface Deficiency {
   location?: string;
   estimatedCost?: string | null;
   systemCategory?: 'FIRE_ALARM' | 'SMOKE_ALARM' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHTING' | 'SPRINKLER' | null;
+  photos?: Array<{ buffer: Buffer; caption?: string | null; locationNote?: string | null }>;
 }
 
 interface InspectionResult {
@@ -1030,6 +1031,73 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
             doc.text(def.severity.toUpperCase(), ax, defY + 6, { width: appColW[2] - 8 });
             defY += rh;
           });
+        }
+
+        // ── Deficiency Photo Appendix ────────────────────────────────────
+        const defsWithPhotos = data.deficiencies.filter(d => d.photos && d.photos.length > 0);
+        if (defsWithPhotos.length > 0) {
+          doc.addPage();
+          let photoY = drawPageHeader(doc, data);
+
+          doc.rect(M, photoY, CW, 24).fill(NAVY);
+          doc.fillColor(WHITE).fontSize(11).font('Helvetica-Bold')
+             .text('DEFICIENCY PHOTOS', M + 10, photoY + 7);
+          photoY += 32;
+
+          const IMG_W = 230;
+          const IMG_H = 160;
+          const IMG_PAD = 8;
+          const COLS = 2;
+          const CELL_W = (CW - IMG_PAD) / COLS;
+
+          for (const def of defsWithPhotos) {
+            if (photoY > 660) { doc.addPage(); photoY = drawPageHeader(doc, data); }
+
+            // Section header per deficiency
+            const sevColor = def.severity === 'critical' ? DANGER : def.severity === 'major' ? '#ea580c' : '#ca8a04';
+            doc.rect(M, photoY, CW, 18).fill('#f8fafc');
+            doc.fillColor(sevColor).fontSize(8).font('Helvetica-Bold')
+               .text(`[${def.severity.toUpperCase()}]`, M + 6, photoY + 5, { lineBreak: false });
+            doc.fillColor(BLACK).fontSize(9).font('Helvetica-Bold')
+               .text(` Def #${def.id} — ${def.title}`, M + 56, photoY + 5, { width: CW - 62 });
+            photoY += 22;
+
+            let col = 0;
+            let rowY = photoY;
+            for (const photo of def.photos!) {
+              if (photoY + IMG_H + 30 > 720) { doc.addPage(); photoY = drawPageHeader(doc, data); rowY = photoY; col = 0; }
+
+              const x = M + col * CELL_W;
+              try {
+                doc.image(photo.buffer, x, rowY, { fit: [IMG_W, IMG_H], align: 'center' });
+              } catch {
+                // skip unreadable image buffer
+              }
+
+              // Caption below image
+              let capY = rowY + IMG_H + 4;
+              if (photo.locationNote) {
+                doc.fillColor(GRAY_TEXT).fontSize(7).font('Helvetica-Oblique')
+                   .text(photo.locationNote, x, capY, { width: CELL_W - IMG_PAD, lineBreak: false, ellipsis: true });
+                capY += 10;
+              }
+              if (photo.caption) {
+                doc.fillColor(BLACK).fontSize(7.5).font('Helvetica')
+                   .text(photo.caption, x, capY, { width: CELL_W - IMG_PAD, lineBreak: false, ellipsis: true });
+              }
+
+              col++;
+              if (col >= COLS) {
+                col = 0;
+                rowY += IMG_H + 30;
+                photoY = rowY;
+              }
+            }
+            if (col > 0) {
+              photoY = rowY + IMG_H + 30;
+            }
+            photoY += 10;
+          }
         }
 
       } else {
