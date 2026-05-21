@@ -23,7 +23,9 @@
     "seed:parts-catalog:dry": "tsx scripts/seedPartsCatalogFromWorkbook.ts --file \"./data/imports/parts_workbook.xlsm\" --company 1 --dry-run",
     "seed:parts-catalog": "tsx scripts/seedPartsCatalogFromWorkbook.ts --file \"./data/imports/parts_workbook.xlsm\" --company 1",
     "seed:sites-from-customer-records:dry": "tsx scripts/seedSitesFromCustomerRecords.ts --company 1 --dry-run",
-    "seed:sites-from-customer-records": "tsx scripts/seedSitesFromCustomerRecords.ts --company 1"
+    "seed:sites-from-customer-records": "tsx scripts/seedSitesFromCustomerRecords.ts --company 1",
+    "normalize:site-names:dry": "tsx scripts/normalizeSiteNames.ts",
+    "normalize:site-names": "tsx scripts/normalizeSiteNames.ts --apply"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
