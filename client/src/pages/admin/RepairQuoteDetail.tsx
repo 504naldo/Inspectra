@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { WorkflowHint } from "@/components/help/WorkflowHint";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import {
   Plus, Trash2, Pencil, Loader2, FileText, CheckCircle,
   Send, Lock, ChevronDown, ChevronUp, ExternalLink, Bot, Copy,
   Sparkles, ArrowRight, Package, ThumbsUp, ThumbsDown, Eye,
-  ClipboardCheck, AlertTriangle, XCircle, HelpCircle, Camera, EyeOff,
+  ClipboardCheck, AlertTriangle, HelpCircle, Camera, EyeOff,
 } from "lucide-react";
 import {
   Dialog,
@@ -309,6 +310,15 @@ export default function RepairQuoteDetail() {
     { jobId: linkedJobId ?? 0 },
     { enabled: !!linkedJobId }
   );
+  const photosByDefId = useMemo(() => {
+    const m = new Map<number, typeof jobMedia>();
+    for (const p of jobMedia) {
+      const arr = m.get(p.entityId) ?? [];
+      arr.push(p);
+      m.set(p.entityId, arr);
+    }
+    return m;
+  }, [jobMedia]);
   const markCustomerFacingMut = trpc.media.markCustomerFacing.useMutation({
     onSuccess: () => utils.media.getMediaForJob.invalidate({ jobId: linkedJobId }),
     onError: (e) => toast.error(e.message),
@@ -991,7 +1001,7 @@ export default function RepairQuoteDetail() {
               {items
                 .filter((item) => (item as any).deficiencyId)
                 .map((item) => {
-                  const photos = jobMedia.filter((m) => m.entityId === (item as any).deficiencyId);
+                  const photos = photosByDefId.get((item as any).deficiencyId) ?? [];
                   if (photos.length === 0) return null;
                   return (
                     <div key={item.id} className="space-y-2">
@@ -1033,21 +1043,7 @@ export default function RepairQuoteDetail() {
           </Card>
         )}
 
-        {/* Lightbox */}
-        {lightboxUrl && (
-          <div
-            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-            onClick={() => setLightboxUrl(null)}
-          >
-            <img src={lightboxUrl} alt="Photo" className="max-w-full max-h-full object-contain rounded" />
-            <button
-              className="absolute top-4 right-4 bg-black/50 rounded-full p-2"
-              onClick={() => setLightboxUrl(null)}
-            >
-              <XCircle className="h-6 w-6 text-white" />
-            </button>
-          </div>
-        )}
+        {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
 
         {/* Totals */}
         <Card>

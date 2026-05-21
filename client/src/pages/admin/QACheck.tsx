@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,6 +43,15 @@ export default function QACheck({ jobId }: QACheckProps) {
   const { data: jobData, isLoading } = trpc.job.getWithDetails.useQuery({ id: jobId });
   const { data: jobMedia = [] } = trpc.media.getMediaForJob.useQuery({ jobId }, { enabled: !!jobId });
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const photosByDefId = useMemo(() => {
+    const m = new Map<number, typeof jobMedia>();
+    for (const p of jobMedia) {
+      const arr = m.get(p.entityId) ?? [];
+      arr.push(p);
+      m.set(p.entityId, arr);
+    }
+    return m;
+  }, [jobMedia]);
 
   const aiQaCheck = trpc.ai.runQACheck.useMutation({
     onSuccess: () => toast.success("QA analysis complete"),
@@ -307,7 +317,7 @@ export default function QACheck({ jobId }: QACheckProps) {
             </CardHeader>
             <CardContent className="space-y-4">
               {deficiencies.map((def: any) => {
-                const photos = jobMedia.filter((m) => m.entityId === def.id);
+                const photos = photosByDefId.get(def.id) ?? [];
                 const hasNoPhoto = def.severity === "critical" && photos.length === 0;
                 return (
                   <div key={def.id} className={`border rounded-lg overflow-hidden ${hasNoPhoto ? "border-amber-300" : ""}`}>
@@ -376,21 +386,7 @@ export default function QACheck({ jobId }: QACheckProps) {
           </Card>
         )}
 
-        {/* Lightbox */}
-        {lightboxUrl && (
-          <div
-            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-            onClick={() => setLightboxUrl(null)}
-          >
-            <img src={lightboxUrl} alt="Photo" className="max-w-full max-h-full object-contain rounded" />
-            <button
-              className="absolute top-4 right-4 bg-black/50 rounded-full p-2"
-              onClick={() => setLightboxUrl(null)}
-            >
-              <XCircle className="h-6 w-6 text-white" />
-            </button>
-          </div>
-        )}
+        {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
 
         {/* Template Inspection Summary */}
         {templateSummaries.length > 0 && (

@@ -34,6 +34,7 @@ import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useTrackInspectionProgress } from "@/hooks/useInspectionProgress";
+import { ImageLightbox } from "@/components/ImageLightbox";
 
 type PendingPhoto = {
   file: File;
@@ -829,21 +830,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         </div>
       </main>
 
-      {/* Lightbox */}
-      {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setLightboxUrl(null)}
-        >
-          <img src={lightboxUrl} alt="Photo" className="max-w-full max-h-full object-contain rounded" />
-          <button
-            className="absolute top-4 right-4 bg-black/50 rounded-full p-2"
-            onClick={() => setLightboxUrl(null)}
-          >
-            <X className="h-5 w-5 text-white" />
-          </button>
-        </div>
-      )}
+      {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
 
       {/* Draft from Notes dialog */}
       <Dialog open={draftOpen} onOpenChange={setDraftOpen}>

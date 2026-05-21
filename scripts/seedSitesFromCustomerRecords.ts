@@ -320,36 +320,56 @@ function parseSiteFolder(name: string): { fileNumber: string; siteName: string }
   return { fileNumber: m[1].trim(), siteName: m[2].trim() };
 }
 
+// ─── Site indexes ─────────────────────────────────────────────────────────────
+
+interface SiteIndexes {
+  byFileNumber: Map<string, DbSite>;
+  byBuildingId: Map<string, DbSite>;
+  /** key: `${orgId}::${normName(site.name)}` */
+  byOrgName: Map<string, DbSite>;
+}
+
+function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
+  const byFileNumber = new Map<string, DbSite>();
+  const byBuildingId = new Map<string, DbSite>();
+  const byOrgName = new Map<string, DbSite>();
+  for (const s of sites) {
+    if (s.fileNumber && !byFileNumber.has(normBldg(s.fileNumber))) {
+      byFileNumber.set(normBldg(s.fileNumber), s);
+    }
+    if (s.buildingId && !byBuildingId.has(normBldg(s.buildingId))) {
+      byBuildingId.set(normBldg(s.buildingId), s);
+    }
+    const nameKey = `${s.customerOrgId}::${normName(s.name)}`;
+    if (!byOrgName.has(nameKey)) byOrgName.set(nameKey, s);
+  }
+  return { byFileNumber, byBuildingId, byOrgName };
+}
+
 // ─── Site matching ────────────────────────────────────────────────────────────
 
 function matchSite(
   record: DriveCustomerRecord,
   orgId: number | undefined,
-  allSites: DbSite[]
+  allSites: DbSite[],
+  indexes: SiteIndexes
 ): SiteMatch | null {
   const normFN = normBldg(record.fileNumber);
-  const companySites = allSites; // already filtered to company
 
-  // HIGH: fileNumber matches site.fileNumber within company
-  for (const s of companySites) {
-    if (s.fileNumber && normBldg(s.fileNumber) === normFN) {
-      return { site: s, confidence: "high", matchedBy: "fileNumber" };
-    }
-  }
+  // HIGH: exact fileNumber match (O(1))
+  const byFN = indexes.byFileNumber.get(normFN);
+  if (byFN) return { site: byFN, confidence: "high", matchedBy: "fileNumber" };
 
-  // HIGH: fileNumber matches site.buildingId within company
-  for (const s of companySites) {
-    if (s.buildingId && normBldg(s.buildingId) === normFN) {
-      return { site: s, confidence: "high", matchedBy: "buildingId" };
-    }
-  }
+  // HIGH: exact buildingId match (O(1))
+  const byBI = indexes.byBuildingId.get(normFN);
+  if (byBI) return { site: byBI, confidence: "high", matchedBy: "buildingId" };
 
-  // MEDIUM: normalized address prefix match within company
+  // MEDIUM: normalized address prefix match (linear — no practical index for prefix queries)
   if (record.address) {
     const normAddr = normAddress(record.address);
     if (normAddr.length >= 8) {
       const prefix = normAddr.slice(0, 20);
-      for (const s of companySites) {
+      for (const s of allSites) {
         if (s.address && normAddress(s.address).startsWith(prefix)) {
           return { site: s, confidence: "medium", matchedBy: "address" };
         }
@@ -357,21 +377,18 @@ function matchSite(
     }
   }
 
-  // MEDIUM: normalized name match + same org
+  // MEDIUM: normalized name + org match (O(1))
   if (orgId !== undefined) {
-    const normSiteName = normName(record.siteName);
-    for (const s of companySites) {
-      if (s.customerOrgId === orgId && normName(s.name) === normSiteName) {
-        return { site: s, confidence: "medium", matchedBy: "name+org" };
-      }
-    }
+    const nameKey = `${orgId}::${normName(record.siteName)}`;
+    const byName = indexes.byOrgName.get(nameKey);
+    if (byName) return { site: byName, confidence: "medium", matchedBy: "name+org" };
   }
 
   // LOW: token overlap ≥ 0.5 (report only, never act on)
   const normSiteName = normName(record.siteName);
   let bestOverlap = 0;
   let bestSite: DbSite | null = null;
-  for (const s of companySites) {
+  for (const s of allSites) {
     const score = tokenOverlap(normSiteName, normName(s.name));
     if (score > bestOverlap) { bestOverlap = score; bestSite = s; }
   }
@@ -652,7 +669,10 @@ async function main() {
   let highConf = 0, medConf = 0, lowConf = 0;
   let dupFileConflicts = 0, dupBldgConflicts = 0;
 
-  // Track in-memory new sites to avoid duplicate creates within this run
+  // Build O(1) lookup indexes from the current site list
+  let siteIndexes = buildSiteIndexes(allSites);
+
+  // Track normalized file numbers seen this run to guard against duplicate creates
   const seenNormFile = new Set<string>();
   for (const s of allSites) {
     if (s.fileNumber) seenNormFile.add(normBldg(s.fileNumber));
@@ -665,7 +685,7 @@ async function main() {
       ? allOrgs.find((o) => o.id === orgId)?.name
       : undefined;
 
-    const match = matchSite(record, orgId, allSites);
+    const match = matchSite(record, orgId, allSites, siteIndexes);
     const confidence: Confidence | "none" = match?.confidence ?? "none";
 
     if (match) {
@@ -827,6 +847,7 @@ async function main() {
         updatedAt: new Date(),
       };
       allSites.push(newSite);
+      siteIndexes = buildSiteIndexes(allSites);
     }
 
     seenNormFile.add(normFN);
