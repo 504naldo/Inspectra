@@ -109,8 +109,8 @@ export function GlobalSearch() {
         aria-label="Search (Ctrl+K)"
       >
         <Search className="h-4 w-4" />
-        <span className="hidden md:inline text-xs">Search</span>
-        <kbd className="hidden md:inline pointer-events-none select-none rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+        <span className="hidden md:inline lg:hidden xl:inline text-xs">Search</span>
+        <kbd className="hidden md:inline lg:hidden xl:inline pointer-events-none select-none rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
           ⌘K
         </kbd>
       </Button>
