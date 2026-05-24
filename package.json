@@ -25,7 +25,9 @@
     "seed:sites-from-customer-records:dry": "tsx scripts/seedSitesFromCustomerRecords.ts --company 1 --dry-run",
     "seed:sites-from-customer-records": "tsx scripts/seedSitesFromCustomerRecords.ts --company 1",
     "normalize:site-names:dry": "tsx scripts/normalizeSiteNames.ts",
-    "normalize:site-names": "tsx scripts/normalizeSiteNames.ts --apply"
+    "normalize:site-names": "tsx scripts/normalizeSiteNames.ts --apply",
+    "backfill:work-site-info:dry": "tsx scripts/backfillWorkSiteInfoFromCustomerRecords.ts",
+    "backfill:work-site-info": "tsx scripts/backfillWorkSiteInfoFromCustomerRecords.ts --apply"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
