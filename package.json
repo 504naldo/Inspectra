@@ -29,7 +29,8 @@
     "backfill:work-site-info:dry": "tsx scripts/backfillWorkSiteInfoFromCustomerRecords.ts",
     "backfill:work-site-info": "tsx scripts/backfillWorkSiteInfoFromCustomerRecords.ts --apply",
     "backfill:contacts:dry": "tsx scripts/backfillContactsFromCustomerRecords.ts",
-    "backfill:contacts": "tsx scripts/backfillContactsFromCustomerRecords.ts --apply"
+    "backfill:contacts": "tsx scripts/backfillContactsFromCustomerRecords.ts --apply",
+    "audit:site-dependencies": "tsx scripts/auditSiteDependencies.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
