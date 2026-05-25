@@ -16,20 +16,22 @@ import {
   monthlyServiceTracking, serviceSchedules,
   devices, deficiencies, jobs,
   approvedWork, invoices, invoiceLineItems,
+  customerContacts,
 } from "../../drizzle/schema.js";
 
 const ISSUE_LIMIT = 50; // max rows per issue category
 
 // ── Return types ──────────────────────────────────────────────────────────────
 
-type SiteRow   = { id: number; name: string };
-type OrgRow    = { id: number; name: string };
-type WsiRow    = { id: number; siteId: number; siteName: string };
-type TrackRow  = { id: number; trackingMonth: string; serviceType: string; buildingId: string | null };
-type DeviceRow = { id: number; deviceType: string; siteId: number };
-type DefRow    = { id: number; title: string; severity: string; jobId: number; daysOpen: number };
-type AwRow     = { id: number; approvedScope: string | null };
-type InvRow    = { id: number; invoiceNumber: string; total: string | null };
+type SiteRow    = { id: number; name: string };
+type OrgRow     = { id: number; name: string };
+type WsiRow     = { id: number; siteId: number; siteName: string };
+type TrackRow   = { id: number; trackingMonth: string; serviceType: string; buildingId: string | null };
+type DeviceRow  = { id: number; deviceType: string; siteId: number };
+type DefRow     = { id: number; title: string; severity: string; jobId: number; daysOpen: number };
+type AwRow      = { id: number; approvedScope: string | null };
+type InvRow     = { id: number; invoiceNumber: string; total: string | null };
+type ContactRow = { id: number; name: string; role: string };
 
 export type DataQualitySummary = {
   counts: { critical: number; warning: number; info: number; total: number };
@@ -51,6 +53,11 @@ export type DataQualitySummary = {
     missingAccessNotes:    WsiRow[];
     missingPanelLocation:  WsiRow[];
     missingMonitoring:     WsiRow[];
+  };
+  contacts: {
+    orgsMissingPrimaryContact:       OrgRow[];
+    sitesMissingSiteAccessContact:   SiteRow[];
+    inactiveButFlagged:              ContactRow[];
   };
   schedule: {
     overdueWithoutTech: TrackRow[];
@@ -132,7 +139,7 @@ export const dataQualityRouter = router({
         entry.names.push(s.name);
         bldgMap.set(bld, entry);
       }
-      const duplicateBuildingIds = [...bldgMap.entries()]
+      const duplicateBuildingIds = Array.from(bldgMap.entries())
         .filter(([, v]) => v.count > 1)
         .map(([buildingId, v]) => ({ buildingId, count: v.count, names: v.names.join(", ") }))
         .slice(0, ISSUE_LIMIT);
@@ -147,7 +154,7 @@ export const dataQualityRouter = router({
         entry.names.push(s.name);
         fileMap.set(fn, entry);
       }
-      const duplicateFileNumbers = [...fileMap.entries()]
+      const duplicateFileNumbers = Array.from(fileMap.entries())
         .filter(([, v]) => v.count > 1)
         .map(([fileNumber, v]) => ({ fileNumber, count: v.count, names: v.names.join(", ") }))
         .slice(0, ISSUE_LIMIT);
@@ -211,7 +218,64 @@ export const dataQualityRouter = router({
           .map(w => ({ id: w.id, siteId: w.siteId, siteName: siteNameMap.get(w.siteId) ?? `Site ${w.siteId}` }));
       }
 
-      // ── 4. Monthly Tracking / Schedule ────────────────────────────────────
+      // ── 4. Contacts ───────────────────────────────────────────────────────
+
+      const allActiveContacts = await db
+        .select({
+          id: customerContacts.id,
+          name: customerContacts.name,
+          role: customerContacts.role,
+          customerOrgId: customerContacts.customerOrgId,
+          siteId: customerContacts.siteId,
+          isPrimary: customerContacts.isPrimary,
+          isSiteAccessContact: customerContacts.isSiteAccessContact,
+          isActive: customerContacts.isActive,
+          receivesReports: customerContacts.receivesReports,
+          receivesQuotes: customerContacts.receivesQuotes,
+          receivesInvoices: customerContacts.receivesInvoices,
+          receivesServiceUpdates: customerContacts.receivesServiceUpdates,
+          receivesComplianceNotices: customerContacts.receivesComplianceNotices,
+        })
+        .from(customerContacts)
+        .where(eq(customerContacts.companyId, companyId));
+
+      // Orgs with no active primary contact
+      const orgsWithPrimary = new Set(
+        allActiveContacts
+          .filter(c => c.isPrimary === 1 && c.isActive === 1 && c.customerOrgId !== null)
+          .map(c => c.customerOrgId!)
+      );
+      const orgsMissingPrimaryContact = allOrgs
+        .filter(o => !orgsWithPrimary.has(o.id))
+        .slice(0, ISSUE_LIMIT)
+        .map(o => ({ id: o.id, name: o.name }));
+
+      // Sites with no active site-access contact
+      const sitesWithAccess = new Set(
+        allActiveContacts
+          .filter(c => c.isSiteAccessContact === 1 && c.isActive === 1 && c.siteId !== null)
+          .map(c => c.siteId!)
+      );
+      const sitesMissingSiteAccessContact = allSites
+        .filter(s => !sitesWithAccess.has(s.id))
+        .slice(0, ISSUE_LIMIT)
+        .map(s => ({ id: s.id, name: s.name }));
+
+      // Inactive contacts still flagged as recipients
+      const inactiveButFlagged = allActiveContacts
+        .filter(c =>
+          c.isActive === 0 && (
+            c.receivesReports === 1 ||
+            c.receivesQuotes === 1 ||
+            c.receivesInvoices === 1 ||
+            c.receivesServiceUpdates === 1 ||
+            c.receivesComplianceNotices === 1
+          )
+        )
+        .slice(0, ISSUE_LIMIT)
+        .map(c => ({ id: c.id, name: c.name, role: c.role }));
+
+      // ── 5. Monthly Tracking / Schedule ────────────────────────────────────
 
       const overdueRows = await db
         .select({ id: monthlyServiceTracking.id, trackingMonth: monthlyServiceTracking.trackingMonth,
@@ -357,6 +421,8 @@ export const dataQualityRouter = router({
         awCompletedNotInvoiced.length +
         invMissingCustomer.length +
         invReadyForSage.length +
+        orgsMissingPrimaryContact.length +
+        inactiveButFlagged.length +
         (openDefs60 - openDefs90);
 
       const info =
@@ -369,6 +435,7 @@ export const dataQualityRouter = router({
         missingMonitoring.length +
         devicesWithoutLocation.length +
         invMissingLineItems.length +
+        sitesMissingSiteAccessContact.length +
         (openDefs30 - openDefs60);
 
       return {
@@ -379,6 +446,7 @@ export const dataQualityRouter = router({
         },
         customerOrgs: { missingContactEmail, missingContactPhone },
         workSiteInfo: { sitesMissingWsi, missingAccessNotes, missingPanelLocation, missingMonitoring },
+        contacts: { orgsMissingPrimaryContact, sitesMissingSiteAccessContact, inactiveButFlagged },
         schedule: { overdueWithoutTech },
         devicesAndDeficiencies: {
           devicesWithoutLocation,
@@ -407,6 +475,7 @@ function emptyResult(): DataQualitySummary {
              missingCity: [], missingContactInfo: [], duplicateBuildingIds: [], duplicateFileNumbers: [] },
     customerOrgs: { missingContactEmail: [], missingContactPhone: [] },
     workSiteInfo: { sitesMissingWsi: [], missingAccessNotes: [], missingPanelLocation: [], missingMonitoring: [] },
+    contacts: { orgsMissingPrimaryContact: [], sitesMissingSiteAccessContact: [], inactiveButFlagged: [] },
     schedule: { overdueWithoutTech: [] },
     devicesAndDeficiencies: { devicesWithoutLocation: [], openDefs30: 0, openDefs60: 0, openDefs90: 0, oldestOpenDefs: [] },
     approvedWorkIssues: { missingSite: [], missingCustomer: [], completedNotInvoiced: [] },
