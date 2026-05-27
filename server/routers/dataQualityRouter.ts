@@ -32,6 +32,7 @@ type DefRow     = { id: number; title: string; severity: string; jobId: number; 
 type AwRow      = { id: number; approvedScope: string | null };
 type InvRow     = { id: number; invoiceNumber: string; total: string | null };
 type ContactRow = { id: number; name: string; role: string };
+type DupEmailRow = { email: string; count: number; names: string };
 
 export type DataQualitySummary = {
   counts: { critical: number; warning: number; info: number; total: number };
@@ -58,6 +59,10 @@ export type DataQualitySummary = {
     orgsMissingPrimaryContact:       OrgRow[];
     sitesMissingSiteAccessContact:   SiteRow[];
     inactiveButFlagged:              ContactRow[];
+    orgsMissingReportRecipient:      OrgRow[];
+    orgsMissingBillingContact:       OrgRow[];
+    orgsMissingQuoteApprover:        OrgRow[];
+    duplicateContactEmails:          DupEmailRow[];
   };
   schedule: {
     overdueWithoutTech: TrackRow[];
@@ -225,6 +230,7 @@ export const dataQualityRouter = router({
           id: customerContacts.id,
           name: customerContacts.name,
           role: customerContacts.role,
+          email: customerContacts.email,
           customerOrgId: customerContacts.customerOrgId,
           siteId: customerContacts.siteId,
           isPrimary: customerContacts.isPrimary,
@@ -274,6 +280,61 @@ export const dataQualityRouter = router({
         )
         .slice(0, ISSUE_LIMIT)
         .map(c => ({ id: c.id, name: c.name, role: c.role }));
+
+      // Orgs missing a report recipient
+      const orgsWithReportRecipient = new Set(
+        allActiveContacts
+          .filter(c => c.receivesReports === 1 && c.isActive === 1 && c.customerOrgId !== null)
+          .map(c => c.customerOrgId!)
+      );
+      const orgsMissingReportRecipient = allOrgs
+        .filter(o => !orgsWithReportRecipient.has(o.id))
+        .slice(0, ISSUE_LIMIT)
+        .map(o => ({ id: o.id, name: o.name }));
+
+      // Orgs missing a billing contact
+      const orgsWithBillingContact = new Set(
+        allActiveContacts
+          .filter(c =>
+            c.isActive === 1 && c.customerOrgId !== null &&
+            (c.receivesInvoices === 1 || c.role === "billing_contact")
+          )
+          .map(c => c.customerOrgId!)
+      );
+      const orgsMissingBillingContact = allOrgs
+        .filter(o => !orgsWithBillingContact.has(o.id))
+        .slice(0, ISSUE_LIMIT)
+        .map(o => ({ id: o.id, name: o.name }));
+
+      // Orgs missing a quote approver
+      const orgsWithQuoteApprover = new Set(
+        allActiveContacts
+          .filter(c =>
+            c.isActive === 1 && c.customerOrgId !== null &&
+            (c.receivesQuotes === 1 || c.role === "quote_approver")
+          )
+          .map(c => c.customerOrgId!)
+      );
+      const orgsMissingQuoteApprover = allOrgs
+        .filter(o => !orgsWithQuoteApprover.has(o.id))
+        .slice(0, ISSUE_LIMIT)
+        .map(o => ({ id: o.id, name: o.name }));
+
+      // Duplicate contact emails within company
+      const dupEmailMap = new Map<string, { count: number; names: string[] }>();
+      for (const c of allActiveContacts) {
+        if (c.isActive !== 1) continue;
+        const em = c.email?.toLowerCase().trim();
+        if (!em) continue;
+        const entry = dupEmailMap.get(em) ?? { count: 0, names: [] };
+        entry.count++;
+        entry.names.push(c.name);
+        dupEmailMap.set(em, entry);
+      }
+      const duplicateContactEmails: DupEmailRow[] = Array.from(dupEmailMap.entries())
+        .filter(([, v]) => v.count > 1)
+        .map(([email, v]) => ({ email, count: v.count, names: v.names.join(", ") }))
+        .slice(0, ISSUE_LIMIT);
 
       // ── 5. Monthly Tracking / Schedule ────────────────────────────────────
 
@@ -423,6 +484,9 @@ export const dataQualityRouter = router({
         invReadyForSage.length +
         orgsMissingPrimaryContact.length +
         inactiveButFlagged.length +
+        orgsMissingReportRecipient.length +
+        orgsMissingBillingContact.length +
+        duplicateContactEmails.length +
         (openDefs60 - openDefs90);
 
       const info =
@@ -436,6 +500,7 @@ export const dataQualityRouter = router({
         devicesWithoutLocation.length +
         invMissingLineItems.length +
         sitesMissingSiteAccessContact.length +
+        orgsMissingQuoteApprover.length +
         (openDefs30 - openDefs60);
 
       return {
@@ -446,7 +511,11 @@ export const dataQualityRouter = router({
         },
         customerOrgs: { missingContactEmail, missingContactPhone },
         workSiteInfo: { sitesMissingWsi, missingAccessNotes, missingPanelLocation, missingMonitoring },
-        contacts: { orgsMissingPrimaryContact, sitesMissingSiteAccessContact, inactiveButFlagged },
+        contacts: {
+          orgsMissingPrimaryContact, sitesMissingSiteAccessContact, inactiveButFlagged,
+          orgsMissingReportRecipient, orgsMissingBillingContact, orgsMissingQuoteApprover,
+          duplicateContactEmails,
+        },
         schedule: { overdueWithoutTech },
         devicesAndDeficiencies: {
           devicesWithoutLocation,
@@ -475,7 +544,11 @@ function emptyResult(): DataQualitySummary {
              missingCity: [], missingContactInfo: [], duplicateBuildingIds: [], duplicateFileNumbers: [] },
     customerOrgs: { missingContactEmail: [], missingContactPhone: [] },
     workSiteInfo: { sitesMissingWsi: [], missingAccessNotes: [], missingPanelLocation: [], missingMonitoring: [] },
-    contacts: { orgsMissingPrimaryContact: [], sitesMissingSiteAccessContact: [], inactiveButFlagged: [] },
+    contacts: {
+      orgsMissingPrimaryContact: [], sitesMissingSiteAccessContact: [], inactiveButFlagged: [],
+      orgsMissingReportRecipient: [], orgsMissingBillingContact: [], orgsMissingQuoteApprover: [],
+      duplicateContactEmails: [],
+    },
     schedule: { overdueWithoutTech: [] },
     devicesAndDeficiencies: { devicesWithoutLocation: [], openDefs30: 0, openDefs60: 0, openDefs90: 0, oldestOpenDefs: [] },
     approvedWorkIssues: { missingSite: [], missingCustomer: [], completedNotInvoiced: [] },

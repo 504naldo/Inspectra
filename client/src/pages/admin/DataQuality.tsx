@@ -7,7 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import {
   ShieldAlert, AlertTriangle, Info, CheckCircle2, ChevronDown, ChevronRight,
-  Building2, Calendar, Wrench, ReceiptText, ExternalLink, RefreshCw,
+  Building2, Calendar, Wrench, ReceiptText, ExternalLink, RefreshCw, Users,
 } from "lucide-react";
 
 // ── Severity helpers ──────────────────────────────────────────────────────────
@@ -416,6 +416,67 @@ export default function DataQuality() {
                 {show("info") && (
                   <IssueGroup label="Missing Contact Phone" severity="info" items={data.customerOrgs.missingContactPhone}
                     renderItem={(item, i) => <OrgRow key={i} {...item} />} />
+                )}
+              </Section>
+            )}
+
+            {/* ── Contacts ── */}
+            {(show("warning") || show("info")) && (
+              <Section
+                title="Contacts"
+                icon={Users}
+                issueCount={
+                  (show("warning") ? (
+                    data.contacts.orgsMissingPrimaryContact.length +
+                    data.contacts.inactiveButFlagged.length +
+                    data.contacts.orgsMissingReportRecipient.length +
+                    data.contacts.orgsMissingBillingContact.length +
+                    data.contacts.duplicateContactEmails.length
+                  ) : 0) +
+                  (show("info") ? (
+                    data.contacts.sitesMissingSiteAccessContact.length +
+                    data.contacts.orgsMissingQuoteApprover.length
+                  ) : 0)
+                }
+                severity={
+                  (data.contacts.orgsMissingPrimaryContact.length +
+                   data.contacts.inactiveButFlagged.length +
+                   data.contacts.orgsMissingReportRecipient.length +
+                   data.contacts.orgsMissingBillingContact.length +
+                   data.contacts.duplicateContactEmails.length) > 0 ? "warning" : "info"
+                }
+              >
+                {show("warning") && (
+                  <>
+                    <IssueGroup label="Orgs missing primary contact" severity="warning" items={data.contacts.orgsMissingPrimaryContact}
+                      renderItem={(item, i) => <OrgRow key={i} {...item} />} />
+                    <IssueGroup label="Orgs missing report recipient" severity="warning" items={data.contacts.orgsMissingReportRecipient}
+                      renderItem={(item, i) => <OrgRow key={i} {...item} />} />
+                    <IssueGroup label="Orgs missing billing contact" severity="warning" items={data.contacts.orgsMissingBillingContact}
+                      renderItem={(item, i) => <OrgRow key={i} {...item} />} />
+                    <IssueGroup label="Inactive contacts still flagged as recipients" severity="warning" items={data.contacts.inactiveButFlagged}
+                      renderItem={(item, i) => (
+                        <div key={i} className="flex items-center justify-between py-0.5 text-xs">
+                          <span className="truncate text-foreground/80">{item.name} <span className="text-muted-foreground">({item.role})</span></span>
+                          <FixLink href="/admin/contacts">Fix</FixLink>
+                        </div>
+                      )} />
+                    <IssueGroup label="Duplicate contact emails" severity="warning" items={data.contacts.duplicateContactEmails}
+                      renderItem={(item, i) => (
+                        <div key={i} className="flex items-center justify-between py-0.5 text-xs">
+                          <span className="truncate text-foreground/80 font-mono">{item.email}</span>
+                          <span className="shrink-0 text-muted-foreground ml-2">{item.names}</span>
+                        </div>
+                      )} />
+                  </>
+                )}
+                {show("info") && (
+                  <>
+                    <IssueGroup label="Sites missing site access contact" severity="info" items={data.contacts.sitesMissingSiteAccessContact}
+                      renderItem={(item, i) => <SiteRow key={i} {...item} />} />
+                    <IssueGroup label="Orgs missing quote approver" severity="info" items={data.contacts.orgsMissingQuoteApprover}
+                      renderItem={(item, i) => <OrgRow key={i} {...item} />} />
+                  </>
                 )}
               </Section>
             )}
