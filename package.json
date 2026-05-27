@@ -32,7 +32,9 @@
     "backfill:contacts": "tsx scripts/backfillContactsFromCustomerRecords.ts --apply",
     "audit:site-dependencies": "tsx scripts/auditSiteDependencies.ts",
     "site:audit-dependencies": "tsx scripts/auditSiteDependencies.ts",
-    "site:audit-reconciliation": "tsx scripts/auditSiteCustomerRecordReconciliation.ts"
+    "site:audit-reconciliation": "tsx scripts/auditSiteCustomerRecordReconciliation.ts",
+    "master-data:validate": "tsx scripts/validateMasterData.ts",
+    "master-data:validate:strict": "tsx scripts/validateMasterData.ts --strict"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
