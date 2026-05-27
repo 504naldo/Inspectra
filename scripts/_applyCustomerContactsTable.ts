@@ -80,15 +80,62 @@ async function main() {
       console.log("__drizzle_migrations: MISSING (drizzle-kit tracking not initialised in this DB)");
     }
 
-    // ── 2. Patch site_work_site_info — add columns added in migration 0042 ──────
-    console.log("\nChecking site_work_site_info columns...");
+    // ── 2. Create or patch site_work_site_info (migration 0042 DDL) ────────────
+    console.log("\nChecking site_work_site_info table...");
     const hasWsi = await tableExists(conn, "site_work_site_info");
     if (!hasWsi) {
-      console.log("  site_work_site_info: table not found — skipping column patch");
+      console.log("site_work_site_info: MISSING — creating...");
+      await conn.execute(`
+        CREATE TABLE IF NOT EXISTS \`site_work_site_info\` (
+          \`id\` int NOT NULL AUTO_INCREMENT,
+          \`companyId\` int NOT NULL,
+          \`siteId\` int NOT NULL,
+          \`customerOrgId\` int,
+          \`siteContactName\` varchar(255),
+          \`siteContactPhone\` varchar(50),
+          \`siteContactEmail\` varchar(320),
+          \`propertyManagerName\` varchar(255),
+          \`propertyManagerPhone\` varchar(50),
+          \`propertyManagerEmail\` varchar(320),
+          \`accessNotes\` text,
+          \`keyLocation\` text,
+          \`keyNumber\` varchar(50),
+          \`lockboxCode\` varchar(50),
+          \`parkingNotes\` text,
+          \`serviceEntranceNotes\` text,
+          \`fireAlarmPanelMake\` varchar(100),
+          \`fireAlarmPanelModel\` varchar(100),
+          \`fireAlarmPanelLocation\` text,
+          \`annunciatorLocation\` text,
+          \`monitoringCompany\` varchar(255),
+          \`monitoringPhone\` varchar(50),
+          \`monitoringAccount\` varchar(100),
+          \`sprinklerNotes\` text,
+          \`backflowNotes\` text,
+          \`emergencyLightingNotes\` text,
+          \`fireExtinguisherNotes\` text,
+          \`generalNotes\` text,
+          \`lastImportedFromWorkbook\` timestamp NULL,
+          \`sourceWorkbookName\` varchar(255),
+          \`sourceSheetName\` varchar(100),
+          \`sourceUpdatedAt\` timestamp NULL,
+          \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`id\`),
+          UNIQUE KEY \`site_work_site_info_siteId_unique\` (\`siteId\`),
+          KEY \`site_work_site_info_companyId_idx\` (\`companyId\`)
+        )
+      `);
+      const confirmed = await tableExists(conn, "site_work_site_info");
+      if (confirmed) {
+        console.log("site_work_site_info: CREATED successfully");
+      } else {
+        console.error("site_work_site_info: CREATE executed but table still not found — check DB permissions");
+        process.exit(1);
+      }
     } else {
-      // Add all columns that migration 0042 defined but may be absent if the
-      // table was created by an earlier schema version. No AFTER clause — MySQL
-      // appends at the end, which is fine. Already-present columns are skipped.
+      console.log("site_work_site_info: EXISTS — checking for missing columns...");
+      // Patch any columns that may be absent on older Railway instances
       const wsi = "site_work_site_info";
       await addColumnIfMissing(conn, wsi, "customerOrgId",            "int");
       await addColumnIfMissing(conn, wsi, "siteContactName",          "varchar(255)");
