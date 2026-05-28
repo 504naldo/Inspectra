@@ -782,9 +782,14 @@ async function main() {
   console.log(`\n${line}`);
   console.log("  SUMMARY");
   console.log(line);
-  console.log(`  ${pad("Drive org folders found:", 42)} ${orgFolders.length}`);
-  console.log(`  ${pad("Org folders matched to DB customerOrg:", 42)} ${orgFolders.length - unmatchedOrgFolders.length}`);
-  console.log(`  ${pad("Org folders unmatched:", 42)} ${unmatchedOrgFolders.length}`);
+  if (!args.flatDrive) {
+    const orgFolderCount = allDriveRecords.length > 0
+      ? orgFolderToOrgId.size + unmatchedOrgFolders.length
+      : 0;
+    console.log(`  ${pad("Drive org folders found:", 42)} ${orgFolderCount}`);
+    console.log(`  ${pad("Org folders matched to DB customerOrg:", 42)} ${orgFolderToOrgId.size}`);
+    console.log(`  ${pad("Org folders unmatched:", 42)} ${unmatchedOrgFolders.length}`);
+  }
   console.log(`  ${pad("Total site folders found:", 42)} ${allDriveRecords.length}`);
   console.log(`  ${pad("Folders without #NNNN pattern:", 42)} ${unparsedFolders.length}`);
   console.log(`  ${pad("Records processed:", 42)} ${records.length}`);
