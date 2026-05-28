@@ -141,6 +141,7 @@ interface CliArgs {
   verbose: boolean;
   adminUserId?: number;
   accessToken?: string;
+  flatDrive: boolean;
 }
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -149,6 +150,7 @@ function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
   const args: CliArgs = {
     companyId: 1,
+    flatDrive: false,
     apply: false,
     outputUnmatched: false,
     outputConflicts: false,
@@ -166,6 +168,7 @@ function parseArgs(): CliArgs {
       case "--verbose":         args.verbose = true; break;
       case "--admin-user-id":   args.adminUserId = parseInt(argv[++i], 10); break;
       case "--access-token":    args.accessToken = argv[++i]; break;
+      case "--flat-drive":      args.flatDrive = true; break;
       case "--default-org":
         console.error("ERROR: --default-org is not supported.");
         console.error("       customerOrgId must come from the Drive folder name matched to a real org row.");
@@ -526,53 +529,32 @@ async function main() {
   for (const org of allOrgs) orgByNorm.set(normName(org.name), org);
 
   // ── Walk Drive tree ─────────────────────────────────────────────────────────
-  console.log(`Listing org folders under Drive root ${rootId}...`);
-  const orgFolders = await listFolders(rootId, token);
-  console.log(`  Found ${orgFolders.length} org folders\n`);
-
   const allDriveRecords: DriveRecord[] = [];
   const unmatchedOrgFolders: string[] = [];
   const unparsedFolders: { orgFolder: string; siteName: string }[] = [];
   const orgFolderToOrgId = new Map<string, number>();
 
-  for (const orgFolder of orgFolders) {
-    if (args.customerOrgId !== undefined) {
-      const normFolder = normName(orgFolder.name);
-      const matchedOrg = orgByNorm.get(normFolder)
-        ?? [...orgByNorm.values()].find((o) => {
-          const on = normName(o.name);
-          return on.includes(normFolder) || normFolder.includes(on);
-        });
-      if (!matchedOrg || matchedOrg.id !== args.customerOrgId) continue;
-    }
+  if (args.flatDrive) {
+    // Flat mode: site folders are directly under root (no org subfolder level).
+    // customerOrgId is resolved from the matched site rather than a folder name.
+    console.log(`Listing site folders under Drive root ${rootId} (--flat-drive)...`);
+    const siteFolders = await listFolders(rootId, token);
+    console.log(`  Found ${siteFolders.length} folders\n`);
 
-    const normFolder = normName(orgFolder.name);
-    let matchedOrg: DbOrg | undefined = orgByNorm.get(normFolder);
-    if (!matchedOrg) {
-      matchedOrg = [...orgByNorm.values()].find((o) => {
-        const on = normName(o.name);
-        return on.includes(normFolder) || normFolder.includes(on);
-      });
-    }
+    // Use a synthetic org folder entry so the rest of the pipeline is unchanged.
+    const FLAT_ORG_ID = "flat";
+    orgFolderToOrgId.set(FLAT_ORG_ID, -1); // sentinel; real orgId resolved per-site below
 
-    if (!matchedOrg) {
-      unmatchedOrgFolders.push(orgFolder.name);
-      continue;
-    }
-
-    orgFolderToOrgId.set(orgFolder.id, matchedOrg.id);
-
-    const siteFolders = await listFolders(orgFolder.id, token);
     for (const sf of siteFolders) {
       const parsed = parseSiteFolder(sf.name);
       if (!parsed) {
-        unparsedFolders.push({ orgFolder: orgFolder.name, siteName: sf.name });
+        unparsedFolders.push({ orgFolder: "(root)", siteName: sf.name });
         continue;
       }
       const addrParts = parseAddressComponents(parsed.siteName);
       allDriveRecords.push({
-        orgFolderName: orgFolder.name,
-        orgFolderId: orgFolder.id,
+        orgFolderName: "(root)",
+        orgFolderId: FLAT_ORG_ID,
         siteFolderName: sf.name,
         siteFolderId: sf.id,
         fileNumber: parsed.fileNumber,
@@ -582,6 +564,60 @@ async function main() {
         state: addrParts.state,
         postalCode: addrParts.postalCode,
       });
+    }
+  } else {
+    console.log(`Listing org folders under Drive root ${rootId}...`);
+    const orgFolders = await listFolders(rootId, token);
+    console.log(`  Found ${orgFolders.length} org folders\n`);
+
+    for (const orgFolder of orgFolders) {
+      if (args.customerOrgId !== undefined) {
+        const normFolder = normName(orgFolder.name);
+        const matchedOrg = orgByNorm.get(normFolder)
+          ?? [...orgByNorm.values()].find((o) => {
+            const on = normName(o.name);
+            return on.includes(normFolder) || normFolder.includes(on);
+          });
+        if (!matchedOrg || matchedOrg.id !== args.customerOrgId) continue;
+      }
+
+      const normFolder = normName(orgFolder.name);
+      let matchedOrg: DbOrg | undefined = orgByNorm.get(normFolder);
+      if (!matchedOrg) {
+        matchedOrg = [...orgByNorm.values()].find((o) => {
+          const on = normName(o.name);
+          return on.includes(normFolder) || normFolder.includes(on);
+        });
+      }
+
+      if (!matchedOrg) {
+        unmatchedOrgFolders.push(orgFolder.name);
+        continue;
+      }
+
+      orgFolderToOrgId.set(orgFolder.id, matchedOrg.id);
+
+      const siteFolders = await listFolders(orgFolder.id, token);
+      for (const sf of siteFolders) {
+        const parsed = parseSiteFolder(sf.name);
+        if (!parsed) {
+          unparsedFolders.push({ orgFolder: orgFolder.name, siteName: sf.name });
+          continue;
+        }
+        const addrParts = parseAddressComponents(parsed.siteName);
+        allDriveRecords.push({
+          orgFolderName: orgFolder.name,
+          orgFolderId: orgFolder.id,
+          siteFolderName: sf.name,
+          siteFolderId: sf.id,
+          fileNumber: parsed.fileNumber,
+          siteName: parsed.siteName,
+          address: addrParts.streetAddress,
+          city: addrParts.city,
+          state: addrParts.state,
+          postalCode: addrParts.postalCode,
+        });
+      }
     }
   }
 
@@ -597,12 +633,12 @@ async function main() {
   const siteIndexes = buildSiteIndexes(allSites);
 
   for (const record of records) {
-    const orgId = orgFolderToOrgId.get(record.orgFolderId);
-    const orgName = orgId !== undefined
-      ? allOrgs.find((o) => o.id === orgId)?.name
-      : undefined;
+    let orgId = orgFolderToOrgId.get(record.orgFolderId);
 
-    if (orgId === undefined) {
+    // In --flat-drive mode the sentinel value -1 means "resolve from matched site"
+    const needsOrgFromSite = orgId === -1;
+
+    if (!needsOrgFromSite && orgId === undefined) {
       results.push({
         record, orgMatched: false, confidence: "none",
         action: "skip-no-org", conflicts: [],
@@ -611,7 +647,22 @@ async function main() {
       continue;
     }
 
-    const match = matchSite(record, orgId, allSites, siteIndexes);
+    // For flat-drive, match site first (without org restriction), then get orgId
+    const match = needsOrgFromSite
+      ? matchSite(record, undefined, allSites, siteIndexes)
+      : matchSite(record, orgId, allSites, siteIndexes);
+
+    if (needsOrgFromSite) {
+      if (match?.site) {
+        orgId = match.site.customerOrgId;
+      } else {
+        orgId = undefined;
+      }
+    }
+
+    const orgName = orgId !== undefined
+      ? allOrgs.find((o) => o.id === orgId)?.name
+      : undefined;
     const confidence: Confidence | "none" = match?.confidence ?? "none";
 
     if (match?.confidence === "high") highConf++;
