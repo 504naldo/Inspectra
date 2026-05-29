@@ -547,6 +547,107 @@ export const repairQuoteRouter = router({
       return { pdfUrl };
     }),
 
+  send: officeProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      to: z.array(z.string().email()).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const q = quote as any;
+      if (!q.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Finalize the quote before sending." });
+
+      const [items, job, site, customer, company] = await Promise.all([
+        db.getRepairQuoteItemsByQuote(input.id),
+        db.getJobById(quote.jobId),
+        db.getSiteById(quote.siteId),
+        db.getCustomerOrgById(quote.customerOrgId),
+        db.getCompanyById(quote.companyId),
+      ]);
+
+      const pdfBuffer = await generateRepairQuotePDF({
+        quoteId: quote.id,
+        quoteNumber: q.quoteNumber ?? `RQ-${quote.id}`,
+        companyName: company?.name ?? "EWF",
+        companyPhone: company?.phone ?? "",
+        companyEmail: company?.email ?? "",
+        companyAddress: company?.address ?? "",
+        customerName: customer?.name ?? "Customer",
+        customerContactName: customer?.contactName ?? "",
+        siteName: site?.name ?? "",
+        siteAddress: [site?.address, site?.city, site?.state].filter(Boolean).join(", "),
+        jobNumber: job?.jobNumber ?? `JOB-${quote.jobId}`,
+        createdAt: quote.createdAt,
+        validUntil: q.validUntil ? new Date(q.validUntil) : null,
+        items: items.map((i) => ({
+          description: i.description,
+          repairNotes: i.repairNotes ?? null,
+          systemType: i.systemType ?? null,
+          location: i.location ?? null,
+          quantity: toNum(i.quantity),
+          partDescription: i.partDescription ?? null,
+          partUnitPrice: toNum(i.partUnitPrice),
+          partTotal: toNum(i.partTotal),
+          techHours: toNum(i.techHours),
+          fitterHours: toNum(i.fitterHours),
+          techLabourRate: toNum(i.techLabourRate),
+          fitterLabourRate: toNum(i.fitterLabourRate),
+          labourTotal: toNum(i.labourTotal),
+          fuelCharge: toNum(i.fuelCharge),
+          backflowReportFee: toNum(i.backflowReportFee),
+          gst: toNum(i.gst),
+          pst: toNum(i.pst),
+          total: toNum(i.total),
+        })),
+        subtotal: toNum(q.subtotal),
+        gst: toNum(q.gst),
+        pst: toNum(q.pst),
+        total: toNum(quote.total),
+        notes: quote.notes ?? null,
+      });
+
+      const pdfKey = `quotes/${quote.companyId}/${quote.id}/repair-quote-${quote.id}.pdf`;
+      const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
+
+      if (ENV.resendApiKey) {
+        const CAD = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
+        const total = CAD.format(toNum(quote.total));
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
+  <div style="background:#1e3a8a;padding:20px 24px;">
+    <h1 style="color:#fff;margin:0;font-size:20px;">Deficiency Repair Quote</h1>
+  </div>
+  <div style="padding:24px;">
+    <p>Hello ${customer?.name ?? ""},</p>
+    <p>Please find attached the deficiency repair quote for <strong>${site?.name ?? ""}</strong> (${job?.jobNumber ?? ""}).</p>
+    <p><strong>Quote Total: ${total}</strong></p>
+    <p>Please review the attached PDF and reply to this email with your approval or any questions.</p>
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
+    <p style="color:#9ca3af;font-size:12px;margin:0;">This quote was prepared by ${company?.name ?? ""}.</p>
+  </div>
+</body></html>`;
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${ENV.resendApiKey}` },
+          body: JSON.stringify({
+            from: `${company?.name ?? "Inspectra"} <noreply@inspectrafire.ca>`,
+            to: input.to,
+            subject: `Repair Quote — ${site?.name ?? ""} (${job?.jobNumber ?? ""})`,
+            html,
+            attachments: [{ filename: `repair-quote-${quote.id}.pdf`, content: pdfBuffer.toString("base64") }],
+          }),
+        });
+      }
+
+      await db.updateQuote(input.id, { pdfUrl, status: "sent", ...(!q.sentAt && { sentAt: new Date() }) } as any);
+      void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.sent",
+        title: `Quote emailed to ${input.to.join(", ")}`, oldValue: q.status, newValue: "sent" });
+
+      return { pdfUrl };
+    }),
+
   // ── Work Order conversion ─────────────────────────────────────────────────────
 
   convertToWorkOrder: officeProcedure

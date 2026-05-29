@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -129,6 +129,115 @@ function calcItemPreview(f: ItemForm) {
   return { partTotal, labourTotal, fuel, backflow, gst, pst, total };
 }
 
+function SendQuoteDialog({
+  open,
+  onOpenChange,
+  customerOrgId,
+  siteId,
+  onSend,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  customerOrgId?: number;
+  siteId?: number;
+  onSend: (to: string[]) => void;
+  isPending: boolean;
+}) {
+  const { data } = trpc.contact.getRecipientsForWorkflow.useQuery(
+    { customerOrgId, siteId, workflowType: "repair_quote" },
+    { enabled: open && !!(customerOrgId || siteId) },
+  );
+  const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? [])].filter((c) => c.email);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [extra, setExtra] = useState("");
+
+  useEffect(() => {
+    if (suggestions.length > 0 && selected.size === 0) {
+      setSelected(new Set(suggestions.map((c) => c.email!)));
+    }
+  }, [suggestions.length]);
+
+  useEffect(() => {
+    if (!open) { setSelected(new Set()); setExtra(""); }
+  }, [open]);
+
+  const toggle = (email: string) =>
+    setSelected((prev) => { const s = new Set(prev); s.has(email) ? s.delete(email) : s.add(email); return s; });
+
+  const extraEmails = extra.split(/[\s,;]+/).map((s) => s.trim()).filter((s) => s.includes("@") && s.includes("."));
+  const allTo = [...Array.from(selected), ...extraEmails];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Send className="h-4 w-4 text-primary" /> Send Quote to Customer
+          </DialogTitle>
+          <DialogDescription>
+            A PDF will be generated and emailed to the selected recipients with an accept link.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          {(data?.warnings ?? []).map((w, i) => (
+            <div key={i} className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />{w}
+            </div>
+          ))}
+          {suggestions.length > 0 ? (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wide">Recipients from contact list</Label>
+              <div className="rounded-md border divide-y">
+                {suggestions.map((c) => (
+                  <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(c.email!)}
+                      onChange={() => toggle(c.email!)}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="flex-1 min-w-0">
+                      <span className="text-sm font-medium">{c.name}</span>
+                      <span className="text-xs text-muted-foreground ml-1.5 truncate">{c.email}</span>
+                    </span>
+                    {(data?.recommended ?? []).some((r) => r.id === c.id) && (
+                      <span className="text-xs bg-violet-100 text-violet-700 rounded-full px-1.5 py-0.5">flagged</span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No contacts found for this site. Enter an email below.</p>
+          )}
+          <div className="space-y-1">
+            <Label className="text-xs">Additional recipients</Label>
+            <Input
+              placeholder="extra@example.com"
+              value={extra}
+              onChange={(e) => setExtra(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Separate multiple with commas or spaces.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            size="sm"
+            disabled={allTo.length === 0 || isPending}
+            onClick={() => onSend(allTo)}
+            className="gap-1.5"
+          >
+            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            Send to {allTo.length} recipient{allTo.length !== 1 ? "s" : ""}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function QuoteApproverSuggestion({
   customerOrgId,
   siteId,
@@ -179,6 +288,9 @@ export default function RepairQuoteDetail() {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [partsOpen, setPartsOpen] = useState(false);
   const [partsDefId, setPartsDefId] = useState<number | null>(null);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendSelected, setSendSelected] = useState<Set<string>>(new Set());
+  const [sendExtra, setSendExtra] = useState("");
 
   // Approval workflow state
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
@@ -301,6 +413,14 @@ export default function RepairQuoteDetail() {
   });
   const cancelMut = trpc.repairQuote.cancelQuote.useMutation({
     onSuccess: () => { invalidate(); toast.success("Quote cancelled"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const sendMut = trpc.repairQuote.send.useMutation({
+    onSuccess: () => {
+      invalidate();
+      setSendOpen(false);
+      toast.success("Quote sent to customer");
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -644,8 +764,13 @@ export default function RepairQuoteDetail() {
               </Button>
             )}
             {(q.status === "draft" || q.status === "ready_to_send") && isFinalized && (
-              <Button size="sm" onClick={() => markSentMut.mutate({ id: quoteId })} disabled={markSentMut.isPending} className="gap-1.5">
-                <Send className="h-3.5 w-3.5" /> Mark Sent
+              <Button size="sm" onClick={() => setSendOpen(true)} className="gap-1.5">
+                <Send className="h-3.5 w-3.5" /> Send to Customer
+              </Button>
+            )}
+            {(q.status === "draft" || q.status === "ready_to_send") && isFinalized && (
+              <Button size="sm" variant="outline" onClick={() => markSentMut.mutate({ id: quoteId })} disabled={markSentMut.isPending} className="gap-1.5 text-muted-foreground">
+                <CheckCircle className="h-3.5 w-3.5" /> Mark Sent (manual)
               </Button>
             )}
             {q.status === "sent" && (
@@ -1248,6 +1373,16 @@ export default function RepairQuoteDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Send to Customer dialog */}
+      <SendQuoteDialog
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        customerOrgId={customer?.id}
+        siteId={site?.id}
+        isPending={sendMut.isPending}
+        onSend={(to) => sendMut.mutate({ id: quoteId, to })}
+      />
 
       {/* Suggest Parts dialog */}
       <Dialog open={partsOpen} onOpenChange={setPartsOpen}>
