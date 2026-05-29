@@ -45,6 +45,17 @@ import { useLocation } from "wouter";
 import { formatDate, parseDateInput } from "@/lib/utils";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 
+function InfoField({ label, value, multiline, highlight }: {
+  label: string; value: string; multiline?: boolean; highlight?: boolean;
+}) {
+  return (
+    <div className={highlight ? "rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5" : ""}>
+      <span className="text-xs text-muted-foreground">{label}: </span>
+      <span className={`${highlight ? "font-mono font-semibold text-amber-900" : ""}${multiline ? " whitespace-pre-line" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
 export default function AdminJobDetails() {
   const { jobId } = useParams<{ jobId: string }>();
   const { user } = useAuth();
@@ -192,6 +203,11 @@ export default function AdminJobDetails() {
   );
 
   const { data: quotes, refetch: refetchQuotes } = trpc.quote.listByJob.useQuery(
+    { jobId: parseInt(jobId!) },
+    { enabled: !!jobId }
+  );
+
+  const { data: wsi } = trpc.workSiteInfo.getForJob.useQuery(
     { jobId: parseInt(jobId!) },
     { enabled: !!jobId }
   );
@@ -596,6 +612,102 @@ export default function AdminJobDetails() {
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Work Site Info */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle>Work Site Info</CardTitle>
+                {job.siteId && (
+                  <Link href={`/admin/sites/${job.siteId}/work-site-info`}>
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <Pencil className="h-3.5 w-3.5" />
+                      {wsi ? "Edit" : "Add"}
+                    </Button>
+                  </Link>
+                )}
+              </CardHeader>
+              <CardContent>
+                {!wsi ? (
+                  <p className="text-sm text-muted-foreground">No work site info recorded for this site.</p>
+                ) : (
+                  <div className="space-y-5 text-sm">
+                    {/* Site Contact */}
+                    {(wsi.siteContactName || wsi.siteContactPhone || wsi.siteContactEmail) && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Site Contact</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1">
+                          {wsi.siteContactName && <InfoField label="Name" value={wsi.siteContactName} />}
+                          {wsi.siteContactPhone && <InfoField label="Phone" value={wsi.siteContactPhone} />}
+                          {wsi.siteContactEmail && <InfoField label="Email" value={wsi.siteContactEmail} />}
+                        </div>
+                      </div>
+                    )}
+                    {/* Property Manager */}
+                    {(wsi.propertyManagerName || wsi.propertyManagerPhone || wsi.propertyManagerEmail) && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Property Manager</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1">
+                          {wsi.propertyManagerName && <InfoField label="Name" value={wsi.propertyManagerName} />}
+                          {wsi.propertyManagerPhone && <InfoField label="Phone" value={wsi.propertyManagerPhone} />}
+                          {wsi.propertyManagerEmail && <InfoField label="Email" value={wsi.propertyManagerEmail} />}
+                        </div>
+                      </div>
+                    )}
+                    {/* Access & Entry */}
+                    {(wsi.accessNotes || wsi.keyLocation || wsi.keyNumber || wsi.lockboxCode || wsi.parkingNotes || wsi.serviceEntranceNotes) && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Access & Entry</p>
+                        <div className="space-y-1.5">
+                          {wsi.accessNotes && <InfoField label="Access Notes" value={wsi.accessNotes} multiline />}
+                          {wsi.keyLocation && <InfoField label="Key Location" value={wsi.keyLocation} />}
+                          {wsi.keyNumber && <InfoField label="Key Number" value={wsi.keyNumber} />}
+                          {wsi.lockboxCode && <InfoField label="Lockbox Code" value={wsi.lockboxCode} highlight />}
+                          {wsi.parkingNotes && <InfoField label="Parking" value={wsi.parkingNotes} multiline />}
+                          {wsi.serviceEntranceNotes && <InfoField label="Service Entrance" value={wsi.serviceEntranceNotes} multiline />}
+                        </div>
+                      </div>
+                    )}
+                    {/* Fire Alarm Panel */}
+                    {(wsi.fireAlarmPanelMake || wsi.fireAlarmPanelModel || wsi.fireAlarmPanelLocation || wsi.annunciatorLocation) && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Fire Alarm Panel</p>
+                        <div className="space-y-1.5">
+                          {(wsi.fireAlarmPanelMake || wsi.fireAlarmPanelModel) && (
+                            <InfoField label="Make / Model" value={[wsi.fireAlarmPanelMake, wsi.fireAlarmPanelModel].filter(Boolean).join(" / ")} />
+                          )}
+                          {wsi.fireAlarmPanelLocation && <InfoField label="Panel Location" value={wsi.fireAlarmPanelLocation} />}
+                          {wsi.annunciatorLocation && <InfoField label="Annunciator" value={wsi.annunciatorLocation} />}
+                        </div>
+                      </div>
+                    )}
+                    {/* Monitoring */}
+                    {(wsi.monitoringCompany || wsi.monitoringPhone || wsi.monitoringAccount) && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Monitoring</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1">
+                          {wsi.monitoringCompany && <InfoField label="Company" value={wsi.monitoringCompany} />}
+                          {wsi.monitoringPhone && <InfoField label="Phone" value={wsi.monitoringPhone} />}
+                          {wsi.monitoringAccount && <InfoField label="Account #" value={wsi.monitoringAccount} />}
+                        </div>
+                      </div>
+                    )}
+                    {/* Systems */}
+                    {(wsi.sprinklerNotes || wsi.backflowNotes || wsi.emergencyLightingNotes || wsi.fireExtinguisherNotes || wsi.generalNotes) && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">System Notes</p>
+                        <div className="space-y-1.5">
+                          {wsi.sprinklerNotes && <InfoField label="Sprinkler" value={wsi.sprinklerNotes} multiline />}
+                          {wsi.backflowNotes && <InfoField label="Backflow" value={wsi.backflowNotes} multiline />}
+                          {wsi.emergencyLightingNotes && <InfoField label="Emergency Lighting" value={wsi.emergencyLightingNotes} multiline />}
+                          {wsi.fireExtinguisherNotes && <InfoField label="Fire Extinguisher" value={wsi.fireExtinguisherNotes} multiline />}
+                          {wsi.generalNotes && <InfoField label="General" value={wsi.generalNotes} multiline />}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
