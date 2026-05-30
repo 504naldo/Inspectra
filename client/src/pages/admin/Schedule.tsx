@@ -31,6 +31,9 @@ import {
   CheckCircle2,
   RefreshCw,
   Trash2,
+  CalendarDays,
+  Zap,
+  Building2,
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -118,14 +121,19 @@ export default function AdminSchedule() {
 
   return (
     <AdminLayout>
-      <Tabs defaultValue="dispatch">
+      <Tabs defaultValue="due-soon">
         <TabsList className="mb-4">
+          <TabsTrigger value="due-soon">Due Soon</TabsTrigger>
           <TabsTrigger value="dispatch">Dispatch Board</TabsTrigger>
           <TabsTrigger value="tracking">Monthly Tracking</TabsTrigger>
           <TabsTrigger value="repair">Repair Letter Tracking</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="schedules">Service Schedules</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="due-soon">
+          <DueSoonTab companyId={companyId} utils={utils} />
+        </TabsContent>
 
         <TabsContent value="dispatch">
           <DispatchBoard companyId={companyId} />
@@ -1131,6 +1139,231 @@ function CalendarTab({ companyId }: { companyId: number }) {
   );
 }
 
+// ── Due Soon Tab ───────────────────────────────────────────────────────────────
+
+function urgencyInfo(daysUntilDue: number | null): { label: string; color: string; bg: string; border: string } {
+  if (daysUntilDue === null) return { label: "No due date", color: "text-muted-foreground", bg: "bg-muted/40", border: "border-muted-foreground/20" };
+  if (daysUntilDue < 0)  return { label: "Overdue",       color: "text-red-700",          bg: "bg-red-50 dark:bg-red-950/20",    border: "border-red-300" };
+  if (daysUntilDue <= 30) return { label: "Due this month",color: "text-amber-700",         bg: "bg-amber-50 dark:bg-amber-950/20",border: "border-amber-300" };
+  if (daysUntilDue <= 60) return { label: "Due soon",      color: "text-yellow-700",        bg: "bg-yellow-50 dark:bg-yellow-950/20",border: "border-yellow-200" };
+  return { label: "Upcoming",           color: "text-green-700",         bg: "bg-green-50 dark:bg-green-950/20",border: "border-green-200" };
+}
+
+function DueSoonTab({ companyId, utils }: { companyId: number; utils: any }) {
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [selectedSchedule, setSelectedSchedule] = useState<any>(null);
+  const [scheduledDate, setScheduledDate] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [notes, setNotes] = useState("");
+  const [leadTechId, setLeadTechId] = useState("");
+
+  const { data: dueSoon, isLoading, refetch } = trpc.serviceSchedule.getDueSoon.useQuery(
+    { companyId, daysAhead: 90 },
+    { enabled: !!companyId }
+  );
+
+  const { data: technicians } = trpc.user.listUsers.useQuery(
+    { companyId, role: "technician" },
+    { enabled: !!companyId }
+  );
+
+  const scheduleNow = trpc.serviceSchedule.scheduleNow.useMutation({
+    onSuccess: ({ jobNumber }) => {
+      toast.success(`Job ${jobNumber} created`);
+      refetch();
+      utils.serviceSchedule.getDueSoon.invalidate();
+      setScheduleOpen(false);
+      setSelectedSchedule(null);
+      setScheduledDate("");
+      setJobTitle("");
+      setNotes("");
+      setLeadTechId("");
+    },
+    onError: (e) => toast.error(e.message || "Failed to create job"),
+  });
+
+  function openScheduleDialog(s: any) {
+    setSelectedSchedule(s);
+    setJobTitle(`${s.serviceType} — ${s.siteName}`);
+    setScheduleOpen(true);
+  }
+
+  function handleSchedule() {
+    if (!selectedSchedule) return;
+    scheduleNow.mutate({
+      scheduleId: selectedSchedule.id,
+      scheduledDate: scheduledDate || undefined,
+      title: jobTitle || undefined,
+      notes: notes || undefined,
+      leadTechnicianId: leadTechId ? Number(leadTechId) : undefined,
+    });
+  }
+
+  const rows: any[] = dueSoon ?? [];
+  const overdue = rows.filter((r) => (r.daysUntilDue ?? 0) < 0);
+  const thisMonth = rows.filter((r) => r.daysUntilDue !== null && r.daysUntilDue >= 0 && r.daysUntilDue <= 30);
+  const upcoming = rows.filter((r) => r.daysUntilDue !== null && r.daysUntilDue > 30);
+  const noDate = rows.filter((r) => r.daysUntilDue === null);
+
+  return (
+    <div className="space-y-4">
+      {/* Summary stats */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className="border-red-200 bg-red-50 dark:bg-red-950/20">
+          <CardContent className="pt-4 pb-3 flex items-center gap-3">
+            <AlertTriangle className="h-8 w-8 text-red-500 shrink-0" />
+            <div>
+              <p className="text-2xl font-bold text-red-700">{overdue.length}</p>
+              <p className="text-xs text-red-600">Overdue</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+          <CardContent className="pt-4 pb-3 flex items-center gap-3">
+            <Clock className="h-8 w-8 text-amber-500 shrink-0" />
+            <div>
+              <p className="text-2xl font-bold text-amber-700">{thisMonth.length}</p>
+              <p className="text-xs text-amber-600">Due this month</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-green-200 bg-green-50 dark:bg-green-950/20">
+          <CardContent className="pt-4 pb-3 flex items-center gap-3">
+            <CalendarDays className="h-8 w-8 text-green-500 shrink-0" />
+            <div>
+              <p className="text-2xl font-bold text-green-700">{upcoming.length}</p>
+              <p className="text-xs text-green-600">Due in 30–90 days</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {isLoading && (
+        <div className="flex justify-center py-12">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {!isLoading && rows.length === 0 && (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <CheckCircle2 className="h-12 w-12 mx-auto text-green-500 mb-3" />
+            <p className="font-semibold">Nothing due in the next 90 days</p>
+            <p className="text-sm text-muted-foreground mt-1">All series are on track. Add service schedules in the Service Schedules tab.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoading && rows.length > 0 && (
+        <div className="space-y-2">
+          {rows.map((s: any) => {
+            const ui = urgencyInfo(s.daysUntilDue);
+            return (
+              <div
+                key={s.id}
+                className={`flex items-center justify-between gap-4 p-4 rounded-lg border ${ui.bg} ${ui.border}`}
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <Building2 className={`h-5 w-5 shrink-0 mt-0.5 ${ui.color}`} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm truncate">{s.siteName}</span>
+                      {s.buildingId && (
+                        <span className="text-xs font-mono text-muted-foreground">#{s.buildingId}</span>
+                      )}
+                      <Badge variant="outline" className="text-[10px]">
+                        {FREQ_LABELS[s.frequency] ?? s.frequency}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{s.serviceType}</p>
+                    <p className="text-xs text-muted-foreground">{s.customerName}{s.siteAddress ? ` · ${s.siteAddress}` : ""}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-right hidden sm:block">
+                    <p className={`text-sm font-semibold ${ui.color}`}>
+                      {s.daysUntilDue === null
+                        ? "No due date"
+                        : s.daysUntilDue < 0
+                        ? `${Math.abs(s.daysUntilDue)}d overdue`
+                        : s.daysUntilDue === 0
+                        ? "Due today"
+                        : `${s.daysUntilDue}d`}
+                    </p>
+                    {s.nextDueAt && (
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(s.nextDueAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    )}
+                  </div>
+                  <Button size="sm" onClick={() => openScheduleDialog(s)}>
+                    <Zap className="h-3.5 w-3.5 mr-1" />
+                    Schedule
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Schedule Now dialog */}
+      <Dialog open={scheduleOpen} onOpenChange={(o) => { if (!o) { setScheduleOpen(false); setSelectedSchedule(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schedule Inspection</DialogTitle>
+          </DialogHeader>
+          {selectedSchedule && (
+            <div className="space-y-4 py-2">
+              <div className="p-3 bg-muted/50 rounded-lg text-sm">
+                <p className="font-medium">{selectedSchedule.siteName}</p>
+                <p className="text-muted-foreground">{selectedSchedule.serviceType} · {selectedSchedule.customerName}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Job Title</Label>
+                <Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="Auto-generated if blank" />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Scheduled Date (optional)</Label>
+                <Input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Lead Technician (optional)</Label>
+                <Select value={leadTechId} onValueChange={setLeadTechId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Assign later…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(technicians as any[])?.map((t: any) => (
+                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Notes (optional)</Label>
+                <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Special instructions…" />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => setScheduleOpen(false)}>Cancel</Button>
+                <Button className="flex-1" onClick={handleSchedule} disabled={scheduleNow.isPending}>
+                  {scheduleNow.isPending ? "Creating…" : "Create Job"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ── Service Schedules Tab ──────────────────────────────────────────────────────
 
 function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: any }) {
@@ -1139,6 +1372,7 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
   const [serviceType, setServiceType] = useState("");
   const [frequency, setFrequency] = useState<string>("annual");
   const [estimatedHours, setEstimatedHours] = useState("");
+  const [firstDueAt, setFirstDueAt] = useState("");
   const [notes, setNotes] = useState("");
 
   const { data: schedules, isLoading, refetch } = trpc.serviceSchedule.listSchedules.useQuery(
@@ -1158,6 +1392,7 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
       setFrequency("annual");
       setEstimatedHours("");
       setNotes("");
+      setFirstDueAt("");
     },
   });
 
@@ -1173,6 +1408,7 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
       frequency: frequency as any,
       estimatedHours: estimatedHours ? Number(estimatedHours) : undefined,
       notes: notes || undefined,
+      firstDueAt: firstDueAt || undefined,
     });
   }
 
@@ -1195,8 +1431,8 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
               <th className="px-3 py-2">Bldg ID</th>
               <th className="px-3 py-2">Service Type</th>
               <th className="px-3 py-2">Frequency</th>
+              <th className="px-3 py-2">Next Due</th>
               <th className="px-3 py-2">Est. Hours</th>
-              <th className="px-3 py-2">Notes</th>
               <th className="px-3 py-2">Active</th>
               <th className="px-3 py-2"></th>
             </tr>
@@ -1210,7 +1446,9 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
             )}
             {rows.map((r: any) => (
               <tr key={r.id} className="border-b hover:bg-gray-50">
-                <td className="px-3 py-2 font-medium">{r.siteId}</td>
+                <td className="px-3 py-2 font-medium">
+                  {sites.find((s: any) => s.id === r.siteId)?.name ?? r.siteId}
+                </td>
                 <td className="px-3 py-2 font-mono text-[11px] text-gray-500">{r.buildingId ?? "—"}</td>
                 <td className="px-3 py-2">{r.serviceType}</td>
                 <td className="px-3 py-2">
@@ -1218,8 +1456,12 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
                     {FREQ_LABELS[r.frequency] ?? r.frequency}
                   </span>
                 </td>
+                <td className="px-3 py-2 text-[11px]">
+                  {r.nextDueAt
+                    ? new Date(r.nextDueAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })
+                    : "—"}
+                </td>
                 <td className="px-3 py-2">{r.estimatedHours ?? "—"}</td>
-                <td className="px-3 py-2 max-w-[160px] text-gray-500 truncate">{r.notes ?? "—"}</td>
                 <td className="px-3 py-2">
                   {r.active ? (
                     <span className="text-green-600 font-medium">Active</span>
@@ -1292,6 +1534,11 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
             <div className="space-y-1">
               <Label>Notes (optional)</Label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any special instructions…" />
+            </div>
+            <div className="space-y-1">
+              <Label>First Due Date (optional)</Label>
+              <Input type="date" value={firstDueAt} onChange={(e) => setFirstDueAt(e.target.value)} />
+              <p className="text-[11px] text-gray-400">Leave blank to default to one frequency interval from today.</p>
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>

@@ -11,6 +11,17 @@ import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
 import * as schema from "../../drizzle/schema";
 
+function addFrequencyToDate(date: Date, frequency: string): Date {
+  const d = new Date(date);
+  switch (frequency) {
+    case "monthly":    d.setMonth(d.getMonth() + 1); break;
+    case "quarterly":  d.setMonth(d.getMonth() + 3); break;
+    case "semi_annual":d.setMonth(d.getMonth() + 6); break;
+    default:           d.setFullYear(d.getFullYear() + 1);
+  }
+  return d;
+}
+
 // ── Work-order helpers ────────────────────────────────────────────────────────
 
 function jobTypeToWorkType(
@@ -311,7 +322,7 @@ const jobRouter = router({
     void syncWorkOrder(input.id, { status: "completed", completedAt: completedNow });
     void logActivity({ ctx, entityType: "job", entityId: input.id, eventType: "completed", title: "Job completed" });
 
-    // Best-effort sync to monthly_service_tracking.
+    // Best-effort sync to monthly_service_tracking and service schedule.
     // Never fail job completion if tracker sync has an unexpected issue.
     try {
       const trackerRow = await db.getMonthlyTrackingByLinkedJobId(job.id);
@@ -331,6 +342,15 @@ const jobRouter = router({
         }
 
         await db.updateMonthlyTrackingByLinkedJobId(job.id, trackerUpdate);
+
+        // Advance the service schedule's next due date
+        if (trackerRow.serviceScheduleId) {
+          const sched = await db.getServiceScheduleById(trackerRow.serviceScheduleId);
+          if (sched) {
+            const nextDueAt = addFrequencyToDate(completedNow, sched.frequency);
+            await db.updateServiceScheduleCompletion(sched.id, completedNow, nextDueAt);
+          }
+        }
       }
     } catch (trackerErr) {
       console.warn(`[MonthlyTracking] Failed to sync completion for job ${job.id}:`, trackerErr);
