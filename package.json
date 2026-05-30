@@ -4,6 +4,8 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "seed:nfpa-templates:dry": "tsx scripts/seedNFPATemplates.ts --company 1 --dry-run",
+    "seed:nfpa-templates": "tsx scripts/seedNFPATemplates.ts --company 1",
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "cap:build": "vite build && npx cap sync android",
