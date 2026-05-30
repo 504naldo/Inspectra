@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { takePhoto, vibrate, vibrateSuccess, vibrateError, isNative } from "@/lib/native";
 import {
   ArrowLeft,
   Check,
@@ -51,6 +52,16 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
   const [flagDescription, setFlagDescription] = useState("");
   const [flagPhotoFile, setFlagPhotoFile] = useState<File | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleTakePhoto = async (onFile: (f: File) => void) => {
+    const native = await takePhoto();
+    if (native) {
+      const blob = await fetch(`data:${native.mimeType};base64,${native.base64}`).then((r) => r.blob());
+      onFile(new File([blob], `photo_${Date.now()}.jpg`, { type: native.mimeType }));
+    } else {
+      photoInputRef.current?.click();
+    }
+  };
 
   // Get category from URL search params
   const searchParams = new URLSearchParams(window.location.search);
@@ -294,21 +305,21 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
           <div className="grid grid-cols-3 gap-3">
             <Button
               className={`action-btn ${result === 'pass' ? 'bg-[var(--success)] hover:bg-[var(--success)]/90 text-white' : 'bg-[var(--success)]/10 text-[var(--success)] hover:bg-[var(--success)]/20'}`}
-              onClick={() => setResult('pass')}
+              onClick={() => { setResult('pass'); vibrateSuccess(); }}
             >
               <Check className="h-6 w-6 mr-2" />
               PASS
             </Button>
             <Button
               className={`action-btn ${result === 'fail' ? 'bg-destructive hover:bg-destructive/90 text-white' : 'bg-destructive/10 text-destructive hover:bg-destructive/20'}`}
-              onClick={() => setResult('fail')}
+              onClick={() => { setResult('fail'); vibrateError(); }}
             >
               <X className="h-6 w-6 mr-2" />
               FAIL
             </Button>
             <Button
               className={`action-btn ${result === 'na' ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              onClick={() => setResult('na')}
+              onClick={() => { setResult('na'); vibrate('light'); }}
             >
               <Minus className="h-6 w-6 mr-2" />
               N/A
@@ -331,7 +342,7 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
         <div className="space-y-3">
           <h2 className="font-semibold">Quick Actions</h2>
           <div className="grid grid-cols-2 gap-3">
-            <Button variant="outline" className="h-14" disabled>
+            <Button variant="outline" className="h-14" onClick={() => handleTakePhoto(setFlagPhotoFile)}>
               <Camera className="h-5 w-5 mr-2" />
               Add Photo
             </Button>
@@ -462,9 +473,9 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
                   </Button>
                 </div>
               ) : (
-                <Button variant="outline" className="w-full" onClick={() => photoInputRef.current?.click()}>
+                <Button variant="outline" className="w-full" onClick={() => handleTakePhoto(setFlagPhotoFile)}>
                   <Camera className="h-4 w-4 mr-2" />
-                  Take / Choose Photo
+                  {isNative() ? "Take Photo" : "Take / Choose Photo"}
                 </Button>
               )}
             </div>

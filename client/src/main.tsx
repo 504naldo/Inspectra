@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { TRPC_URL } from "@/lib/native";
 import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
@@ -66,7 +67,7 @@ function fakeSuccessResponse(url: string): Response {
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: "/api/trpc",
+      url: TRPC_URL,
       transformer: superjson,
       fetch(input, init) {
         const isPost = !init?.method || init.method === "POST";

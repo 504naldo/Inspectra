@@ -9,6 +9,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
 import { useEffect } from "react";
 import { getRoleBasedPath } from "./lib/roleRedirect";
+import { useNativeInit } from "./hooks/useNativeInit";
 
 // Pages
 import Home from "./pages/Home";
@@ -579,6 +580,7 @@ function Router() {
 }
 
 function App() {
+  useNativeInit();
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
