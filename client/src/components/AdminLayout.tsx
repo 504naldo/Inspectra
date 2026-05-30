@@ -129,9 +129,10 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Financial",
     icon: ReceiptText,
     items: [
-      { label: "Invoices",        href: "/admin/invoices",        icon: FileText    },
-      { label: "Quotes",          href: "/admin/quotes",          icon: ReceiptText },
-      { label: "Purchase Orders", href: "/admin/purchase-orders", icon: ClipboardPen },
+      { label: "Financial Reports", href: "/admin/financial-reports", icon: TrendingUp  },
+      { label: "Invoices",         href: "/admin/invoices",          icon: FileText    },
+      { label: "Quotes",           href: "/admin/quotes",            icon: ReceiptText },
+      { label: "Purchase Orders",  href: "/admin/purchase-orders",   icon: ClipboardPen },
     ],
   },
   {
