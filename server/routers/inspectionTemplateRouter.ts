@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { router, officeProcedure, adminProcedure, technicianProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
@@ -569,6 +569,60 @@ export const inspectionTemplateRouter = router({
       });
 
       return { ok: true };
+    }),
+
+  // Returns template completeness for the Submit-for-QA dialog.
+  // Counts required items vs answered responses across all templates assigned to the job.
+  getCompletenessForJob: technicianProcedure
+    .input(z.object({ jobId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+
+      const [job] = await db
+        .select({ jobType: jobs.jobType, siteId: jobs.siteId, customerOrgId: jobs.customerOrgId, companyId: jobs.companyId })
+        .from(jobs)
+        .where(eq(jobs.id, input.jobId))
+        .limit(1);
+
+      if (!job || job.companyId !== ctx.user.companyId) return { templateCount: 0, totalRequired: 0, answered: 0 };
+
+      const assignments = await db
+        .select({ templateId: inspectionTemplateAssignments.templateId, jobType: inspectionTemplateAssignments.jobType, siteId: inspectionTemplateAssignments.siteId, customerOrgId: inspectionTemplateAssignments.customerOrgId })
+        .from(inspectionTemplateAssignments)
+        .where(and(eq(inspectionTemplateAssignments.companyId, ctx.user.companyId!), eq(inspectionTemplateAssignments.isActive, 1)));
+
+      const matchingIds = new Set<number>();
+      for (const a of assignments) {
+        if ((!a.jobType || a.jobType === job.jobType) && (!a.siteId || a.siteId === job.siteId) && (!a.customerOrgId || a.customerOrgId === job.customerOrgId)) {
+          matchingIds.add(a.templateId);
+        }
+      }
+
+      if (matchingIds.size === 0) return { templateCount: 0, totalRequired: 0, answered: 0 };
+
+      const activeTemplates = await db
+        .select({ id: inspectionTemplates.id })
+        .from(inspectionTemplates)
+        .where(and(eq(inspectionTemplates.companyId, ctx.user.companyId!), eq(inspectionTemplates.status, "active")));
+
+      const activeIds = activeTemplates.map((t) => t.id).filter((id) => matchingIds.has(id));
+      if (activeIds.length === 0) return { templateCount: 0, totalRequired: 0, answered: 0 };
+
+      const [allItems, responses] = await Promise.all([
+        db.select({ id: inspectionTemplateItems.id })
+          .from(inspectionTemplateItems)
+          .where(and(inArray(inspectionTemplateItems.templateId, activeIds), eq(inspectionTemplateItems.isRequired, 1))),
+        db.select({ itemId: inspectionTemplateResponses.itemId, responseValue: inspectionTemplateResponses.responseValue, responseText: inspectionTemplateResponses.responseText })
+          .from(inspectionTemplateResponses)
+          .where(and(eq(inspectionTemplateResponses.jobId, input.jobId), eq(inspectionTemplateResponses.companyId, ctx.user.companyId!))),
+      ]);
+
+      const answeredIds = new Set(responses.filter((r) => r.responseValue || r.responseText).map((r) => r.itemId));
+      return {
+        templateCount: activeIds.length,
+        totalRequired: allItems.length,
+        answered: allItems.filter((i) => answeredIds.has(i.id)).length,
+      };
     }),
 
   // ── Report QA / Admin — lightweight response summary ─────────────────────

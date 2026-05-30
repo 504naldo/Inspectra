@@ -357,6 +357,10 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   // Submit for QA
   const [qaDialogOpen, setQaDialogOpen] = useState(false);
+  const { data: templateCompleteness } = trpc.inspectionTemplate.getCompletenessForJob.useQuery(
+    { jobId },
+    { enabled: qaDialogOpen && !!jobId, staleTime: 30_000 }
+  );
   const submitForQA = trpc.technician.submitForQA.useMutation({
     onSuccess: () => {
       toast.success('Submitted for QA — office has been notified');
@@ -1624,8 +1628,18 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <div className="rounded-lg bg-muted p-3 space-y-1">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Devices tested</span>
-                <span className="font-medium">{testedCount} / {totalDevices}</span>
+                <span className={`font-medium ${testedCount < totalDevices ? "text-amber-600" : "text-emerald-600"}`}>
+                  {testedCount} / {totalDevices}
+                </span>
               </div>
+              {templateCompleteness && templateCompleteness.templateCount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Checklist items</span>
+                  <span className={`font-medium ${templateCompleteness.answered < templateCompleteness.totalRequired ? "text-amber-600" : "text-emerald-600"}`}>
+                    {templateCompleteness.answered} / {templateCompleteness.totalRequired}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Deficiencies</span>
                 <span className="font-medium">{deficiencies?.length ?? 0}</span>
@@ -1633,6 +1647,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               {testedCount < totalDevices && (
                 <p className="text-amber-600 text-xs pt-1">
                   ⚠ {totalDevices - testedCount} device{totalDevices - testedCount !== 1 ? "s" : ""} not yet tested.
+                </p>
+              )}
+              {templateCompleteness && templateCompleteness.templateCount > 0 && templateCompleteness.answered < templateCompleteness.totalRequired && (
+                <p className="text-amber-600 text-xs">
+                  ⚠ {templateCompleteness.totalRequired - templateCompleteness.answered} required checklist item{templateCompleteness.totalRequired - templateCompleteness.answered !== 1 ? "s" : ""} unanswered.
                 </p>
               )}
             </div>

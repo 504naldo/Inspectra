@@ -77,6 +77,11 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
     { enabled: true, retry: isOnline ? 2 : 0 }
   );
 
+  const { data: historical } = trpc.inspectionResult.getHistoricalForDevice.useQuery(
+    { jobId, deviceId },
+    { enabled: isOnline, retry: 1, staleTime: 5 * 60_000 }
+  );
+
   // Get job details for category navigation
   const { data: jobData } = trpc.job.getWithDetails.useQuery(
     { id: jobId },
@@ -326,6 +331,51 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
             </Button>
           </div>
         </div>
+
+        {/* Historical result — suggestion or anomaly flag */}
+        {historical && (() => {
+          const priorDate = historical.priorJobCompletedAt
+            ? new Date(historical.priorJobCompletedAt).toLocaleDateString("en-CA", { month: "short", year: "numeric" })
+            : "prior inspection";
+          const priorLabel = historical.result.toUpperCase();
+
+          if (result === "not_tested") {
+            return (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                <span>Last inspection: <strong>{priorLabel}</strong> · {priorDate}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 shrink-0 border-blue-300 text-blue-800 hover:bg-blue-100 text-xs px-2"
+                  onClick={() => { setResult(historical.result); vibrate("light"); }}
+                >
+                  Apply
+                </Button>
+              </div>
+            );
+          }
+          if (result !== historical.result) {
+            const isRegression = result === "fail" && historical.result === "pass";
+            return (
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                isRegression
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-800"
+              }`}>
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>
+                  {isRegression ? "⚠ Regression" : "✓ Improvement"}: was{" "}
+                  <strong>{priorLabel}</strong> on {priorDate}
+                </span>
+              </div>
+            );
+          }
+          return (
+            <p className="text-xs text-muted-foreground px-1">
+              ✓ Same result as {priorDate}
+            </p>
+          );
+        })()}
 
         {/* Notes */}
         <div className="space-y-3">
