@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePortalPreview } from "@/contexts/PortalPreviewContext";
+import { useLocation } from "wouter";
 import {
   Search,
   Plus,
@@ -17,11 +19,14 @@ import {
   Pencil,
   Save,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AdminCustomers() {
   const { user } = useAuth();
+  const { setPreviewOrg } = usePortalPreview();
+  const [, setLocation] = useLocation();
 
   if (!user || !user.companyId) {
     return (
@@ -34,6 +39,11 @@ export default function AdminCustomers() {
   }
 
   const companyId = user.companyId;
+
+  const handleViewPortal = (customer: any) => {
+    setPreviewOrg({ id: customer.id, name: customer.name });
+    setLocation("/customer");
+  };
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -232,14 +242,26 @@ export default function AdminCustomers() {
                         </p>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-                      onClick={() => openEdit(customer)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-muted-foreground hover:text-primary text-xs"
+                        onClick={() => handleViewPortal(customer)}
+                        title="Preview customer portal"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                        Portal
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => openEdit(customer)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

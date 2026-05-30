@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePortalPreview } from "@/contexts/PortalPreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -95,7 +96,8 @@ function DeficiencyCard({ def, onClick }: { def: any; onClick: () => void }) {
 
 export default function CustomerDeficiencies() {
   const { user } = useAuth();
-  const customerOrgId = user?.customerOrgId!;
+  const { previewOrg } = usePortalPreview();
+  const customerOrgId = previewOrg?.id ?? user?.customerOrgId!;
   const [selected, setSelected] = useState<any>(null);
 
   const { data: deficiencies, isLoading } = trpc.deficiency.listByCustomerOrg.useQuery(

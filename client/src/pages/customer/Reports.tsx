@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePortalPreview } from "@/contexts/PortalPreviewContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -11,7 +12,8 @@ import { toast } from "sonner";
 
 export default function CustomerReports() {
   const { user } = useAuth();
-  const customerOrgId = user?.customerOrgId!;
+  const { previewOrg } = usePortalPreview();
+  const customerOrgId = previewOrg?.id ?? user?.customerOrgId!;
   const [_selectedReport, setSelectedReport] = useState<any>(null);
 
   const { data: reports, isLoading, refetch } = trpc.report.listByCustomerOrg.useQuery(

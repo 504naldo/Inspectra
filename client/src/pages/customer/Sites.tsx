@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePortalPreview } from "@/contexts/PortalPreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import CustomerLayout from "@/components/CustomerLayout";
@@ -7,7 +8,8 @@ import { Building2, MapPin, Phone, CheckCircle2, AlertTriangle } from "lucide-re
 
 export default function CustomerSites() {
   const { user } = useAuth();
-  const customerOrgId = user?.customerOrgId!;
+  const { previewOrg } = usePortalPreview();
+  const customerOrgId = previewOrg?.id ?? user?.customerOrgId!;
 
   const { data: sites, isLoading } = trpc.site.listByCustomerOrg.useQuery(
     { customerOrgId },
