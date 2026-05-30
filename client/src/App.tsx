@@ -51,6 +51,7 @@ import ApprovedWork from "./pages/admin/ApprovedWork";
 import ApprovedWorkDetail from "./pages/admin/ApprovedWorkDetail";
 import AdminInvoices from "./pages/admin/Invoices";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
+import FinancialReports from "./pages/admin/FinancialReports";
 import CompanySettings from "./pages/admin/CompanySettings";
 import DataQuality from "./pages/admin/DataQuality";
 import ImportCenter from "./pages/admin/ImportCenter";
@@ -370,6 +371,11 @@ function Router() {
             <ApprovedWorkDetail id={parseInt(params.id)} />
           </ProtectedRoute>
         )}
+      </Route>
+      <Route path="/admin/financial-reports">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <FinancialReports />
+        </ProtectedRoute>
       </Route>
       <Route path="/admin/invoices">
         <ProtectedRoute allowedRoles={['admin', 'office']}>

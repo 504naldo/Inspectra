@@ -37,6 +37,7 @@ import { repairLetterRouter } from "./routers/repairLetterRouter";
 import { workOrderRouter } from "./routers/workOrderRouter";
 import { approvedWorkRouter } from "./routers/approvedWorkRouter";
 import { invoiceRouter } from "./routers/invoiceRouter";
+import { financialReportingRouter } from "./routers/financialReportingRouter";
 import { workSiteInfoRouter } from "./routers/workSiteInfoRouter";
 import { partsCatalogRouter } from "./routers/partsCatalogRouter";
 import { companySettingsRouter } from "./routers/companySettingsRouter";
@@ -132,6 +133,7 @@ export const appRouter = router({
   workOrder: workOrderRouter,
   approvedWork: approvedWorkRouter,
   invoice: invoiceRouter,
+  financialReporting: financialReportingRouter,
   workSiteInfo: workSiteInfoRouter,
   partsCatalog: partsCatalogRouter,
   companySettings: companySettingsRouter,
