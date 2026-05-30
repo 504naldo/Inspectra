@@ -5,6 +5,8 @@ import { eq, and, or, like, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { adminProcedure, protectedProcedure, router } from './_core/trpc';
 import { randomUUID } from 'crypto';
+import { sendPortalInvite } from './emailService';
+import { ENV } from './_core/env';
 
 export const userRouter = router({
   // List all users in company (admin only)
@@ -155,6 +157,14 @@ export const userRouter = router({
         isActive: 1,
         lastSignedIn: new Date(),
       });
+
+      if (input.role === 'customer') {
+        void sendPortalInvite({
+          email: input.email,
+          name: input.name,
+          portalUrl: `${ENV.appUrl}/customer`,
+        });
+      }
 
       return { success: true };
     }),
