@@ -87,10 +87,10 @@ import TemplateFormRenderer from "./pages/technician/TemplateFormRenderer";
 import FeedbackCenter from "./pages/admin/FeedbackCenter";
 import ContactsPage from "./pages/admin/Contacts";
 import QuoteAccept from "./pages/QuoteAccept";
-// Customer portal imports disabled — customer world not active in this release
-// import CustomerPortal from "./pages/customer/Portal";
-// import CustomerReports from "./pages/customer/Reports";
-// import CustomerDeficiencies from "./pages/customer/Deficiencies";
+import CustomerPortal from "./pages/customer/Portal";
+import CustomerReports from "./pages/customer/Reports";
+import CustomerDeficiencies from "./pages/customer/Deficiencies";
+import CustomerSites from "./pages/customer/Sites";
 
 // Protected route wrapper
 function ProtectedRoute({ 
@@ -552,15 +552,26 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      {/* Customer routes — disabled, customer portal not active in this release */}
+      {/* Customer portal */}
       <Route path="/customer">
-        <Redirect to="/forbidden" />
+        <ProtectedRoute allowedRoles={['customer']}>
+          <CustomerPortal />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/customer/sites">
+        <ProtectedRoute allowedRoles={['customer']}>
+          <CustomerSites />
+        </ProtectedRoute>
       </Route>
       <Route path="/customer/reports">
-        <Redirect to="/forbidden" />
+        <ProtectedRoute allowedRoles={['customer']}>
+          <CustomerReports />
+        </ProtectedRoute>
       </Route>
       <Route path="/customer/deficiencies">
-        <Redirect to="/forbidden" />
+        <ProtectedRoute allowedRoles={['customer']}>
+          <CustomerDeficiencies />
+        </ProtectedRoute>
       </Route>
 
       {/* 403 Forbidden */}

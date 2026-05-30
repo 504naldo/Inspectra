@@ -28,6 +28,7 @@ export default function AdminUsers() {
   const [editCertLevel, setEditCertLevel] = useState('');
   const [editCertExpiry, setEditCertExpiry] = useState('');
 
+  const [editCustomerOrgId, setEditCustomerOrgId] = useState<string>('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   // Add User dialog state
@@ -35,8 +36,14 @@ export default function AdminUsers() {
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'office' | 'technician' | 'customer'>('technician');
+  const [newCustomerOrgId, setNewCustomerOrgId] = useState<string>('');
 
   const utils = trpc.useUtils();
+
+  const { data: customerOrgs } = trpc.customerOrg.list.useQuery(
+    { companyId: user?.companyId! },
+    { enabled: !!user?.companyId }
+  );
 
   const createUserMutation = trpc.user.createUser.useMutation({
     onSuccess: () => {
@@ -45,6 +52,7 @@ export default function AdminUsers() {
       setNewEmail('');
       setNewName('');
       setNewRole('technician');
+      setNewCustomerOrgId('');
       utils.user.listUsers.invalidate();
     },
     onError: (error) => {
@@ -78,6 +86,7 @@ export default function AdminUsers() {
     setEditingUser(u.id);
     setEditName(u.name || '');
     setEditRole(u.role);
+    setEditCustomerOrgId(u.customerOrgId ? String(u.customerOrgId) : '');
     setEditIsActive(!!u.isActive);
     setEditCertNumber(u.certNumber || '');
     setEditCertLevel(u.certificationLevel || '');
@@ -100,6 +109,7 @@ export default function AdminUsers() {
       certNumber: editCertNumber || null,
       certificationLevel: editCertLevel || null,
       certExpiry: editCertExpiry || null,
+      customerOrgId: editCustomerOrgId ? Number(editCustomerOrgId) : null,
     });
   };
 
@@ -297,7 +307,7 @@ export default function AdminUsers() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="new-role">Role</Label>
-                <Select value={newRole} onValueChange={(v) => setNewRole(v as typeof newRole)}>
+                <Select value={newRole} onValueChange={(v) => { setNewRole(v as typeof newRole); setNewCustomerOrgId(''); }}>
                   <SelectTrigger id="new-role">
                     <SelectValue />
                   </SelectTrigger>
@@ -309,13 +319,34 @@ export default function AdminUsers() {
                   </SelectContent>
                 </Select>
               </div>
+              {newRole === 'customer' && (
+                <div className="space-y-2">
+                  <Label htmlFor="new-customer-org">Customer Organization</Label>
+                  <Select value={newCustomerOrgId} onValueChange={setNewCustomerOrgId}>
+                    <SelectTrigger id="new-customer-org">
+                      <SelectValue placeholder="Select organization…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customerOrgs?.map((org: any) => (
+                        <SelectItem key={org.id} value={String(org.id)}>{org.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">This user will only see data for the selected organization.</p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddUserOpen(false)}>
                 Cancel
               </Button>
               <Button
-                onClick={() => createUserMutation.mutate({ email: newEmail, name: newName, role: newRole })}
+                onClick={() => createUserMutation.mutate({
+                  email: newEmail,
+                  name: newName,
+                  role: newRole,
+                  customerOrgId: newCustomerOrgId ? Number(newCustomerOrgId) : null,
+                })}
                 disabled={createUserMutation.isPending || !newEmail.trim() || !newName.trim()}
               >
                 {createUserMutation.isPending ? 'Adding...' : 'Add User'}
@@ -369,7 +400,7 @@ export default function AdminUsers() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-role">Role</Label>
-                <Select value={editRole} onValueChange={setEditRole}>
+                <Select value={editRole} onValueChange={(v) => { setEditRole(v); if (v !== 'customer') setEditCustomerOrgId(''); }}>
                   <SelectTrigger id="edit-role">
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
@@ -377,9 +408,26 @@ export default function AdminUsers() {
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="office">Office</SelectItem>
                     <SelectItem value="technician">Technician</SelectItem>
+                    <SelectItem value="customer">Customer</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              {editRole === 'customer' && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit-customer-org">Customer Organization</Label>
+                  <Select value={editCustomerOrgId} onValueChange={setEditCustomerOrgId}>
+                    <SelectTrigger id="edit-customer-org">
+                      <SelectValue placeholder="Select organization…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customerOrgs?.map((org: any) => (
+                        <SelectItem key={org.id} value={String(org.id)}>{org.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Customer users only see data for their assigned organization.</p>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <Label htmlFor="edit-active">Active Status</Label>
                 <Switch
