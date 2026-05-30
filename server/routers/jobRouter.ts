@@ -10,6 +10,8 @@ import { populateJobFireAlarmChecklist } from "../fireAlarmRouter";
 import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
 import * as schema from "../../drizzle/schema";
+import { sendJobScheduledEmail } from "../emailService";
+import { ENV } from "../_core/env";
 
 function addFrequencyToDate(date: Date, frequency: string): Date {
   const d = new Date(date);
@@ -247,6 +249,32 @@ const jobRouter = router({
         ? `Scheduled for ${new Date(input.scheduledDate).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })}`
         : undefined,
     });
+
+    // Notify customer org contact when job is scheduled (best-effort)
+    const scheduledDateForEmail = input.scheduledDate;
+    const customerOrgIdForEmail = input.customerOrgId;
+    if (scheduledDateForEmail && customerOrgIdForEmail) {
+      void (async () => {
+        try {
+          const [site, customerOrg] = await Promise.all([
+            db.getSiteById(input.siteId),
+            db.getCustomerOrgById(customerOrgIdForEmail),
+          ]);
+          if (customerOrg?.contactEmail) {
+            await sendJobScheduledEmail({
+              to: customerOrg.contactEmail,
+              customerName: customerOrg.contactName || customerOrg.name,
+              siteName: site?.name ?? input.title,
+              jobNumber: newJob.jobNumber,
+              scheduledDate: scheduledDateForEmail,
+              portalUrl: ENV.appUrl,
+            });
+          }
+        } catch (err) {
+          console.warn("[email] Failed to send job scheduled notification:", err);
+        }
+      })();
+    }
 
     return newJob;
   }),

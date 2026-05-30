@@ -13,6 +13,8 @@ import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
 import { logActivity } from "../activityLogger.js";
+import { sendJobScheduledEmail } from "../emailService.js";
+import { ENV } from "../_core/env.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -258,6 +260,27 @@ export const serviceScheduleRouter = router({
       void logActivity({ ctx, entityType: "monthly_service_tracking", entityId: trackingRow.id,
         eventType: "linked", title: `Job created from series: ${jobNumber}`,
         relatedEntityType: "job", relatedEntityId: job.id });
+
+      // Notify customer org contact when inspection is scheduled (best-effort)
+      if (scheduledDate && sched.customerOrgId) {
+        void (async () => {
+          try {
+            const customerOrg = await db.getCustomerOrgById(sched.customerOrgId!);
+            if (customerOrg?.contactEmail) {
+              await sendJobScheduledEmail({
+                to: customerOrg.contactEmail,
+                customerName: customerOrg.contactName || customerOrg.name,
+                siteName: site.name,
+                jobNumber,
+                scheduledDate,
+                portalUrl: ENV.appUrl,
+              });
+            }
+          } catch (err) {
+            console.warn("[email] Failed to send scheduleNow notification:", err);
+          }
+        })();
+      }
 
       return { jobId: job.id, jobNumber };
     }),

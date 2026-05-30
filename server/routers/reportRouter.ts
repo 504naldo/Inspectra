@@ -10,7 +10,8 @@ import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
 import { fetchImageBuffer } from "../pdfSharedStyles";
 import * as checklists from "../complianceChecklists";
-import { sendReportEmail } from "../emailService";
+import { sendReportEmail, sendReportReadyEmail } from "../emailService";
+import { ENV } from "../_core/env";
 import {
   inspectionTemplates,
   inspectionTemplateSections,
@@ -447,13 +448,24 @@ const reportRouter = router({
     });
     
     // Send notification email to reports@ewandf.ca
-    const emailSite = await db.getSiteById(job.siteId);
     await sendReportEmail({
-      siteName: emailSite?.name ?? job.title,
+      siteName: site?.name ?? job.title,
       jobNumber: job.jobNumber,
       reportType: "compliance",
       pdfUrl: url,
     });
+
+    // Notify customer org contact that report is ready
+    if (customerOrg?.contactEmail) {
+      void sendReportReadyEmail({
+        to: customerOrg.contactEmail,
+        customerName: customerOrg.contactName || customerOrg.name,
+        siteName: site?.name ?? job.title,
+        jobNumber: job.jobNumber,
+        reportType: "compliance",
+        portalUrl: ENV.appUrl,
+      });
+    }
 
     // Auto-save to Google Drive (best-effort — don't fail report generation)
     let driveUrl: string | null = null;
@@ -808,13 +820,24 @@ const reportRouter = router({
     });
 
     // Send notification email to reports@ewandf.ca
-    const annualSite = await db.getSiteById(job.siteId);
     await sendReportEmail({
-      siteName: annualSite?.name ?? job.title,
+      siteName: site.name ?? job.title,
       jobNumber: job.jobNumber,
       reportType: "annual",
       pdfUrl: url,
     });
+
+    // Notify customer org contact that report is ready
+    if (customerOrg?.contactEmail) {
+      void sendReportReadyEmail({
+        to: customerOrg.contactEmail,
+        customerName: customerOrg.contactName || customerOrg.name,
+        siteName: site.name ?? job.title,
+        jobNumber: job.jobNumber,
+        reportType: "annual",
+        portalUrl: ENV.appUrl,
+      });
+    }
 
     // Auto-save to Google Drive (best-effort — don't fail report generation)
     let driveUrl: string | null = null;
