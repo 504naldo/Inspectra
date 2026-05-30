@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { WorkflowHint } from "@/components/help/WorkflowHint";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,8 @@ import {
   Lock,
   Bot,
   Copy,
+  Send,
+  AlertTriangle,
 } from "lucide-react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "../../../../drizzle/schema";
 
@@ -336,6 +338,129 @@ function MarkPaidDialog({
   );
 }
 
+// ── Send Invoice dialog ───────────────────────────────────────────────────────
+
+function SendInvoiceDialog({
+  open,
+  onOpenChange,
+  invoice,
+  onSend,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  invoice: { id: number; customerOrgId?: number | null; siteId?: number | null; billToEmail?: string | null };
+  onSend: (to: string[]) => void;
+  isPending: boolean;
+}) {
+  const { data } = trpc.contact.getRecipientsForWorkflow.useQuery(
+    { customerOrgId: invoice.customerOrgId ?? undefined, siteId: invoice.siteId ?? undefined, workflowType: "invoice" },
+    { enabled: open && !!(invoice.customerOrgId || invoice.siteId) },
+  );
+  const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? [])].filter((c) => c.email);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [extra, setExtra] = useState("");
+
+  useEffect(() => {
+    if (!open) { setSelected(new Set()); setExtra(""); return; }
+    const initial = new Set<string>();
+    if (suggestions.length > 0) {
+      suggestions.forEach((c) => initial.add(c.email!));
+    } else if (invoice.billToEmail) {
+      initial.add(invoice.billToEmail);
+    }
+    if (initial.size > 0 && selected.size === 0) setSelected(initial);
+  }, [open, suggestions.length]);
+
+  const toggle = (email: string) =>
+    setSelected((prev) => { const s = new Set(prev); s.has(email) ? s.delete(email) : s.add(email); return s; });
+
+  const extraEmails = extra.split(/[\s,;]+/).map((s) => s.trim()).filter((s) => s.includes("@") && s.includes("."));
+  const allTo = [...Array.from(selected), ...extraEmails];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Send className="h-4 w-4 text-primary" /> Send Invoice to Customer
+          </DialogTitle>
+          <DialogDescription>
+            A PDF will be generated and emailed to the selected recipients.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          {(data?.warnings ?? []).map((w, i) => (
+            <div key={i} className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />{w}
+            </div>
+          ))}
+          {suggestions.length > 0 ? (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wide">Recipients from contact list</Label>
+              <div className="rounded-md border divide-y">
+                {suggestions.map((c) => (
+                  <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(c.email!)}
+                      onChange={() => toggle(c.email!)}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="flex-1 min-w-0">
+                      <span className="text-sm font-medium">{c.name}</span>
+                      <span className="text-xs text-muted-foreground ml-1.5 truncate">{c.email}</span>
+                    </span>
+                    {(data?.recommended ?? []).some((r) => r.id === c.id) && (
+                      <span className="text-xs bg-violet-100 text-violet-700 rounded-full px-1.5 py-0.5">flagged</span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : invoice.billToEmail ? (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wide">Bill-to email</Label>
+              <label className="flex items-center gap-2.5 rounded-md border px-3 py-2 hover:bg-muted cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selected.has(invoice.billToEmail)}
+                  onChange={() => toggle(invoice.billToEmail!)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm">{invoice.billToEmail}</span>
+              </label>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No contacts found. Enter an email below.</p>
+          )}
+          <div className="space-y-1">
+            <Label className="text-xs">Additional recipients</Label>
+            <Input
+              placeholder="extra@example.com"
+              value={extra}
+              onChange={(e) => setExtra(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Separate multiple with commas or spaces.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            size="sm"
+            disabled={allTo.length === 0 || isPending}
+            onClick={() => onSend(allTo)}
+            className="gap-1.5"
+          >
+            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            Send to {allTo.length} recipient{allTo.length !== 1 ? "s" : ""}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 interface Props { id: number }
@@ -347,6 +472,7 @@ export default function InvoiceDetail({ id }: Props) {
   const [showAddItem, setShowAddItem] = useState(false);
   const [showMarkPaid, setShowMarkPaid] = useState(false);
   const [showEditHeader, setShowEditHeader] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [editDesc, setEditDesc] = useState("");
   const [editQty, setEditQty] = useState("");
@@ -380,6 +506,11 @@ export default function InvoiceDetail({ id }: Props) {
 
   const voidInvoice = trpc.invoice.void.useMutation({
     onSuccess: () => { toast.success("Invoice voided"); invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const sendMut = trpc.invoice.send.useMutation({
+    onSuccess: () => { toast.success("Invoice sent to customer"); setSendOpen(false); invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -494,9 +625,14 @@ export default function InvoiceDetail({ id }: Props) {
                 {aiDraft.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />}
                 Draft Note
               </Button>
+              {!isLocked && (invoice.status === "draft" || invoice.status === "sent") && (
+                <Button size="sm" className="gap-1.5" onClick={() => setSendOpen(true)}>
+                  <Send className="h-3.5 w-3.5" /> Send Invoice
+                </Button>
+              )}
               {!isLocked && invoice.status === "draft" && (
-                <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "sent" })} disabled={updateStatus.isPending}>
-                  <CheckCircle className="h-3.5 w-3.5 mr-1" /> Mark Sent
+                <Button size="sm" variant="outline" className="gap-1.5 text-muted-foreground" onClick={() => updateStatus.mutate({ id: invoice.id, status: "sent" })} disabled={updateStatus.isPending}>
+                  <CheckCircle className="h-3.5 w-3.5" /> Mark Sent (manual)
                 </Button>
               )}
               {!isLocked && (invoice.status === "sent" || invoice.status === "viewed") && (
@@ -870,6 +1006,14 @@ export default function InvoiceDetail({ id }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SendInvoiceDialog
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        invoice={{ id: invoice.id, customerOrgId: invoice.customerOrgId, siteId: invoice.siteId, billToEmail: invoice.billToEmail }}
+        isPending={sendMut.isPending}
+        onSend={(to) => sendMut.mutate({ id: invoice.id, to })}
+      />
     </AdminLayout>
   );
 }
