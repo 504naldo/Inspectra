@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Inspectra</string>
+    <string name="title_activity_main">Inspectra</string>
+    <string name="package_name">ca.inspectrafire.app</string>
+    <string name="custom_url_scheme">ca.inspectrafire.app</string>
+</resources>

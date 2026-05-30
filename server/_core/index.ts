@@ -87,6 +87,8 @@ async function startServer() {
         // Local development
         /^http:\/\/localhost:\d+$/,
         /^https:\/\/localhost:\d+$/,
+        // Capacitor Android webview (androidScheme: "https")
+        /^https:\/\/localhost$/,
       ];
       
       const isAllowed = allowedOrigins.some(pattern => pattern.test(origin));

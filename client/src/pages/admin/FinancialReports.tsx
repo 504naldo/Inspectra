@@ -1,12 +1,28 @@
 import AdminLayout from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { Loader2, TrendingUp, AlertTriangle, Users, Calendar } from "lucide-react";
+import { Loader2, TrendingUp, AlertTriangle, Users, Calendar, Download } from "lucide-react";
 
 const CAD = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
 const fmt = (n: number) => CAD.format(n);
 const pct = (n: number, total: number) => total > 0 ? `${Math.round((n / total) * 100)}%` : "—";
+
+function downloadCsv(filename: string, rows: string[][]): void {
+  const escape = (v: string | number) => {
+    const s = String(v ?? "");
+    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = rows.map((r) => r.map(escape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -36,6 +52,14 @@ function ARAgingTab() {
   const { rows, totals, asOf } = data;
   const hasData = rows.length > 0;
 
+  function exportCsv() {
+    const asOfDate = new Date(asOf).toLocaleDateString("en-CA");
+    const header = ["Customer", "Current", "1-30 Days", "31-60 Days", "61-90 Days", "90+ Days", "Total", "Invoice Count"];
+    const body = rows.map((r) => [r.name, r.current, r.d1_30, r.d31_60, r.d61_90, r.d90plus, r.total, r.invoiceCount]);
+    const foot = ["TOTAL", totals.current, totals.d1_30, totals.d31_60, totals.d61_90, totals.d90plus, totals.total, totals.invoiceCount];
+    downloadCsv(`ar-aging-${asOfDate}.csv`, [header, ...body, foot] as string[][]);
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -47,9 +71,16 @@ function ARAgingTab() {
       </div>
 
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Accounts Receivable Aging</CardTitle>
-          <p className="text-xs text-muted-foreground">As of {new Date(asOf).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })} · {totals.invoiceCount} open invoice{totals.invoiceCount !== 1 ? "s" : ""} · Total outstanding: <strong>{fmt(totals.total)}</strong></p>
+        <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Accounts Receivable Aging</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">As of {new Date(asOf).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })} · {totals.invoiceCount} open invoice{totals.invoiceCount !== 1 ? "s" : ""} · Total outstanding: <strong>{fmt(totals.total)}</strong></p>
+          </div>
+          {hasData && (
+            <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={exportCsv}>
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {!hasData ? (
@@ -126,8 +157,16 @@ function RevenueTab() {
 
       {/* Revenue bar chart (text-based) */}
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2">
           <CardTitle className="text-base">Monthly Revenue — Last 12 Months</CardTitle>
+          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={() => {
+            const today = new Date().toLocaleDateString("en-CA");
+            const header = ["Month", "Invoiced (CAD)", "Collected (CAD)", "Invoice Count"];
+            const body = last12.map((m) => [m.label, m.invoiced, m.collected, m.invoiceCount]);
+            downloadCsv(`revenue-by-period-${today}.csv`, [header, ...body] as string[][]);
+          }}>
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </Button>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -251,8 +290,24 @@ function PipelineTab() {
       )}
 
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2">
           <CardTitle className="text-base">Scheduled Jobs — Next 12 Months</CardTitle>
+          {totalJobs > 0 && (
+            <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={() => {
+              const today = new Date().toLocaleDateString("en-CA");
+              const header = ["Month", "Job Count", "Job Types", "Potential Revenue (CAD)"];
+              const body = months.map((m) => [
+                m.label,
+                m.jobCount,
+                Object.entries(m.jobTypes).map(([t, c]) => `${JOB_TYPE_LABELS[t] ?? t} x${c}`).join("; "),
+                m.potentialRevenue,
+              ]);
+              const foot = ["TOTAL", totalJobs, "", totalRevenue];
+              downloadCsv(`job-pipeline-forecast-${today}.csv`, [header, ...body, foot] as string[][]);
+            }}>
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -331,7 +386,19 @@ function CustomersTab() {
       </div>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Customer Revenue Concentration</CardTitle></CardHeader>
+        <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+          <CardTitle className="text-base">Customer Revenue Concentration</CardTitle>
+          {rows.length > 0 && (
+            <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={() => {
+              const today = new Date().toLocaleDateString("en-CA");
+              const header = ["Rank", "Customer", "% of Total", "Invoiced (CAD)", "Collected (CAD)", "Outstanding (CAD)"];
+              const body = rows.map((r, i) => [i + 1, r.name, `${r.pct}%`, r.invoiced, r.collected, r.outstanding]);
+              downloadCsv(`customer-concentration-${today}.csv`, [header, ...body] as string[][]);
+            }}>
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
+          )}
+        </CardHeader>
         <CardContent className="p-0">
           {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground px-6 py-8">No invoiced revenue yet.</p>

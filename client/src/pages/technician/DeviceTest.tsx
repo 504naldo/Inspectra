@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { takePhoto, vibrate, vibrateSuccess, vibrateError, isNative } from "@/lib/native";
 import {
   ArrowLeft,
   Check,
@@ -52,6 +53,16 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
   const [flagPhotoFile, setFlagPhotoFile] = useState<File | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
+  const handleTakePhoto = async (onFile: (f: File) => void) => {
+    const native = await takePhoto();
+    if (native) {
+      const blob = await fetch(`data:${native.mimeType};base64,${native.base64}`).then((r) => r.blob());
+      onFile(new File([blob], `photo_${Date.now()}.jpg`, { type: native.mimeType }));
+    } else {
+      photoInputRef.current?.click();
+    }
+  };
+
   // Get category from URL search params
   const searchParams = new URLSearchParams(window.location.search);
   const category = searchParams.get('category');
@@ -64,6 +75,11 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
   const { data: existingResult } = trpc.inspectionResult.getByJobAndDevice.useQuery(
     { jobId, deviceId },
     { enabled: true, retry: isOnline ? 2 : 0 }
+  );
+
+  const { data: historical } = trpc.inspectionResult.getHistoricalForDevice.useQuery(
+    { jobId, deviceId },
+    { enabled: isOnline, retry: 1, staleTime: 5 * 60_000 }
   );
 
   // Get job details for category navigation
@@ -294,27 +310,72 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
           <div className="grid grid-cols-3 gap-3">
             <Button
               className={`action-btn ${result === 'pass' ? 'bg-[var(--success)] hover:bg-[var(--success)]/90 text-white' : 'bg-[var(--success)]/10 text-[var(--success)] hover:bg-[var(--success)]/20'}`}
-              onClick={() => setResult('pass')}
+              onClick={() => { setResult('pass'); vibrateSuccess(); }}
             >
               <Check className="h-6 w-6 mr-2" />
               PASS
             </Button>
             <Button
               className={`action-btn ${result === 'fail' ? 'bg-destructive hover:bg-destructive/90 text-white' : 'bg-destructive/10 text-destructive hover:bg-destructive/20'}`}
-              onClick={() => setResult('fail')}
+              onClick={() => { setResult('fail'); vibrateError(); }}
             >
               <X className="h-6 w-6 mr-2" />
               FAIL
             </Button>
             <Button
               className={`action-btn ${result === 'na' ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              onClick={() => setResult('na')}
+              onClick={() => { setResult('na'); vibrate('light'); }}
             >
               <Minus className="h-6 w-6 mr-2" />
               N/A
             </Button>
           </div>
         </div>
+
+        {/* Historical result — suggestion or anomaly flag */}
+        {historical && (() => {
+          const priorDate = historical.priorJobCompletedAt
+            ? new Date(historical.priorJobCompletedAt).toLocaleDateString("en-CA", { month: "short", year: "numeric" })
+            : "prior inspection";
+          const priorLabel = historical.result.toUpperCase();
+
+          if (result === "not_tested") {
+            return (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                <span>Last inspection: <strong>{priorLabel}</strong> · {priorDate}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 shrink-0 border-blue-300 text-blue-800 hover:bg-blue-100 text-xs px-2"
+                  onClick={() => { setResult(historical.result); vibrate("light"); }}
+                >
+                  Apply
+                </Button>
+              </div>
+            );
+          }
+          if (result !== historical.result) {
+            const isRegression = result === "fail" && historical.result === "pass";
+            return (
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                isRegression
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-800"
+              }`}>
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>
+                  {isRegression ? "⚠ Regression" : "✓ Improvement"}: was{" "}
+                  <strong>{priorLabel}</strong> on {priorDate}
+                </span>
+              </div>
+            );
+          }
+          return (
+            <p className="text-xs text-muted-foreground px-1">
+              ✓ Same result as {priorDate}
+            </p>
+          );
+        })()}
 
         {/* Notes */}
         <div className="space-y-3">
@@ -331,7 +392,7 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
         <div className="space-y-3">
           <h2 className="font-semibold">Quick Actions</h2>
           <div className="grid grid-cols-2 gap-3">
-            <Button variant="outline" className="h-14" disabled>
+            <Button variant="outline" className="h-14" onClick={() => handleTakePhoto(setFlagPhotoFile)}>
               <Camera className="h-5 w-5 mr-2" />
               Add Photo
             </Button>
@@ -462,9 +523,9 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
                   </Button>
                 </div>
               ) : (
-                <Button variant="outline" className="w-full" onClick={() => photoInputRef.current?.click()}>
+                <Button variant="outline" className="w-full" onClick={() => handleTakePhoto(setFlagPhotoFile)}>
                   <Camera className="h-4 w-4 mr-2" />
-                  Take / Choose Photo
+                  {isNative() ? "Take Photo" : "Take / Choose Photo"}
                 </Button>
               )}
             </div>

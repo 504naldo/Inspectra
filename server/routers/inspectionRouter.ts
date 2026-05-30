@@ -64,6 +64,29 @@ const inspectionResultRouter = router({
     return db.getInspectionStats(input.jobId);
   }),
   
+  // Returns the result for this device from the most recent completed job at the same site.
+  // Used to pre-fill suggestions and detect regressions on DeviceTest.
+  getHistoricalForDevice: technicianProcedure
+    .input(z.object({ jobId: z.number(), deviceId: z.number() }))
+    .query(async ({ input }) => {
+      const job = await db.getJobById(input.jobId);
+      if (!job?.siteId) return null;
+
+      const lastJob = await db.getLastCompletedJobForSite(job.siteId);
+      if (!lastJob || lastJob.id === input.jobId) return null;
+
+      const result = await db.getInspectionResultByJobAndDevice(lastJob.id, input.deviceId);
+      if (!result || result.result === "not_tested") return null;
+
+      return {
+        result: result.result as "pass" | "fail" | "na",
+        notes: result.notes ?? null,
+        testedAt: result.testedAt ?? null,
+        priorJobId: lastJob.id,
+        priorJobCompletedAt: lastJob.finalizedAt ?? null,
+      };
+    }),
+
   // Batch sync for offline data
   syncBatch: technicianProcedure.input(z.object({
     results: z.array(z.object({
