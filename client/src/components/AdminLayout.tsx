@@ -113,15 +113,23 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    id: "inspections",
+    label: "Inspections",
+    icon: ClipboardList,
+    items: [
+      { label: "Templates",   href: "/admin/inspection-templates", icon: ClipboardList  },
+      { label: "Report QA",  href: "/admin/report-qa",            icon: ClipboardCheck },
+      { label: "Compliance", href: "/admin/compliance",           icon: ShieldAlert    },
+      { label: "Documents",  href: "/admin/documents",            icon: FolderOpen     },
+    ],
+  },
+  {
     id: "reports",
     label: "Reports",
     icon: FileText,
     items: [
-      { label: "Reports",      href: "/admin/reports",      icon: FileText     },
-      { label: "Report QA",    href: "/admin/report-qa",    icon: ClipboardCheck },
-      { label: "Compliance",   href: "/admin/compliance",   icon: ShieldAlert  },
-      { label: "Documents",    href: "/admin/documents",    icon: FolderOpen   },
-      { label: "Data Quality", href: "/admin/data-quality", icon: ShieldAlert  },
+      { label: "Reports",      href: "/admin/reports",      icon: FileText    },
+      { label: "Data Quality", href: "/admin/data-quality", icon: ShieldAlert },
     ],
   },
   {
@@ -155,7 +163,6 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Settings",           href: "/admin/settings",               icon: Settings                  },
       { label: "Setup Wizard",       href: "/admin/setup",                  icon: CheckSquare               },
       { label: "Access Control",     href: "/admin/access-control",         icon: ShieldAlert               },
-      { label: "Inspection Templates", href: "/admin/inspection-templates", icon: ClipboardList             },
       { label: "Imports",         href: "/admin/imports",         icon: Upload                    },
       { label: "Notifications",   href: "/admin/notifications",   icon: Bell                      },
       { label: "AI Assistant",    href: "/admin/ai-assistant",    icon: Bot                       },
