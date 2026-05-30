@@ -50,6 +50,7 @@ export const userRouter = router({
           certNumber: users.certNumber,
           certificationLevel: users.certificationLevel,
           certExpiry: users.certExpiry,
+          customerOrgId: users.customerOrgId,
         })
         .from(users)
         .where(and(...conditions))
@@ -68,9 +69,10 @@ export const userRouter = router({
       certNumber: z.string().max(64).optional().nullable(),
       certificationLevel: z.string().max(128).optional().nullable(),
       certExpiry: z.string().optional().nullable(), // ISO date string YYYY-MM-DD
+      customerOrgId: z.number().optional().nullable(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const { userId, name, role, isActive, certNumber, certificationLevel, certExpiry } = input;
+      const { userId, name, role, isActive, certNumber, certificationLevel, certExpiry, customerOrgId } = input;
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
       
@@ -100,6 +102,7 @@ export const userRouter = router({
         // Convert ISO string to Date or null for the date column
         updates.certExpiry = certExpiry ? new Date(certExpiry) : null;
       }
+      if (customerOrgId !== undefined) updates.customerOrgId = customerOrgId;
       
       if (Object.keys(updates).length === 0) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No updates provided' });
@@ -126,6 +129,7 @@ export const userRouter = router({
       email: z.string().email(),
       name: z.string().min(1),
       role: z.enum(['admin', 'office', 'technician', 'customer']),
+      customerOrgId: z.number().optional().nullable(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -147,6 +151,7 @@ export const userRouter = router({
         name: input.name,
         role: input.role,
         companyId: ctx.user.companyId,
+        customerOrgId: input.customerOrgId ?? null,
         isActive: 1,
         lastSignedIn: new Date(),
       });

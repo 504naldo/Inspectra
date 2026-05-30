@@ -6,6 +6,7 @@ import Forbidden from "@/pages/Forbidden";
 import { Route, Switch, Redirect, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { PortalPreviewProvider, usePortalPreview } from "./contexts/PortalPreviewContext";
 import { useAuth } from "./_core/hooks/useAuth";
 import { useEffect } from "react";
 import { getRoleBasedPath } from "./lib/roleRedirect";
@@ -87,20 +88,23 @@ import TemplateFormRenderer from "./pages/technician/TemplateFormRenderer";
 import FeedbackCenter from "./pages/admin/FeedbackCenter";
 import ContactsPage from "./pages/admin/Contacts";
 import QuoteAccept from "./pages/QuoteAccept";
-// Customer portal imports disabled — customer world not active in this release
-// import CustomerPortal from "./pages/customer/Portal";
-// import CustomerReports from "./pages/customer/Reports";
-// import CustomerDeficiencies from "./pages/customer/Deficiencies";
+import CustomerPortal from "./pages/customer/Portal";
+import CustomerReports from "./pages/customer/Reports";
+import CustomerDeficiencies from "./pages/customer/Deficiencies";
+import CustomerSites from "./pages/customer/Sites";
 
 // Protected route wrapper
-function ProtectedRoute({ 
-  children, 
-  allowedRoles 
-}: { 
-  children: React.ReactNode; 
+function ProtectedRoute({
+  children,
+  allowedRoles,
+  allowPreview = false,
+}: {
+  children: React.ReactNode;
   allowedRoles?: string[];
+  allowPreview?: boolean;
 }) {
   const { user, loading, isAuthenticated } = useAuth();
+  const { previewOrg } = usePortalPreview();
   const [location] = useLocation();
 
   if (loading) {
@@ -115,13 +119,17 @@ function ProtectedRoute({
   }
 
   if (!isAuthenticated) {
-    // Pass current location as returnTo parameter
     const returnTo = encodeURIComponent(location);
     return <Redirect to={`/login?returnTo=${returnTo}`} />;
   }
 
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    // Redirect to appropriate dashboard based on role
+  // Admin/office users can enter customer portal when they have an active preview org
+  const isAdminPreview =
+    allowPreview &&
+    !!previewOrg &&
+    (user?.role === "admin" || user?.role === "office");
+
+  if (allowedRoles && user && !allowedRoles.includes(user.role) && !isAdminPreview) {
     const targetPath = getRoleBasedPath(user.role);
     return <Redirect to={targetPath} />;
   }
@@ -552,15 +560,26 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      {/* Customer routes — disabled, customer portal not active in this release */}
+      {/* Customer portal */}
       <Route path="/customer">
-        <Redirect to="/forbidden" />
+        <ProtectedRoute allowedRoles={['customer']} allowPreview>
+          <CustomerPortal />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/customer/sites">
+        <ProtectedRoute allowedRoles={['customer']} allowPreview>
+          <CustomerSites />
+        </ProtectedRoute>
       </Route>
       <Route path="/customer/reports">
-        <Redirect to="/forbidden" />
+        <ProtectedRoute allowedRoles={['customer']} allowPreview>
+          <CustomerReports />
+        </ProtectedRoute>
       </Route>
       <Route path="/customer/deficiencies">
-        <Redirect to="/forbidden" />
+        <ProtectedRoute allowedRoles={['customer']} allowPreview>
+          <CustomerDeficiencies />
+        </ProtectedRoute>
       </Route>
 
       {/* 403 Forbidden */}
@@ -584,11 +603,13 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
-        <TooltipProvider>
-          <Toaster />
-          <OfflineBanner />
-          <Router />
-        </TooltipProvider>
+        <PortalPreviewProvider>
+          <TooltipProvider>
+            <Toaster />
+            <OfflineBanner />
+            <Router />
+          </TooltipProvider>
+        </PortalPreviewProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

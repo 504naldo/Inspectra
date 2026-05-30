@@ -1870,6 +1870,38 @@ export async function updateServiceSchedule(id: number, data: Partial<InsertServ
   await db.update(serviceSchedules).set(data).where(eq(serviceSchedules.id, id));
 }
 
+export async function updateServiceScheduleCompletion(
+  id: number,
+  lastCompletedAt: Date,
+  nextDueAt: Date,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(serviceSchedules)
+    .set({ lastCompletedAt, nextDueAt })
+    .where(eq(serviceSchedules.id, id));
+}
+
+export async function getServiceSchedulesDueSoon(
+  companyId: number,
+  daysAhead: number = 90,
+): Promise<ServiceSchedule[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + daysAhead);
+  return db.select().from(serviceSchedules).where(
+    and(
+      eq(serviceSchedules.companyId, companyId),
+      eq(serviceSchedules.active, true),
+      or(
+        isNull(serviceSchedules.nextDueAt),
+        lte(serviceSchedules.nextDueAt, cutoff),
+      ),
+    ),
+  ).orderBy(asc(serviceSchedules.nextDueAt));
+}
+
 // ============================================
 // MONTHLY SERVICE TRACKING QUERIES
 // ============================================

@@ -22,6 +22,18 @@ function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Advance a date by one frequency interval */
+function addFrequency(date: Date, frequency: string): Date {
+  const d = new Date(date);
+  switch (frequency) {
+    case "monthly":    d.setMonth(d.getMonth() + 1); break;
+    case "quarterly":  d.setMonth(d.getMonth() + 3); break;
+    case "semi_annual":d.setMonth(d.getMonth() + 6); break;
+    default:           d.setFullYear(d.getFullYear() + 1); // annual + other
+  }
+  return d;
+}
+
 /** Normalize a header string for fuzzy matching — strip all non-alphanumeric chars */
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
@@ -86,11 +98,16 @@ export const serviceScheduleRouter = router({
         estimatedHours: z.number().nonnegative().optional(),
         requiredTechCount: z.number().int().positive().optional(),
         notes: z.string().max(2000).optional(),
+        firstDueAt: z.string().optional(), // ISO date — defaults to now + frequency
       })
     )
     .mutation(async ({ input, ctx }) => {
       const site = await db.getSiteById(input.siteId);
       if (!site || site.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const firstDueAt = input.firstDueAt
+        ? new Date(input.firstDueAt)
+        : addFrequency(new Date(), input.frequency);
+
       return db.createServiceSchedule({
         siteId: input.siteId,
         buildingId: site.buildingId ?? undefined,
@@ -102,6 +119,7 @@ export const serviceScheduleRouter = router({
         requiredTechCount: input.requiredTechCount,
         notes: input.notes,
         active: true,
+        nextDueAt: firstDueAt,
       });
     }),
 
@@ -127,6 +145,121 @@ export const serviceScheduleRouter = router({
         ...(estimatedHours != null ? { estimatedHours: String(estimatedHours) } : {}),
       });
       return { success: true };
+    }),
+
+  /** Return active schedules due within daysAhead days, enriched with site/customer names */
+  getDueSoon: officeProcedure
+    .input(z.object({
+      companyId: z.number().int().positive(),
+      daysAhead: z.number().int().positive().default(90),
+    }))
+    .query(async ({ input, ctx }) => {
+      if (ctx.user.companyId !== input.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const schedules = await db.getServiceSchedulesDueSoon(input.companyId, input.daysAhead);
+
+      const siteIds = [...new Set(schedules.map((s) => s.siteId))];
+      const orgIds  = [...new Set(schedules.map((s) => s.customerOrgId).filter((id): id is number => !!id))];
+
+      const [sites, orgs] = await Promise.all([
+        Promise.all(siteIds.map((id) => db.getSiteById(id))),
+        Promise.all(orgIds.map((id) => db.getCustomerOrgById(id))),
+      ]);
+      const siteMap = Object.fromEntries(sites.filter(Boolean).map((s) => [s!.id, s!]));
+      const orgMap  = Object.fromEntries(orgs.filter(Boolean).map((o) => [o!.id, o!]));
+
+      const now = new Date();
+      return schedules.map((s) => {
+        const site = siteMap[s.siteId];
+        const org  = s.customerOrgId ? orgMap[s.customerOrgId] : null;
+        const daysUntilDue = s.nextDueAt
+          ? Math.floor((new Date(s.nextDueAt).getTime() - now.getTime()) / 86_400_000)
+          : null;
+        return {
+          ...s,
+          siteName: site?.name ?? "Unknown",
+          siteAddress: [site?.city, site?.state].filter(Boolean).join(", "),
+          buildingId: s.buildingId ?? site?.buildingId ?? null,
+          customerName: org?.name ?? "Unknown",
+          daysUntilDue,
+        };
+      });
+    }),
+
+  /**
+   * One-click: create a tracking row + job from a service schedule.
+   * Used by the "Schedule Now" button on the Due Soon tab.
+   */
+  scheduleNow: officeProcedure
+    .input(z.object({
+      scheduleId: z.number().int().positive(),
+      scheduledDate: z.string().optional(),
+      title: z.string().max(200).optional(),
+      notes: z.string().max(2000).optional(),
+      leadTechnicianId: z.number().int().positive().optional(),
+      assignedTechnicianIds: z.array(z.number().int().positive()).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const sched = await db.getServiceScheduleById(input.scheduleId);
+      if (!sched || sched.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const site = await db.getSiteById(sched.siteId);
+      if (!site) throw new TRPCError({ code: "NOT_FOUND", message: "Site not found" });
+
+      const trackingRow = await db.createMonthlyTracking({
+        serviceScheduleId: sched.id,
+        siteId: sched.siteId,
+        buildingId: sched.buildingId ?? site.buildingId ?? undefined,
+        customerOrgId: sched.customerOrgId,
+        companyId: sched.companyId,
+        trackingMonth: currentMonth(),
+        serviceType: sched.serviceType,
+        status: "not_scheduled",
+        reportStatus: "none",
+        notes: input.notes ?? undefined,
+      });
+
+      const jobTypeMap: Record<string, string> = {
+        annual: "annual", semi_annual: "semi_annual",
+        quarterly: "quarterly", monthly: "monthly",
+      };
+      const jobType = (jobTypeMap[sched.frequency] ?? "annual") as any;
+      const scheduledDate = input.scheduledDate ? new Date(input.scheduledDate) : undefined;
+      const jobNumber = `JOB-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+      const jobTitle = input.title?.trim() || `${sched.serviceType} — ${site.name}`;
+
+      const job = await db.createJob({
+        companyId: sched.companyId,
+        siteId: sched.siteId,
+        customerOrgId: sched.customerOrgId,
+        jobNumber,
+        title: jobTitle,
+        description: input.notes ?? undefined,
+        jobType,
+        status: scheduledDate ? "scheduled" : "pending",
+        priority: "medium",
+        scheduledDate,
+        ...(input.leadTechnicianId ? { leadTechnicianId: input.leadTechnicianId } : {}),
+      });
+
+      if (input.leadTechnicianId) {
+        await db.addJobAssignment({ jobId: job.id, userId: input.leadTechnicianId, role: "LEAD", assignedByUserId: ctx.user.id });
+      }
+      for (const techId of input.assignedTechnicianIds ?? []) {
+        if (techId === input.leadTechnicianId) continue;
+        await db.addJobAssignment({ jobId: job.id, userId: techId, role: "ASSIST", assignedByUserId: ctx.user.id });
+      }
+
+      await db.updateMonthlyTracking(trackingRow.id, {
+        linkedJobId: job.id,
+        status: "scheduled",
+        ...(scheduledDate ? { scheduledDate } : {}),
+      });
+
+      void logActivity({ ctx, entityType: "monthly_service_tracking", entityId: trackingRow.id,
+        eventType: "linked", title: `Job created from series: ${jobNumber}`,
+        relatedEntityType: "job", relatedEntityId: job.id });
+
+      return { jobId: job.id, jobNumber };
     }),
 
   // ── Monthly Tracking ──────────────────────────────────────────────────────
