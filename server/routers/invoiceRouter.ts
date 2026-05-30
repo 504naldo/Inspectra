@@ -4,6 +4,9 @@ import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { INVOICE_STATUSES } from "../../drizzle/schema";
 import { logActivity } from "../activityLogger";
+import { ENV } from "../_core/env.js";
+import { storagePut } from "../storage.js";
+import { generateInvoicePDF } from "../invoicePdfGenerator.js";
 
 function generateInvoiceNumber(prefix = "INV"): string {
   const now = new Date();
@@ -416,5 +419,107 @@ export const invoiceRouter = router({
       void logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "exported",
         title: "Invoice manually marked as exported to Sage" });
       return { success: true };
+    }),
+
+  send: officeProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      to: z.array(z.string().email()).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const inv = await db.getInvoiceById(input.id);
+      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
+      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (inv.status === "void" || inv.status === "paid") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot send a voided or paid invoice." });
+      }
+
+      const [lineItems, site, customer, company] = await Promise.all([
+        db.getLineItemsByInvoice(input.id),
+        inv.siteId ? db.getSiteById(inv.siteId) : Promise.resolve(undefined),
+        inv.customerOrgId ? db.getCustomerOrgById(inv.customerOrgId) : Promise.resolve(undefined),
+        db.getCompanyById(inv.companyId),
+      ]);
+
+      const toNum = (v: unknown) => parseFloat(String(v ?? "0")) || 0;
+
+      const pdfBuffer = await generateInvoicePDF({
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        companyName: company?.name ?? "EWF",
+        companyPhone: company?.phone ?? "",
+        companyEmail: company?.email ?? "",
+        companyAddress: company?.address ?? "",
+        billToName: inv.billToName ?? customer?.name ?? "",
+        billToAddress: inv.billToAddress ?? "",
+        billToCity: inv.billToCity ?? "",
+        billToState: inv.billToState ?? "",
+        billToPostalCode: inv.billToPostalCode ?? "",
+        siteName: site?.name,
+        siteAddress: site?.address,
+        invoiceDate: inv.invoiceDate ? new Date(inv.invoiceDate) : null,
+        dueDate: inv.dueDate ? new Date(inv.dueDate) : null,
+        lineItems: lineItems.map((li) => ({
+          description: li.description ?? "",
+          quantity: toNum(li.quantity),
+          unitPrice: toNum(li.unitPrice),
+          total: toNum(li.total),
+          taxable: li.taxable === 1,
+        })),
+        subtotal: toNum(inv.subtotal),
+        taxRate: toNum(inv.taxRate),
+        taxAmount: toNum(inv.taxAmount),
+        total: toNum(inv.total),
+        amountPaid: toNum(inv.amountPaid),
+        balanceDue: toNum(inv.balanceDue),
+        clientNotes: inv.clientNotes,
+      });
+
+      const pdfKey = `invoices/${inv.companyId}/${inv.id}/invoice-${inv.id}.pdf`;
+      const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
+
+      if (ENV.resendApiKey) {
+        const CAD = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
+        const fmtDate = (d: Date | string | null | undefined) =>
+          d ? new Date(d).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" }) : "—";
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
+  <div style="background:#1e3a8a;padding:20px 24px;">
+    <h1 style="color:#fff;margin:0;font-size:20px;">Invoice ${inv.invoiceNumber}</h1>
+  </div>
+  <div style="padding:24px;">
+    <p>Hello ${inv.billToName ?? customer?.name ?? ""},</p>
+    <p>Please find your invoice attached${site?.name ? ` for services at <strong>${site.name}</strong>` : ""}.</p>
+    <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
+      <tr><td style="padding:6px 0;color:#6b7280;">Invoice #</td><td style="padding:6px 0;font-weight:bold;">${inv.invoiceNumber}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Date</td><td style="padding:6px 0;">${fmtDate(inv.invoiceDate)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Due</td><td style="padding:6px 0;">${fmtDate(inv.dueDate)}</td></tr>
+      <tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 0;font-weight:bold;">Amount Due</td><td style="padding:8px 0;font-weight:bold;font-size:16px;">${CAD.format(toNum(inv.balanceDue || inv.total))}</td></tr>
+    </table>
+    <p style="color:#6b7280;font-size:13px;">The full invoice is attached as a PDF. Please reply to this email with any questions.</p>
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
+    <p style="color:#9ca3af;font-size:12px;margin:0;">Sent by ${company?.name ?? ""}.</p>
+  </div>
+</body></html>`;
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${ENV.resendApiKey}` },
+          body: JSON.stringify({
+            from: `${company?.name ?? "Inspectra"} <noreply@inspectrafire.ca>`,
+            to: input.to,
+            subject: `Invoice ${inv.invoiceNumber}${site?.name ? ` — ${site.name}` : ""}`,
+            html,
+            attachments: [{ filename: `invoice-${inv.invoiceNumber}.pdf`, content: pdfBuffer.toString("base64") }],
+          }),
+        });
+      }
+
+      const updates: Record<string, unknown> = { pdfUrl, status: "sent" };
+      if (!inv.sentAt) updates.sentAt = new Date();
+      await db.updateInvoice(input.id, updates as any);
+      void logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "quote.sent",
+        title: `Invoice emailed to ${input.to.join(", ")}`, oldValue: inv.status, newValue: "sent" });
+
+      return { pdfUrl };
     }),
 });

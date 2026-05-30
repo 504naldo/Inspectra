@@ -1478,6 +1478,7 @@ export const invoices = mysqlTable("invoices", {
   sageExportStatus: mysqlEnum("sageExportStatus", ["pending", "exported", "error"]).default("pending"),
   internalNotes: text("internalNotes"),
   clientNotes: text("clientNotes"),
+  pdfUrl: text("pdfUrl"),
   createdById: int("createdById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
