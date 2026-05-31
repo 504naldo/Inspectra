@@ -45,6 +45,7 @@ import {
   Copy,
   Send,
   AlertTriangle,
+  Eye,
 } from "lucide-react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "../../../../drizzle/schema";
 
@@ -514,6 +515,11 @@ export default function InvoiceDetail({ id }: Props) {
     onError: (e) => toast.error(e.message),
   });
 
+  const generatePdf = trpc.invoice.generatePdf.useMutation({
+    onSuccess: ({ pdfUrl }) => { invalidate(); window.open(pdfUrl, "_blank", "noopener"); },
+    onError: (e) => toast.error(e.message || "PDF generation failed"),
+  });
+
   const markExportedToSage = trpc.invoice.markExportedToSage.useMutation({
     onSuccess: () => { toast.success("Marked as exported to Sage"); invalidate(); },
     onError: (e) => toast.error(e.message),
@@ -625,6 +631,27 @@ export default function InvoiceDetail({ id }: Props) {
                 {aiDraft.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />}
                 Draft Note
               </Button>
+              {invoice.pdfUrl ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => window.open(invoice.pdfUrl!, "_blank", "noopener")}
+                >
+                  <Eye className="h-3.5 w-3.5" /> View PDF
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => generatePdf.mutate({ id: invoice.id })}
+                  disabled={generatePdf.isPending}
+                >
+                  {generatePdf.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  {generatePdf.isPending ? "Generating…" : "Generate PDF"}
+                </Button>
+              )}
               {!isLocked && (invoice.status === "draft" || invoice.status === "sent") && (
                 <Button size="sm" className="gap-1.5" onClick={() => setSendOpen(true)}>
                   <Send className="h-3.5 w-3.5" /> Send Invoice
@@ -723,6 +750,13 @@ export default function InvoiceDetail({ id }: Props) {
               <InvRow label="Due Date">{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}</InvRow>
               {invoice.sentAt && <InvRow label="Sent At">{new Date(invoice.sentAt).toLocaleDateString()}</InvRow>}
               {invoice.paidAt && <InvRow label="Paid At">{new Date(invoice.paidAt).toLocaleDateString()}</InvRow>}
+              {invoice.pdfUrl && (
+                <InvRow label="PDF">
+                  <a href={invoice.pdfUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                    <Download className="h-3 w-3" /> Download
+                  </a>
+                </InvRow>
+              )}
               {invoice.sageCustomerCode && <InvRow label="Sage Customer">{invoice.sageCustomerCode}</InvRow>}
               {invoice.sageGlCode && <InvRow label="GL Code">{invoice.sageGlCode}</InvRow>}
               {invoice.sageDepartment && <InvRow label="Department">{invoice.sageDepartment}</InvRow>}

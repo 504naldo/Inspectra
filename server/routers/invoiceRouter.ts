@@ -421,6 +421,63 @@ export const invoiceRouter = router({
       return { success: true };
     }),
 
+  // Generate (or regenerate) the invoice PDF and store it — without sending email.
+  // Returns the S3/R2 URL so the admin can preview or download.
+  generatePdf: officeProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const inv = await db.getInvoiceById(input.id);
+      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
+      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const [lineItems, site, customer, company] = await Promise.all([
+        db.getLineItemsByInvoice(input.id),
+        inv.siteId ? db.getSiteById(inv.siteId) : Promise.resolve(undefined),
+        inv.customerOrgId ? db.getCustomerOrgById(inv.customerOrgId) : Promise.resolve(undefined),
+        db.getCompanyById(inv.companyId),
+      ]);
+
+      const toNum = (v: unknown) => parseFloat(String(v ?? "0")) || 0;
+
+      const pdfBuffer = await generateInvoicePDF({
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        companyName: company?.name ?? "EWF",
+        companyPhone: company?.phone ?? "",
+        companyEmail: company?.email ?? "",
+        companyAddress: company?.address ?? "",
+        billToName: inv.billToName ?? customer?.name ?? "",
+        billToAddress: inv.billToAddress ?? "",
+        billToCity: inv.billToCity ?? "",
+        billToState: inv.billToState ?? "",
+        billToPostalCode: inv.billToPostalCode ?? "",
+        siteName: site?.name,
+        siteAddress: site?.address ?? undefined,
+        invoiceDate: inv.invoiceDate ? new Date(inv.invoiceDate) : null,
+        dueDate: inv.dueDate ? new Date(inv.dueDate) : null,
+        lineItems: lineItems.map((li) => ({
+          description: li.description ?? "",
+          quantity: toNum(li.quantity),
+          unitPrice: toNum(li.unitPrice),
+          total: toNum(li.total),
+          taxable: Boolean(li.taxable),
+        })),
+        subtotal: toNum(inv.subtotal),
+        taxRate: toNum(inv.taxRate),
+        taxAmount: toNum(inv.taxAmount),
+        total: toNum(inv.total),
+        amountPaid: toNum(inv.amountPaid),
+        balanceDue: toNum(inv.balanceDue),
+        clientNotes: inv.clientNotes,
+      });
+
+      const pdfKey = `invoices/${inv.companyId}/${inv.id}/invoice-${inv.id}.pdf`;
+      const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
+
+      await db.updateInvoice(input.id, { pdfUrl } as any);
+      return { pdfUrl };
+    }),
+
   send: officeProcedure
     .input(z.object({
       id: z.number().int().positive(),
@@ -456,7 +513,7 @@ export const invoiceRouter = router({
         billToState: inv.billToState ?? "",
         billToPostalCode: inv.billToPostalCode ?? "",
         siteName: site?.name,
-        siteAddress: site?.address,
+        siteAddress: site?.address ?? undefined,
         invoiceDate: inv.invoiceDate ? new Date(inv.invoiceDate) : null,
         dueDate: inv.dueDate ? new Date(inv.dueDate) : null,
         lineItems: lineItems.map((li) => ({
@@ -464,7 +521,7 @@ export const invoiceRouter = router({
           quantity: toNum(li.quantity),
           unitPrice: toNum(li.unitPrice),
           total: toNum(li.total),
-          taxable: li.taxable === 1,
+          taxable: Boolean(li.taxable),
         })),
         subtotal: toNum(inv.subtotal),
         taxRate: toNum(inv.taxRate),
