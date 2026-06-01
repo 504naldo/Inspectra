@@ -260,7 +260,7 @@ const jobRouter = router({
             db.getSiteById(input.siteId),
             db.getCustomerOrgById(customerOrgIdForEmail),
           ]);
-          if (customerOrg?.contactEmail) {
+          if (customerOrg?.contactEmail && customerOrg.notifyJobScheduled !== 0) {
             await sendJobScheduledEmail({
               to: customerOrg.contactEmail,
               customerName: customerOrg.contactName || customerOrg.name,

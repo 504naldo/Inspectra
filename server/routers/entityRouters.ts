@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, adminProcedure, officeProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure, officeProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
 
 // Company router
@@ -77,6 +77,30 @@ const customerOrgRouter = router({
   })).mutation(async ({ input }) => {
     const { id, ...data } = input;
     await db.updateCustomerOrg(id, data);
+    return { success: true };
+  }),
+
+  getNotifPrefs: customerProcedure.query(async ({ ctx }) => {
+    const orgId = ctx.user.customerOrgId;
+    if (!orgId) throw new TRPCError({ code: "BAD_REQUEST", message: "No customer org" });
+    const org = await db.getCustomerOrgById(orgId);
+    if (!org) throw new TRPCError({ code: "NOT_FOUND" });
+    return {
+      notifyReportReady: org.notifyReportReady !== 0,
+      notifyJobScheduled: org.notifyJobScheduled !== 0,
+    };
+  }),
+
+  updateNotifPrefs: customerProcedure.input(z.object({
+    notifyReportReady: z.boolean(),
+    notifyJobScheduled: z.boolean(),
+  })).mutation(async ({ input, ctx }) => {
+    const orgId = ctx.user.customerOrgId;
+    if (!orgId) throw new TRPCError({ code: "BAD_REQUEST", message: "No customer org" });
+    await db.updateCustomerOrg(orgId, {
+      notifyReportReady: input.notifyReportReady ? 1 : 0,
+      notifyJobScheduled: input.notifyJobScheduled ? 1 : 0,
+    } as any);
     return { success: true };
   }),
 });

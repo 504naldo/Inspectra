@@ -266,7 +266,7 @@ export const serviceScheduleRouter = router({
         void (async () => {
           try {
             const customerOrg = await db.getCustomerOrgById(sched.customerOrgId!);
-            if (customerOrg?.contactEmail) {
+            if (customerOrg?.contactEmail && customerOrg.notifyJobScheduled !== 0) {
               await sendJobScheduledEmail({
                 to: customerOrg.contactEmail,
                 customerName: customerOrg.contactName || customerOrg.name,

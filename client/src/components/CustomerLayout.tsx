@@ -3,7 +3,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { usePortalPreview } from "@/contexts/PortalPreviewContext";
 import { APP_NAME } from "../../../shared/constants";
 import { Button } from "@/components/ui/button";
-import { Shield, LogOut, Menu, X, ArrowLeft, Eye } from "lucide-react";
+import { Shield, LogOut, Menu, X, ArrowLeft, Eye, Settings } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 const NAV = [
@@ -11,6 +11,7 @@ const NAV = [
   { label: "Sites",         href: "/customer/sites"        },
   { label: "Reports",       href: "/customer/reports"      },
   { label: "Deficiencies",  href: "/customer/deficiencies" },
+  { label: "Settings",      href: "/customer/settings"     },
 ];
 
 interface CustomerLayoutProps {

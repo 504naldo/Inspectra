@@ -477,8 +477,8 @@ const reportRouter = router({
       pdfUrl: url,
     });
 
-    // Notify customer org contact that report is ready
-    if (customerOrg?.contactEmail) {
+    // Notify customer org contact that report is ready (respects org preferences)
+    if (customerOrg?.contactEmail && customerOrg.notifyReportReady !== 0) {
       void sendReportReadyEmail({
         to: customerOrg.contactEmail,
         customerName: customerOrg.contactName || customerOrg.name,
@@ -849,8 +849,8 @@ const reportRouter = router({
       pdfUrl: url,
     });
 
-    // Notify customer org contact that report is ready
-    if (customerOrg?.contactEmail) {
+    // Notify customer org contact that report is ready (respects org preferences)
+    if (customerOrg?.contactEmail && customerOrg.notifyReportReady !== 0) {
       void sendReportReadyEmail({
         to: customerOrg.contactEmail,
         customerName: customerOrg.contactName || customerOrg.name,

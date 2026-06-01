@@ -80,6 +80,8 @@ export const customerOrgs = mysqlTable("customer_orgs", {
   contactEmail: varchar("contactEmail", { length: 320 }),
   contactPhone: varchar("contactPhone", { length: 50 }),
   address: text("address"),
+  notifyReportReady: tinyint("notifyReportReady").default(1).notNull(),
+  notifyJobScheduled: tinyint("notifyJobScheduled").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
