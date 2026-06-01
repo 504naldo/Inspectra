@@ -639,4 +639,91 @@ export const jobAssignmentRouter = router({
 
     return { success: true };
   }),
+
+  /**
+   * Bulk reassign: replace fromTech with toTech across a set of jobs,
+   * preserving each technician's role (LEAD stays LEAD, ASSIST stays ASSIST).
+   * If toTech is already assigned, their existing role is promoted to LEAD when
+   * appropriate and fromTech is removed.
+   */
+  reassignTechnician: protectedProcedure
+    .input(z.object({
+      fromTechId: z.number().int().positive(),
+      toTechId:   z.number().int().positive(),
+      jobIds:     z.array(z.number().int().positive()).min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      if (input.fromTechId === input.toTechId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "From and to technician must be different." });
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      // Verify all jobs belong to this company
+      const jobRows = await db
+        .select({ id: jobs.id, companyId: jobs.companyId })
+        .from(jobs)
+        .where(inArray(jobs.id, input.jobIds));
+
+      if (jobRows.some((j) => j.companyId !== ctx.user.companyId)) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      let reassigned = 0;
+
+      for (const job of jobRows) {
+        const fromRow = await db
+          .select({ role: jobAssignments.role })
+          .from(jobAssignments)
+          .where(and(eq(jobAssignments.jobId, job.id), eq(jobAssignments.userId, input.fromTechId)))
+          .limit(1);
+
+        if (fromRow.length === 0) continue;
+        const role = fromRow[0].role;
+
+        const toRow = await db
+          .select({ id: jobAssignments.jobId })
+          .from(jobAssignments)
+          .where(and(eq(jobAssignments.jobId, job.id), eq(jobAssignments.userId, input.toTechId)))
+          .limit(1);
+
+        if (toRow.length > 0) {
+          // toTech already on this job — promote if fromTech was lead
+          if (role === "LEAD") {
+            await db.update(jobAssignments)
+              .set({ role: "LEAD" })
+              .where(and(eq(jobAssignments.jobId, job.id), eq(jobAssignments.userId, input.toTechId)));
+            await db.update(jobs).set({ leadTechnicianId: input.toTechId }).where(eq(jobs.id, job.id));
+          }
+        } else {
+          // Add toTech in same role
+          await db.insert(jobAssignments).values({
+            jobId: job.id,
+            userId: input.toTechId,
+            role,
+            assignedByUserId: ctx.user.id,
+          });
+          if (role === "LEAD") {
+            await db.update(jobs).set({ leadTechnicianId: input.toTechId }).where(eq(jobs.id, job.id));
+          }
+        }
+
+        // Remove fromTech
+        await db.delete(jobAssignments)
+          .where(and(eq(jobAssignments.jobId, job.id), eq(jobAssignments.userId, input.fromTechId)));
+
+        // Clear deprecated leadTechnicianId if it still points to fromTech
+        await db.update(jobs)
+          .set({ leadTechnicianId: null })
+          .where(and(eq(jobs.id, job.id), eq(jobs.leadTechnicianId, input.fromTechId)));
+
+        reassigned++;
+      }
+
+      return { reassigned };
+    }),
 });

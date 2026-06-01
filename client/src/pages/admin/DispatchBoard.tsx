@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, ExternalLink, Users, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ChevronLeft, ChevronRight, ExternalLink, Users, X, Shuffle } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -350,6 +351,21 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
     onError: (e) => toast.error(e.message || "Failed to update job"),
   });
 
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignFrom, setReassignFrom] = useState("");
+  const [reassignTo, setReassignTo] = useState("");
+
+  const reassignMutation = trpc.jobAssignment.reassignTechnician.useMutation({
+    onSuccess: ({ reassigned }) => {
+      toast.success(`Reassigned ${reassigned} job${reassigned !== 1 ? "s" : ""}`);
+      setReassignOpen(false);
+      setReassignFrom("");
+      setReassignTo("");
+      refetch();
+    },
+    onError: (e) => toast.error(e.message || "Reassignment failed"),
+  });
+
   // Filter jobs
   const jobs: DispatchJob[] = useMemo(() => {
     if (!rawJobs) return [];
@@ -372,6 +388,12 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
 
     return filtered;
   }, [rawJobs, statusFilter, techFilter, unassignedOnly]);
+
+  const reassignFromJobs = useMemo(() => {
+    if (!reassignFrom) return [];
+    const tid = Number(reassignFrom);
+    return jobs.filter((j) => j.assignedTechnicians.some((t) => t.id === tid));
+  }, [reassignFrom, jobs]);
 
   // Stats per tech
   const techJobCounts = useMemo(() => {
@@ -629,6 +651,10 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
           Unassigned only
         </label>
 
+        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setReassignOpen(true)}>
+          <Shuffle className="h-3 w-3" /> Bulk Reassign
+        </Button>
+
         {/* Summary chips */}
         {viewMode === "day" && !isLoading && (
           <div className="flex items-center gap-1.5 ml-auto text-[11px] text-muted-foreground">
@@ -650,6 +676,83 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
       ) : (
         renderWeekView()
       )}
+
+      {/* Bulk Reassign Dialog */}
+      <Dialog open={reassignOpen} onOpenChange={(v) => { if (!v) { setReassignOpen(false); setReassignFrom(""); setReassignTo(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shuffle className="h-4 w-4" /> Bulk Reassign Jobs
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">Move all jobs from one technician to another within the current view.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">From technician</label>
+              <Select value={reassignFrom} onValueChange={(v) => { setReassignFrom(v); setReassignTo(""); }}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Select technician…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {technicians.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)} className="text-sm">
+                      {t.name ?? t.email ?? `Tech #${t.id}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {reassignFrom && (
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                {reassignFromJobs.length === 0
+                  ? "No jobs assigned to this technician in the current view."
+                  : `${reassignFromJobs.length} job${reassignFromJobs.length !== 1 ? "s" : ""} will be reassigned:`}
+                {reassignFromJobs.length > 0 && (
+                  <ul className="mt-1 space-y-0.5">
+                    {reassignFromJobs.slice(0, 5).map((j) => (
+                      <li key={j.id} className="truncate">· {j.siteName ?? j.title} {j.scheduledDate ? `(${new Date(j.scheduledDate).toLocaleDateString("en-CA", { month: "short", day: "numeric" })})` : "(unscheduled)"}</li>
+                    ))}
+                    {reassignFromJobs.length > 5 && <li className="text-muted-foreground">…and {reassignFromJobs.length - 5} more</li>}
+                  </ul>
+                )}
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">To technician</label>
+              <Select value={reassignTo} onValueChange={setReassignTo} disabled={!reassignFrom || reassignFromJobs.length === 0}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Select technician…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {technicians.filter((t) => String(t.id) !== reassignFrom).map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)} className="text-sm">
+                      {t.name ?? t.email ?? `Tech #${t.id}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setReassignOpen(false); setReassignFrom(""); setReassignTo(""); }}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!reassignFrom || !reassignTo || reassignFromJobs.length === 0 || reassignMutation.isPending}
+              onClick={() => reassignMutation.mutate({
+                fromTechId: Number(reassignFrom),
+                toTechId: Number(reassignTo),
+                jobIds: reassignFromJobs.map((j) => j.id),
+              })}
+            >
+              {reassignMutation.isPending ? "Reassigning…" : `Reassign ${reassignFromJobs.length} job${reassignFromJobs.length !== 1 ? "s" : ""}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
