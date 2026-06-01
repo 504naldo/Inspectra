@@ -10,7 +10,7 @@ import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
 import { fetchImageBuffer } from "../pdfSharedStyles";
 import * as checklists from "../complianceChecklists";
-import { sendReportEmail, sendReportReadyEmail } from "../emailService";
+import { sendReportEmail, sendReportReadyEmail, sendReportApprovedNotification } from "../emailService";
 import { ENV } from "../_core/env";
 import {
   inspectionTemplates,
@@ -211,11 +211,33 @@ const reportRouter = router({
   }),
   
   approve: customerProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
-    await db.updateReport(input.id, { 
-      status: 'approved', 
+    await db.updateReport(input.id, {
+      status: 'approved',
       approvedAt: new Date(),
-      approvedById: ctx.user.id 
+      approvedById: ctx.user.id,
     });
+
+    const approverName = ctx.user.name;
+    const approverEmail = ctx.user.email;
+    void (async () => {
+      try {
+        const report = await db.getReportById(input.id);
+        if (!report) return;
+        const job = await db.getJobById(report.jobId);
+        const site = job ? await db.getSiteById(job.siteId) : undefined;
+        await sendReportApprovedNotification({
+          reportNumber: report.reportNumber ?? "",
+          reportTitle: report.title ?? "",
+          siteName: site?.name ?? job?.title ?? "",
+          jobNumber: job?.jobNumber ?? "",
+          approvedByName: approverName ?? "",
+          approvedByEmail: approverEmail ?? "",
+        });
+      } catch (err) {
+        console.warn("[email] Failed to send report approved notification:", err);
+      }
+    })();
+
     return { success: true };
   }),
   

@@ -739,6 +739,11 @@ EWF Fire & Security`;
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {r.reportNumber} · {r.jobNumber} · {new Date(r.createdAt).toLocaleDateString()}
+                        {r.approvedAt && (
+                          <span className="text-green-600 ml-1">
+                            · Approved {new Date(r.approvedAt).toLocaleDateString()}
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 ml-4 shrink-0">

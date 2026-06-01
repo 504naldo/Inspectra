@@ -990,6 +990,7 @@ export async function getReportsByCompany(companyId: number) {
       fileUrl: reports.fileUrl,
       fileKey: reports.fileKey,
       createdAt: reports.createdAt,
+      approvedAt: reports.approvedAt,
       jobNumber: jobs.jobNumber,
       jobTitle: jobs.title,
       siteName: sites.name,
