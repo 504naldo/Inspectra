@@ -1724,6 +1724,33 @@ export async function getQuotesByCompany(companyId: number): Promise<Quote[]> {
   return db.select().from(quotes).where(eq(quotes.companyId, companyId)).orderBy(desc(quotes.createdAt));
 }
 
+export async function getQuotesByCustomerOrg(customerOrgId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: quotes.id,
+      quoteNumber: quotes.quoteNumber,
+      status: quotes.status,
+      total: quotes.total,
+      lineItems: quotes.lineItems,
+      notes: quotes.notes,
+      createdAt: quotes.createdAt,
+      acceptedAt: quotes.acceptedAt,
+      viewedAt: quotes.viewedAt,
+      siteName: sites.name,
+      jobNumber: jobs.jobNumber,
+    })
+    .from(quotes)
+    .leftJoin(sites, eq(quotes.siteId, sites.id))
+    .leftJoin(jobs, eq(quotes.jobId, jobs.id))
+    .where(and(
+      eq(quotes.customerOrgId, customerOrgId),
+      inArray(quotes.status as any, ['sent', 'viewed', 'accepted', 'declined', 'expired', 'approved', 'partially_approved', 'converted_to_approved_work']),
+    ))
+    .orderBy(desc(quotes.createdAt));
+}
+
 export async function updateQuote(id: number, data: Partial<InsertQuote>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1942,6 +1969,23 @@ export async function getMonthlyTrackingBySite(siteId: number, trackingMonth?: s
   const conditions = [eq(monthlyServiceTracking.siteId, siteId)];
   if (trackingMonth) conditions.push(eq(monthlyServiceTracking.trackingMonth, trackingMonth));
   return db.select().from(monthlyServiceTracking).where(and(...conditions));
+}
+
+export async function getMonthlyTrackingByScheduleAndMonth(
+  serviceScheduleId: number,
+  trackingMonth: string,
+): Promise<MonthlyServiceTracking | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(monthlyServiceTracking)
+    .where(and(
+      eq(monthlyServiceTracking.serviceScheduleId, serviceScheduleId),
+      eq(monthlyServiceTracking.trackingMonth, trackingMonth),
+    ))
+    .limit(1);
+  return result[0];
 }
 
 export async function getMonthlyTrackingByLinkedJobId(jobId: number): Promise<MonthlyServiceTracking | undefined> {

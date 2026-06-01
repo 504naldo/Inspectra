@@ -92,6 +92,7 @@ import CustomerPortal from "./pages/customer/Portal";
 import CustomerReports from "./pages/customer/Reports";
 import CustomerDeficiencies from "./pages/customer/Deficiencies";
 import CustomerSites from "./pages/customer/Sites";
+import CustomerQuotes from "./pages/customer/Quotes";
 import CustomerSettings from "./pages/customer/Settings";
 
 // Protected route wrapper
@@ -580,6 +581,11 @@ function Router() {
       <Route path="/customer/deficiencies">
         <ProtectedRoute allowedRoles={['customer']} allowPreview>
           <CustomerDeficiencies />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/customer/quotes">
+        <ProtectedRoute allowedRoles={['customer']} allowPreview>
+          <CustomerQuotes />
         </ProtectedRoute>
       </Route>
       <Route path="/customer/settings">

@@ -139,6 +139,32 @@ export async function sendReportReadyEmail(opts: {
   }
 }
 
+export async function sendQuoteApprovedNotification(opts: {
+  quoteNumber: string;
+  siteName: string;
+  total: number | string;
+  approvedByName: string;
+  approvedByEmail: string;
+}): Promise<void> {
+  const { quoteNumber, siteName, total, approvedByName, approvedByEmail } = opts;
+  const title = `Quote Approved via Portal: ${siteName} (${quoteNumber})`;
+  const content = [
+    `A customer has approved a quote through the portal.`,
+    ``,
+    `Quote:       ${quoteNumber}`,
+    `Site:        ${siteName}`,
+    `Total:       $${Number(total).toFixed(2)}`,
+    `Approved by: ${approvedByName} <${approvedByEmail}>`,
+    `Approved at: ${new Date().toLocaleString("en-CA")}`,
+  ].join("\n");
+
+  try {
+    await notifyOwner({ title, content });
+  } catch (err) {
+    console.error("[emailService] Failed to send quote approved notification:", err);
+  }
+}
+
 export async function sendReportApprovedNotification(opts: {
   reportNumber: string;
   reportTitle: string;
