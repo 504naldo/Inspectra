@@ -64,7 +64,7 @@ export const contactRouter = router({
       receivesQuotes: z.boolean().optional(),
       activeOnly: z.boolean().default(true),
       search: z.string().max(100).optional(),
-    }).default({}))
+    }).default({ activeOnly: true }))
     .query(async ({ ctx, input }) => {
       const companyId = ctx.user.companyId!;
       const db = requireDb(await getDb());
@@ -78,7 +78,7 @@ export const contactRouter = router({
             input.activeOnly ? eq(customerContacts.isActive, 1) : undefined,
             input.customerOrgId ? eq(customerContacts.customerOrgId, input.customerOrgId) : undefined,
             input.siteId ? eq(customerContacts.siteId, input.siteId) : undefined,
-            input.role ? eq(customerContacts.role, input.role) : undefined,
+            input.role ? eq(customerContacts.role, input.role as any) : undefined,
             input.receivesReports ? eq(customerContacts.receivesReports, 1) : undefined,
             input.receivesInvoices ? eq(customerContacts.receivesInvoices, 1) : undefined,
             input.receivesQuotes ? eq(customerContacts.receivesQuotes, 1) : undefined,

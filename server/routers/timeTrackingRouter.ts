@@ -100,7 +100,7 @@ export const timeTrackingRouter = router({
         entityId: id,
         eventType: "created",
         title: `Time entry created: ${input.durationMinutes} min (${input.labourType})`,
-      });
+      } as any);
       return { id };
     }),
 
@@ -123,7 +123,7 @@ export const timeTrackingRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Can only edit draft or rejected entries." });
       }
       const { id, ...rest } = input;
-      await db.updateTimeEntry(id, { ...rest, status: "draft" });
+      await db.updateTimeEntry(id, { ...rest, status: "draft" } as any);
       return { success: true };
     }),
 
@@ -146,7 +146,7 @@ export const timeTrackingRouter = router({
         entityId: input.id,
         eventType: "submitted",
         title: `Time entry submitted for approval`,
-      });
+      } as any);
       const dedupeKey = `time_submitted_${input.id}`;
       const exists = await db.hasUndismissedNotification(ctx.user.companyId, dedupeKey);
       if (!exists) {
@@ -183,7 +183,7 @@ export const timeTrackingRouter = router({
         entityId: input.id,
         eventType: "approved",
         title: `Time entry approved`,
-      });
+      } as any);
       return { success: true };
     }),
 
@@ -210,7 +210,7 @@ export const timeTrackingRouter = router({
         entityId: input.id,
         eventType: "rejected",
         title: `Time entry rejected${input.reason ? `: ${input.reason}` : ""}`,
-      });
+      } as any);
       return { success: true };
     }),
 

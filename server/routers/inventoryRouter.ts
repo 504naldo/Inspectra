@@ -408,7 +408,7 @@ export const inventoryRouter = router({
         approvedWorkId: input.approvedWorkId ?? null,
         deficiencyId: input.deficiencyId ?? null,
         notes: input.notes ?? null,
-        neededByDate: input.neededByDate ?? null,
+        neededByDate: (input.neededByDate ?? null) as any,
       });
 
       for (const item of input.items) {

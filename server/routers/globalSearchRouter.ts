@@ -26,6 +26,7 @@ export const globalSearchRouter = router({
       const { q } = input;
       const companyId = ctx.user.companyId;
       const db = await getDb();
+      if (!db) return { customers: [], sites: [], jobs: [], workOrders: [], approvedWork: [], invoices: [], agreements: [], inventory: [], devices: [], reports: [], deficiencies: [], contacts: [] };
       const pat = `%${q}%`;
 
       const [
@@ -52,13 +53,13 @@ export const globalSearchRouter = router({
           .from(customerOrgs)
           .where(
             and(
-              eq(customerOrgs.companyId, companyId),
+              eq(customerOrgs.companyId, companyId as any),
               or(
                 like(customerOrgs.name, pat),
                 like(customerOrgs.contactName, pat),
                 like(customerOrgs.contactEmail, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -73,7 +74,7 @@ export const globalSearchRouter = router({
           .from(sites)
           .where(
             and(
-              eq(sites.companyId, companyId),
+              eq(sites.companyId, companyId as any),
               or(
                 like(sites.name, pat),
                 like(sites.address, pat),
@@ -82,7 +83,7 @@ export const globalSearchRouter = router({
                 like(sites.contactName, pat),
                 like(sites.buildingId, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -96,14 +97,14 @@ export const globalSearchRouter = router({
           .from(jobs)
           .where(
             and(
-              eq(jobs.companyId, companyId),
+              eq(jobs.companyId, companyId as any),
               or(
                 like(jobs.jobNumber, pat),
                 like(jobs.title, pat),
                 like(jobs.description, pat),
                 like(jobs.notes, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -117,13 +118,13 @@ export const globalSearchRouter = router({
           .from(workOrders)
           .where(
             and(
-              eq(workOrders.companyId, companyId),
+              eq(workOrders.companyId, companyId as any),
               or(
                 like(workOrders.workOrderNumber, pat),
                 like(workOrders.title, pat),
                 like(workOrders.officeNotes, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -137,13 +138,13 @@ export const globalSearchRouter = router({
           .from(approvedWork)
           .where(
             and(
-              eq(approvedWork.companyId, companyId),
+              eq(approvedWork.companyId, companyId as any),
               or(
                 like(approvedWork.approvedScope, pat),
                 like(approvedWork.approvedByName, pat),
                 like(approvedWork.officeNotes, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -158,13 +159,13 @@ export const globalSearchRouter = router({
           .from(invoices)
           .where(
             and(
-              eq(invoices.companyId, companyId),
+              eq(invoices.companyId, companyId as any),
               or(
                 like(invoices.invoiceNumber, pat),
                 like(invoices.billToName, pat),
                 like(invoices.billToEmail, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -178,13 +179,13 @@ export const globalSearchRouter = router({
           .from(serviceAgreements)
           .where(
             and(
-              eq(serviceAgreements.companyId, companyId),
+              eq(serviceAgreements.companyId, companyId as any),
               or(
                 like(serviceAgreements.agreementNumber, pat),
                 like(serviceAgreements.name, pat),
                 like(serviceAgreements.internalNotes, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -198,7 +199,7 @@ export const globalSearchRouter = router({
           .from(inventoryItems)
           .where(
             and(
-              eq(inventoryItems.companyId, companyId),
+              eq(inventoryItems.companyId, companyId as any),
               eq(inventoryItems.isActive, true),
               or(
                 like(inventoryItems.sku, pat),
@@ -206,7 +207,7 @@ export const globalSearchRouter = router({
                 like(inventoryItems.description, pat),
                 like(inventoryItems.supplierPartNumber, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -222,7 +223,7 @@ export const globalSearchRouter = router({
           .from(devices)
           .where(
             and(
-              eq(devices.companyId, companyId),
+              eq(devices.companyId, companyId as any),
               eq(devices.isActive, true),
               or(
                 like(devices.label, pat),
@@ -232,7 +233,7 @@ export const globalSearchRouter = router({
                 like(devices.model, pat),
                 like(devices.location, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -247,9 +248,9 @@ export const globalSearchRouter = router({
           .innerJoin(jobs, eq(reports.jobId, jobs.id))
           .where(
             and(
-              eq(jobs.companyId, companyId),
+              eq(jobs.companyId, companyId as any),
               or(like(reports.reportNumber, pat), like(reports.title, pat)),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -264,14 +265,14 @@ export const globalSearchRouter = router({
           .innerJoin(jobs, eq(deficiencies.jobId, jobs.id))
           .where(
             and(
-              eq(jobs.companyId, companyId),
+              eq(jobs.companyId, companyId as any),
               or(
                 like(deficiencies.title, pat),
                 like(deficiencies.description, pat),
                 like(deficiencies.observedIssue, pat),
                 like(deficiencies.correctiveAction, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
 
@@ -288,7 +289,7 @@ export const globalSearchRouter = router({
           .from(customerContacts)
           .where(
             and(
-              eq(customerContacts.companyId, companyId),
+              eq(customerContacts.companyId, companyId as any),
               eq(customerContacts.isActive, 1),
               or(
                 like(customerContacts.name, pat),
@@ -297,7 +298,7 @@ export const globalSearchRouter = router({
                 like(customerContacts.mobile, pat),
                 like(customerContacts.companyName, pat),
               ),
-            ),
+            ) as any,
           )
           .limit(PER_GROUP),
       ]);
