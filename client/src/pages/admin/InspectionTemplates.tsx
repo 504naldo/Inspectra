@@ -211,14 +211,14 @@ export default function InspectionTemplates() {
     onError: (e) => toast.error(e.message),
   });
 
-  const filtered = templates.filter((t) => {
+  const filtered = templates.filter((t: any) => {
     if (filterSystem !== "all" && t.systemType !== filterSystem) return false;
     if (filterStatus !== "all" && t.status !== filterStatus) return false;
     if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  const grouped = filtered.reduce<Record<string, typeof filtered>>((acc, t) => {
+  const grouped = filtered.reduce<Record<string, typeof filtered>>((acc: any, t: any) => {
     const key = t.systemType;
     if (!acc[key]) acc[key] = [];
     acc[key].push(t);
@@ -323,15 +323,15 @@ export default function InspectionTemplates() {
         {!isLoading && Object.entries(grouped).map(([systemType, items]) => (
           <div key={systemType}>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              {SYSTEM_LABELS[systemType] ?? systemType}
+              {(SYSTEM_LABELS as any)[systemType] ?? systemType}
             </h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map((t) => (
+              {(items as any[]).map((t: any) => (
                 <Card key={t.id} className={t.status === "archived" ? "opacity-60" : ""}>
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
                       <CardTitle className="text-base leading-snug">{t.name}</CardTitle>
-                      <Badge variant={STATUS_COLORS[t.status] as "default" | "secondary" | "outline"} className="shrink-0 text-xs capitalize">
+                      <Badge variant={(STATUS_COLORS as any)[t.status] as "default" | "secondary" | "outline"} className="shrink-0 text-xs capitalize">
                         {t.status}
                       </Badge>
                     </div>

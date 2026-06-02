@@ -460,12 +460,12 @@ export default function SchedulingAutomation() {
   }
 
   // Flatten all items for search/filter
-  const allItems: QueueItem[] = [
+  const allItems: QueueItem[] = ([
     ...data.jobs,
     ...data.approvedWork,
     ...data.workOrders,
     ...data.serviceTracking,
-  ];
+  ] as any) as QueueItem[];
 
   const filtered = allItems.filter(item => {
     if (activeFilter !== "all" && item.itemType !== activeFilter) return false;

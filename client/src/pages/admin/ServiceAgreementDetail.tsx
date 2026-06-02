@@ -370,7 +370,7 @@ export default function ServiceAgreementDetail({ id }: { id: number }) {
         <Card>
           <CardHeader><CardTitle className="text-base">Activity</CardTitle></CardHeader>
           <CardContent className="px-4 pb-4">
-            <ActivityTimeline entityType="service_agreement" entityId={id} />
+            <ActivityTimeline entityType={"service_agreement" as any} entityId={id} />
           </CardContent>
         </Card>
       </div>

@@ -379,14 +379,14 @@ export default function TemplateFormRenderer() {
     setResponses(init);
     // Expand all sections initially
     if (data.sections) {
-      setExpandedSections(new Set(data.sections.map((s) => s.id)));
+      setExpandedSections(new Set(data.sections.map((s: any) => s.id)));
     }
   }, [data]);
 
   const handleChange = (itemId: number, partial: Partial<ResponseState>) => {
     setResponses((prev) => ({
       ...prev,
-      [itemId]: { responseValue: "", responseText: "", notes: "", ...prev[itemId], ...partial },
+      [itemId]: { ...{ responseValue: "", responseText: "", notes: "" }, ...prev[itemId], ...partial },
     }));
   };
 
@@ -400,7 +400,7 @@ export default function TemplateFormRenderer() {
     try {
       const items = data.items;
       await Promise.all(
-        items.map((item) => {
+        items.map((item: any) => {
           const r = responses[item.id];
           if (!r) return Promise.resolve();
           return saveResponse.mutateAsync({
@@ -450,7 +450,7 @@ export default function TemplateFormRenderer() {
 
   const { template, sections, items } = data;
   const sortedSections = [...sections].sort((a, b) => a.sortOrder - b.sortOrder);
-  const itemsBySectionId = items.reduce<Record<number, typeof items>>((acc, i) => {
+  const itemsBySectionId = items.reduce<Record<number, typeof items>>((acc: any, i: any) => {
     if (!acc[i.sectionId]) acc[i.sectionId] = [];
     acc[i.sectionId].push(i);
     return acc;
@@ -477,8 +477,8 @@ export default function TemplateFormRenderer() {
 
       <div className="max-w-2xl mx-auto p-4 space-y-4">
         {sortedSections.map((section) => {
-          const sectionItems = (itemsBySectionId[section.id] ?? []).sort((a, b) => a.sortOrder - b.sortOrder);
-          const sectionAnswered = sectionItems.filter((i) => responses[i.id]?.responseValue || responses[i.id]?.responseText).length;
+          const sectionItems = (itemsBySectionId[section.id] ?? []).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+          const sectionAnswered = sectionItems.filter((i: any) => responses[i.id]?.responseValue || responses[i.id]?.responseText).length;
           const isExpanded = expandedSections.has(section.id);
 
           return (
@@ -503,7 +503,7 @@ export default function TemplateFormRenderer() {
 
               {isExpanded && (
                 <CardContent className="pt-0 space-y-4">
-                  {sectionItems.map((item, idx) => (
+                  {sectionItems.map((item: any, idx: any) => (
                     <div key={item.id}>
                       {idx > 0 && <Separator />}
                       <div className="pt-3">

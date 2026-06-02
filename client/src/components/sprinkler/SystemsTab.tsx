@@ -171,7 +171,7 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
   const addSystem = () => {
     const nextNumber = systems.length + 1;
     setSystems(prev => [...prev, emptySystem(nextNumber)]);
-    setExpandedSystems(prev => new Set([...prev, nextNumber]));
+    setExpandedSystems(prev => new Set(Array.from(prev).concat(nextNumber)));
   };
 
   const removeSystem = (index: number) => {
@@ -182,7 +182,7 @@ export default function SystemsTab({ inspectionId, isFinalized }: SystemsTabProp
     });
     setExpandedSystems(prev => {
       // Rebuild expanded set with renumbered system numbers
-      const asList = [...prev].filter(n => n !== index + 1).map(n => n > index + 1 ? n - 1 : n);
+      const asList = Array.from(prev).filter(n => n !== index + 1).map(n => n > index + 1 ? n - 1 : n);
       return new Set(asList);
     });
   };

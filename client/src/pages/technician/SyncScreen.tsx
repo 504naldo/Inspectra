@@ -72,7 +72,7 @@ export default function SyncScreen() {
           });
           resultsSynced = data.synced;
           // Mark all pending results as synced (by unique job ID), then clear
-          const uniqueJobIds = [...new Set(pendingResults.map((r) => r.jobId))];
+          const uniqueJobIds = Array.from(new Set(pendingResults.map((r) => r.jobId)));
           for (const jId of uniqueJobIds) markResultsSynced(jId);
           clearSyncedResults();
         } catch {

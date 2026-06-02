@@ -85,7 +85,7 @@ export default function DocumentCenter() {
 
   const { data, isLoading } = trpc.documentCenter.list.useQuery(
     { search: deferredSearch, docType, limit: 300 },
-    { keepPreviousData: true },
+    {},
   );
 
   const items = data?.items ?? [];

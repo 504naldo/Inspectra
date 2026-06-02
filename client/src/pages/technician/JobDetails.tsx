@@ -85,7 +85,7 @@ function TemplateInspectionCards({
 
   return (
     <>
-      {templates.map((t) => (
+      {templates.map((t: any) => (
         <Card key={t.id} className="border-teal-200 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-950/20">
           <CardContent className="p-4">
             <div className="flex items-center justify-between gap-3">
@@ -1052,7 +1052,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
         </Card>
 
         {/* Inspection Templates — dynamic templates assigned to this job */}
-        <TemplateInspectionCards jobId={parseInt(jobId!)} setLocation={setLocation} />
+        <TemplateInspectionCards jobId={jobId} setLocation={setLocation} />
 
         {/* Work Order */}
         {workOrder && (
