@@ -39,10 +39,10 @@ export const approvedWorkRouter = router({
       if (records.length === 0) return [];
 
       // Batch-enrich with site + customer org names
-      const siteIds   = [...new Set(records.map(r => r.siteId).filter(Boolean) as number[])];
-      const orgIds    = [...new Set(records.map(r => r.customerOrgId).filter(Boolean) as number[])];
-      const woIds     = [...new Set(records.map(r => r.workOrderId).filter(Boolean) as number[])];
-      const userIds   = [...new Set(records.flatMap(r => (r.assignedTechnicianIds as number[] | null) ?? []))];
+      const siteIds   = Array.from(new Set(records.map(r => r.siteId).filter(Boolean) as number[]));
+      const orgIds    = Array.from(new Set(records.map(r => r.customerOrgId).filter(Boolean) as number[]));
+      const woIds     = Array.from(new Set(records.map(r => r.workOrderId).filter(Boolean) as number[]));
+      const userIds   = Array.from(new Set(records.flatMap(r => (r.assignedTechnicianIds as number[] | null) ?? [])));
 
       const [sites, orgs, wos, users] = await Promise.all([
         siteIds.length   ? Promise.all(siteIds.map(id => db.getSiteById(id)))   : Promise.resolve([]),
@@ -193,7 +193,7 @@ export const approvedWorkRouter = router({
           message: "Cannot create Approved Work from a declined quote.",
         });
       }
-      if (quote.status === "pending" || quote.status === "draft") {
+      if ((quote.status as string) === "pending" || quote.status === "draft") {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Quote must be approved before creating Approved Work.",

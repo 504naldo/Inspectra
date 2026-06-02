@@ -142,11 +142,9 @@ export const reportQaRouter = router({
 
       // 6. Resolve technician names (fetch only unique IDs)
       const allItems = [...reportItems, ...fieldCompleteItems];
-      const techIds = [
-        ...new Set(
-          allItems.map((i) => i.technicianId).filter((id): id is number => id != null),
-        ),
-      ];
+      const techIds = Array.from(new Set(
+        allItems.map((i) => i.technicianId).filter((id): id is number => id != null),
+      ));
       const techMap = new Map<number, string>();
       for (const id of techIds) {
         const u = await db.getUserById(id);

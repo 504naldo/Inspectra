@@ -28,7 +28,7 @@ import {
 // Returns empty array when no template responses exist — PDF skips the section.
 
 async function fetchTemplateReportData(jobId: number, companyId: number) {
-  const drizzle = getDb();
+  const drizzle = await getDb();
 
   const responses = await drizzle
     .select()

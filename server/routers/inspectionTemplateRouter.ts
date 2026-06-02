@@ -19,7 +19,7 @@ import { logActivity } from "../activityLogger";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function assertTemplateOwner(templateId: number, companyId: number) {
-  const db = getDb();
+  const db = await getDb();
   const [template] = await db
     .select({ id: inspectionTemplates.id, companyId: inspectionTemplates.companyId })
     .from(inspectionTemplates)
@@ -31,7 +31,7 @@ async function assertTemplateOwner(templateId: number, companyId: number) {
 }
 
 async function assertSectionOwner(sectionId: number, companyId: number) {
-  const db = getDb();
+  const db = await getDb();
   const [section] = await db
     .select({ id: inspectionTemplateSections.id, companyId: inspectionTemplateSections.companyId, templateId: inspectionTemplateSections.templateId })
     .from(inspectionTemplateSections)
@@ -43,7 +43,7 @@ async function assertSectionOwner(sectionId: number, companyId: number) {
 }
 
 async function assertItemOwner(itemId: number, companyId: number) {
-  const db = getDb();
+  const db = await getDb();
   const [item] = await db
     .select({ id: inspectionTemplateItems.id, companyId: inspectionTemplateItems.companyId, templateId: inspectionTemplateItems.templateId, sectionId: inspectionTemplateItems.sectionId })
     .from(inspectionTemplateItems)
@@ -66,7 +66,7 @@ export const inspectionTemplateRouter = router({
       status: z.enum(TEMPLATE_STATUSES).optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
       const conditions = [eq(inspectionTemplates.companyId, ctx.user.companyId!)];
       if (input?.systemType) conditions.push(eq(inspectionTemplates.systemType, input.systemType));
       if (input?.status) conditions.push(eq(inspectionTemplates.status, input.status));
@@ -81,7 +81,7 @@ export const inspectionTemplateRouter = router({
   get: officeProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
       const [template] = await db
         .select()
         .from(inspectionTemplates)
@@ -118,7 +118,7 @@ export const inspectionTemplateRouter = router({
       frequency: z.string().default("annual"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
       const [result] = await db.insert(inspectionTemplates).values({
         companyId: ctx.user.companyId!,
         name: input.name,
@@ -147,7 +147,7 @@ export const inspectionTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertTemplateOwner(input.id, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
       const { id, isDefault, ...rest } = input;
       await db.update(inspectionTemplates).set({
         ...rest,
@@ -159,7 +159,7 @@ export const inspectionTemplateRouter = router({
   clone: adminProcedure
     .input(z.object({ id: z.number(), name: z.string().min(1).max(200) }))
     .mutation(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
       const [template] = await db
         .select()
         .from(inspectionTemplates)
@@ -231,7 +231,7 @@ export const inspectionTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertTemplateOwner(input.templateId, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
 
       const existingSections = await db
         .select({ sortOrder: inspectionTemplateSections.sortOrder })
@@ -262,7 +262,7 @@ export const inspectionTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertSectionOwner(input.id, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
       const { id, isRequired, ...rest } = input;
       await db.update(inspectionTemplateSections).set({
         ...rest,
@@ -275,7 +275,7 @@ export const inspectionTemplateRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const section = await assertSectionOwner(input.id, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
       await db.delete(inspectionTemplateItems).where(eq(inspectionTemplateItems.sectionId, input.id));
       await db.delete(inspectionTemplateSections).where(eq(inspectionTemplateSections.id, input.id));
       return { ok: true, templateId: section.templateId };
@@ -288,7 +288,7 @@ export const inspectionTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertTemplateOwner(input.templateId, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
       await Promise.all(
         input.orderedIds.map((id, idx) =>
           db.update(inspectionTemplateSections)
@@ -320,7 +320,7 @@ export const inspectionTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertTemplateOwner(input.templateId, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
 
       const existing = await db
         .select({ sortOrder: inspectionTemplateItems.sortOrder })
@@ -366,7 +366,7 @@ export const inspectionTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertItemOwner(input.id, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
       const { id, isRequired, ...rest } = input;
       await db.update(inspectionTemplateItems).set({
         ...rest,
@@ -379,7 +379,7 @@ export const inspectionTemplateRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       await assertItemOwner(input.id, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
       await db.delete(inspectionTemplateItems).where(eq(inspectionTemplateItems.id, input.id));
       return { ok: true };
     }),
@@ -391,7 +391,7 @@ export const inspectionTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertSectionOwner(input.sectionId, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
       await Promise.all(
         input.orderedIds.map((id, idx) =>
           db.update(inspectionTemplateItems)
@@ -414,7 +414,7 @@ export const inspectionTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await assertTemplateOwner(input.templateId, ctx.user.companyId!);
-      const db = getDb();
+      const db = await getDb();
       const [result] = await db.insert(inspectionTemplateAssignments).values({
         companyId: ctx.user.companyId!,
         templateId: input.templateId,
@@ -430,7 +430,7 @@ export const inspectionTemplateRouter = router({
   removeAssignment: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
       await db.update(inspectionTemplateAssignments)
         .set({ isActive: 0 })
         .where(and(
@@ -445,7 +445,7 @@ export const inspectionTemplateRouter = router({
   getTemplatesForJob: technicianProcedure
     .input(z.object({ jobId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
 
       // Get job details to match against assignments
       const [job] = await db
@@ -497,7 +497,7 @@ export const inspectionTemplateRouter = router({
   getTemplateWithResponses: technicianProcedure
     .input(z.object({ templateId: z.number(), jobId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
 
       const [[template], [job]] = await Promise.all([
         db.select().from(inspectionTemplates)
@@ -538,7 +538,7 @@ export const inspectionTemplateRouter = router({
       deficiencyId: z.number().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
 
       const [job] = await db.select({ companyId: jobs.companyId, finalizedAt: jobs.finalizedAt })
         .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
@@ -576,7 +576,7 @@ export const inspectionTemplateRouter = router({
   getCompletenessForJob: technicianProcedure
     .input(z.object({ jobId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
 
       const [job] = await db
         .select({ jobType: jobs.jobType, siteId: jobs.siteId, customerOrgId: jobs.customerOrgId, companyId: jobs.companyId })
@@ -630,7 +630,7 @@ export const inspectionTemplateRouter = router({
   getResponseSummary: officeProcedure
     .input(z.object({ jobId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
 
       const [job] = await db.select({ companyId: jobs.companyId })
         .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
@@ -660,7 +660,7 @@ export const inspectionTemplateRouter = router({
   getReportResponseSummary: officeProcedure
     .input(z.object({ jobId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const db = getDb();
+      const db = await getDb();
 
       const [job] = await db.select({ companyId: jobs.companyId })
         .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);

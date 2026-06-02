@@ -129,7 +129,7 @@ export const payrollHoursRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Can only edit draft or rejected entries." });
       }
       const { id, ...rest } = input;
-      await db.updatePayrollEntry(id, { ...rest, status: "draft" as const });
+      await db.updatePayrollEntry(id, { ...rest, status: "draft" } as any);
       return { success: true };
     }),
 

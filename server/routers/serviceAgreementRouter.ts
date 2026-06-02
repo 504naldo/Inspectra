@@ -102,7 +102,7 @@ export const serviceAgreementRouter = router({
   list: officeProcedure
     .input(z.object({ status: statusEnum.optional() }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
+      const companyId = ctx.user.companyId!;
       let rows = await db.getServiceAgreementsByCompany(companyId, input.status);
 
       // Auto-transition statuses and fire notifications (fire-and-forget)
@@ -194,7 +194,7 @@ export const serviceAgreementRouter = router({
       documentUrl: z.string().url().max(500).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
+      const companyId = ctx.user.companyId!;
 
       // Verify customerOrg belongs to this company
       const orgs = await db.getCustomerOrgsByCompany(companyId);
@@ -388,7 +388,7 @@ export const serviceAgreementRouter = router({
   getExpiringSoon: officeProcedure
     .input(z.object({ daysAhead: z.number().int().min(1).max(365).default(90) }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
+      const companyId = ctx.user.companyId!;
       const rows = await db.getExpiringSoonAgreements(companyId, input.daysAhead);
       void _fireExpiryNotifications(companyId, rows);
       return rows;
@@ -397,7 +397,7 @@ export const serviceAgreementRouter = router({
   getAgreementForSite: officeProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
+      const companyId = ctx.user.companyId!;
       return db.getActiveAgreementForSite(input.siteId, companyId);
     }),
 });

@@ -238,7 +238,7 @@ const complianceRouter = router({
 
       const reportedJobIds = new Set(allReports.map((r) => r.jobId));
       const completedJobIds = new Set(allJobs.filter((j) => j.status === "completed").map((j) => j.id));
-      reportQaSummary.fieldComplete = [...completedJobIds].filter((id) => !reportedJobIds.has(id)).length;
+      reportQaSummary.fieldComplete = Array.from(completedJobIds).filter((id) => !reportedJobIds.has(id)).length;
 
       for (const r of allReports) {
         const siteId = jobToSite.get(r.jobId);
@@ -384,7 +384,7 @@ const complianceRouter = router({
 
     let totalOpenDefs = 0;
     let totalCriticalDefs = 0;
-    for (const [, d] of defsBySite) {
+    for (const [, d] of Array.from(defsBySite.entries())) {
       totalOpenDefs += d.count;
       totalCriticalDefs += d.criticalCount;
     }

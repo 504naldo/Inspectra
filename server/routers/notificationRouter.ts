@@ -122,7 +122,7 @@ export const notificationRouter = router({
 
     // Filter by companyId — reports don't have companyId directly; we join through jobs
     // Since this is a lightweight check, we'll filter after joining
-    const jobIds = [...new Set(pendingReports.map((r) => r.jobId))];
+    const jobIds = Array.from(new Set(pendingReports.map((r) => r.jobId)));
     let companyJobIds = new Set<number>();
     if (jobIds.length > 0) {
       const compJobs = await rawDb

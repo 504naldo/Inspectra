@@ -210,7 +210,7 @@ export async function updateUser(userId: number, data: Partial<InsertUser>) {
 export async function incrementUserSessionVersion(userId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.update(users).set({ sessionVersion: sql`sessionVersion + 1` }).where(eq(users.id, userId));
+  await db.update(users).set({ sessionVersion: sql`sessionVersion + 1` } as any).where(eq(users.id, userId));
 }
 
 // ============================================
@@ -1062,7 +1062,7 @@ export async function listKnowledgeBase(companyId: number, opts: {
     conditions.push(or(
       like(knowledgeBase.title, `%${opts.search}%`),
       like(knowledgeBase.content, `%${opts.search}%`)
-    ));
+    )!);
   }
 
   return db.select().from(knowledgeBase)

@@ -70,7 +70,7 @@ export const assetLifecycleRouter = router({
       replacementRecommended: z.boolean().optional(),
     }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
+      const companyId = ctx.user.companyId!;
 
       // Determine target site IDs
       let targetSiteIds: number[] | null = null;
@@ -351,7 +351,7 @@ export const assetLifecycleRouter = router({
   getAssetsDueForService: officeProcedure
     .input(z.object({ siteId: z.number().int().positive().optional() }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
+      const companyId = ctx.user.companyId!;
       let deviceList = await db.getDevicesByCompany(companyId);
       if (input.siteId) deviceList = deviceList.filter((d) => d.siteId === input.siteId);
 
@@ -369,7 +369,7 @@ export const assetLifecycleRouter = router({
   getRepeatedFailureAssets: officeProcedure
     .input(z.object({ siteId: z.number().int().positive().optional() }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
+      const companyId = ctx.user.companyId!;
       let deviceList = await db.getDevicesByCompany(companyId);
       if (input.siteId) deviceList = deviceList.filter((d) => d.siteId === input.siteId);
 

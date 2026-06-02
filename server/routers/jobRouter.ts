@@ -739,7 +739,7 @@ const jobRouter = router({
             .where(and(
               eq(schema.inspectionTemplates.companyId, companyId),
               eq(schema.inspectionTemplates.status, "active"),
-              inArray(schema.inspectionTemplates.id, [...matchingIds]),
+              inArray(schema.inspectionTemplates.id, Array.from(matchingIds)),
             ))
         : [];
 
@@ -769,7 +769,7 @@ const jobRouter = router({
         },
         site: site
           ? { id: site.id, name: site.name, address: site.address, city: site.city,
-              state: site.state, postalCode: site.postalCode, phone: site.phone, notes: site.notes }
+              state: site.state, postalCode: site.postalCode, phone: (site as any).phone, notes: site.notes }
           : null,
         customerOrg: customerOrg
           ? { name: customerOrg.name, phone: (customerOrg as any).phone ?? null }
