@@ -135,3 +135,4 @@ temp/
 /data/imports/*.xlsx
 /data/imports/*.xlsm
 /data/imports/*.xls
+.claude/
