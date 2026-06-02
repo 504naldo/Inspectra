@@ -66,11 +66,11 @@ export const invoiceRouter = router({
       sageExportStatus: z.enum(["pending", "exported", "error"]).optional(),
     }))
     .query(async ({ input, ctx }) => {
-      let rows = await db.getInvoicesByCompany(ctx.user.companyId, input.status);
+      let rows = await db.getInvoicesByCompany(ctx.user.companyId!, input.status);
       if (input.sageExportStatus) {
         rows = rows.filter((r: any) => r.sageExportStatus === input.sageExportStatus);
       }
-      const customerOrgs = await db.getCustomerOrgsByCompany(ctx.user.companyId);
+      const customerOrgs = await db.getCustomerOrgsByCompany(ctx.user.companyId!);
       const orgMap = new Map(customerOrgs.map((o: any) => [o.id, o.name]));
       return rows.map((inv) => ({
         ...inv,
@@ -126,7 +126,7 @@ export const invoiceRouter = router({
         dueDate.setDate(dueDate.getDate() + (settings.invoiceDueDays ?? 30));
       }
       const inv = await db.createInvoice({
-        companyId: ctx.user.companyId,
+        companyId: ctx.user.companyId!,
         invoiceNumber: generateInvoiceNumber(settings.invoiceNumberPrefix ?? "INV"),
         status: "draft",
         createdById: ctx.user.id,

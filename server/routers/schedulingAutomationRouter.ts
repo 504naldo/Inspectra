@@ -140,11 +140,11 @@ export const schedulingAutomationRouter = router({
       approvedWork: awItems.map(aw => ({
         id: aw.id,
         itemType: "approved_work" as const,
-        title: aw.title,
+        title: (aw as any).title,
         awType: aw.type,
         priority: null,
         status: aw.status,
-        description: aw.description,
+        description: (aw as any).description,
         createdAt: aw.createdAt,
         assignedTechnicianIds: (aw.assignedTechnicianIds as number[] | null) ?? [],
         assignedTechNames: ((aw.assignedTechnicianIds as number[] | null) ?? []).map(id => techMap.get(id)?.name ?? null).filter(Boolean) as string[],
@@ -250,7 +250,7 @@ export const schedulingAutomationRouter = router({
       const scheduledAw = await db
         .select({
           id: approvedWork.id,
-          title: approvedWork.title,
+          title: (approvedWork as any).title,
           scheduledDate: approvedWork.scheduledDate,
           assignedTechnicianIds: approvedWork.assignedTechnicianIds,
         })
@@ -356,7 +356,7 @@ export const schedulingAutomationRouter = router({
         const rows = await db.select().from(approvedWork).where(eq(approvedWork.id, input.itemId)).limit(1);
         const item = rows[0];
         if (!item || item.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
-        itemTitle = item.title;
+        itemTitle = (item as any).title;
       } else if (input.itemType === "work_order") {
         const rows = await db.select().from(workOrders).where(eq(workOrders.id, input.itemId)).limit(1);
         const item = rows[0];
@@ -438,7 +438,7 @@ export const schedulingAutomationRouter = router({
       // Pick least loaded technician
       let minLoad = Infinity;
       let suggestedTechId: number | null = null;
-      for (const [tid, count] of loadCount) {
+      for (const [tid, count] of Array.from(loadCount.entries())) {
         if (count < minLoad) { minLoad = count; suggestedTechId = tid; }
       }
 
@@ -592,7 +592,7 @@ export const schedulingAutomationRouter = router({
         // Format as YYYY-MM-DD for the date column
         const dateStr = input.scheduledDate.toISOString().slice(0, 10);
         await db.update(monthlyServiceTracking).set({
-          scheduledDate: dateStr,
+          scheduledDate: dateStr as any,
           status: "scheduled",
           ...(input.technicianIds ? { assignedTechnicianIds: input.technicianIds } : {}),
         }).where(eq(monthlyServiceTracking.id, input.itemId));

@@ -133,7 +133,7 @@ async function buildInvoiceContext(invoiceId: number, companyId: number): Promis
   const invoice = await db.getInvoiceById(invoiceId);
   if (!invoice || invoice.companyId !== companyId) return "(invoice not found or access denied)";
 
-  const lineItems = (invoice.lineItems as any[] | null) ?? [];
+  const lineItems = ((invoice as any).lineItems as any[] | null) ?? [];
   const itemSummary = lineItems.slice(0, 8).map((li: any) => `  - ${li.description ?? "item"}: $${li.total ?? li.amount ?? "?"}`).join("\n");
 
   return [
@@ -143,7 +143,7 @@ async function buildInvoiceContext(invoiceId: number, companyId: number): Promis
     `Sage: ${(invoice as any).sageStatus ?? "not exported"}`,
     `Line items (${lineItems.length}):`,
     itemSummary || "  (none)",
-    invoice.notes ? `Notes: ${(invoice.notes as string).slice(0, 200)}` : "",
+    (invoice as any).notes ? `Notes: ${((invoice as any).notes as string).slice(0, 200)}` : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -181,12 +181,12 @@ async function buildApprovedWorkContext(awId: number, companyId: number): Promis
   const customer = aw.customerOrgId ? await db.getCustomerOrgById(aw.customerOrgId) : null;
 
   return [
-    `APPROVED WORK: ${aw.title}`,
+    `APPROVED WORK: ${(aw as any).title}`,
     `Type: ${aw.type} | Status: ${aw.status}`,
     `Site: ${site?.name ?? "unknown"}`,
     `Customer: ${customer?.name ?? "unknown"}`,
     `Scheduled: ${aw.scheduledDate ? new Date(aw.scheduledDate).toDateString() : "not set"}`,
-    aw.description ? `Description: ${aw.description.slice(0, 300)}` : "",
+    (aw as any).description ? `Description: ${((aw as any).description as string).slice(0, 300)}` : "",
   ].filter(Boolean).join("\n");
 }
 

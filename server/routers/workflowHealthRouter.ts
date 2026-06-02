@@ -111,8 +111,8 @@ export const workflowHealthRouter = router({
         ));
 
       // Resolve site/customer names in a single pass
-      const siteIds = [...new Set(staleReportRows.map((r) => jobMap.get(r.jobId)?.siteId).filter(Boolean) as number[])];
-      const orgIds  = [...new Set(staleReportRows.map((r) => jobMap.get(r.jobId)?.customerOrgId).filter(Boolean) as number[])];
+      const siteIds = Array.from(new Set(staleReportRows.map((r) => jobMap.get(r.jobId)?.siteId).filter(Boolean) as number[]));
+      const orgIds  = Array.from(new Set(staleReportRows.map((r) => jobMap.get(r.jobId)?.customerOrgId).filter(Boolean) as number[]));
 
       const [siteRows, orgRows] = await Promise.all([
         siteIds.length ? rawDb.select({ id: sites.id, name: sites.name }).from(sites).where(inArray(sites.id, siteIds)) : [],
@@ -185,8 +185,8 @@ export const workflowHealthRouter = router({
       ));
 
     if (staleQuoteRows.length > 0) {
-      const qSiteIds = [...new Set(staleQuoteRows.map((q) => q.siteId).filter(Boolean) as number[])];
-      const qOrgIds  = [...new Set(staleQuoteRows.map((q) => q.customerOrgId).filter(Boolean) as number[])];
+      const qSiteIds = Array.from(new Set(staleQuoteRows.map((q) => q.siteId).filter(Boolean) as number[]));
+      const qOrgIds  = Array.from(new Set(staleQuoteRows.map((q) => q.customerOrgId).filter(Boolean) as number[]));
       const [qSiteRows, qOrgRows] = await Promise.all([
         qSiteIds.length ? rawDb.select({ id: sites.id, name: sites.name }).from(sites).where(inArray(sites.id, qSiteIds)) : [],
         qOrgIds.length  ? rawDb.select({ id: customerOrgs.id, name: customerOrgs.name }).from(customerOrgs).where(inArray(customerOrgs.id, qOrgIds)) : [],
@@ -255,8 +255,8 @@ export const workflowHealthRouter = router({
       ));
 
     if (staleApprovedRows.length > 0) {
-      const awSiteIds = [...new Set(staleApprovedRows.map((a) => a.siteId).filter(Boolean) as number[])];
-      const awOrgIds  = [...new Set(staleApprovedRows.map((a) => a.customerOrgId).filter(Boolean) as number[])];
+      const awSiteIds = Array.from(new Set(staleApprovedRows.map((a) => a.siteId).filter(Boolean) as number[]));
+      const awOrgIds  = Array.from(new Set(staleApprovedRows.map((a) => a.customerOrgId).filter(Boolean) as number[]));
       const [awSiteRows, awOrgRows] = await Promise.all([
         awSiteIds.length ? rawDb.select({ id: sites.id, name: sites.name }).from(sites).where(inArray(sites.id, awSiteIds)) : [],
         awOrgIds.length  ? rawDb.select({ id: customerOrgs.id, name: customerOrgs.name }).from(customerOrgs).where(inArray(customerOrgs.id, awOrgIds)) : [],
@@ -332,8 +332,8 @@ export const workflowHealthRouter = router({
       ));
 
     if (staleWorkOrderRows.length > 0) {
-      const woSiteIds = [...new Set(staleWorkOrderRows.map((w) => w.siteId).filter(Boolean) as number[])];
-      const woOrgIds  = [...new Set(staleWorkOrderRows.map((w) => w.customerOrgId).filter(Boolean) as number[])];
+      const woSiteIds = Array.from(new Set(staleWorkOrderRows.map((w) => w.siteId).filter(Boolean) as number[]));
+      const woOrgIds  = Array.from(new Set(staleWorkOrderRows.map((w) => w.customerOrgId).filter(Boolean) as number[]));
       const [woSiteRows, woOrgRows] = await Promise.all([
         woSiteIds.length ? rawDb.select({ id: sites.id, name: sites.name }).from(sites).where(inArray(sites.id, woSiteIds)) : [],
         woOrgIds.length  ? rawDb.select({ id: customerOrgs.id, name: customerOrgs.name }).from(customerOrgs).where(inArray(customerOrgs.id, woOrgIds)) : [],
@@ -407,8 +407,8 @@ export const workflowHealthRouter = router({
       ));
 
     if (staleInvoiceRows.length > 0) {
-      const invSiteIds = [...new Set(staleInvoiceRows.map((i) => i.siteId).filter(Boolean) as number[])];
-      const invOrgIds  = [...new Set(staleInvoiceRows.map((i) => i.customerOrgId).filter(Boolean) as number[])];
+      const invSiteIds = Array.from(new Set(staleInvoiceRows.map((i) => i.siteId).filter(Boolean) as number[]));
+      const invOrgIds  = Array.from(new Set(staleInvoiceRows.map((i) => i.customerOrgId).filter(Boolean) as number[]));
       const [invSiteRows, invOrgRows] = await Promise.all([
         invSiteIds.length ? rawDb.select({ id: sites.id, name: sites.name }).from(sites).where(inArray(sites.id, invSiteIds)) : [],
         invOrgIds.length  ? rawDb.select({ id: customerOrgs.id, name: customerOrgs.name }).from(customerOrgs).where(inArray(customerOrgs.id, invOrgIds)) : [],
@@ -481,9 +481,9 @@ export const workflowHealthRouter = router({
       payrollByUser.set(p.userId, list);
     }
 
-    for (const [userId, entries] of payrollByUser) {
-      const oldest = entries.reduce((a, b) => ageDays(a.submittedAt ?? a.rejectedAt) > ageDays(b.submittedAt ?? b.rejectedAt) ? a : b);
-      const hasRejected = entries.some((e) => e.status === "rejected");
+    for (const [userId, entries] of Array.from(payrollByUser.entries())) {
+      const oldest = entries.reduce((a: any, b: any) => ageDays(a.submittedAt ?? a.rejectedAt) > ageDays(b.submittedAt ?? b.rejectedAt) ? a : b);
+      const hasRejected = entries.some((e: any) => e.status === "rejected");
       const age = ageDays(hasRejected ? oldest.rejectedAt : oldest.submittedAt);
 
       allItems.push({
@@ -498,7 +498,7 @@ export const workflowHealthRouter = router({
         ageDays: age,
         lastUpdatedAt: new Date(oldest.updatedAt).toISOString(),
         reason: hasRejected
-          ? `${entries.filter((e) => e.status === "rejected").length} rejected entr${entries.filter((e) => e.status === "rejected").length === 1 ? "y" : "ies"} not resubmitted (${age}d)`
+          ? `${entries.filter((e: any) => e.status === "rejected").length} rejected entr${entries.filter((e: any) => e.status === "rejected").length === 1 ? "y" : "ies"} not resubmitted (${age}d)`
           : `${entries.length} entr${entries.length === 1 ? "y" : "ies"} submitted ${age} days ago, pending approval`,
         suggestedNextAction: hasRejected
           ? "Contact employee to correct and resubmit rejected entries"
@@ -544,8 +544,8 @@ export const workflowHealthRouter = router({
       ));
 
     if (stalePartsRows.length > 0) {
-      const prSiteIds = [...new Set(stalePartsRows.map((p) => p.siteId).filter(Boolean) as number[])];
-      const prOrgIds  = [...new Set(stalePartsRows.map((p) => p.customerOrgId).filter(Boolean) as number[])];
+      const prSiteIds = Array.from(new Set(stalePartsRows.map((p) => p.siteId).filter(Boolean) as number[]));
+      const prOrgIds  = Array.from(new Set(stalePartsRows.map((p) => p.customerOrgId).filter(Boolean) as number[]));
       const [prSiteRows, prOrgRows] = await Promise.all([
         prSiteIds.length ? rawDb.select({ id: sites.id, name: sites.name }).from(sites).where(inArray(sites.id, prSiteIds)) : [],
         prOrgIds.length  ? rawDb.select({ id: customerOrgs.id, name: customerOrgs.name }).from(customerOrgs).where(inArray(customerOrgs.id, prOrgIds)) : [],

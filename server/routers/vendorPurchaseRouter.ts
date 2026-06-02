@@ -208,7 +208,7 @@ export const vendorPurchaseRouter = router({
         status: "draft",
         priority: input.priority,
         partsRequestId: input.partsRequestId ?? null,
-        expectedDate: input.expectedDate ?? null,
+        expectedDate: (input.expectedDate ?? null) as any,
         requestedById: input.requestedById ?? null,
         createdById: ctx.user.id,
         notes: input.notes ?? null,
@@ -288,7 +288,7 @@ export const vendorPurchaseRouter = router({
         ...fields,
         ...(tax !== undefined ? { tax: String(tax) as any } : {}),
         ...(shipping !== undefined ? { shipping: String(shipping) as any } : {}),
-      });
+      } as any);
       if (tax !== undefined || shipping !== undefined) {
         await db.recalculatePOTotals(
           id,
@@ -628,7 +628,7 @@ export const vendorPurchaseRouter = router({
         status: "draft",
         priority: input.priority,
         partsRequestId: input.partsRequestId,
-        expectedDate: input.expectedDate ?? null,
+        expectedDate: (input.expectedDate ?? null) as any,
         requestedById: pr.requestedById,
         createdById: ctx.user.id,
         notes: input.notes ?? null,
@@ -694,7 +694,7 @@ export const vendorPurchaseRouter = router({
         status: "draft",
         priority: input.priority,
         partsRequestId: null,
-        expectedDate: input.expectedDate ?? null,
+        expectedDate: (input.expectedDate ?? null) as any,
         requestedById: null,
         createdById: ctx.user.id,
         notes: input.notes ?? `Restock PO for ${input.inventoryItemIds.length} item(s)`,

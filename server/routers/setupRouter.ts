@@ -139,6 +139,7 @@ export const setupRouter = router({
   getOverview: officeProcedure.query(async ({ ctx }) => {
     const companyId = ctx.user.companyId!;
     const drizzle = await getDb();
+    if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
     const [
       company,
@@ -279,6 +280,7 @@ export const setupRouter = router({
     .mutation(async ({ ctx, input }) => {
       const companyId = ctx.user.companyId!;
       const drizzle = await getDb();
+      if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const completedAt =
         input.status === "completed" || input.status === "skipped" ? new Date() : null;
