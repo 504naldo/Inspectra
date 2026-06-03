@@ -28,7 +28,7 @@ import {
 // Returns empty array when no template responses exist — PDF skips the section.
 
 async function fetchTemplateReportData(jobId: number, companyId: number) {
-  const drizzle = await getDb();
+  const drizzle = (await getDb())!;
 
   const responses = await drizzle
     .select()
@@ -37,7 +37,7 @@ async function fetchTemplateReportData(jobId: number, companyId: number) {
 
   if (responses.length === 0) return [];
 
-  const templateIds = [...new Set(responses.map((r) => r.templateId))];
+  const templateIds = Array.from(new Set(responses.map((r) => r.templateId)));
 
   const [allTemplates, allSections, allItems, allDeficiencies] = await Promise.all([
     drizzle.select().from(inspectionTemplates)
@@ -380,7 +380,7 @@ const reportRouter = router({
         // Pre-fetch customer-facing photo buffers for this deficiency
         let photos: Array<{ buffer: Buffer; caption?: string | null; locationNote?: string | null }> = [];
         try {
-          const drizzle = await getDb();
+          const drizzle = (await getDb())!;
           if (drizzle) {
             const mediaRows = await drizzle
               .select()
