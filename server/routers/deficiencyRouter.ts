@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, technicianProcedure } from "../_core/trpc";
+import { router, protectedProcedure, technicianProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { withAudit, assertJobNotFinalized } from "../db";
 
@@ -62,6 +62,33 @@ const deficiencyRouter = router({
     });
   }),
   
+  signOffFromPortal: customerProcedure
+    .input(z.object({ deficiencyId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const deficiency = await db.getDeficiencyById(input.deficiencyId);
+      if (!deficiency) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const job = await db.getJobById(deficiency.jobId);
+      if (!job || job.customerOrgId !== ctx.user.customerOrgId) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      if (deficiency.customerSignedOffAt) {
+        return { success: true };
+      }
+
+      const updateData: any = {
+        customerSignedOffAt: new Date(),
+        customerSignedOffByName: ctx.user.name ?? ctx.user.email,
+      };
+      if (deficiency.status === "resolved") {
+        updateData.status = "closed";
+      }
+
+      await db.updateDeficiency(input.deficiencyId, updateData);
+      return { success: true };
+    }),
+
   update: technicianProcedure.input(z.object({
     id: z.number(),
     title: z.string().optional(),

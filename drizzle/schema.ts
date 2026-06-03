@@ -366,6 +366,8 @@ export const deficiencies = mysqlTable("deficiencies", {
   resolvedAt: timestamp("resolvedAt"),
   resolvedById: int("resolvedById"),
   resolutionNotes: text("resolutionNotes"),
+  customerSignedOffAt: timestamp("customerSignedOffAt"),
+  customerSignedOffByName: varchar("customerSignedOffByName", { length: 255 }),
   // Linked work order — set when a repair work order is created for this deficiency
   workOrderId: int("workOrderId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

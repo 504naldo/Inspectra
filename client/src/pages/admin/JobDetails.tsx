@@ -843,6 +843,11 @@ export default function AdminJobDetails() {
                                     {def.observedIssue && (
                                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{def.observedIssue}</p>
                                     )}
+                                    {(def as any).customerSignedOffAt && (
+                                      <p className="text-xs text-green-600 mt-0.5">
+                                        ✓ Customer confirmed {new Date((def as any).customerSignedOffAt).toLocaleDateString()}
+                                      </p>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3">
                                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
