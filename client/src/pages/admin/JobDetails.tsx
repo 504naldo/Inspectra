@@ -80,6 +80,9 @@ export default function AdminJobDetails() {
   const [jobEditJobType, setJobEditJobType] = useState("");
   const [jobEditPriority, setJobEditPriority] = useState("");
   const [jobEditScheduledDate, setJobEditScheduledDate] = useState("");
+  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
+  const [declineReason, setDeclineReason] = useState("");
+  const [declineCustomerName, setDeclineCustomerName] = useState("");
 
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
@@ -91,6 +94,17 @@ export default function AdminJobDetails() {
       utils.job.get.invalidate({ id: parseInt(jobId!) });
     },
     onError: (err) => toast.error(err.message || "Failed to update job"),
+  });
+
+  const recordDeclineMutation = trpc.job.recordCustomerDecline.useMutation({
+    onSuccess: () => {
+      toast.success("Customer decline recorded");
+      setDeclineDialogOpen(false);
+      setDeclineReason("");
+      setDeclineCustomerName("");
+      utils.job.get.invalidate({ id: parseInt(jobId!) });
+    },
+    onError: (err) => toast.error(err.message || "Failed to record decline"),
   });
 
   const handleJobEditOpen = (job: any) => {
@@ -565,10 +579,23 @@ export default function AdminJobDetails() {
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                 <CardTitle>Job Information</CardTitle>
                 {!job.finalizedAt && (user?.role === "admin" || user?.role === "office") && (
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleJobEditOpen(job)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleJobEditOpen(job)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </Button>
+                    {!(job as any).customerDeclinedAt && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
+                        onClick={() => setDeclineDialogOpen(true)}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                        Record Decline
+                      </Button>
+                    )}
+                  </div>
                 )}
               </CardHeader>
               <CardContent className="space-y-2">
@@ -609,6 +636,18 @@ export default function AdminJobDetails() {
                     <div className="col-span-2">
                       <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Notes</p>
                       <p className="mt-0.5 whitespace-pre-line">{(job as any).notes}</p>
+                    </div>
+                  )}
+                  {(job as any).customerDeclinedAt && (
+                    <div className="col-span-2 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-red-700 mb-1">
+                        Customer Declined Service
+                        {(job as any).customerDeclinedByName && ` · ${(job as any).customerDeclinedByName}`}
+                        {" · "}{new Date((job as any).customerDeclinedAt).toLocaleDateString()}
+                      </p>
+                      {(job as any).customerDeclinedReason && (
+                        <p className="text-sm text-red-900 dark:text-red-200">{(job as any).customerDeclinedReason}</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1623,6 +1662,61 @@ export default function AdminJobDetails() {
                 ) : (
                   <><Save className="h-4 w-4 mr-2" />Save Changes</>
                 )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Record Customer Decline Dialog */}
+      <Dialog open={declineDialogOpen} onOpenChange={setDeclineDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-red-500" />
+              Record Customer Decline
+            </DialogTitle>
+            <DialogDescription>
+              Record that the customer has declined this service visit. This creates a permanent compliance record.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Customer Name (optional)</label>
+              <input
+                className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                placeholder="Who declined?"
+                value={declineCustomerName}
+                onChange={(e) => setDeclineCustomerName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Reason (optional)</label>
+              <Textarea
+                className="mt-1"
+                placeholder="e.g. Budget constraints, building not accessible, service not needed…"
+                rows={3}
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                className="flex-1"
+                disabled={recordDeclineMutation.isPending}
+                onClick={() =>
+                  recordDeclineMutation.mutate({
+                    jobId: parseInt(jobId!),
+                    reason: declineReason || undefined,
+                    customerName: declineCustomerName || undefined,
+                  })
+                }
+              >
+                {recordDeclineMutation.isPending ? "Saving…" : "Record Decline"}
+              </Button>
+              <Button variant="outline" onClick={() => setDeclineDialogOpen(false)}>
+                Cancel
               </Button>
             </div>
           </div>

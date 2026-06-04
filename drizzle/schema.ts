@@ -282,6 +282,10 @@ export const jobs = mysqlTable("jobs", {
   syncAssertedById: int("syncAssertedById"),
   // Google Calendar integration
   googleCalendarEventId: varchar("googleCalendarEventId", { length: 255 }),
+  // Customer service decline — recorded by office when customer refuses a visit
+  customerDeclinedAt: timestamp("customerDeclinedAt"),
+  customerDeclinedReason: text("customerDeclinedReason"),
+  customerDeclinedByName: varchar("customerDeclinedByName", { length: 255 }),
   // Digital signatures — collected at end of inspection before completion
   techSignatureUrl: text("tech_signature_url"),
   contactSignatureUrl: text("contact_signature_url"),
@@ -1047,6 +1051,9 @@ export const quotes = mysqlTable("quotes", {
   validUntil: date("validUntil"),
   approvedAt: timestamp("approvedAt"),
   declinedAt: timestamp("declinedAt"),
+  declinedReason: text("declinedReason"),
+  declinedByName: varchar("declinedByName", { length: 255 }),
+  declinedByEmail: varchar("declinedByEmail", { length: 320 }),
   viewedAt: timestamp("viewedAt"),
   approvedByName: varchar("approvedByName", { length: 255 }),
   approvedByEmail: varchar("approvedByEmail", { length: 320 }),

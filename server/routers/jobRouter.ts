@@ -838,6 +838,34 @@ const jobRouter = router({
         cacheVersion: lastUpdatedAt.getTime().toString(),
       };
     }),
+
+  recordCustomerDecline: officeProcedure
+    .input(z.object({
+      jobId: z.number(),
+      reason: z.string().max(1000).optional(),
+      customerName: z.string().max(255).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const job = await db.getJobById(input.jobId);
+      if (!job) throw new TRPCError({ code: "NOT_FOUND" });
+      if (job.companyId !== ctx.user.companyId!) throw new TRPCError({ code: "FORBIDDEN" });
+
+      await db.updateJob(input.jobId, {
+        customerDeclinedAt: new Date(),
+        customerDeclinedReason: input.reason ?? null,
+        customerDeclinedByName: input.customerName ?? null,
+      } as any);
+
+      void logActivity({
+        ctx,
+        entityType: "job",
+        entityId: input.jobId,
+        eventType: "updated",
+        title: `Customer declined service${input.customerName ? ` (${input.customerName})` : ""}`,
+      });
+
+      return { success: true };
+    }),
 });
 
 export { jobRouter };

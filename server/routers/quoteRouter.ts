@@ -699,6 +699,35 @@ export const quoteRouter = router({
 
       return { success: true, alreadyAccepted: false };
     }),
+
+  declineFromPortal: customerProcedure
+    .input(z.object({
+      quoteId: z.number(),
+      reason: z.string().max(1000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const quote = await db.getQuoteById(input.quoteId);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const job = await db.getJobById(quote.jobId);
+      if (!job || job.customerOrgId !== ctx.user.customerOrgId) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      if (quote.status === "declined") {
+        return { success: true };
+      }
+
+      await db.updateQuote(input.quoteId, {
+        status: "declined",
+        declinedAt: new Date(),
+        declinedReason: input.reason ?? null,
+        declinedByName: ctx.user.name ?? null,
+        declinedByEmail: ctx.user.email ?? null,
+      } as any);
+
+      return { success: true };
+    }),
 });
 
 // ── Email HTML helper ─────────────────────────────────────────────────────────

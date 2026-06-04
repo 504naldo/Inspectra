@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { FileText, CheckCircle2, Clock, Eye, XCircle } from "lucide-react";
+import { FileText, CheckCircle2, Clock, Eye, XCircle, ThumbsDown } from "lucide-react";
 
 type Quote = {
   id: number;
@@ -17,6 +18,8 @@ type Quote = {
   notes: string | null;
   createdAt: Date | string;
   acceptedAt: Date | string | null;
+  declinedAt: Date | string | null;
+  declinedReason: string | null;
   siteName: string | null;
   jobNumber: string | null;
 };
@@ -44,6 +47,8 @@ function StatusBadge({ status }: { status: string }) {
 export default function CustomerQuotes() {
   const utils = trpc.useUtils();
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [decliningId, setDecliningId] = useState<number | null>(null);
+  const [declineReason, setDeclineReason] = useState("");
 
   const { data: quotes, isLoading } = trpc.quote.listByCustomerOrg.useQuery();
 
@@ -55,9 +60,19 @@ export default function CustomerQuotes() {
         toast.success("Quote approved");
       }
       setApprovingId(null);
-      utils.quote.listByCustomerOrg.invalidate();
+      void utils.quote.listByCustomerOrg.invalidate();
     },
     onError: (e) => toast.error(e.message || "Failed to approve quote"),
+  });
+
+  const declineQuote = trpc.quote.declineFromPortal.useMutation({
+    onSuccess: () => {
+      toast.success("Quote declined");
+      setDecliningId(null);
+      setDeclineReason("");
+      void utils.quote.listByCustomerOrg.invalidate();
+    },
+    onError: (e) => toast.error(e.message || "Failed to decline quote"),
   });
 
   return (
@@ -81,7 +96,7 @@ export default function CustomerQuotes() {
           </Card>
         ) : (
           <div className="space-y-4">
-            {(quotes as Quote[]).map((q) => (
+            {(quotes as unknown as Quote[]).map((q) => (
               <Card key={q.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -98,6 +113,11 @@ export default function CustomerQuotes() {
                         {new Date(q.createdAt).toLocaleDateString()}
                       </p>
                       <p className="text-lg font-semibold">{fmt(q.total)}</p>
+                      {q.declinedAt && q.declinedReason && (
+                        <p className="text-xs text-red-600 mt-1">
+                          Declined: {q.declinedReason}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
@@ -122,7 +142,19 @@ export default function CustomerQuotes() {
                                   Accepted {new Date(q.acceptedAt).toLocaleDateString()}
                                 </span>
                               )}
+                              {q.declinedAt && (
+                                <span className="text-xs text-muted-foreground">
+                                  Declined {new Date(q.declinedAt).toLocaleDateString()}
+                                </span>
+                              )}
                             </div>
+
+                            {q.declinedReason && (
+                              <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 p-3">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-red-700 mb-1">Reason for Declining</p>
+                                <p className="text-sm text-red-900 dark:text-red-200">{q.declinedReason}</p>
+                              </div>
+                            )}
 
                             {/* Line items */}
                             {Array.isArray(q.lineItems) && q.lineItems.length > 0 && (
@@ -156,19 +188,52 @@ export default function CustomerQuotes() {
                             )}
 
                             {(q.status === "sent" || q.status === "viewed") && (
-                              <Button
-                                className="w-full"
-                                disabled={approveQuote.isPending && approvingId === q.id}
-                                onClick={() => {
-                                  setApprovingId(q.id);
-                                  approveQuote.mutate({ id: q.id });
-                                }}
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-2" />
-                                {approveQuote.isPending && approvingId === q.id
-                                  ? "Approving…"
-                                  : "Approve Quote"}
-                              </Button>
+                              <div className="space-y-3 pt-2 border-t">
+                                <Button
+                                  className="w-full"
+                                  disabled={approveQuote.isPending && approvingId === q.id}
+                                  onClick={() => {
+                                    setApprovingId(q.id);
+                                    approveQuote.mutate({ id: q.id });
+                                  }}
+                                >
+                                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                                  {approveQuote.isPending && approvingId === q.id ? "Approving…" : "Approve Quote"}
+                                </Button>
+
+                                {decliningId === q.id ? (
+                                  <div className="space-y-2">
+                                    <Textarea
+                                      placeholder="Reason for declining (optional but helpful)"
+                                      value={declineReason}
+                                      onChange={(e) => setDeclineReason(e.target.value)}
+                                      rows={3}
+                                    />
+                                    <div className="flex gap-2">
+                                      <Button
+                                        variant="destructive"
+                                        className="flex-1"
+                                        disabled={declineQuote.isPending}
+                                        onClick={() => declineQuote.mutate({ quoteId: q.id, reason: declineReason || undefined })}
+                                      >
+                                        {declineQuote.isPending ? "Declining…" : "Confirm Decline"}
+                                      </Button>
+                                      <Button variant="outline" onClick={() => { setDecliningId(null); setDeclineReason(""); }}>
+                                        Cancel
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    className="w-full text-red-600 border-red-200 hover:bg-red-50"
+                                    onClick={() => setDecliningId(q.id)}
+                                  >
+                                    <ThumbsDown className="h-4 w-4 mr-2" />
+                                    Decline Quote
+                                  </Button>
+                                )}
+                              </div>
                             )}
                           </div>
                         </DialogContent>
