@@ -44,4 +44,8 @@ export const ENV = {
   googleDriveCustomerRootId:  process.env.GOOGLE_DRIVE_CUSTOMER_ROOT_ID ?? "",
   googleDriveSharedDriveId:   process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID ?? "",
   googleDriveUseSharedDrive:  process.env.GOOGLE_DRIVE_USE_SHARED_DRIVE === "true",
+
+  // Firebase Cloud Messaging (push notifications)
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID ?? "",
+  firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? "",
 };

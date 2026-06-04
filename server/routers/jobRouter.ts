@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, asc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
@@ -12,6 +12,7 @@ import { nanoid } from "nanoid";
 import * as schema from "../../drizzle/schema";
 import { sendJobScheduledEmail } from "../emailService";
 import { ENV } from "../_core/env";
+import { sendPushToUser } from "../pushService";
 
 function addFrequencyToDate(date: Date, frequency: string): Date {
   const d = new Date(date);
@@ -449,6 +450,7 @@ const jobRouter = router({
     void syncWorkOrder(input.jobId, { assignedTechnicianIds: [input.technicianId] });
     void logActivity({ ctx, entityType: "job", entityId: input.jobId, eventType: "assigned",
       title: `Lead technician assigned: ${technician.name ?? "Unknown"}` });
+    void sendPushToUser(input.technicianId, "New Job Assigned", `You've been assigned as lead technician for job #${input.jobId}.`, { jobId: String(input.jobId) });
 
     return { success: true };
   }),
@@ -477,10 +479,11 @@ const jobRouter = router({
       role: 'ASSIST',
       assignedByUserId: ctx.user.id
     });
-    
+    void sendPushToUser(input.technicianId, "New Job Assigned", `You've been assigned as additional technician for job #${input.jobId}.`, { jobId: String(input.jobId) });
+
     return { success: true };
   }),
-  
+
   removeAdditionalTechnician: officeProcedure.input(z.object({
     jobId: z.number(),
     technicianId: z.number()
@@ -743,6 +746,33 @@ const jobRouter = router({
             ))
         : [];
 
+      const [templateSections, templateItems] = templates.length > 0
+        ? await Promise.all([
+            rawDb
+              .select()
+              .from(schema.inspectionTemplateSections)
+              .where(and(
+                eq(schema.inspectionTemplateSections.companyId, companyId),
+                inArray(schema.inspectionTemplateSections.templateId, templates.map((t) => t.id)),
+              ))
+              .orderBy(
+                asc(schema.inspectionTemplateSections.templateId),
+                asc(schema.inspectionTemplateSections.sortOrder),
+              ),
+            rawDb
+              .select()
+              .from(schema.inspectionTemplateItems)
+              .where(and(
+                eq(schema.inspectionTemplateItems.companyId, companyId),
+                inArray(schema.inspectionTemplateItems.templateId, templates.map((t) => t.id)),
+              ))
+              .orderBy(
+                asc(schema.inspectionTemplateItems.sectionId),
+                asc(schema.inspectionTemplateItems.sortOrder),
+              ),
+          ])
+        : [[], []];
+
       // lastUpdatedAt = latest of job.updatedAt and site.updatedAt
       const timestamps: Date[] = [new Date(job.updatedAt)];
       if (site?.updatedAt) timestamps.push(new Date(site.updatedAt));
@@ -800,6 +830,8 @@ const jobRouter = router({
           : null,
         devices,
         templates,
+        templateSections,
+        templateItems,
         deficiencies: currentDeficiencies.filter((d) => d.status === "open" || d.status === "in_progress"),
         previousUnresolvedDeficiencies: previousUnresolved,
         lastUpdatedAt: lastUpdatedAt.toISOString(),

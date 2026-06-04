@@ -28,6 +28,9 @@ export const users = mysqlTable("users", {
   // sessionVersion column is live in the DB after migration 0044; not declared here
   // so Drizzle's explicit SELECT list doesn't break pre-migration deploys.
   // Use (user as any).sessionVersion at runtime.
+  // Push notification tokens (Capacitor / FCM)
+  pushToken: text("pushToken"),
+  pushPlatform: varchar("pushPlatform", { length: 10 }), // "ios" | "android"
 });
 
 export type User = typeof users.$inferSelect;
