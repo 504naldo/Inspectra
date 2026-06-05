@@ -214,8 +214,17 @@ export function registerOAuthRoutes(app: Express) {
       }
       res.redirect(302, targetRoute);
     } catch (error) {
-      console.error("[OAuth] Callback failed", error);
-      res.status(500).json({ error: "OAuth callback failed" });
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[OAuth] Callback failed:", message);
+      // Surface enough detail to diagnose (not secret values) without leaking credentials
+      const hint = message.includes("redirect_uri")
+        ? "redirect_uri_mismatch — ensure APP_URL env var matches your deployment URL and the callback is registered in Google Cloud Console"
+        : message.includes("client_id") || message.includes("client_secret")
+        ? "invalid_client — check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET env vars"
+        : message.includes("invalid_grant") || message.includes("code")
+        ? "invalid_grant — the authorization code was already used or expired"
+        : message;
+      res.status(500).json({ error: "OAuth callback failed", hint });
     }
   });
 }
