@@ -24,6 +24,20 @@ export async function takePhoto(): Promise<{ base64: string; mimeType: string } 
   return { base64: photo.base64String, mimeType: `image/${photo.format ?? "jpeg"}` };
 }
 
+// ── Barcode / QR scanning ─────────────────────────────────────────────────────
+/** Scans a single barcode/QR code using the device camera. Returns the decoded
+ * text, or null if scanning isn't available (web) or the user cancels. */
+export async function scanBarcode(): Promise<string | null> {
+  if (!isNative()) return null;
+  const { BarcodeScanner } = await import("@capacitor-mlkit/barcode-scanning");
+
+  const { camera } = await BarcodeScanner.requestPermissions();
+  if (camera !== "granted" && camera !== "limited") return null;
+
+  const { barcodes } = await BarcodeScanner.scan();
+  return barcodes[0]?.rawValue ?? null;
+}
+
 // ── Haptics ───────────────────────────────────────────────────────────────────
 export async function vibrate(style: "light" | "medium" | "heavy" = "medium") {
   if (!isNative()) return;

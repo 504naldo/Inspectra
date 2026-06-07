@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import { scanBarcode } from "@/lib/native";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -75,6 +76,7 @@ interface DeviceRow {
   manufacturer?: string | null;
   model?: string | null;
   serialNumber?: string | null;
+  barcode?: string | null;
   notes?: string | null;
   result?: string;
   inspectionNotes?: string | null;
@@ -374,10 +376,15 @@ export function IndividualDeviceGrid({
     const q = searchQuery.toLowerCase().trim();
     if (!q) return rows;
     return rows.filter((d) =>
-      [d.location, d.label, d.deviceType, d.circuitAddress, d.zone]
+      [d.location, d.label, d.deviceType, d.circuitAddress, d.zone, d.serialNumber, d.barcode]
         .some((v) => v?.toLowerCase().includes(q))
     );
   }, [rows, searchQuery]);
+
+  const handleScan = useCallback(async () => {
+    const code = await scanBarcode();
+    if (code) setSearchQuery(code);
+  }, []);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save"),
@@ -530,7 +537,7 @@ export function IndividualDeviceGrid({
         <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
         {devices.length > 1 && (
           <div className="mb-2">
-            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" />
+            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" onScan={handleScan} />
           </div>
         )}
         {!isFinalized && devices.length > 0 && (
@@ -620,7 +627,7 @@ export function IndividualDeviceGrid({
         <div className="flex items-center gap-2">
           <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
           {devices.length > 1 && (
-            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" />
+            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" onScan={handleScan} />
           )}
         </div>
         <div className="flex items-center gap-2">

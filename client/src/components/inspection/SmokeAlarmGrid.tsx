@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import { scanBarcode } from "@/lib/native";
 import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
@@ -85,6 +86,8 @@ export interface SmokeAlarmRow {
   suiteNumber?: string | null;
   location?: string | null;
   deviceType?: string | null;
+  serialNumber?: string | null;
+  barcode?: string | null;
   powerType?: string | null;
   batterySize?: string | null;        // Battery Type (col D)
   batteryReplaced?: string | null;    // Batt Replaced (col E)
@@ -300,10 +303,15 @@ export function SmokeAlarmGrid({
     const q = searchQuery.toLowerCase().trim();
     if (!q) return rows;
     return rows.filter((d) =>
-      [d.suiteNumber, d.location, d.deviceType]
+      [d.suiteNumber, d.location, d.deviceType, d.serialNumber, d.barcode]
         .some((v) => v?.toLowerCase().includes(q))
     );
   }, [rows, searchQuery]);
+
+  const handleScan = useCallback(async () => {
+    const code = await scanBarcode();
+    if (code) setSearchQuery(code);
+  }, []);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
     onError: () => toast.error("Failed to save result"),
@@ -473,7 +481,7 @@ export function SmokeAlarmGrid({
         </p>
         <div className="flex items-center gap-2 flex-wrap">
           {devices.length > 1 && (
-            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter alarms…" />
+            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter alarms…" onScan={handleScan} />
           )}
           <span className="text-xs text-muted-foreground">
             {completed} / {rows.length} tested
