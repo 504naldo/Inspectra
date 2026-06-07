@@ -392,6 +392,10 @@ const jobRouter = router({
     jobId: z.number(),
     /** Base64-encoded PNG of the technician's signature */
     techSignatureBase64: z.string().min(1),
+    /** Optional: base64-encoded PNG of the on-site contact's signature */
+    contactSignatureBase64: z.string().min(1).optional(),
+    /** Optional: name of the on-site contact who signed */
+    contactName: z.string().min(1).max(255).optional(),
   })).mutation(async ({ input }) => {
     const job = await db.getJobById(input.jobId);
     if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -404,10 +408,23 @@ const jobRouter = router({
       "image/png"
     );
 
-    await db.updateJob(input.jobId, {
+    const updates: Parameters<typeof db.updateJob>[1] = {
       techSignatureUrl: techResult.url,
       techSignedAt: now,
-    });
+    };
+
+    if (input.contactSignatureBase64 && input.contactName) {
+      const contactResult = await storagePut(
+        `signatures/${nanoid()}.png`,
+        Buffer.from(input.contactSignatureBase64, "base64"),
+        "image/png"
+      );
+      updates.contactSignatureUrl = contactResult.url;
+      updates.contactName = input.contactName;
+      updates.contactSignedAt = now;
+    }
+
+    await db.updateJob(input.jobId, updates);
     return { success: true };
   }),
   

@@ -23,6 +23,7 @@ import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending } from "@share
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -186,6 +187,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   // Signature capture state
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
   const [techSigUrl, setTechSigUrl] = useState<string | null>(null);
+  const [contactSigningEnabled, setContactSigningEnabled] = useState(false);
+  const [contactSigName, setContactSigName] = useState("");
+  const [contactSigUrl, setContactSigUrl] = useState<string | null>(null);
 
   const saveSignatures = trpc.job.saveSignatures.useMutation({
     onSuccess: () => {
@@ -197,14 +201,24 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   function openSignatureDialog() {
     setTechSigUrl(null);
+    setContactSigningEnabled(false);
+    setContactSigName(site?.contactName || "");
+    setContactSigUrl(null);
     setSigDialogOpen(true);
   }
 
   function handleSignaturesSubmit() {
     if (!techSigUrl) return;
+    if (contactSigningEnabled && (!contactSigName.trim() || !contactSigUrl)) return;
     saveSignatures.mutate({
       jobId,
       techSignatureBase64: techSigUrl.split(",")[1],
+      ...(contactSigningEnabled && contactSigUrl
+        ? {
+            contactSignatureBase64: contactSigUrl.split(",")[1],
+            contactName: contactSigName.trim(),
+          }
+        : {}),
     });
   }
   
@@ -1687,9 +1701,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
       {/* Signature capture dialog */}
       <Dialog open={sigDialogOpen} onOpenChange={(open) => { if (!saveSignatures.isPending) setSigDialogOpen(open); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Technician Signature</DialogTitle>
+            <DialogTitle>Sign Off on Completion</DialogTitle>
           </DialogHeader>
 
           <div className="flex flex-col gap-4 py-2">
@@ -1702,6 +1716,45 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               onConfirm={(dataUrl) => setTechSigUrl(dataUrl)}
               onClear={() => setTechSigUrl(null)}
             />
+
+            <div className="flex items-center gap-2 pt-2 border-t">
+              <Switch
+                id="contact-signing"
+                checked={contactSigningEnabled}
+                onCheckedChange={(checked) => {
+                  setContactSigningEnabled(checked);
+                  if (!checked) {
+                    setContactSigName("");
+                    setContactSigUrl(null);
+                  } else {
+                    setContactSigName(site?.contactName || "");
+                  }
+                }}
+              />
+              <Label htmlFor="contact-signing" className="cursor-pointer">
+                Site contact is present and will sign too
+              </Label>
+            </div>
+
+            {contactSigningEnabled && (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="contact-sig-name">Contact's name</Label>
+                  <Input
+                    id="contact-sig-name"
+                    placeholder="e.g. Jane Smith"
+                    value={contactSigName}
+                    onChange={(e) => setContactSigName(e.target.value)}
+                  />
+                </div>
+                <SignaturePad
+                  label="Site contact's signature"
+                  height={200}
+                  onConfirm={(dataUrl) => setContactSigUrl(dataUrl)}
+                  onClear={() => setContactSigUrl(null)}
+                />
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
@@ -1710,7 +1763,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </Button>
             <Button
               onClick={handleSignaturesSubmit}
-              disabled={!techSigUrl || saveSignatures.isPending}
+              disabled={
+                !techSigUrl ||
+                saveSignatures.isPending ||
+                (contactSigningEnabled && (!contactSigName.trim() || !contactSigUrl))
+              }
             >
               {saveSignatures.isPending ? "Saving…" : "Complete Job"}
             </Button>
