@@ -7,7 +7,19 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, ExternalLink, Users, X, Shuffle } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Users, X, Shuffle, GripVertical } from "lucide-react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -113,6 +125,8 @@ function JobCard({
   onStatus,
   onAddAssist,
   onRemoveAssist,
+  dragHandleRef,
+  dragHandleProps,
 }: {
   job: DispatchJob;
   technicians: Tech[];
@@ -120,6 +134,8 @@ function JobCard({
   onStatus: (jobId: number, status: string) => void;
   onAddAssist: (jobId: number, techId: number) => void;
   onRemoveAssist: (jobId: number, techId: number) => void;
+  dragHandleRef?: (el: HTMLElement | null) => void;
+  dragHandleProps?: Record<string, unknown>;
 }) {
   const lead = job.assignedTechnicians.find((t) => t.role === "LEAD");
   const assists = job.assignedTechnicians.filter((t) => t.role !== "LEAD");
@@ -135,9 +151,21 @@ function JobCard({
     >
       {/* Header row */}
       <div className="flex items-start justify-between gap-1 mb-1">
-        <span className="font-mono text-[11px] text-muted-foreground leading-tight">
-          {job.jobNumber ?? `#${job.id}`}
-        </span>
+        <div className="flex items-center gap-1 min-w-0">
+          {dragHandleRef && (
+            <button
+              ref={dragHandleRef}
+              {...dragHandleProps}
+              className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground touch-none flex-shrink-0"
+              title="Drag to reassign"
+            >
+              <GripVertical className="h-3 w-3" />
+            </button>
+          )}
+          <span className="font-mono text-[11px] text-muted-foreground leading-tight truncate">
+            {job.jobNumber ?? `#${job.id}`}
+          </span>
+        </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {job.priority !== "low" && (
             <span className={cn("text-[10px] rounded px-1 py-0.5 leading-none", PRIORITY_COLORS[job.priority])}>
@@ -259,25 +287,56 @@ function JobCard({
   );
 }
 
-// ── Tech Column ───────────────────────────────────────────────────────────────
+// ── Draggable Job Card (Day View) ────────────────────────────────────────────
+// Wraps JobCard with @dnd-kit/core's useDraggable so it can be dropped onto
+// another technician's column to reassign the lead (see DroppableTechColumn).
 
-function TechColumn({
-  label,
-  jobs,
-  technicians,
-  onAssign,
-  onStatus,
-  onAddAssist,
-  onRemoveAssist,
-}: {
-  label: string;
-  jobs: DispatchJob[];
+type JobActions = {
   technicians: Tech[];
   onAssign: (jobId: number, techId: number | null) => void;
   onStatus: (jobId: number, status: string) => void;
   onAddAssist: (jobId: number, techId: number) => void;
   onRemoveAssist: (jobId: number, techId: number) => void;
-}) {
+};
+
+function DraggableJobCard({ job, ...actions }: { job: DispatchJob } & JobActions) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } = useDraggable({
+    id: job.id,
+    data: { job },
+  });
+
+  const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
+
+  return (
+    <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-40 relative z-10")}>
+      <JobCard job={job} {...actions} dragHandleRef={setActivatorNodeRef} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  );
+}
+
+// ── Droppable Tech Column (Day View) ──────────────────────────────────────────
+// Wraps TechColumn with useDroppable so a dragged JobCard can be released here
+// to reassign its lead technician. `techId` is null for the "Unassigned" column.
+
+function DroppableTechColumn({ id, techId, ...props }: { id: string; techId: number | null } & TechColumnProps) {
+  const { setNodeRef, isOver } = useDroppable({ id, data: { techId } });
+
+  return (
+    <div ref={setNodeRef} className={cn("rounded-lg transition-colors", isOver && "bg-primary/5 ring-2 ring-primary/30")}>
+      <TechColumn {...props} />
+    </div>
+  );
+}
+
+// ── Tech Column ───────────────────────────────────────────────────────────────
+
+type TechColumnProps = JobActions & {
+  label: string;
+  jobs: DispatchJob[];
+};
+
+function TechColumn({ label, jobs, technicians, onAssign, onStatus, onAddAssist, onRemoveAssist }: TechColumnProps) {
+  const actions = { technicians, onAssign, onStatus, onAddAssist, onRemoveAssist };
   return (
     <div className="flex-shrink-0 w-56">
       <div className="flex items-center justify-between mb-2 px-1">
@@ -288,7 +347,7 @@ function TechColumn({
       </div>
       <div className="min-h-[4rem]">
         {jobs.map((job) => (
-          <JobCard key={job.id} job={job} technicians={technicians} onAssign={onAssign} onStatus={onStatus} onAddAssist={onAddAssist} onRemoveAssist={onRemoveAssist} />
+          <DraggableJobCard key={job.id} job={job} {...actions} />
         ))}
         {jobs.length === 0 && (
           <div className="rounded border border-dashed border-muted-foreground/25 h-16 flex items-center justify-center">
@@ -431,6 +490,30 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
     updateJob.mutate({ id: jobId, status: status as any });
   }
 
+  // Drag-and-drop reassignment (Day View): dragging a job card onto another
+  // technician's column (or "Unassigned") sets that technician as the lead.
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const [draggingJob, setDraggingJob] = useState<DispatchJob | null>(null);
+
+  function handleDragStart(event: DragStartEvent) {
+    setDraggingJob((event.active.data.current?.job as DispatchJob | undefined) ?? null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setDraggingJob(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const job = active.data.current?.job as DispatchJob | undefined;
+    if (!job) return;
+
+    const newLeadId = (over.data.current as { techId: number | null } | undefined)?.techId ?? null;
+    const currentLeadId = job.assignedTechnicians.find((t) => t.role === "LEAD")?.id ?? null;
+    if (currentLeadId === newLeadId) return; // dropped back onto its own column — no-op
+
+    handleAssign(job.id, newLeadId);
+  }
+
   // Navigate day / week
   function navigate(dir: 1 | -1) {
     const d = new Date(selectedDate + "T12:00:00");
@@ -443,52 +526,48 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
 
   const unassigned = jobs.filter((j) => j.assignedTechnicians.length === 0);
 
-  // For day view: show all active techs + their jobs
-  const techsWithJobs = useMemo(() => {
-    const seen = new Set<number>();
-    jobs.forEach((j) => j.assignedTechnicians.forEach((t) => seen.add(t.id)));
-    // Show all technicians; those with no jobs show empty column
-    return technicians;
-  }, [technicians, jobs]);
+  // Day view shows every technician as a column, including those with no jobs today
+  const techsWithJobs = technicians;
 
   // ── Day View ──────────────────────────────────────────────────────────────
 
   function renderDayView() {
+    const columnActions = { technicians, onAssign: handleAssign, onStatus: handleStatus, onAddAssist: handleAddAssist, onRemoveAssist: handleRemoveAssist };
     return (
-      <div className="overflow-x-auto pb-2">
-        <div className="flex gap-3 min-w-max">
-          {/* Unassigned column */}
-          <TechColumn
-            label="Unassigned"
-            jobs={unassigned}
-            technicians={technicians}
-            onAssign={handleAssign}
-            onStatus={handleStatus}
-            onAddAssist={handleAddAssist}
-            onRemoveAssist={handleRemoveAssist}
-          />
+      <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div className="overflow-x-auto pb-2">
+          <div className="flex gap-3 min-w-max">
+            {/* Unassigned column */}
+            <DroppableTechColumn id="unassigned" techId={null} label="Unassigned" jobs={unassigned} {...columnActions} />
 
-          {/* Divider */}
-          <div className="w-px bg-border self-stretch" />
+            {/* Divider */}
+            <div className="w-px bg-border self-stretch" />
 
-          {/* Tech columns */}
-          {techsWithJobs.map((tech) => {
-            const techJobs = jobs.filter((j) => j.assignedTechnicians.some((t) => t.id === tech.id));
-            return (
-              <TechColumn
-                key={tech.id}
-                label={tech.name ?? tech.email ?? `Tech #${tech.id}`}
-                jobs={techJobs}
-                technicians={technicians}
-                onAssign={handleAssign}
-                onStatus={handleStatus}
-                onAddAssist={handleAddAssist}
-                onRemoveAssist={handleRemoveAssist}
-              />
-            );
-          })}
+            {/* Tech columns */}
+            {techsWithJobs.map((tech) => {
+              const techJobs = jobs.filter((j) => j.assignedTechnicians.some((t) => t.id === tech.id));
+              return (
+                <DroppableTechColumn
+                  key={tech.id}
+                  id={`tech-${tech.id}`}
+                  techId={tech.id}
+                  label={tech.name ?? tech.email ?? `Tech #${tech.id}`}
+                  jobs={techJobs}
+                  {...columnActions}
+                />
+              );
+            })}
+          </div>
         </div>
-      </div>
+
+        <DragOverlay>
+          {draggingJob ? (
+            <div className="w-56 rotate-2 shadow-lg opacity-95">
+              <JobCard job={draggingJob} {...columnActions} />
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     );
   }
 
@@ -658,6 +737,9 @@ export function DispatchBoard({ companyId }: { companyId: number }) {
         {/* Summary chips */}
         {viewMode === "day" && !isLoading && (
           <div className="flex items-center gap-1.5 ml-auto text-[11px] text-muted-foreground">
+            <span className="hidden sm:inline-flex items-center gap-1 text-muted-foreground/60">
+              <GripVertical className="h-3 w-3" /> Drag a job to reassign
+            </span>
             <span>{jobs.length} job{jobs.length !== 1 ? "s" : ""}</span>
             {unassigned.length > 0 && (
               <span className="bg-amber-100 text-amber-700 rounded px-1.5 py-0.5 leading-none">
