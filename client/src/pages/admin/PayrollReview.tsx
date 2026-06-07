@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -483,7 +483,7 @@ function EmployeeGroup({
         <div className="flex items-center gap-2 ml-auto text-xs text-muted-foreground">
           {Object.entries(statusBreakdown).map(([status, count]) => (
             <span key={status} className={`px-1.5 py-0.5 rounded-full ${STATUS_COLORS[status] ?? "bg-gray-100"}`}>
-              {count} {status}
+              {count as React.ReactNode} {status}
             </span>
           ))}
           <span className="font-bold text-foreground">{fmtH(totalMins)}</span>

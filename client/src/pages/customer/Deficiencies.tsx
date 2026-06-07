@@ -3,6 +3,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { usePortalPreview } from "@/contexts/PortalPreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import CustomerLayout from "@/components/CustomerLayout";
 import { trpc } from "@/lib/trpc";
@@ -12,6 +13,7 @@ import {
   XCircle,
   Wrench,
   FileCheck,
+  ThumbsUp,
 } from "lucide-react";
 
 const SEVERITY_BADGE: Record<string, React.ReactNode> = {
@@ -100,10 +102,18 @@ export default function CustomerDeficiencies() {
   const customerOrgId = previewOrg?.id ?? user?.customerOrgId!;
   const [selected, setSelected] = useState<any>(null);
 
+  const utils = trpc.useUtils();
   const { data: deficiencies, isLoading } = trpc.deficiency.listByCustomerOrg.useQuery(
     { customerOrgId },
     { enabled: !!customerOrgId }
   );
+
+  const signOff = trpc.deficiency.signOffFromPortal.useMutation({
+    onSuccess: () => {
+      void utils.deficiency.listByCustomerOrg.invalidate({ customerOrgId });
+      setSelected(null);
+    },
+  });
 
   const open     = deficiencies?.filter((d: any) => d.status === "open" || d.status === "in_progress") ?? [];
   const resolved = deficiencies?.filter((d: any) => d.status === "resolved" || d.status === "closed") ?? [];
@@ -257,6 +267,35 @@ export default function CustomerDeficiencies() {
                   <div className="border rounded-lg p-3 bg-muted/50">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">What This Means</p>
                     <p className="text-sm">{selected.customerExplanation}</p>
+                  </div>
+                )}
+
+                {/* Customer sign-off */}
+                {selected.customerSignedOffAt ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 p-3">
+                    <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-green-800 dark:text-green-300">You confirmed this remediation</p>
+                      <p className="text-xs text-green-700 dark:text-green-400">
+                        {new Date(selected.customerSignedOffAt).toLocaleDateString()} · {selected.customerSignedOffByName}
+                      </p>
+                    </div>
+                  </div>
+                ) : !previewOrg && selected.status !== "closed" && (
+                  <div className="border rounded-lg p-4 space-y-2">
+                    <p className="text-sm font-medium">Confirm Remediation</p>
+                    <p className="text-xs text-muted-foreground">
+                      If your team has addressed this issue, you can acknowledge it here. Our inspector will verify and close it.
+                    </p>
+                    <Button
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={() => signOff.mutate({ deficiencyId: selected.id })}
+                      disabled={signOff.isPending}
+                    >
+                      <ThumbsUp className="h-4 w-4" />
+                      {signOff.isPending ? "Saving…" : "We've Addressed This"}
+                    </Button>
                   </div>
                 )}
               </div>

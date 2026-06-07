@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import { scanBarcode } from "@/lib/native";
 import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
@@ -18,6 +19,7 @@ interface ExtinguisherRow {
   manufacturer?: string | null;
   model?: string | null;
   serialNumber?: string | null;
+  barcode?: string | null;
   mfgDate?: string | null;
   lastHST?: string | null;
   last6yr?: string | null;
@@ -92,10 +94,15 @@ export function ExtinguisherGrid({
     const q = searchQuery.toLowerCase().trim();
     if (!q) return rows;
     return rows.filter((d) =>
-      [d.location, d.deviceType, d.manufacturer, d.model, d.serialNumber]
+      [d.location, d.deviceType, d.manufacturer, d.model, d.serialNumber, d.barcode]
         .some((v) => v?.toLowerCase().includes(q))
     );
   }, [rows, searchQuery]);
+
+  const handleScan = useCallback(async () => {
+    const code = await scanBarcode();
+    if (code) setSearchQuery(code);
+  }, []);
   const {
     pendingChanges: pendingDeviceChanges,
     queueChange: queuePendingDeviceChange,
@@ -236,7 +243,7 @@ export function ExtinguisherGrid({
       {devices.length > 0 && (
         <div className="flex items-center gap-2 mb-2 flex-wrap">
           {devices.length > 1 && (
-            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" />
+            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" onScan={handleScan} />
           )}
           {!isFinalized && (
             <div className="flex items-center gap-2 ml-auto">

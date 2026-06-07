@@ -200,7 +200,7 @@ export const documentCenterRouter = router({
           .limit(limit);
 
         // Build job number map for quotes
-        const quoteJobIds = [...new Set(rows.map((r) => r.jobId).filter((id): id is number => id != null))];
+        const quoteJobIds = Array.from(new Set(rows.map((r) => r.jobId).filter((id): id is number => id != null)));
         const jobNumMap = new Map<number, string>();
         if (quoteJobIds.length > 0) {
           const qjRows = await rawDb.select({ id: jobs.id, jobNumber: jobs.jobNumber }).from(jobs).where(inArray(jobs.id, quoteJobIds));

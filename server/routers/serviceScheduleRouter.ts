@@ -159,8 +159,8 @@ export const serviceScheduleRouter = router({
       if (ctx.user.companyId !== input.companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const schedules = await db.getServiceSchedulesDueSoon(input.companyId, input.daysAhead);
 
-      const siteIds = [...new Set(schedules.map((s) => s.siteId))];
-      const orgIds  = [...new Set(schedules.map((s) => s.customerOrgId).filter((id): id is number => !!id))];
+      const siteIds = Array.from(new Set(schedules.map((s) => s.siteId)));
+      const orgIds  = Array.from(new Set(schedules.map((s) => s.customerOrgId).filter((id): id is number => !!id)));
 
       const [sites, orgs] = await Promise.all([
         Promise.all(siteIds.map((id) => db.getSiteById(id))),
@@ -266,7 +266,7 @@ export const serviceScheduleRouter = router({
         void (async () => {
           try {
             const customerOrg = await db.getCustomerOrgById(sched.customerOrgId!);
-            if (customerOrg?.contactEmail) {
+            if (customerOrg?.contactEmail && customerOrg.notifyJobScheduled !== 0) {
               await sendJobScheduledEmail({
                 to: customerOrg.contactEmail,
                 customerName: customerOrg.contactName || customerOrg.name,

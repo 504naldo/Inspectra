@@ -575,8 +575,8 @@ export default function Inventory() {
     restockMut.mutate({ inventoryItemIds: [item.id] });
   };
 
-  const categories = [...new Set(items.map((i: any) => i.category))].sort();
-  const suppliers = [...new Set(items.map((i: any) => i.supplierName).filter(Boolean))].sort() as string[];
+  const categories = Array.from(new Set(items.map((i: any) => i.category))).sort();
+  const suppliers = Array.from(new Set(items.map((i: any) => i.supplierName).filter(Boolean))).sort() as string[];
 
   const filtered = items.filter((item: any) => {
     if (!showInactive && !item.isActive) return false;

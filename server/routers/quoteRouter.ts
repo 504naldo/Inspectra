@@ -15,7 +15,8 @@
 import crypto from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure, publicProcedure } from "../_core/trpc.js";
+import { router, officeProcedure, publicProcedure, customerProcedure } from "../_core/trpc.js";
+import { sendQuoteApprovedNotification } from "../emailService.js";
 import * as db from "../db.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
@@ -622,6 +623,110 @@ export const quoteRouter = router({
       }
 
       return { success: true, alreadyAccepted: false };
+    }),
+
+  listByCustomerOrg: customerProcedure.query(async ({ ctx }) => {
+    const orgId = ctx.user.customerOrgId;
+    if (!orgId) throw new TRPCError({ code: "BAD_REQUEST", message: "No customer org" });
+    return db.getQuotesByCustomerOrg(orgId);
+  }),
+
+  approveFromPortal: customerProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const quote = await db.getQuoteById(input.id);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+      if (quote.customerOrgId !== ctx.user.customerOrgId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (quote.status === "accepted") return { success: true, alreadyAccepted: true };
+      if (quote.status !== "sent" && quote.status !== "viewed") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This quote is not available for approval." });
+      }
+
+      const approvedByName = ctx.user.name ?? "";
+      const approvedByEmail = ctx.user.email ?? "";
+
+      await db.updateQuote(input.id, {
+        status: "accepted",
+        acceptedAt: new Date(),
+        approvedAt: new Date(),
+        approvedByName,
+        approvedByEmail,
+        approvalSource: "portal_later",
+      } as any);
+
+      // Auto-create ApprovedWork
+      try {
+        const existingAW = await db.getApprovedWorkByQuote(quote.id);
+        if (!existingAW) {
+          await db.createApprovedWork({
+            companyId: quote.companyId,
+            siteId: quote.siteId,
+            customerOrgId: quote.customerOrgId,
+            jobId: quote.jobId,
+            quoteId: quote.id,
+            type: "repair_order",
+            status: "approved",
+            approvalSource: "portal",
+            approvedAt: new Date(),
+            approvedAmount: String(quote.total),
+            approvedScope: quote.quoteNumber ? `Quote ${quote.quoteNumber}` : `Quote #${quote.id}`,
+          });
+        }
+      } catch (awErr) {
+        console.warn("[ApprovedWork] Auto-create failed on portal approve:", awErr);
+      }
+
+      // Mark linked deficiencies as quoted
+      try {
+        const lineItems = (quote.lineItems ?? []) as QuoteLineItem[];
+        const defIds = lineItems.map((i) => i.deficiencyId).filter((id): id is number => id !== null);
+        if (defIds.length) {
+          await Promise.all(defIds.map((id) => db.updateDeficiency(id, { status: "quoted" })));
+        }
+      } catch (err) {
+        console.warn("[quote] Failed to mark deficiencies quoted on portal approve:", err);
+      }
+
+      // Notify admin
+      const site = await db.getSiteById(quote.siteId).catch(() => undefined);
+      void sendQuoteApprovedNotification({
+        quoteNumber: quote.quoteNumber ?? `#${quote.id}`,
+        siteName: (site as any)?.name ?? "",
+        total: quote.total ?? 0,
+        approvedByName,
+        approvedByEmail,
+      });
+
+      return { success: true, alreadyAccepted: false };
+    }),
+
+  declineFromPortal: customerProcedure
+    .input(z.object({
+      quoteId: z.number(),
+      reason: z.string().max(1000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const quote = await db.getQuoteById(input.quoteId);
+      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const job = await db.getJobById(quote.jobId);
+      if (!job || job.customerOrgId !== ctx.user.customerOrgId) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      if (quote.status === "declined") {
+        return { success: true };
+      }
+
+      await db.updateQuote(input.quoteId, {
+        status: "declined",
+        declinedAt: new Date(),
+        declinedReason: input.reason ?? null,
+        declinedByName: ctx.user.name ?? null,
+        declinedByEmail: ctx.user.email ?? null,
+      } as any);
+
+      return { success: true };
     }),
 });
 

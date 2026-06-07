@@ -11,6 +11,7 @@ import { createContext } from "./context";
 import { handleMultipartUpload } from "./upload";
 import { serveStatic, setupVite } from "./vite";
 import { runMigrations } from "../runMigrations";
+import { runAutoScheduler } from "../scheduler";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -141,3 +142,11 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
+
+// Auto-scheduler: create pending jobs 14 days before nextDueAt.
+// Runs once 2 minutes after startup, then every 24 hours.
+const SCHEDULER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+setTimeout(() => {
+  void runAutoScheduler();
+  setInterval(() => void runAutoScheduler(), SCHEDULER_INTERVAL_MS);
+}, 2 * 60 * 1000);

@@ -209,7 +209,7 @@ export async function generateInvoicePDF(data: InvoicePdfData): Promise<Buffer> 
     }
 
     // ── Footer ────────────────────────────────────────────────────────────────
-    drawFooter(doc, data.companyName, `Invoice ${data.invoiceNumber}`);
+    drawFooter(doc, data.companyName, `Invoice ${data.invoiceNumber}`, 1, 1);
 
     doc.end();
   });

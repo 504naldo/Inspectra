@@ -89,7 +89,7 @@ function FeedbackDetailSheet({
     { id: id! },
     {
       enabled: !!id && open,
-      onSuccess: (data) => {
+      onSuccess: (data: any) => {
         setAdminNotes(data.adminNotes ?? "");
         setNotesDirty(false);
       },

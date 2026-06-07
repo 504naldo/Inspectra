@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getDb, incrementUserSessionVersion } from './db';
+import { getDb, incrementUserSessionVersion, updateUser } from './db';
 import { users } from '../drizzle/schema';
 import { eq, and, or, like, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
@@ -261,7 +261,20 @@ export const userRouter = router({
       await db
         .delete(users)
         .where(eq(users.id, deleteUserId));
-      
+
+      return { success: true };
+    }),
+
+  registerPushToken: protectedProcedure
+    .input(z.object({
+      token: z.string().min(1),
+      platform: z.enum(["ios", "android"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await updateUser(ctx.user.id, {
+        pushToken: input.token,
+        pushPlatform: input.platform,
+      } as any);
       return { success: true };
     }),
 });

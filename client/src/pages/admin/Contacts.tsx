@@ -401,7 +401,7 @@ function ContactRow({
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className="font-semibold text-sm">{contact.name}</span>
             {contact.isPrimary === 1 && (
-              <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" title="Primary contact" />
+              <span title="Primary contact"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" /></span>
             )}
             <Badge className={`text-[10px] px-1.5 py-0 ${ROLE_COLORS[role] ?? ""}`}>
               {ROLE_LABELS[role] ?? role}
@@ -545,7 +545,7 @@ export default function ContactsPage() {
   );
   // Use a simpler approach — fetch sites via a separate query if available
   // For now, extract unique sites from contacts to minimise extra queries
-  const uniqueSiteIds = [...new Set(contacts.filter((c) => c.siteId).map((c) => c.siteId!))];
+  const uniqueSiteIds = Array.from(new Set(contacts.filter((c) => c.siteId).map((c) => c.siteId!)));
 
   const deactivate = trpc.contact.deactivateContact.useMutation({
     onSuccess: () => { toast.success("Contact deactivated"); utils.contact.listContacts.invalidate(); utils.contact.getOverviewStats.invalidate(); },

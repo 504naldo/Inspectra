@@ -290,7 +290,7 @@ export default function Notifications() {
             {notifications.map((n) => (
               <NotifRow
                 key={n.id}
-                n={n}
+                n={n as any}
                 onMarkRead={handleMarkRead}
                 onDismiss={handleDismiss}
               />

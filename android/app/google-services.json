@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "287510202400",
+    "project_id": "inspectra-67504",
+    "storage_bucket": "inspectra-67504.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:287510202400:android:62c10d659723d056e99445",
+        "android_client_info": {
+          "package_name": "ca.inspectrafire.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDajEtoW-9FGtW2pI4UGk7W523EBj11328"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

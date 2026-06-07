@@ -51,7 +51,7 @@ type StepConfig = {
   checklist: (data: OverviewData) => string[];
 };
 
-type OverviewData = NonNullable<ReturnType<typeof trpc.setup.getOverview.useQuery>["data"]>;
+type OverviewData = any;
 
 const STEP_CONFIGS: Record<string, StepConfig> = {
   company_profile: {

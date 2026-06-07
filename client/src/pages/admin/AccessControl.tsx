@@ -237,7 +237,7 @@ export default function AccessControl() {
                   )}
                   {usersData?.map((u) => {
                     const meta = ROLE_META.find((m) => m.role === u.role);
-                    const active = u.isActive === 1 || u.isActive === true;
+                    const active = u.isActive !== 0;
                     return (
                       <TableRow key={u.id} className={!active ? "opacity-50" : ""}>
                         <TableCell className="pl-4 font-medium">

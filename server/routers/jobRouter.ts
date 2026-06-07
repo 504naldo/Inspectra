@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, asc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
@@ -12,6 +12,7 @@ import { nanoid } from "nanoid";
 import * as schema from "../../drizzle/schema";
 import { sendJobScheduledEmail } from "../emailService";
 import { ENV } from "../_core/env";
+import { sendPushToUser } from "../pushService";
 
 function addFrequencyToDate(date: Date, frequency: string): Date {
   const d = new Date(date);
@@ -260,7 +261,7 @@ const jobRouter = router({
             db.getSiteById(input.siteId),
             db.getCustomerOrgById(customerOrgIdForEmail),
           ]);
-          if (customerOrg?.contactEmail) {
+          if (customerOrg?.contactEmail && customerOrg.notifyJobScheduled !== 0) {
             await sendJobScheduledEmail({
               to: customerOrg.contactEmail,
               customerName: customerOrg.contactName || customerOrg.name,
@@ -391,6 +392,10 @@ const jobRouter = router({
     jobId: z.number(),
     /** Base64-encoded PNG of the technician's signature */
     techSignatureBase64: z.string().min(1),
+    /** Optional: base64-encoded PNG of the on-site contact's signature */
+    contactSignatureBase64: z.string().min(1).optional(),
+    /** Optional: name of the on-site contact who signed */
+    contactName: z.string().min(1).max(255).optional(),
   })).mutation(async ({ input }) => {
     const job = await db.getJobById(input.jobId);
     if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -403,10 +408,23 @@ const jobRouter = router({
       "image/png"
     );
 
-    await db.updateJob(input.jobId, {
+    const updates: Parameters<typeof db.updateJob>[1] = {
       techSignatureUrl: techResult.url,
       techSignedAt: now,
-    });
+    };
+
+    if (input.contactSignatureBase64 && input.contactName) {
+      const contactResult = await storagePut(
+        `signatures/${nanoid()}.png`,
+        Buffer.from(input.contactSignatureBase64, "base64"),
+        "image/png"
+      );
+      updates.contactSignatureUrl = contactResult.url;
+      updates.contactName = input.contactName;
+      updates.contactSignedAt = now;
+    }
+
+    await db.updateJob(input.jobId, updates);
     return { success: true };
   }),
   
@@ -449,6 +467,7 @@ const jobRouter = router({
     void syncWorkOrder(input.jobId, { assignedTechnicianIds: [input.technicianId] });
     void logActivity({ ctx, entityType: "job", entityId: input.jobId, eventType: "assigned",
       title: `Lead technician assigned: ${technician.name ?? "Unknown"}` });
+    void sendPushToUser(input.technicianId, "New Job Assigned", `You've been assigned as lead technician for job #${input.jobId}.`, { jobId: String(input.jobId) });
 
     return { success: true };
   }),
@@ -477,10 +496,11 @@ const jobRouter = router({
       role: 'ASSIST',
       assignedByUserId: ctx.user.id
     });
-    
+    void sendPushToUser(input.technicianId, "New Job Assigned", `You've been assigned as additional technician for job #${input.jobId}.`, { jobId: String(input.jobId) });
+
     return { success: true };
   }),
-  
+
   removeAdditionalTechnician: officeProcedure.input(z.object({
     jobId: z.number(),
     technicianId: z.number()
@@ -739,9 +759,36 @@ const jobRouter = router({
             .where(and(
               eq(schema.inspectionTemplates.companyId, companyId),
               eq(schema.inspectionTemplates.status, "active"),
-              inArray(schema.inspectionTemplates.id, [...matchingIds]),
+              inArray(schema.inspectionTemplates.id, Array.from(matchingIds)),
             ))
         : [];
+
+      const [templateSections, templateItems] = templates.length > 0
+        ? await Promise.all([
+            rawDb
+              .select()
+              .from(schema.inspectionTemplateSections)
+              .where(and(
+                eq(schema.inspectionTemplateSections.companyId, companyId),
+                inArray(schema.inspectionTemplateSections.templateId, templates.map((t) => t.id)),
+              ))
+              .orderBy(
+                asc(schema.inspectionTemplateSections.templateId),
+                asc(schema.inspectionTemplateSections.sortOrder),
+              ),
+            rawDb
+              .select()
+              .from(schema.inspectionTemplateItems)
+              .where(and(
+                eq(schema.inspectionTemplateItems.companyId, companyId),
+                inArray(schema.inspectionTemplateItems.templateId, templates.map((t) => t.id)),
+              ))
+              .orderBy(
+                asc(schema.inspectionTemplateItems.sectionId),
+                asc(schema.inspectionTemplateItems.sortOrder),
+              ),
+          ])
+        : [[], []];
 
       // lastUpdatedAt = latest of job.updatedAt and site.updatedAt
       const timestamps: Date[] = [new Date(job.updatedAt)];
@@ -769,7 +816,7 @@ const jobRouter = router({
         },
         site: site
           ? { id: site.id, name: site.name, address: site.address, city: site.city,
-              state: site.state, postalCode: site.postalCode, phone: site.phone, notes: site.notes }
+              state: site.state, postalCode: site.postalCode, phone: (site as any).phone, notes: site.notes }
           : null,
         customerOrg: customerOrg
           ? { name: customerOrg.name, phone: (customerOrg as any).phone ?? null }
@@ -800,11 +847,41 @@ const jobRouter = router({
           : null,
         devices,
         templates,
+        templateSections,
+        templateItems,
         deficiencies: currentDeficiencies.filter((d) => d.status === "open" || d.status === "in_progress"),
         previousUnresolvedDeficiencies: previousUnresolved,
         lastUpdatedAt: lastUpdatedAt.toISOString(),
         cacheVersion: lastUpdatedAt.getTime().toString(),
       };
+    }),
+
+  recordCustomerDecline: officeProcedure
+    .input(z.object({
+      jobId: z.number(),
+      reason: z.string().max(1000).optional(),
+      customerName: z.string().max(255).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const job = await db.getJobById(input.jobId);
+      if (!job) throw new TRPCError({ code: "NOT_FOUND" });
+      if (job.companyId !== ctx.user.companyId!) throw new TRPCError({ code: "FORBIDDEN" });
+
+      await db.updateJob(input.jobId, {
+        customerDeclinedAt: new Date(),
+        customerDeclinedReason: input.reason ?? null,
+        customerDeclinedByName: input.customerName ?? null,
+      } as any);
+
+      void logActivity({
+        ctx,
+        entityType: "job",
+        entityId: input.jobId,
+        eventType: "updated",
+        title: `Customer declined service${input.customerName ? ` (${input.customerName})` : ""}`,
+      });
+
+      return { success: true };
     }),
 });
 

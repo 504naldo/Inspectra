@@ -485,7 +485,7 @@ export default function PartsRequestDetail({ id }: { id: number }) {
   const isOverdue =
     req.neededByDate &&
     canCancel &&
-    new Date(req.neededByDate as string) < new Date();
+    new Date(String(req.neededByDate)) < new Date();
 
   return (
     <AdminLayout>

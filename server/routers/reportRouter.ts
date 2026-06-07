@@ -10,7 +10,7 @@ import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
 import { fetchImageBuffer } from "../pdfSharedStyles";
 import * as checklists from "../complianceChecklists";
-import { sendReportEmail, sendReportReadyEmail } from "../emailService";
+import { sendReportEmail, sendReportReadyEmail, sendReportApprovedNotification } from "../emailService";
 import { ENV } from "../_core/env";
 import {
   inspectionTemplates,
@@ -28,7 +28,7 @@ import {
 // Returns empty array when no template responses exist — PDF skips the section.
 
 async function fetchTemplateReportData(jobId: number, companyId: number) {
-  const drizzle = getDb();
+  const drizzle = (await getDb())!;
 
   const responses = await drizzle
     .select()
@@ -37,7 +37,7 @@ async function fetchTemplateReportData(jobId: number, companyId: number) {
 
   if (responses.length === 0) return [];
 
-  const templateIds = [...new Set(responses.map((r) => r.templateId))];
+  const templateIds = Array.from(new Set(responses.map((r) => r.templateId)));
 
   const [allTemplates, allSections, allItems, allDeficiencies] = await Promise.all([
     drizzle.select().from(inspectionTemplates)
@@ -211,11 +211,33 @@ const reportRouter = router({
   }),
   
   approve: customerProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
-    await db.updateReport(input.id, { 
-      status: 'approved', 
+    await db.updateReport(input.id, {
+      status: 'approved',
       approvedAt: new Date(),
-      approvedById: ctx.user.id 
+      approvedById: ctx.user.id,
     });
+
+    const approverName = ctx.user.name;
+    const approverEmail = ctx.user.email;
+    void (async () => {
+      try {
+        const report = await db.getReportById(input.id);
+        if (!report) return;
+        const job = await db.getJobById(report.jobId);
+        const site = job ? await db.getSiteById(job.siteId) : undefined;
+        await sendReportApprovedNotification({
+          reportNumber: report.reportNumber ?? "",
+          reportTitle: report.title ?? "",
+          siteName: site?.name ?? job?.title ?? "",
+          jobNumber: job?.jobNumber ?? "",
+          approvedByName: approverName ?? "",
+          approvedByEmail: approverEmail ?? "",
+        });
+      } catch (err) {
+        console.warn("[email] Failed to send report approved notification:", err);
+      }
+    })();
+
     return { success: true };
   }),
   
@@ -358,7 +380,7 @@ const reportRouter = router({
         // Pre-fetch customer-facing photo buffers for this deficiency
         let photos: Array<{ buffer: Buffer; caption?: string | null; locationNote?: string | null }> = [];
         try {
-          const drizzle = await getDb();
+          const drizzle = (await getDb())!;
           if (drizzle) {
             const mediaRows = await drizzle
               .select()
@@ -455,8 +477,8 @@ const reportRouter = router({
       pdfUrl: url,
     });
 
-    // Notify customer org contact that report is ready
-    if (customerOrg?.contactEmail) {
+    // Notify customer org contact that report is ready (respects org preferences)
+    if (customerOrg?.contactEmail && customerOrg.notifyReportReady !== 0) {
       void sendReportReadyEmail({
         to: customerOrg.contactEmail,
         customerName: customerOrg.contactName || customerOrg.name,
@@ -827,8 +849,8 @@ const reportRouter = router({
       pdfUrl: url,
     });
 
-    // Notify customer org contact that report is ready
-    if (customerOrg?.contactEmail) {
+    // Notify customer org contact that report is ready (respects org preferences)
+    if (customerOrg?.contactEmail && customerOrg.notifyReportReady !== 0) {
       void sendReportReadyEmail({
         to: customerOrg.contactEmail,
         customerName: customerOrg.contactName || customerOrg.name,

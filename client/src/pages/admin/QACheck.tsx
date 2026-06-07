@@ -393,8 +393,8 @@ export default function QACheck({ jobId }: QACheckProps) {
           <div className="space-y-4">
             {templateSummaries.map((tmpl) => {
               const failedNoDeficiency = tmpl.sections
-                .flatMap((s) => s.items)
-                .filter((i) => {
+                .flatMap((s: any) => s.items)
+                .filter((i: any) => {
                   const v = (i.responseValue ?? "").toLowerCase();
                   return (v === "fail" || v === "no") && !i.deficiencyId;
                 });
@@ -446,15 +446,15 @@ export default function QACheck({ jobId }: QACheckProps) {
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                         <span>
                           {failedNoDeficiency.length} failed response{failedNoDeficiency.length !== 1 ? "s" : ""} without linked deficiency:{" "}
-                          {failedNoDeficiency.slice(0, 3).map((i) => i.questionText.slice(0, 50)).join("; ")}
+                          {failedNoDeficiency.slice(0, 3).map((i: any) => i.questionText.slice(0, 50)).join("; ")}
                           {failedNoDeficiency.length > 3 ? ` +${failedNoDeficiency.length - 3} more` : ""}
                         </span>
                       </div>
                     )}
 
                     {/* Section breakdown */}
-                    {tmpl.sections.map((sec) => {
-                      const secAnswered = sec.items.filter((i) => i.responseValue || i.responseText).length;
+                    {tmpl.sections.map((sec: any) => {
+                      const secAnswered = sec.items.filter((i: any) => i.responseValue || i.responseText).length;
                       return (
                         <div key={sec.sectionId} className="border rounded-md overflow-hidden">
                           <div className="flex items-center justify-between px-3 py-1.5 bg-muted/40 text-xs font-medium">
@@ -462,7 +462,7 @@ export default function QACheck({ jobId }: QACheckProps) {
                             <span className="text-muted-foreground">{secAnswered}/{sec.items.length}</span>
                           </div>
                           <div className="divide-y">
-                            {sec.items.map((item, idx) => {
+                            {sec.items.map((item: any, idx: any) => {
                               const v = (item.responseValue ?? "").toLowerCase();
                               const isFail = v === "fail" || v === "no";
                               const isMissing = !item.responseValue && !item.responseText;

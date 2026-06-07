@@ -376,7 +376,7 @@ export default function InspectionTemplateDetail() {
 
   const { template, sections, items } = data;
 
-  const itemsBySectionId = items.reduce<Record<number, typeof items>>((acc, item) => {
+  const itemsBySectionId = items.reduce<Record<number, typeof items>>((acc: any, item: any) => {
     if (!acc[item.sectionId]) acc[item.sectionId] = [];
     acc[item.sectionId].push(item);
     return acc;
@@ -394,9 +394,9 @@ export default function InspectionTemplateDetail() {
   };
 
   const moveItem = (sectionId: number, idx: number, dir: -1 | 1) => {
-    const sectionItems = (itemsBySectionId[sectionId] ?? []).sort((a, b) => a.sortOrder - b.sortOrder);
+    const sectionItems = (itemsBySectionId[sectionId] ?? []).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
     if (!sectionItems[idx + dir]) return;
-    const newOrder = sectionItems.map((i) => i.id);
+    const newOrder = sectionItems.map((i: any) => i.id);
     const [moved] = newOrder.splice(idx, 1);
     newOrder.splice(idx + dir, 0, moved);
     reorderItemsMutation.mutate({ sectionId, orderedIds: newOrder });
@@ -413,10 +413,10 @@ export default function InspectionTemplateDetail() {
   };
 
   const editingSection = sectionDialog !== "add" && sectionDialog !== null
-    ? sections.find((s) => s.id === sectionDialog)
+    ? sections.find((s: any) => s.id === sectionDialog)
     : undefined;
   const editingItem = itemDialog?.itemId != null
-    ? items.find((i) => i.id === itemDialog!.itemId)
+    ? items.find((i: any) => i.id === itemDialog!.itemId)
     : undefined;
 
   return (
@@ -433,7 +433,7 @@ export default function InspectionTemplateDetail() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold truncate">{template.name}</h1>
               <Badge
-                variant={STATUS_COLORS[template.status] as "default" | "secondary" | "outline"}
+                variant={(STATUS_COLORS as any)[template.status] as "default" | "secondary" | "outline"}
                 className="capitalize"
               >
                 {template.status}
@@ -485,7 +485,7 @@ export default function InspectionTemplateDetail() {
 
         {/* Sections */}
         {sortedSections.map((section, sIdx) => {
-          const sectionItems = (itemsBySectionId[section.id] ?? []).sort((a, b) => a.sortOrder - b.sortOrder);
+          const sectionItems = (itemsBySectionId[section.id] ?? []).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
           return (
             <Card key={section.id}>
               <CardHeader className="pb-2">
@@ -552,7 +552,7 @@ export default function InspectionTemplateDetail() {
                   <p className="text-sm text-muted-foreground pl-5 py-2 italic">No items yet.</p>
                 )}
                 <div className="space-y-1">
-                  {sectionItems.map((item, iIdx) => {
+                  {sectionItems.map((item: any, iIdx: any) => {
                     const hasTrigger = !!item.deficiencyTrigger;
                     return (
                       <div

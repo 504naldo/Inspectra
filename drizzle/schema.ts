@@ -28,6 +28,9 @@ export const users = mysqlTable("users", {
   // sessionVersion column is live in the DB after migration 0044; not declared here
   // so Drizzle's explicit SELECT list doesn't break pre-migration deploys.
   // Use (user as any).sessionVersion at runtime.
+  // Push notification tokens (Capacitor / FCM)
+  pushToken: text("pushToken"),
+  pushPlatform: varchar("pushPlatform", { length: 10 }), // "ios" | "android"
 });
 
 export type User = typeof users.$inferSelect;
@@ -80,6 +83,8 @@ export const customerOrgs = mysqlTable("customer_orgs", {
   contactEmail: varchar("contactEmail", { length: 320 }),
   contactPhone: varchar("contactPhone", { length: 50 }),
   address: text("address"),
+  notifyReportReady: tinyint("notifyReportReady").default(1).notNull(),
+  notifyJobScheduled: tinyint("notifyJobScheduled").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -277,6 +282,10 @@ export const jobs = mysqlTable("jobs", {
   syncAssertedById: int("syncAssertedById"),
   // Google Calendar integration
   googleCalendarEventId: varchar("googleCalendarEventId", { length: 255 }),
+  // Customer service decline — recorded by office when customer refuses a visit
+  customerDeclinedAt: timestamp("customerDeclinedAt"),
+  customerDeclinedReason: text("customerDeclinedReason"),
+  customerDeclinedByName: varchar("customerDeclinedByName", { length: 255 }),
   // Digital signatures — collected at end of inspection before completion
   techSignatureUrl: text("tech_signature_url"),
   contactSignatureUrl: text("contact_signature_url"),
@@ -364,6 +373,8 @@ export const deficiencies = mysqlTable("deficiencies", {
   resolvedAt: timestamp("resolvedAt"),
   resolvedById: int("resolvedById"),
   resolutionNotes: text("resolutionNotes"),
+  customerSignedOffAt: timestamp("customerSignedOffAt"),
+  customerSignedOffByName: varchar("customerSignedOffByName", { length: 255 }),
   // Linked work order — set when a repair work order is created for this deficiency
   workOrderId: int("workOrderId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1040,6 +1051,9 @@ export const quotes = mysqlTable("quotes", {
   validUntil: date("validUntil"),
   approvedAt: timestamp("approvedAt"),
   declinedAt: timestamp("declinedAt"),
+  declinedReason: text("declinedReason"),
+  declinedByName: varchar("declinedByName", { length: 255 }),
+  declinedByEmail: varchar("declinedByEmail", { length: 320 }),
   viewedAt: timestamp("viewedAt"),
   approvedByName: varchar("approvedByName", { length: 255 }),
   approvedByEmail: varchar("approvedByEmail", { length: 320 }),
