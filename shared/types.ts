@@ -47,6 +47,11 @@ export interface OfflineDeficiency {
   severity: DeficiencySeverity;
   description?: string;
   observedIssue?: string;
+  correctiveAction?: string;
+  customerExplanation?: string;
+  codeReference?: string;
+  systemCategory?: 'FIRE_ALARM' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHTING' | 'SPRINKLER' | 'SMOKE_ALARM';
+  estimatedCost?: number;
   synced: boolean;
 }
 
