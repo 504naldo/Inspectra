@@ -134,11 +134,11 @@ export default function Login() {
         <div style={{ display: "flex", gap: 30, color: "#5d738f", fontSize: 12.5, position: "relative", zIndex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <IconShield />
-            <span><strong style={{ color: "#8ea6c4" }}>SOC 2</strong> Type II</span>
+            <span>Encrypted &amp; secure</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <IconCheck />
-            <span>NFPA-aligned workflows</span>
+            <span>Built for <strong style={{ color: "#8ea6c4" }}>NFPA 25 &amp; 72</strong></span>
           </div>
         </div>
       </div>
