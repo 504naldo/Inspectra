@@ -15,7 +15,7 @@ export function OfflineBanner() {
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const syncingRef = useRef(false);
 
-  const offlineStorePending = syncStatus.pendingResults + syncStatus.pendingDeficiencies;
+  const offlineStorePending = syncStatus.pendingResults + syncStatus.pendingDeficiencies + syncStatus.pendingAttachments;
   const totalPending = mqPending + offlineStorePending;
 
   // Refresh mutationQueue count every 2 seconds

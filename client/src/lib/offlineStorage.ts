@@ -4,8 +4,9 @@
  */
 
 const DB_NAME = "FireInspectOffline";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "pendingInspectionResults";
+const PHOTO_STORE_NAME = "pendingDeficiencyPhotos";
 
 export interface PendingInspectionResult {
   id: string; // Unique ID for this pending item (timestamp-based)
@@ -18,6 +19,32 @@ export interface PendingInspectionResult {
   textValue?: string;
   timestamp: number; // When this was saved offline
   synced: boolean; // Whether this has been synced to server
+}
+
+export interface PendingDeficiencyPhoto {
+  id: string; // Unique ID for this pending item (timestamp-based)
+  deficiencyLocalId: string; // Links to OfflineDeficiency.localId until it's synced
+  resolvedDeficiencyId?: number; // Set once the parent deficiency has synced and we know its server id
+  fileName: string;
+  mimeType: "image/jpeg" | "image/png" | "image/webp";
+  fileSize: number;
+  fileData: string; // base64-encoded file contents
+  caption?: string;
+  locationNote?: string;
+  timestamp: number; // When this was queued offline
+}
+
+// Module-level event bus so hooks can react instantly to pending-photo changes
+// instead of polling IndexedDB (mirrors the pattern in useOfflineJobPacket.ts)
+const pendingPhotoListeners = new Set<() => void>();
+
+function notifyPendingPhotoListeners() {
+  pendingPhotoListeners.forEach((l) => l());
+}
+
+export function subscribePendingPhotos(listener: () => void): () => void {
+  pendingPhotoListeners.add(listener);
+  return () => pendingPhotoListeners.delete(listener);
 }
 
 class OfflineStorage {
@@ -49,6 +76,15 @@ class OfflineStorage {
           store.createIndex("jobId", "jobId", { unique: false });
           store.createIndex("synced", "synced", { unique: false });
           store.createIndex("timestamp", "timestamp", { unique: false });
+        }
+
+        // Create object store for pending deficiency photos (queued offline)
+        if (!db.objectStoreNames.contains(PHOTO_STORE_NAME)) {
+          const photoStore = db.createObjectStore(PHOTO_STORE_NAME, { keyPath: "id" });
+          photoStore.createIndex("deficiencyLocalId", "deficiencyLocalId", { unique: false });
+          // IndexedDB indexes skip records that lack the indexed property, so this
+          // index naturally contains only photos whose parent deficiency has synced
+          photoStore.createIndex("resolvedDeficiencyId", "resolvedDeficiencyId", { unique: false });
         }
       };
     });
@@ -198,6 +234,128 @@ class OfflineStorage {
   async getPendingCount(): Promise<number> {
     const pending = await this.getPendingResults();
     return pending.length;
+  }
+
+  /**
+   * Queue a deficiency photo captured while offline (linked by the
+   * deficiency's localId until the deficiency itself has synced)
+   */
+  async savePendingPhoto(data: Omit<PendingDeficiencyPhoto, "id" | "timestamp">): Promise<string> {
+    if (!this.db) await this.init();
+
+    const id = `photo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const item: PendingDeficiencyPhoto = {
+      ...data,
+      id,
+      timestamp: Date.now(),
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readwrite");
+      const store = transaction.objectStore(PHOTO_STORE_NAME);
+      const request = store.add(item);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+    notifyPendingPhotoListeners();
+    return id;
+  }
+
+  /**
+   * Record the server-side deficiency id once the parent offline deficiency has synced,
+   * so a queued photo can still be uploaded (and retried) even after its local record is cleared
+   */
+  async setPhotoResolvedDeficiencyId(id: string, deficiencyId: number): Promise<void> {
+    if (!this.db) await this.init();
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readwrite");
+      const store = transaction.objectStore(PHOTO_STORE_NAME);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const item = getRequest.result;
+        if (item) {
+          item.resolvedDeficiencyId = deficiencyId;
+          const updateRequest = store.put(item);
+          updateRequest.onsuccess = () => resolve();
+          updateRequest.onerror = () => reject(updateRequest.error);
+        } else {
+          resolve();
+        }
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+    notifyPendingPhotoListeners();
+  }
+
+  /**
+   * Get all photos queued for a given offline deficiency (by local id)
+   */
+  async getPendingPhotosForDeficiency(deficiencyLocalId: string): Promise<PendingDeficiencyPhoto[]> {
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readonly");
+      const store = transaction.objectStore(PHOTO_STORE_NAME);
+      const index = store.index("deficiencyLocalId");
+      const request = index.getAll(deficiencyLocalId);
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get queued photos whose parent deficiency has synced and is ready to upload to.
+   * Queries the resolvedDeficiencyId index directly so unresolved photos (whose base64
+   * payload may be several MB) are never pulled into memory.
+   */
+  async getPhotosReadyToUpload(): Promise<PendingDeficiencyPhoto[]> {
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readonly");
+      const store = transaction.objectStore(PHOTO_STORE_NAME);
+      const request = store.index("resolvedDeficiencyId").getAll();
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Delete a queued photo once it has been uploaded to the server
+   */
+  async deletePendingPhoto(id: string): Promise<void> {
+    if (!this.db) await this.init();
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readwrite");
+      const store = transaction.objectStore(PHOTO_STORE_NAME);
+      const request = store.delete(id);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+    notifyPendingPhotoListeners();
+  }
+
+  /**
+   * Get count of queued deficiency photos, without loading their base64 payloads
+   */
+  async getPendingPhotoCount(): Promise<number> {
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readonly");
+      const store = transaction.objectStore(PHOTO_STORE_NAME);
+      const request = store.count();
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
   }
 }
 

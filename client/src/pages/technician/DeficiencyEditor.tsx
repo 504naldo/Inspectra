@@ -34,6 +34,11 @@ import { PageHelpButton } from "@/components/help/PageHelpButton";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+// Two distinct offline stores by design: useOfflineStorage (localStorage) holds the
+// small structured deficiency record; offlineStorage (IndexedDB) holds photo blobs,
+// which are too large for localStorage's quota.
+import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { offlineStorage } from "@/lib/offlineStorage";
 import { useTrackInspectionProgress } from "@/hooks/useInspectionProgress";
 import { ImageLightbox } from "@/components/ImageLightbox";
 
@@ -51,6 +56,23 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+// Shared by the online (immediate upload) and offline (IndexedDB queue) save paths —
+// both need to base64-encode each pending photo and hand it off, tolerating per-photo failures
+async function processPendingPhotos(
+  photos: PendingPhoto[],
+  handOff: (base64: string, photo: PendingPhoto) => Promise<unknown>,
+  failureMessage: (fileName: string) => string,
+) {
+  for (const p of photos) {
+    try {
+      const base64 = await readFileAsBase64(p.file);
+      await handOff(base64, p);
+    } catch {
+      toast.error(failureMessage(p.file.name));
+    }
+  }
 }
 
 type DraftResult = {
@@ -91,6 +113,7 @@ interface DeficiencyEditorProps {
 export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEditorProps) {
   const [location, setLocation] = useLocation();
   const isOnline = useOnlineStatus();
+  const { saveOfflineDeficiency } = useOfflineStorage();
   const isEditing = !!deficiencyId;
   
   // Track inspection progress for resume functionality
@@ -366,22 +389,19 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       // Upload any pending photos after the deficiency is created
       if (pendingPhotos.length > 0 && isOnline) {
         setIsUploadingPhotos(true);
-        for (const p of pendingPhotos) {
-          try {
-            const base64 = await readFileAsBase64(p.file);
-            await uploadMediaMut.mutateAsync({
-              deficiencyId: newDef.id,
-              fileName: p.file.name,
-              mimeType: p.file.type as "image/jpeg" | "image/png" | "image/webp",
-              fileSize: p.file.size,
-              fileData: base64,
-              caption: p.caption || undefined,
-              locationNote: p.locationNote || undefined,
-            });
-          } catch {
-            toast.error(`Photo "${p.file.name}" failed to upload`);
-          }
-        }
+        await processPendingPhotos(
+          pendingPhotos,
+          (base64, p) => uploadMediaMut.mutateAsync({
+            deficiencyId: newDef.id,
+            fileName: p.file.name,
+            mimeType: p.file.type as "image/jpeg" | "image/png" | "image/webp",
+            fileSize: p.file.size,
+            fileData: base64,
+            caption: p.caption || undefined,
+            locationNote: p.locationNote || undefined,
+          }),
+          (fileName) => `Photo "${fileName}" failed to upload`,
+        );
         setIsUploadingPhotos(false);
         setPendingPhotos([]);
       }
@@ -413,6 +433,58 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
     }
   });
 
+  const [isSavingOffline, setIsSavingOffline] = useState(false);
+
+  // Queue a brand-new deficiency (and any attached photos) for sync once back online
+  const saveDeficiencyOffline = async (andAnother: boolean) => {
+    setIsSavingOffline(true);
+    try {
+      const localId = `def-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      saveOfflineDeficiency({
+        localId,
+        jobId: jobId!,
+        deviceId,
+        title,
+        severity: severity as any,
+        description: description || undefined,
+        observedIssue: observedIssue || undefined,
+        correctiveAction: correctiveAction || undefined,
+        customerExplanation: customerExplanation || undefined,
+        codeReference: codeReference || undefined,
+        systemCategory: systemCategory as any,
+        estimatedCost: estimatedCost !== "" ? parseFloat(estimatedCost) : undefined,
+        synced: false,
+      });
+
+      await processPendingPhotos(
+        pendingPhotos,
+        (base64, p) => offlineStorage.savePendingPhoto({
+          deficiencyLocalId: localId,
+          fileName: p.file.name,
+          mimeType: p.file.type as "image/jpeg" | "image/png" | "image/webp",
+          fileSize: p.file.size,
+          fileData: base64,
+          caption: p.caption || undefined,
+          locationNote: p.locationNote || undefined,
+        }),
+        (fileName) => `Photo "${fileName}" could not be queued for upload`,
+      );
+      pendingPhotos.forEach((p) => URL.revokeObjectURL(p.localUrl));
+      setPendingPhotos([]);
+
+      if (andAnother) {
+        toast.success('Deficiency saved offline — add another');
+        resetForm();
+        setAddAnother(false);
+      } else {
+        toast.success('Deficiency saved offline — will sync when you\'re back online');
+        setLocation(`/tech/jobs/${jobId}`);
+      }
+    } finally {
+      setIsSavingOffline(false);
+    }
+  };
+
   const doSave = (andAnother = false) => {
     if (!title) {
       toast.error('Please enter a title');
@@ -434,6 +506,8 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         systemCategory: systemCategory as any,
         estimatedCost: estimatedCost !== "" ? parseFloat(estimatedCost) : undefined,
       });
+    } else if (!isOnline) {
+      void saveDeficiencyOffline(andAnother);
     } else {
       createDeficiency.mutate({
         jobId: jobId!,
@@ -454,7 +528,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
 
   const handleSave = () => doSave(false);
 
-  const isSaving = createDeficiency.isPending || updateDeficiency.isPending;
+  const isSaving = createDeficiency.isPending || updateDeficiency.isPending || isSavingOffline;
 
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom pb-24">
@@ -478,7 +552,9 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         {!isOnline && (
           <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-300">
             <WifiOff className="h-4 w-4 shrink-0" />
-            You are offline. Connect to the internet to save deficiencies.
+            {isEditing
+              ? "You are offline. Connect to the internet to update this deficiency."
+              : "You are offline. This deficiency (and any photos) will be saved on this device and synced automatically when you're back online."}
           </div>
         )}
 
@@ -713,7 +789,9 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
           {!isOnline && (
             <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-300">
               <WifiOff className="h-4 w-4 shrink-0" />
-              Photo upload requires a connection. Photos will not be saved while offline.
+              {isEditing
+                ? "Photo upload requires a connection. Photos will not be saved while offline."
+                : "You're offline — photos will be queued on this device and uploaded automatically once you're back online."}
             </div>
           )}
 
@@ -829,12 +907,14 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
 
           {!isEditing && pendingPhotos.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              Photos will upload automatically when you save this deficiency.
+              {isOnline
+                ? "Photos will upload automatically when you save this deficiency."
+                : "Photos will be queued on this device and uploaded once you're back online."}
             </p>
           )}
 
-          {/* Upload buttons */}
-          {isOnline && (
+          {/* Upload buttons — capture works offline in create mode (queued for later upload) */}
+          {(isOnline || !isEditing) && (
             <div className="grid grid-cols-2 gap-2">
               <input
                 ref={cameraInputRef}
@@ -1072,7 +1152,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
               className="w-full"
               variant="outline"
               onClick={() => doSave(true)}
-              disabled={isSaving || !title || !isOnline}
+              disabled={isSaving || !title || (isEditing && !isOnline)}
             >
               {isSaving ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -1085,14 +1165,20 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
           <Button
             className="w-full action-btn"
             onClick={handleSave}
-            disabled={isSaving || !title || !isOnline}
+            disabled={isSaving || !title || (isEditing && !isOnline)}
           >
             {isSaving ? (
               <Loader2 className="h-5 w-5 mr-2 animate-spin" />
             ) : (
               <Save className="h-5 w-5 mr-2" />
             )}
-            {isSaving ? 'Saving...' : (isEditing ? 'Update Deficiency' : 'Save Deficiency')}
+            {isSaving
+              ? 'Saving...'
+              : isEditing
+                ? 'Update Deficiency'
+                : isOnline
+                  ? 'Save Deficiency'
+                  : 'Save Offline'}
           </Button>
         </div>
       </div>

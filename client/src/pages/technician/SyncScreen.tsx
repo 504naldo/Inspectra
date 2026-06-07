@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { useAllCachedPackets, removePacketById } from "@/hooks/useOfflineJobPacket";
+import { offlineStorage } from "@/lib/offlineStorage";
 import {
   ArrowLeft,
   RefreshCw,
@@ -38,9 +39,11 @@ export default function SyncScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const cachedPackets = useAllCachedPackets();
+  const pendingPhotoCount = syncStatus.pendingAttachments;
 
   const syncBatch = trpc.inspectionResult.syncBatch.useMutation();
   const createDeficiency = trpc.deficiency.create.useMutation();
+  const uploadMedia = trpc.media.uploadDeficiencyMedia.useMutation();
 
   const handleSync = async () => {
     if (!isOnline) {
@@ -80,21 +83,32 @@ export default function SyncScreen() {
         }
       }
 
-      // Sync offline deficiencies (one by one)
+      // Sync offline deficiencies one by one, recording each one's server-side id so
+      // any photos queued alongside it can be uploaded (now or on a later retry)
       const pendingDefs = getOfflineDeficiencies().filter((d) => !d.synced);
       const syncedLocalIds: string[] = [];
       for (const def of pendingDefs) {
         try {
-          await createDeficiency.mutateAsync({
+          const created = await createDeficiency.mutateAsync({
             jobId: def.jobId,
             deviceId: def.deviceId,
             title: def.title,
             severity: def.severity,
             description: def.description,
             observedIssue: def.observedIssue,
+            correctiveAction: def.correctiveAction,
+            customerExplanation: def.customerExplanation,
+            codeReference: def.codeReference,
+            systemCategory: def.systemCategory,
+            estimatedCost: def.estimatedCost,
           });
           syncedLocalIds.push(def.localId);
           defsSynced++;
+
+          const queuedPhotos = await offlineStorage.getPendingPhotosForDeficiency(def.localId);
+          for (const photo of queuedPhotos) {
+            await offlineStorage.setPhotoResolvedDeficiencyId(photo.id, created.id);
+          }
         } catch {
           defsFailed++;
         }
@@ -104,11 +118,36 @@ export default function SyncScreen() {
         clearSyncedDeficiencies();
       }
 
+      // Upload any queued photos whose parent deficiency has a known server id —
+      // covers both freshly-synced deficiencies and ones left over from a failed retry
+      let photosFailed = 0;
+      const photosToUpload = await offlineStorage.getPhotosReadyToUpload();
+      for (const photo of photosToUpload) {
+        try {
+          await uploadMedia.mutateAsync({
+            deficiencyId: photo.resolvedDeficiencyId!,
+            fileName: photo.fileName,
+            mimeType: photo.mimeType,
+            fileSize: photo.fileSize,
+            fileData: photo.fileData,
+            caption: photo.caption,
+            locationNote: photo.locationNote,
+          });
+          await offlineStorage.deletePendingPhoto(photo.id);
+        } catch {
+          photosFailed++;
+        }
+      }
+
       const totalSynced = resultsSynced + defsSynced;
       const totalFailed = resultsFailed + defsFailed;
 
+      if (photosFailed > 0) {
+        toast.warning(`${photosFailed} photo${photosFailed !== 1 ? "s" : ""} failed to upload — they'll retry on the next sync`);
+      }
+
       if (totalSynced === 0 && totalFailed === 0) {
-        toast.info("Nothing to sync");
+        toast.info(photosFailed > 0 ? "Synced deficiencies — some photos still pending" : "Nothing to sync");
       } else if (totalFailed === 0) {
         toast.success(`Synced ${totalSynced} item${totalSynced !== 1 ? "s" : ""}`);
         setLastSyncTime();
@@ -141,7 +180,7 @@ export default function SyncScreen() {
   const pendingDefs = offlineDeficiencies.filter((d) => !d.synced);
   const syncedDefs = offlineDeficiencies.filter((d) => d.synced);
 
-  const totalPending = pendingResults.length + pendingDefs.length;
+  const totalPending = pendingResults.length + pendingDefs.length + pendingPhotoCount;
   const totalSynced = syncedResults.length + syncedDefs.length;
 
   return (
@@ -204,9 +243,13 @@ export default function SyncScreen() {
               <Clock className="h-8 w-8 mx-auto text-amber-500 mb-2" />
               <p className="text-2xl font-bold">{totalPending}</p>
               <p className="text-sm text-muted-foreground">Pending Upload</p>
-              {pendingResults.length > 0 && pendingDefs.length > 0 && (
+              {(pendingResults.length > 0 ? 1 : 0) + (pendingDefs.length > 0 ? 1 : 0) + (pendingPhotoCount > 0 ? 1 : 0) > 1 && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  {pendingResults.length} test{pendingResults.length !== 1 ? "s" : ""} · {pendingDefs.length} def.
+                  {[
+                    pendingResults.length > 0 ? `${pendingResults.length} test${pendingResults.length !== 1 ? "s" : ""}` : null,
+                    pendingDefs.length > 0 ? `${pendingDefs.length} def.` : null,
+                    pendingPhotoCount > 0 ? `${pendingPhotoCount} photo${pendingPhotoCount !== 1 ? "s" : ""}` : null,
+                  ].filter(Boolean).join(" · ")}
                 </p>
               )}
             </CardContent>
@@ -292,9 +335,19 @@ export default function SyncScreen() {
                   </span>
                 </div>
               ))}
-              {totalPending > 16 && (
+              {pendingPhotoCount > 0 && (
+                <div className="flex items-center justify-between p-2 bg-muted rounded">
+                  <p className="text-sm font-medium">
+                    {pendingPhotoCount} deficiency photo{pendingPhotoCount !== 1 ? "s" : ""} queued
+                  </p>
+                  <span className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                    on this device
+                  </span>
+                </div>
+              )}
+              {pendingResults.length + pendingDefs.length > 16 && (
                 <p className="text-sm text-muted-foreground text-center">
-                  +{totalPending - 16} more items
+                  +{pendingResults.length + pendingDefs.length - 16} more items
                 </p>
               )}
             </CardContent>

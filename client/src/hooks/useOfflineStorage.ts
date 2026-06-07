@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { OfflineInspectionResult, OfflineDeficiency, SyncStatus } from '@shared/types';
+import { usePendingPhotoCount } from './usePendingPhotoCount';
 
 const STORAGE_KEYS = {
   INSPECTION_RESULTS: 'fire_inspect_offline_results',
@@ -47,14 +48,17 @@ export function useOfflineStorage() {
     const deficiencies = getOfflineDeficiencies();
     const lastSync = localStorage.getItem(STORAGE_KEYS.LAST_SYNC);
 
-    setSyncStatus({
+    setSyncStatus(prev => ({
+      ...prev,
       pendingResults: results.filter(r => !r.synced).length,
       pendingDeficiencies: deficiencies.filter(d => !d.synced).length,
-      pendingAttachments: 0,
       lastSyncAt: lastSync ? new Date(lastSync) : undefined,
       isOnline: navigator.onLine,
-    });
+    }));
   }, []);
+
+  // Pending deficiency photos live in IndexedDB (offlineStorage.ts), tracked reactively here
+  const pendingAttachments = usePendingPhotoCount();
 
   // Inspection Results
   const getOfflineResults = useCallback((): OfflineInspectionResult[] => {
@@ -179,7 +183,7 @@ export function useOfflineStorage() {
 
   return {
     isOnline,
-    syncStatus,
+    syncStatus: { ...syncStatus, pendingAttachments },
     // Results
     getOfflineResults,
     saveOfflineResult,
