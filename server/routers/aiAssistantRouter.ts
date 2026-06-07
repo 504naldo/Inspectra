@@ -956,6 +956,79 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
     }),
 
   /**
+   * analyzeDeficiencyPhoto — Vision-based analysis of an inspection photo.
+   * Looks at the actual image (not just typed notes) and suggests an observed
+   * issue, title, and severity grounded in what's visible. Output is a draft —
+   * never auto-saved or applied without technician review.
+   */
+  analyzeDeficiencyPhoto: technicianProcedure
+    .input(z.object({
+      photoUrl: z.string().url(),
+      deviceType: z.string().optional(),
+      location: z.string().optional(),
+      systemCategory: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const contextLines: string[] = [];
+      if (input.deviceType) contextLines.push(`Device type: ${input.deviceType}`);
+      if (input.location) contextLines.push(`Location: ${input.location}`);
+      if (input.systemCategory) contextLines.push(`System category: ${input.systemCategory}`);
+      const contextBlock = contextLines.length > 0 ? `\n\nKnown context:\n${contextLines.join("\n")}` : "";
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `${FIELD_COPILOT_SYSTEM_PROMPT}\n\nYou are looking at a photo taken during a fire protection inspection. Describe only what is visibly present in the image — do not assume details that aren't shown. If the photo doesn't clearly show a deficiency, say so plainly.`,
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: `Analyze this inspection photo and describe what it shows.${contextBlock}\n\nReturn JSON only.` },
+              { type: "image_url", image_url: { url: input.photoUrl, detail: "auto" } },
+            ],
+          },
+        ],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "photo_analysis",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                visualFindings: { type: "array", items: { type: "string" }, description: "Specific things visible in the photo (condition, damage, labels, readings, etc.)" },
+                suggestedObservedIssue: { type: "string", description: "One or two sentence description of the issue shown, grounded only in what's visible" },
+                suggestedTitle: { type: "string" },
+                suggestedSeverity: { type: "string", enum: ["critical", "major", "minor", "observation", "unclear"] },
+                confidence: { type: "string", enum: ["high", "medium", "low"] },
+                warnings: { type: "array", items: { type: "string" } },
+              },
+              required: ["visualFindings", "suggestedObservedIssue", "suggestedTitle", "suggestedSeverity", "confidence", "warnings"],
+              additionalProperties: false,
+            },
+          },
+        },
+        maxTokens: 500,
+      });
+
+      const raw = extractText(result);
+      if (!raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI response was empty" });
+      const parsed = JSON.parse(raw);
+
+      void logActivity({
+        ctx,
+        entityType: "deficiency",
+        entityId: 0,
+        eventType: "ai_assistant.analyzeDeficiencyPhoto",
+        title: "AI photo analysis generated",
+        metadata: { confidence: parsed.confidence },
+      });
+
+      return { ...parsed, isDraft: true as const, disclaimer: "AI photo analysis — verify against what you observed in person before applying." };
+    }),
+
+  /**
    * improveDeficiencyText — Rewrites existing deficiency text fields to be more professional.
    * Accessible to admin, office, and technicians.
    */

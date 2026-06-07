@@ -28,6 +28,7 @@ import {
   X,
   Eye,
   EyeOff,
+  ScanEye,
 } from "lucide-react";
 import { PageHelpButton } from "@/components/help/PageHelpButton";
 import { Link, useLocation } from "wouter";
@@ -70,6 +71,15 @@ type ImproveResult = {
   improvedObservedIssue: string;
   improvedCorrectiveAction: string;
   improvedCustomerExplanation: string;
+  warnings: string[];
+};
+
+type PhotoAnalysisResult = {
+  visualFindings: string[];
+  suggestedObservedIssue: string;
+  suggestedTitle: string;
+  suggestedSeverity: string;
+  confidence: string;
   warnings: string[];
 };
 
@@ -157,6 +167,8 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
   const [draftResult, setDraftResult] = useState<DraftResult | null>(null);
   const [improveOpen, setImproveOpen] = useState(false);
   const [improveResult, setImproveResult] = useState<ImproveResult | null>(null);
+  const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  const [analyzeResult, setAnalyzeResult] = useState<PhotoAnalysisResult | null>(null);
 
   // Existing AI narrative generator (requires device)
   const generateNarrative = trpc.ai.generateDeficiencyNarrative.useMutation({
@@ -183,6 +195,32 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
     onSuccess: (d) => { setImproveResult(d as ImproveResult); },
     onError: (e) => toast.error(e.message || "Improve failed"),
   });
+
+  // Vision-based photo analysis
+  const analyzePhoto = trpc.aiAssistant.analyzeDeficiencyPhoto.useMutation({
+    onSuccess: (d) => { setAnalyzeResult(d as PhotoAnalysisResult); },
+    onError: (e) => toast.error(e.message || "Photo analysis failed"),
+  });
+
+  function handleAnalyzePhoto(photoUrl: string) {
+    setAnalyzeResult(null);
+    setAnalyzeOpen(true);
+    analyzePhoto.mutate({
+      photoUrl,
+      deviceType: deviceType || undefined,
+      location: deviceLocation || undefined,
+      systemCategory: systemCategory || undefined,
+    });
+  }
+
+  function applyPhotoAnalysis(d: PhotoAnalysisResult) {
+    if (d.suggestedObservedIssue) setObservedIssue(d.suggestedObservedIssue);
+    if (d.suggestedTitle && !title.trim()) setTitle(d.suggestedTitle);
+    if (d.suggestedSeverity && d.suggestedSeverity !== "unclear") setSeverity(d.suggestedSeverity);
+    setAiDraft(true);
+    setAnalyzeOpen(false);
+    toast.success("AI photo analysis applied — review before saving");
+  }
 
   function applyDraft(d: DraftResult) {
     if (d.suggestedTitle) setTitle(d.suggestedTitle);
@@ -707,6 +745,19 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
                       </button>
                     </div>
                   </div>
+                  <div className="px-1.5 pt-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 w-full text-xs gap-1.5"
+                      disabled={!isOnline}
+                      title={!isOnline ? "AI requires an internet connection" : undefined}
+                      onClick={() => handleAnalyzePhoto(photo.fileUrl)}
+                    >
+                      <ScanEye className="h-3.5 w-3.5" /> Analyze with AI
+                    </Button>
+                  </div>
                   <div className="p-1.5 space-y-1">
                     <Input
                       placeholder="Caption (optional)"
@@ -956,6 +1007,59 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
           )}
           <DialogFooter>
             <Button variant="ghost" size="sm" onClick={() => setImproveOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Analyze Photo dialog */}
+      <Dialog open={analyzeOpen} onOpenChange={setAnalyzeOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ScanEye className="h-4 w-4 text-primary" /> AI Photo Analysis
+            </DialogTitle>
+            <DialogDescription>The AI looks only at this photo. Verify against what you observed in person.</DialogDescription>
+          </DialogHeader>
+          {analyzePhoto.isPending && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          {analyzeResult && (
+            <div className="space-y-3">
+              <p className="text-xs text-amber-600 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" /> Review AI output carefully before applying.
+              </p>
+              {analyzeResult.warnings.length > 0 && (
+                <div className="space-y-1">
+                  {analyzeResult.warnings.map((w, i) => (
+                    <p key={i} className="text-xs text-muted-foreground">• {w}</p>
+                  ))}
+                </div>
+              )}
+              <div className="space-y-2 text-sm">
+                <div><span className="font-medium">Suggested title:</span> {analyzeResult.suggestedTitle}</div>
+                <div><span className="font-medium">Suggested severity:</span> {analyzeResult.suggestedSeverity} (confidence: {analyzeResult.confidence})</div>
+                {analyzeResult.visualFindings.length > 0 && (
+                  <div className="border rounded p-2 bg-muted/30 text-xs">
+                    <p className="font-medium mb-1">What the AI sees in the photo:</p>
+                    <ul className="space-y-0.5">
+                      {analyzeResult.visualFindings.map((f, i) => <li key={i}>• {f}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <div className="border rounded p-2 bg-muted/30 text-xs">
+                  <p className="font-medium mb-1">Suggested observed issue:</p>
+                  <p>{analyzeResult.suggestedObservedIssue}</p>
+                </div>
+              </div>
+              <Button className="w-full" onClick={() => applyPhotoAnalysis(analyzeResult!)}>
+                <CheckCircle2 className="h-4 w-4 mr-2" /> Apply to Draft
+              </Button>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setAnalyzeOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
