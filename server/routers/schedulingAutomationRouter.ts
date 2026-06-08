@@ -3,6 +3,8 @@ import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { logActivity } from "../activityLogger";
+import { haversineDistanceKm } from "../_core/geo";
+import type { LatLng } from "../_core/map";
 import { eq, and, inArray, isNull, gte, lte, or } from "drizzle-orm";
 import {
   jobs,
@@ -346,27 +348,32 @@ export const schedulingAutomationRouter = router({
       // Resolve item and verify ownership
       let itemTargetDate: Date | null = null;
       let itemTitle = "";
+      let itemSiteId: number | null = null;
 
       if (input.itemType === "job") {
         const rows = await db.select().from(jobs).where(eq(jobs.id, input.itemId)).limit(1);
         const item = rows[0];
         if (!item || item.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
         itemTitle = item.title;
+        itemSiteId = item.siteId;
       } else if (input.itemType === "approved_work") {
         const rows = await db.select().from(approvedWork).where(eq(approvedWork.id, input.itemId)).limit(1);
         const item = rows[0];
         if (!item || item.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
         itemTitle = (item as any).title;
+        itemSiteId = item.siteId;
       } else if (input.itemType === "work_order") {
         const rows = await db.select().from(workOrders).where(eq(workOrders.id, input.itemId)).limit(1);
         const item = rows[0];
         if (!item || item.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
         itemTitle = item.title;
+        itemSiteId = item.siteId;
       } else {
         const rows = await db.select().from(monthlyServiceTracking).where(eq(monthlyServiceTracking.id, input.itemId)).limit(1);
         const item = rows[0];
         if (!item || item.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
         itemTitle = `${item.serviceType} — ${item.buildingId ?? item.siteId}`;
+        itemSiteId = item.siteId;
         if (item.targetDate) itemTargetDate = new Date(item.targetDate);
       }
 
@@ -403,51 +410,91 @@ export const schedulingAutomationRouter = router({
       const dayEnd = endOfDay(suggestedDate);
 
       const dayJobs = await db
-        .select({ leadTechnicianId: jobs.leadTechnicianId })
+        .select({ leadTechnicianId: jobs.leadTechnicianId, siteId: jobs.siteId })
         .from(jobs)
         .where(and(eq(jobs.companyId, companyId), gte(jobs.scheduledDate, dayStart), lte(jobs.scheduledDate, dayEnd)));
 
       const dayAw = await db
-        .select({ assignedTechnicianIds: approvedWork.assignedTechnicianIds })
+        .select({ assignedTechnicianIds: approvedWork.assignedTechnicianIds, siteId: approvedWork.siteId })
         .from(approvedWork)
         .where(and(eq(approvedWork.companyId, companyId), gte(approvedWork.scheduledDate, dayStart), lte(approvedWork.scheduledDate, dayEnd)));
 
       const dayWo = await db
-        .select({ assignedTechnicianIds: workOrders.assignedTechnicianIds })
+        .select({ assignedTechnicianIds: workOrders.assignedTechnicianIds, siteId: workOrders.siteId })
         .from(workOrders)
         .where(and(eq(workOrders.companyId, companyId), gte(workOrders.scheduledDate, dayStart), lte(workOrders.scheduledDate, dayEnd)));
 
       const loadCount = new Map<number, number>(techs.map(t => [t.id, 0]));
+      // Sites each tech is already visiting that day — used to score routes by proximity
+      const techSiteIds = new Map<number, number[]>(techs.map(t => [t.id, []]));
 
-      for (const j of dayJobs) {
-        if (j.leadTechnicianId && loadCount.has(j.leadTechnicianId)) {
-          loadCount.set(j.leadTechnicianId, (loadCount.get(j.leadTechnicianId) ?? 0) + 1);
-        }
-      }
-      for (const aw of dayAw) {
-        for (const tid of ((aw.assignedTechnicianIds as number[] | null) ?? [])) {
-          if (loadCount.has(tid)) loadCount.set(tid, (loadCount.get(tid) ?? 0) + 1);
-        }
-      }
-      for (const wo of dayWo) {
-        for (const tid of ((wo.assignedTechnicianIds as number[]) ?? [])) {
-          if (loadCount.has(tid)) loadCount.set(tid, (loadCount.get(tid) ?? 0) + 1);
-        }
+      function tally(techId: number | null | undefined, siteId: number | null | undefined) {
+        if (techId == null || !loadCount.has(techId)) return;
+        loadCount.set(techId, (loadCount.get(techId) ?? 0) + 1);
+        if (siteId != null) techSiteIds.get(techId)!.push(siteId);
       }
 
-      // Pick least loaded technician
+      for (const j of dayJobs) tally(j.leadTechnicianId, j.siteId);
+      for (const aw of dayAw) for (const tid of (aw.assignedTechnicianIds as number[] | null) ?? []) tally(tid, aw.siteId);
+      for (const wo of dayWo) for (const tid of (wo.assignedTechnicianIds as number[]) ?? []) tally(tid, wo.siteId);
+
+      // Fetch coordinates for the item's site plus every site already on the day's
+      // routes, in one batch — powers the proximity tie-break below (best-effort;
+      // sites without geocoded addresses simply fall out of the distance comparison).
+      const relevantSiteIds = Array.from(new Set(
+        [itemSiteId, ...Array.from(techSiteIds.values()).flat()].filter((id): id is number => id != null)
+      ));
+      const siteCoords = new Map<number, LatLng>();
+      if (relevantSiteIds.length > 0) {
+        const rows = await db.select({ id: sites.id, latitude: sites.latitude, longitude: sites.longitude })
+          .from(sites).where(inArray(sites.id, relevantSiteIds));
+        for (const row of rows) {
+          if (row.latitude != null && row.longitude != null) {
+            siteCoords.set(row.id, { lat: Number(row.latitude), lng: Number(row.longitude) });
+          }
+        }
+      }
+      const itemCoords = itemSiteId != null ? siteCoords.get(itemSiteId) ?? null : null;
+
+      function avgDistanceKm(techId: number): number | null {
+        if (!itemCoords) return null;
+        const stops = (techSiteIds.get(techId) ?? []).map((id) => siteCoords.get(id)).filter((c): c is LatLng => !!c);
+        if (stops.length === 0) return null;
+        return stops.reduce((sum, c) => sum + haversineDistanceKm(itemCoords, c), 0) / stops.length;
+      }
+
+      // Selection: balance workload first (avoid piling onto the busiest tech), then —
+      // among techs within one job of the lightest day — prefer whoever's existing
+      // stops are geographically closest to this site, keeping routes tight.
       let minLoad = Infinity;
-      let suggestedTechId: number | null = null;
-      for (const [tid, count] of Array.from(loadCount.entries())) {
-        if (count < minLoad) { minLoad = count; suggestedTechId = tid; }
+      let lightestTechId: number | null = null;
+      for (const t of techs) {
+        const count = loadCount.get(t.id) ?? 0;
+        if (count < minLoad) { minLoad = count; lightestTechId = t.id; }
       }
+      const candidates = techs.filter((t) => (loadCount.get(t.id) ?? 0) <= minLoad + 1);
+
+      let suggestedTechId: number | null = null;
+      let suggestedDistanceKm: number | null = null;
+      for (const t of candidates) {
+        const d = avgDistanceKm(t.id);
+        if (d !== null && (suggestedDistanceKm === null || d < suggestedDistanceKm)) {
+          suggestedDistanceKm = d;
+          suggestedTechId = t.id;
+        }
+      }
+      // No geocoded sites to compare — fall back to pure load balancing
+      if (suggestedTechId === null) suggestedTechId = lightestTechId;
 
       const suggestedTech = techs.find(t => t.id === suggestedTechId);
+      const suggestedLoad = suggestedTechId != null ? loadCount.get(suggestedTechId) ?? 0 : 0;
 
       const dateReason = input.preferredDate ? "preferred date" : itemTargetDate ? "item target date" : "3 days from today";
-      const techReason = suggestedTech
-        ? `${suggestedTech.name ?? "Unknown"} has the fewest assignments (${minLoad}) on this day`
-        : "no technician available";
+      const techReason = !suggestedTech
+        ? "no technician available"
+        : suggestedDistanceKm !== null
+          ? `${suggestedTech.name ?? "Unknown"} has ${suggestedLoad} job${suggestedLoad !== 1 ? "s" : ""} that day and averages ${suggestedDistanceKm.toFixed(1)} km from this site — keeps the route tight`
+          : `${suggestedTech.name ?? "Unknown"} has the fewest assignments (${suggestedLoad}) on this day`;
 
       return {
         suggestedDate,

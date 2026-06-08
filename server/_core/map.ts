@@ -74,6 +74,26 @@ export async function makeRequest<T = unknown>(
 }
 
 // ============================================================================
+// Geocoding
+// ============================================================================
+
+/**
+ * Resolve a free-form address to coordinates. Best-effort: returns null on
+ * missing config, empty input, zero results, or any request failure so callers
+ * (e.g. site create/update) can treat geocoding as optional and never fail.
+ */
+export async function geocodeAddress(address: string): Promise<LatLng | null> {
+  if (!ENV.googleMapsApiKey || !address.trim()) return null;
+  try {
+    const result = await makeRequest<GeocodingResult>("/maps/api/geocode/json", { address });
+    if (result.status !== "OK" || result.results.length === 0) return null;
+    return result.results[0].geometry.location;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
 // Type Definitions (unchanged — same exports as before)
 // ============================================================================
 

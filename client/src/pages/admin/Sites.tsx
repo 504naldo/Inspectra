@@ -325,6 +325,17 @@ export default function AdminSites() {
     onError: () => toast.error('Failed to update site')
   });
 
+  // One-time backfill: geocodes any sites that predate the auto-geocode-on-save
+  // behavior, so they show up correctly in route-aware scheduling suggestions.
+  const geocodeMissingSites = trpc.site.geocodeMissingSites.useMutation({
+    onSuccess: ({ total, geocoded, skipped }) => {
+      if (total === 0) toast.success('All sites already have coordinates');
+      else toast.success(`Geocoded ${geocoded} of ${total} site${total !== 1 ? 's' : ''}${skipped > 0 ? ` (${skipped} couldn't be resolved)` : ''}`);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message || 'Failed to geocode sites'),
+  });
+
   const pdfUploadMutation = trpc.drive.importPdfFromUpload.useMutation({
     onSuccess: (data) => {
       setIsPdfExtracting(false);
@@ -433,6 +444,20 @@ export default function AdminSites() {
           <Button variant="outline" onClick={() => setShowPdfImport(true)}>
             <FileText className="h-4 w-4 mr-2" />
             Import from PDF
+          </Button>
+
+          <Button
+            variant="outline"
+            disabled={geocodeMissingSites.isPending}
+            onClick={() => geocodeMissingSites.mutate({ companyId })}
+            title="Resolve map coordinates for sites that predate route-aware scheduling"
+          >
+            {geocodeMissingSites.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <MapPin className="h-4 w-4 mr-2" />
+            )}
+            Geocode Sites
           </Button>
 
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

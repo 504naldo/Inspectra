@@ -339,6 +339,18 @@ export async function updateSite(id: number, data: Partial<InsertSite>) {
   await db.update(sites).set(data).where(eq(sites.id, id));
 }
 
+// Sites with a usable address but no coordinates yet — candidates for the
+// one-time geocoding backfill (new sites are geocoded automatically on create).
+export async function getSitesMissingCoordinates(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(sites).where(and(
+    eq(sites.companyId, companyId),
+    isNull(sites.latitude),
+    or(isNotNull(sites.address), isNotNull(sites.city)),
+  ));
+}
+
 // ============================================
 // AREA QUERIES
 // ============================================
