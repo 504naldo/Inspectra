@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
+import { geocodeAddress } from "../_core/map";
 import * as db from "../db";
+
+// Joins the address fields into a single string for geocoding; skips empty parts
+// so a site with only a city still resolves to a usable (if coarse) location.
+function formatAddressForGeocoding(parts: { address?: string | null; city?: string | null; state?: string | null; postalCode?: string | null }): string {
+  return [parts.address, parts.city, parts.state, parts.postalCode].filter((s): s is string => !!s?.trim()).join(", ");
+}
 
 // Site router
 const siteRouter = router({
@@ -75,7 +82,16 @@ const siteRouter = router({
       notes: input.notes || '',
     };
     
-    return db.createSite({ ...input, summary });
+    // Best-effort geocode so the site shows up on the route-optimized dispatch view;
+    // never blocks site creation if the address is incomplete or geocoding fails.
+    const coords = await geocodeAddress(formatAddressForGeocoding(input));
+
+    return db.createSite({
+      ...input,
+      summary,
+      latitude: coords ? String(coords.lat) : undefined,
+      longitude: coords ? String(coords.lng) : undefined,
+    });
   }),
   
   update: officeProcedure.input(z.object({
@@ -149,8 +165,22 @@ const siteRouter = router({
       notes: data.notes ?? existingSite.summary?.notes ?? existingSite.notes ?? '',
     };
     
+    // Re-geocode only when an address field actually changed — keeps edits to
+    // unrelated fields (notes, key tracking, etc.) from costing an API call.
+    let coordsUpdate: { latitude?: string | null; longitude?: string | null } = {};
+    if (data.address !== undefined || data.city !== undefined || data.state !== undefined || data.postalCode !== undefined) {
+      const coords = await geocodeAddress(formatAddressForGeocoding({
+        address: data.address ?? existingSite.address,
+        city: data.city ?? existingSite.city,
+        state: data.state ?? existingSite.state,
+        postalCode: data.postalCode ?? existingSite.postalCode,
+      }));
+      coordsUpdate = { latitude: coords ? String(coords.lat) : null, longitude: coords ? String(coords.lng) : null };
+    }
+
     await db.updateSite(id, {
       ...data,
+      ...coordsUpdate,
       summary: updatedSummary,
       keySignOutDate: data.keySignOutDate ? new Date(data.keySignOutDate) : undefined,
     });
@@ -161,6 +191,30 @@ const siteRouter = router({
     .input(z.object({ siteId: z.number() }))
     .query(async ({ input }) => {
       return db.getLastInspectionSummaryForSite(input.siteId);
+    }),
+
+  // One-time backfill for sites created before geocoding was wired into create/update.
+  // Geocodes sequentially (Google's API has per-second rate limits) and is safe to
+  // re-run — it only targets sites that still lack coordinates.
+  geocodeMissingSites: officeProcedure
+    .input(z.object({ companyId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      if (ctx.user.companyId !== input.companyId) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      const candidates = await db.getSitesMissingCoordinates(input.companyId);
+      let geocoded = 0;
+      let skipped = 0;
+      for (const site of candidates) {
+        const coords = await geocodeAddress(formatAddressForGeocoding(site));
+        if (coords) {
+          await db.updateSite(site.id, { latitude: String(coords.lat), longitude: String(coords.lng) });
+          geocoded++;
+        } else {
+          skipped++;
+        }
+      }
+      return { total: candidates.length, geocoded, skipped };
     }),
 });
 

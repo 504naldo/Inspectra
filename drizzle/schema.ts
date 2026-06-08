@@ -155,6 +155,9 @@ export const sites = mysqlTable("sites", {
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 100 }),
   postalCode: varchar("postalCode", { length: 20 }),
+  // Geocoded from the address (best-effort, on create/update) — powers route-aware scheduling
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
   contactName: varchar("contactName", { length: 255 }),
   contactPhone: varchar("contactPhone", { length: 50 }),
   notes: text("notes"),
