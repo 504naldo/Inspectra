@@ -2755,6 +2755,19 @@ export async function hasUndismissedNotification(companyId: number, dedupeKey: s
 // SERVICE AGREEMENTS
 // ============================================
 
+export async function getServiceAgreementsByCustomerOrg(customerOrgId: number): Promise<ServiceAgreement[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(serviceAgreements)
+    .where(and(
+      eq(serviceAgreements.customerOrgId, customerOrgId),
+      inArray(serviceAgreements.status, ["active", "expiring_soon", "expired"] as ServiceAgreement["status"][]),
+    ))
+    .orderBy(desc(serviceAgreements.startDate));
+}
+
 export async function getServiceAgreementsByCompany(
   companyId: number,
   status?: string,

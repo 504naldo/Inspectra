@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure } from "../_core/trpc";
+import { router, officeProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { logActivity } from "../activityLogger";
 
@@ -99,6 +99,40 @@ async function _fireExpiryNotifications(
 }
 
 export const serviceAgreementRouter = router({
+  listByCustomerOrg: customerProcedure.query(async ({ ctx }) => {
+    const orgId = ctx.user.customerOrgId;
+    if (!orgId) return [];
+    const agreements = await db.getServiceAgreementsByCustomerOrg(orgId);
+    const sites = await Promise.all(agreements.map((a) => db.getAgreementSitesByAgreement(a.id)));
+    const allSiteIds = Array.from(new Set(sites.flat().map((s) => s.siteId)));
+    const siteData = allSiteIds.length
+      ? await Promise.all(allSiteIds.map((id) => db.getSiteById(id)))
+      : [];
+    const siteMap = new Map(siteData.filter(Boolean).map((s) => [s!.id, s!]));
+
+    return agreements.map((a, i) => ({
+      id: a.id,
+      agreementNumber: a.agreementNumber,
+      name: a.name,
+      status: a.status,
+      startDate: a.startDate,
+      endDate: a.endDate,
+      renewalDate: a.renewalDate,
+      billingCycle: a.billingCycle,
+      includedServicesJson: a.includedServicesJson,
+      excludedServicesJson: a.excludedServicesJson,
+      sites: sites[i].map((as) => ({
+        siteId: as.siteId,
+        siteName: siteMap.get(as.siteId)?.name ?? null,
+        siteAddress: siteMap.get(as.siteId)?.address ?? null,
+        siteCity: siteMap.get(as.siteId)?.city ?? null,
+        siteState: siteMap.get(as.siteId)?.state ?? null,
+        includedServicesJson: as.includedServicesJson,
+        siteSpecificNotes: as.siteSpecificNotes,
+      })),
+    }));
+  }),
+
   list: officeProcedure
     .input(z.object({ status: statusEnum.optional() }))
     .query(async ({ input, ctx }) => {
