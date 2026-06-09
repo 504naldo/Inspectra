@@ -3,6 +3,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Landing page brand palette */
+@theme {
+  --color-brand-50: #eef7ff;
+  --color-brand-100: #d9edff;
+  --color-brand-200: #bce0ff;
+  --color-brand-300: #8ecdff;
+  --color-brand-400: #59b0ff;
+  --color-brand-500: #3390f5;
+  --color-brand-600: #1d71ea;
+  --color-brand-700: #155bd7;
+  --color-brand-800: #174aae;
+  --color-brand-900: #184189;
+  --color-brand-950: #132954;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -317,9 +332,20 @@
       flex-direction: column;
       align-items: stretch;
     }
-    
+
     .mobile-stack > * {
       width: 100%;
     }
+  }
+
+  /* Landing page utilities */
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-brand-600 to-brand-400;
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
   }
 }
