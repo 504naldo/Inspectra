@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure } from "../_core/trpc";
+import { router, officeProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { INVOICE_STATUSES } from "../../drizzle/schema";
 import { logActivity } from "../activityLogger";
@@ -60,6 +60,14 @@ function csvCell(v: string | number | null | undefined): string {
 }
 
 export const invoiceRouter = router({
+  listByCustomerOrg: customerProcedure.query(async ({ ctx }) => {
+    const orgId = ctx.user.customerOrgId;
+    if (!orgId) return [];
+    const rows = await db.getInvoicesByCustomerOrg(orgId);
+    const lineItemsByInvoice = await Promise.all(rows.map((inv) => db.getLineItemsByInvoice(inv.id)));
+    return rows.map((inv, i) => ({ ...inv, lineItems: lineItemsByInvoice[i] }));
+  }),
+
   list: officeProcedure
     .input(z.object({
       status: z.string().optional(),

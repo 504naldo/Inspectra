@@ -2272,6 +2272,14 @@ export async function getInvoicesByCompany(companyId: number, status?: string): 
   return db.select().from(invoices).where(and(...conditions)).orderBy(desc(invoices.createdAt));
 }
 
+export async function getInvoicesByCustomerOrg(customerOrgId: number): Promise<Invoice[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(invoices)
+    .where(and(eq(invoices.customerOrgId, customerOrgId), inArray(invoices.status, ["sent", "viewed", "approved", "paid", "partial", "overdue"] as Invoice["status"][])))
+    .orderBy(desc(invoices.createdAt));
+}
+
 export async function getInvoiceByApprovedWork(approvedWorkId: number): Promise<Invoice | undefined> {
   const db = await getDb();
   if (!db) return undefined;
