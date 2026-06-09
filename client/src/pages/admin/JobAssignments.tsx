@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAuth } from '@/_core/hooks/useAuth';
 import AdminLayout from '@/components/AdminLayout';
 import { trpc } from '@/lib/trpc';
 import { formatDate } from '@/lib/utils';
@@ -16,7 +17,8 @@ export default function JobAssignments() {
   const [bulkTechnicianId, setBulkTechnicianId] = useState<string>('');
   const [filterTechnicianId, setFilterTechnicianId] = useState<string>('all');
 
-  const companyId = 1; // TODO: Get from user context
+  const { user } = useAuth();
+  const companyId = user?.companyId ?? 0;
   const { data: jobs, isLoading: jobsLoading, refetch: refetchJobs } = trpc.jobAssignment.listJobsWithAssignees.useQuery({ companyId, status: undefined });
   const { data: technicians, isLoading: techniciansLoading } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
   const assignJobMutation = trpc.jobAssignment.setJobAssignments.useMutation();
