@@ -109,3 +109,29 @@ export async function storageGet(
 
   return { key, url };
 }
+
+/**
+ * Generate a presigned URL that triggers a browser download with the given filename.
+ * Uses ResponseContentDisposition so the browser receives Content-Disposition: attachment
+ * even for cross-origin S3/R2 URLs where the HTML download attribute has no effect.
+ */
+export async function storageGetDownload(
+  relKey: string,
+  filename: string
+): Promise<string> {
+  const s3 = getS3();
+  const bucket = getBucket();
+  const key = normalizeKey(relKey);
+  const safe = filename.replace(/[^\w.\-() ]/g, "_");
+
+  return getSignedUrl(
+    s3,
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ResponseContentDisposition: `attachment; filename="${safe}"`,
+      ResponseContentType: "application/pdf",
+    }),
+    { expiresIn: 60 * 15 }
+  );
+}

@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from "@/components/ui/badge";
 import CustomerLayout from "@/components/CustomerLayout";
 import { trpc } from "@/lib/trpc";
-import { FileText, CheckCircle2, Clock, Download, Eye } from "lucide-react";
+import { FileText, CheckCircle2, Clock, Download, Eye, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function CustomerReports() {
@@ -15,6 +15,20 @@ export default function CustomerReports() {
   const { previewOrg } = usePortalPreview();
   const customerOrgId = previewOrg?.id ?? user?.customerOrgId!;
   const [_selectedReport, setSelectedReport] = useState<any>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const utils = trpc.useUtils();
+
+  async function handleDownload(reportId: number) {
+    setDownloadingId(reportId);
+    try {
+      const url = await utils.report.getDownloadUrl.fetch({ id: reportId });
+      window.open(url, "_blank");
+    } catch {
+      toast.error("Could not get download link — please try again");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   const { data: reports, isLoading, refetch } = trpc.report.listByCustomerOrg.useQuery(
     { customerOrgId },
@@ -141,12 +155,18 @@ export default function CustomerReports() {
                             )}
 
                             <div className="flex gap-2">
-                              {report.fileUrl && (
-                                <Button variant="outline" size="sm" asChild className="flex-1">
-                                  <a href={report.fileUrl} target="_blank" rel="noopener noreferrer">
-                                    <Download className="h-4 w-4 mr-2" />
-                                    Download PDF
-                                  </a>
+                              {report.fileKey && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="flex-1"
+                                  disabled={downloadingId === report.id}
+                                  onClick={() => handleDownload(report.id)}
+                                >
+                                  {downloadingId === report.id
+                                    ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    : <Download className="h-4 w-4 mr-2" />}
+                                  Download PDF
                                 </Button>
                               )}
                               {report.status === "sent" && (
@@ -164,12 +184,17 @@ export default function CustomerReports() {
                         </DialogContent>
                       </Dialog>
 
-                      {report.fileUrl && (
-                        <Button variant="outline" size="sm" asChild>
-                          <a href={report.fileUrl} target="_blank" rel="noopener noreferrer">
-                            <Download className="h-4 w-4 mr-1" />
-                            PDF
-                          </a>
+                      {report.fileKey && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={downloadingId === report.id}
+                          onClick={() => handleDownload(report.id)}
+                        >
+                          {downloadingId === report.id
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <Download className="h-4 w-4 mr-1" />}
+                          {downloadingId === report.id ? "" : "PDF"}
                         </Button>
                       )}
                     </div>

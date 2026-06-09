@@ -5,7 +5,7 @@ import { router, officeProcedure, customerProcedure, protectedProcedure, technic
 import * as db from "../db";
 import { getDb } from "../db";
 import { assertJobNotFinalized } from "../db";
-import { storagePut } from "../storage";
+import { storagePut, storageGetDownload } from "../storage";
 import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
 import { fetchImageBuffer } from "../pdfSharedStyles";
@@ -144,6 +144,23 @@ const reportRouter = router({
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     return db.getReportsByCustomerOrg(input.customerOrgId);
+  }),
+
+  getDownloadUrl: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const report = await db.getReportById(input.id);
+    if (!report) throw new TRPCError({ code: "NOT_FOUND" });
+    if (!report.fileKey) throw new TRPCError({ code: "NOT_FOUND", message: "No PDF on file" });
+
+    const job = await db.getJobById(report.jobId);
+    if (!job) throw new TRPCError({ code: "NOT_FOUND" });
+    if (ctx.user.role === "customer") {
+      if (ctx.user.customerOrgId !== job.customerOrgId) throw new TRPCError({ code: "FORBIDDEN" });
+    } else if (ctx.user.companyId !== job.companyId) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
+
+    const filename = `${report.reportNumber ?? `report-${report.id}`}.pdf`;
+    return storageGetDownload(report.fileKey, filename);
   }),
   
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
