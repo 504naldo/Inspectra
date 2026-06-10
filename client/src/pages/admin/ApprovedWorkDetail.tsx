@@ -26,6 +26,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { getApprovedWorkStatusLabel, getApprovedWorkStatusBadgeClass } from "@/lib/statusLabels";
 import {
   CheckSquare,
   Loader2,
@@ -51,32 +52,8 @@ import { APPROVED_WORK_STATUSES } from "../../../../drizzle/schema";
 
 type Status = typeof APPROVED_WORK_STATUSES[number];
 
-function statusLabel(s: string) {
-  return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-}
-
 function typeLabel(t: string) {
   return t === "repair_order" ? "Repair Order" : "Job Order";
-}
-
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case "approved":          return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300";
-    case "ready_to_schedule": return "bg-accent/10 text-accent";
-    case "scheduled":         return "bg-accent/10 text-accent";
-    case "assigned":          return "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300";
-    case "in_progress":       return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300";
-    case "parts_required":
-    case "awaiting_parts":    return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300";
-    case "parts_ordered":     return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
-    case "parts_received":    return "bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300";
-    case "completed":         return "status-pass";
-    case "report_pending":    return "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300";
-    case "invoiced":          return "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300";
-    case "closed":            return "bg-muted text-muted-foreground";
-    case "cancelled":         return "status-fail";
-    default:                  return "bg-muted text-muted-foreground";
-  }
 }
 
 function fmtAmount(amount: string | null | undefined): string {
@@ -107,7 +84,7 @@ function UpdateStatusDialog({ open, onClose, currentStatus, onUpdate, isPending 
           </SelectTrigger>
           <SelectContent>
             {APPROVED_WORK_STATUSES.map(s => (
-              <SelectItem key={s} value={s}>{statusLabel(s)}</SelectItem>
+              <SelectItem key={s} value={s}>{getApprovedWorkStatusLabel(s)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -390,8 +367,8 @@ export default function ApprovedWorkDetail({ id }: Props) {
                   {record.type === "repair_order" ? <Wrench className="h-3 w-3 mr-1" /> : null}
                   {typeLabel(record.type)}
                 </span>
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadgeClass(record.status)}`}>
-                  {statusLabel(record.status)}
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${getApprovedWorkStatusBadgeClass(record.status)}`}>
+                  {getApprovedWorkStatusLabel(record.status)}
                 </span>
               </div>
               <h1 className="text-2xl font-bold mt-2 flex items-center gap-2">
@@ -471,7 +448,7 @@ export default function ApprovedWorkDetail({ id }: Props) {
               <Row label="Approved At">{record.approvedAt ? formatDate(record.approvedAt) : "—"}</Row>
               <Row label="Approved By">{record.approvedByName ?? "—"}</Row>
               {record.approvedByEmail && <Row label="Email">{record.approvedByEmail}</Row>}
-              <Row label="Source">{record.approvalSource ? statusLabel(record.approvalSource) : "—"}</Row>
+              <Row label="Source">{record.approvalSource ? getApprovedWorkStatusLabel(record.approvalSource) : "—"}</Row>
             </CardContent>
           </Card>
 
@@ -567,7 +544,7 @@ export default function ApprovedWorkDetail({ id }: Props) {
                         className="text-xs px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors"
                         onClick={() => updateStatusMut.mutate({ id: record.id, status: s as Status })}
                       >
-                        → {statusLabel(s)}
+                        → {getApprovedWorkStatusLabel(s)}
                       </button>
                     ))}
                   </div>

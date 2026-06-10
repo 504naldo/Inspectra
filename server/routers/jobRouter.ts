@@ -121,6 +121,14 @@ const jobRouter = router({
     if (input.companyId !== ctx.user.companyId) {
       throw new TRPCError({ code: "FORBIDDEN", message: "Cannot create a job for another company." });
     }
+    const site = await db.getSiteById(input.siteId);
+    if (!site || site.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid site" });
+    }
+    const customerOrg = await db.getCustomerOrgById(input.customerOrgId);
+    if (!customerOrg || customerOrg.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid customer organization" });
+    }
 
     const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
 

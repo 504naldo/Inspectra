@@ -1062,7 +1062,7 @@ async function _createApprovedWorkFromQuote(quoteId: number, approvalSource: "em
   });
 }
 
-async function _createWorkOrderFromQuote(quoteId: number, companyId: number): Promise<{ workOrderId: number }> {
+export async function _createWorkOrderFromQuote(quoteId: number, companyId: number): Promise<{ workOrderId: number }> {
   const quote = await db.getQuoteById(quoteId);
   if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
   const items = await db.getRepairQuoteItemsByQuote(quoteId);

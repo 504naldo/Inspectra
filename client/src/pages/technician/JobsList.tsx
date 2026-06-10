@@ -21,6 +21,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { getJobStatusLabel, getJobStatusBadgeClass } from "@/lib/statusLabels";
 
 export default function JobsList() {
   const { user } = useAuth();
@@ -112,17 +113,6 @@ export default function JobsList() {
       job.jobNumber.toLowerCase().includes(query)
     );
   }) || [];
-
-  const getStatusBadgeClass = (status: string) => {
-    switch (status) {
-      case 'completed': return 'status-pass';
-      case 'in_progress': return 'bg-primary/10 text-primary border-primary/20';
-      case 'pending':
-      case 'scheduled': return 'status-pending';
-      case 'cancelled': return 'status-fail';
-      default: return 'status-na';
-    }
-  };
 
   const getPriorityBadgeClass = (priority: string) => {
     switch (priority) {
@@ -246,8 +236,8 @@ export default function JobsList() {
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${getPriorityBadgeClass(job.priority)}`}>
                               {job.priority}
                             </span>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getStatusBadgeClass(job.status)}`}>
-                              {job.status.replace('_', ' ')}
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getJobStatusBadgeClass(job.status)}`}>
+                              {getJobStatusLabel(job.status)}
                             </span>
                           </div>
                           <h3 className="font-semibold safe-text">{job.title}</h3>

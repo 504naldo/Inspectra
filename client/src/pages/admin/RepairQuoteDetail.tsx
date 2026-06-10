@@ -27,24 +27,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { getQuoteStatusLabel, getQuoteStatusBadgeClass } from "@/lib/statusLabels";
 
 const CAD = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
 const fmtDate = (d: Date | string | null | undefined) =>
   d ? new Date(d).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" }) : "—";
-
-const STATUS_BADGE: Record<string, string> = {
-  draft:                     "bg-gray-100 text-gray-600 border-gray-200",
-  ready_to_send:             "bg-violet-50 text-violet-700 border-violet-200",
-  sent:                      "bg-blue-50 text-blue-700 border-blue-200",
-  viewed:                    "bg-sky-50 text-sky-700 border-sky-200",
-  partially_approved:        "bg-amber-50 text-amber-700 border-amber-200",
-  approved:                  "bg-emerald-50 text-emerald-700 border-emerald-200",
-  accepted:                  "bg-emerald-50 text-emerald-700 border-emerald-200",
-  declined:                  "bg-red-50 text-red-700 border-red-200",
-  expired:                   "bg-orange-50 text-orange-700 border-orange-200",
-  converted_to_approved_work:"bg-teal-50 text-teal-700 border-teal-200",
-  cancelled:                 "bg-gray-100 text-gray-500 border-gray-200",
-};
 
 const ITEM_STATUS_BADGE: Record<string, string> = {
   pending:                   "bg-gray-100 text-gray-500 border-gray-200",
@@ -61,20 +48,6 @@ const APPROVAL_SOURCE_LABELS: Record<string, string> = {
   in_person: "In Person",
   portal_later: "Portal (later)",
   internal_entry: "Internal Entry",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  ready_to_send: "Ready to Send",
-  sent: "Sent",
-  viewed: "Viewed",
-  partially_approved: "Partially Approved",
-  approved: "Approved",
-  accepted: "Accepted",
-  declined: "Declined",
-  expired: "Expired",
-  converted_to_approved_work: "Converted to Work",
-  cancelled: "Cancelled",
 };
 
 const SYSTEM_OPTIONS = [
@@ -703,8 +676,8 @@ export default function RepairQuoteDetail() {
           <div>
             <h1 className="text-2xl font-bold">{q.quoteNumber ?? `Quote #${quoteId}`}</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-medium ${STATUS_BADGE[quote.status] ?? ""}`}>
-                {quote.status}
+              <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-medium ${getQuoteStatusBadgeClass(quote.status)}`}>
+                {getQuoteStatusLabel(quote.status)}
               </span>
               {isFinalized && (
                 <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-medium">

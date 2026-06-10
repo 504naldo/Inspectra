@@ -9,10 +9,11 @@
  *   - Customers can never finalize
  *
  * Status transition matrix:
- *   in_progress  → completed ✅
+ *   in_progress           → completed (finalized) ✅
+ *   completed (unsealed)  → completed (finalized) ✅
  *   pending      → block with JOB_NOT_IN_PROGRESS
  *   scheduled    → block with JOB_NOT_IN_PROGRESS
- *   completed    → block with JOB_ALREADY_FINALIZED
+ *   already finalized → block with JOB_FINALIZED_IMMUTABLE
  *   cancelled    → block with JOB_CANCELLED_CANNOT_FINALIZE
  *
  * Sync assertion:
@@ -29,7 +30,6 @@ import type { TrpcContext } from "../_core/context";
 import {
   JOB_FINALIZED_IMMUTABLE,
   JOB_NOT_IN_PROGRESS,
-  JOB_ALREADY_FINALIZED,
   JOB_CANCELLED_CANNOT_FINALIZE,
   SYNC_ASSERTION_REQUIRED,
 } from "../../shared/_core/errors";
@@ -120,13 +120,6 @@ export async function finalizeJob(
     });
   }
 
-  if (job.status === "completed") {
-    throw new TRPCError({
-      code: "CONFLICT",
-      message: JOB_ALREADY_FINALIZED,
-    });
-  }
-
   if (job.status === "pending" || job.status === "scheduled") {
     throw new TRPCError({
       code: "CONFLICT",
@@ -134,7 +127,9 @@ export async function finalizeJob(
     });
   }
 
-  // status must be 'in_progress' at this point
+  // status must be 'in_progress' or 'completed' (with finalizedAt still null) at this point —
+  // job.complete() moves status to 'completed' before finalization, and finalization is the
+  // immutability-sealing step that happens afterward.
 
   // 5. Signature check — technician signature required before finalization
   if (!job.techSignatureUrl) {
@@ -196,7 +191,7 @@ export async function finalizeJob(
       finalizationHash,
       syncAssertedAt: now,
       syncAssertedById: user.id,
-      completedAt: now,
+      completedAt: job.completedAt ?? now,
     })
     .where(eq(schema.jobs.id, jobId));
 

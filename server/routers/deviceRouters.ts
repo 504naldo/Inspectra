@@ -19,7 +19,11 @@ const areaRouter = router({
     floor: z.string().optional(),
     building: z.string().optional(),
     description: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    const site = await db.getSiteById(input.siteId);
+    if (!site || site.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
     return db.createArea(input);
   }),
   
@@ -61,7 +65,20 @@ const deviceRouter = router({
     location: z.string().optional(),
     barcode: z.string().optional(),
     notes: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    const site = await db.getSiteById(input.siteId);
+    if (!site || site.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    if (input.areaId !== undefined) {
+      const area = await db.getAreaById(input.areaId);
+      if (!area || area.siteId !== input.siteId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid area for this site' });
+      }
+    }
     return db.createDevice(input);
   }),
   
@@ -163,12 +180,16 @@ const deviceRouter = router({
     notes: z.string().optional(),
     suiteNumber: z.string().optional(),
     powerType: z.enum(['hardwired', 'battery', 'sealed', 'unknown']).optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { jobId, ...deviceData } = input;
-    const job = await db.getJobById(jobId);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+    const job = await db.assertJobCompany(jobId, ctx.user.companyId!);
     if ((job as any).finalizedAt) throw new TRPCError({ code: 'FORBIDDEN', message: 'Job is finalized' });
-    const device = await db.createDevice(deviceData as any);
+    const site = await db.getSiteById(deviceData.siteId);
+    if (!site || site.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    // Always attribute the device to the job's own company, never a client-supplied value.
+    const device = await db.createDevice({ ...deviceData, companyId: job.companyId } as any);
     return { success: true, deviceId: device.id };
   }),
 
@@ -231,7 +252,14 @@ const smokeAlarmRouter = router({
     powerType: z.enum(['hardwired', 'battery', 'sealed', 'unknown']).optional(),
     installDate: z.string().optional(), // ISO date string
     notes: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    const site = await db.getSiteById(input.siteId);
+    if (!site || site.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
     const { installDate, ...rest } = input;
     return db.createDevice({
       ...rest,

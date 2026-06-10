@@ -8,6 +8,7 @@ import {
   AlertTriangle
 } from "lucide-react";
 import { Link } from "wouter";
+import { getDeficiencyStatusLabel, getDeficiencyStatusBadgeClass } from "@/lib/statusLabels";
 
 interface DeficiencyListProps {
   jobId: number;
@@ -22,16 +23,6 @@ export default function DeficiencyList({ jobId }: DeficiencyListProps) {
       case 'major': return 'bg-warning text-warning-foreground';
       case 'minor': return 'bg-primary text-primary-foreground';
       default: return 'bg-muted text-muted-foreground';
-    }
-  };
-
-  const getStatusBadgeClass = (status: string) => {
-    switch (status) {
-      case 'open': return 'status-fail';
-      case 'in_progress': return 'status-pending';
-      case 'resolved':
-      case 'closed': return 'status-pass';
-      default: return 'status-na';
     }
   };
 
@@ -82,8 +73,8 @@ export default function DeficiencyList({ jobId }: DeficiencyListProps) {
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSeverityBadgeClass(def.severity)}`}>
                           {def.severity}
                         </span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getStatusBadgeClass(def.status)}`}>
-                          {def.status}
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getDeficiencyStatusBadgeClass(def.status)}`}>
+                          {getDeficiencyStatusLabel(def.status)}
                         </span>
                       </div>
                       <h3 className="font-semibold">{def.title}</h3>

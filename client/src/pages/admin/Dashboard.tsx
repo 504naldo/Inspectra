@@ -31,6 +31,7 @@ import {
   Activity,
 } from "lucide-react";
 import { Link } from "wouter";
+import { getApprovedWorkStatusLabel, getApprovedWorkStatusBadgeClass } from "@/lib/statusLabels";
 
 // ── Helper utilities ──────────────────────────────────────────────────────────
 
@@ -84,40 +85,6 @@ function typeLabel(type: string): { label: string; color: string } {
     default:             return { label: type,             color: "bg-muted text-muted-foreground" };
   }
 }
-
-const AW_STATUS_LABELS: Record<string, string> = {
-  approved: "Approved",
-  ready_to_schedule: "Ready to Schedule",
-  scheduled: "Scheduled",
-  assigned: "Assigned",
-  in_progress: "In Progress",
-  parts_required: "Parts Required",
-  awaiting_parts: "Awaiting Parts",
-  parts_ordered: "Parts Ordered",
-  parts_received: "Parts Received",
-  completed: "Completed",
-  report_pending: "Report Pending",
-  invoiced: "Invoiced",
-  closed: "Closed",
-  cancelled: "Cancelled",
-};
-
-const AW_STATUS_COLORS: Record<string, string> = {
-  approved: "bg-blue-100 text-blue-700",
-  ready_to_schedule: "bg-teal-100 text-teal-700",
-  scheduled: "bg-indigo-100 text-indigo-700",
-  assigned: "bg-violet-100 text-violet-700",
-  in_progress: "bg-amber-100 text-amber-700",
-  parts_required: "bg-orange-100 text-orange-700",
-  awaiting_parts: "bg-orange-100 text-orange-700",
-  parts_ordered: "bg-yellow-100 text-yellow-700",
-  parts_received: "bg-lime-100 text-lime-700",
-  completed: "bg-green-100 text-green-700",
-  report_pending: "bg-cyan-100 text-cyan-700",
-  invoiced: "bg-emerald-100 text-emerald-700",
-  closed: "bg-muted text-muted-foreground",
-  cancelled: "bg-red-100 text-red-700",
-};
 
 // ── Snapshot card ─────────────────────────────────────────────────────────────
 
@@ -498,8 +465,8 @@ export default function AdminDashboard() {
                     })
                     .map(([status, count]) => (
                       <div key={status} className="flex items-center justify-between">
-                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${AW_STATUS_COLORS[status] ?? "bg-muted text-muted-foreground"}`}>
-                          {AW_STATUS_LABELS[status] ?? status}
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${getApprovedWorkStatusBadgeClass(status)}`}>
+                          {getApprovedWorkStatusLabel(status)}
                         </span>
                         <span className="text-sm font-bold tabular-nums">{count}</span>
                       </div>

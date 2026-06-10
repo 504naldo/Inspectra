@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { trpc } from "@/lib/trpc";
 import type { QuoteLineItem } from "../../../../drizzle/schema";
+import { getQuoteStatusLabel, getQuoteStatusBadgeClass } from "@/lib/statusLabels";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -18,20 +19,26 @@ function fmtDate(d: Date | string | null | undefined) {
   return new Date(d).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
 }
 
-const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; className: string }> = {
-  draft:    { label: "Draft",    icon: Clock,        className: "bg-gray-100 text-gray-600 border-gray-200" },
-  sent:     { label: "Sent",     icon: Send,         className: "bg-blue-50 text-blue-700 border-blue-200" },
-  accepted: { label: "Accepted", icon: CheckCircle,  className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  declined: { label: "Declined", icon: XCircle,      className: "bg-red-50 text-red-700 border-red-200" },
+const STATUS_ICONS: Record<string, React.ElementType> = {
+  draft: Clock,
+  ready_to_send: Clock,
+  sent: Send,
+  viewed: Send,
+  partially_approved: FileText,
+  approved: CheckCircle,
+  accepted: CheckCircle,
+  declined: XCircle,
+  expired: XCircle,
+  converted_to_approved_work: FileText,
+  cancelled: XCircle,
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.draft;
-  const Icon = cfg.icon;
+  const Icon = STATUS_ICONS[status] ?? FileText;
   return (
-    <span className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1 rounded-full border ${cfg.className}`}>
+    <span className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1 rounded-full border ${getQuoteStatusBadgeClass(status)}`}>
       <Icon className="h-3.5 w-3.5" />
-      {cfg.label}
+      {getQuoteStatusLabel(status)}
     </span>
   );
 }

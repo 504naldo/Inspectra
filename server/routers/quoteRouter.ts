@@ -22,6 +22,7 @@ import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateQuotePDF, generateBuildingQuotePDF } from "../quotePdfGenerator.js";
 import type { QuoteLineItem } from "../../drizzle/schema.js";
+import { _createWorkOrderFromQuote } from "./repairQuoteRouter.js";
 
 // ── Zod schemas ──────────────────────────────────────────────────────────────
 
@@ -676,15 +677,14 @@ export const quoteRouter = router({
         console.warn("[ApprovedWork] Auto-create failed on portal approve:", awErr);
       }
 
-      // Mark linked deficiencies as quoted
+      // Create (or update) the work order for this repair, and mark linked
+      // deficiencies as quoted with the work order linked — mirrors the office
+      // accept flow in repairQuoteRouter so portal approvals don't require a
+      // manual "Create Work Order" step afterward.
       try {
-        const lineItems = (quote.lineItems ?? []) as QuoteLineItem[];
-        const defIds = lineItems.map((i) => i.deficiencyId).filter((id): id is number => id !== null);
-        if (defIds.length) {
-          await Promise.all(defIds.map((id) => db.updateDeficiency(id, { status: "quoted" })));
-        }
+        await _createWorkOrderFromQuote(quote.id, quote.companyId);
       } catch (err) {
-        console.warn("[quote] Failed to mark deficiencies quoted on portal approve:", err);
+        console.warn("[quote] Failed to create work order on portal approve:", err);
       }
 
       // Notify admin
