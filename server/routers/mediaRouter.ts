@@ -164,9 +164,17 @@ export const mediaRouter = router({
       if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const drizzle = await getDb();
       if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // Only reorder attachments that actually belong to this deficiency, so a
+      // client can't use this endpoint to overwrite sortOrder on arbitrary attachments.
       await Promise.all(
         input.orderedIds.map((id, idx) =>
-          drizzle.update(attachments).set({ sortOrder: idx }).where(eq(attachments.id, id))
+          drizzle.update(attachments).set({ sortOrder: idx }).where(
+            and(
+              eq(attachments.id, id),
+              eq(attachments.entityType, "deficiency"),
+              eq(attachments.entityId, input.deficiencyId)
+            )
+          )
         )
       );
       return { success: true };

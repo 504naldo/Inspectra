@@ -166,6 +166,9 @@ export const timeTrackingRouter = router({
     .mutation(async ({ input, ctx }) => {
       if (!ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const entry = await requireEntry(input.id, ctx.user.companyId);
+      if (entry.userId === ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "You cannot approve your own time entry." });
+      }
       if (entry.status !== "submitted") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Can only approve submitted entries." });
       }
@@ -192,6 +195,9 @@ export const timeTrackingRouter = router({
     .mutation(async ({ input, ctx }) => {
       if (!ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const entry = await requireEntry(input.id, ctx.user.companyId);
+      if (entry.userId === ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "You cannot reject your own time entry." });
+      }
       if (entry.status !== "submitted") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Can only reject submitted entries." });
       }

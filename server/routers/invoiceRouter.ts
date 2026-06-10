@@ -49,10 +49,13 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
 };
 
 // ── CSV helpers ───────────────────────────────────────────────────────────────
-// Wrap a value in double-quotes if it contains commas, quotes, or newlines.
-// Always safe to call; passes through clean values unchanged.
+// Wrap a value in double-quotes if it contains commas, quotes, or newlines, and
+// neutralize spreadsheet formula injection by prefixing a single quote when the
+// value begins with =, +, -, or @ (Excel/Sage would otherwise evaluate it as a
+// formula). Always safe to call; passes through clean values unchanged.
 function csvCell(v: string | number | null | undefined): string {
-  const s = (v ?? "").toString().trim();
+  let s = (v ?? "").toString().trim();
+  if (/^[=+\-@]/.test(s)) s = `'${s}`;
   if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
     return `"${s.replace(/"/g, '""')}"`;
   }
@@ -412,6 +415,7 @@ export const invoiceRouter = router({
       if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
       if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
       if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot reset Sage export status on a voided invoice" });
+      if (inv.sageExportStatus === "exported") throw new TRPCError({ code: "BAD_REQUEST", message: "This invoice has already been exported to Sage. Reverse the export in Sage before re-opening it here." });
       await db.updateInvoice(input.id, { sageExportStatus: "pending" });
       return { success: true };
     }),

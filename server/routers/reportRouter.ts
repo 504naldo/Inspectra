@@ -186,6 +186,7 @@ const reportRouter = router({
     executiveSummary: z.string().optional(),
     aiSummary: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
+    await db.assertJobCompany(input.jobId, ctx.user.companyId!);
     const stats = await db.getInspectionStats(input.jobId);
     const deficiencies = await db.getDeficienciesByJob(input.jobId);
     const reportNumber = `RPT-${Date.now().toString(36).toUpperCase()}`;
@@ -212,6 +213,8 @@ const reportRouter = router({
   })).mutation(async ({ input, ctx }) => {
     const report = await db.getReportById(input.id);
     if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+    // Verify the report's parent job belongs to the caller's company
+    await db.assertJobCompany(report.jobId, ctx.user.companyId!);
     // Prevent editing reports whose parent job is finalized
     await assertJobNotFinalized(report.jobId);
     const { id, status, ...data } = input;
@@ -228,6 +231,14 @@ const reportRouter = router({
   }),
   
   approve: customerProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+    // A customer may only approve reports for jobs belonging to their own org.
+    const report = await db.getReportById(input.id);
+    if (!report) throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+    const parentJob = await db.getJobById(report.jobId);
+    if (!parentJob || parentJob.customerOrgId !== ctx.user.customerOrgId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+    }
+
     await db.updateReport(input.id, {
       status: 'approved',
       approvedAt: new Date(),
@@ -238,9 +249,7 @@ const reportRouter = router({
     const approverEmail = ctx.user.email;
     void (async () => {
       try {
-        const report = await db.getReportById(input.id);
-        if (!report) return;
-        const job = await db.getJobById(report.jobId);
+        const job = parentJob;
         const site = job ? await db.getSiteById(job.siteId) : undefined;
         await sendReportApprovedNotification({
           reportNumber: report.reportNumber ?? "",
@@ -265,10 +274,9 @@ const reportRouter = router({
   })).mutation(async ({ input, ctx }) => {
     // DEPRECATED: Use deficiencyReport.generate instead
     console.warn('[DEPRECATED] report.generatePDF is deprecated. Use deficiencyReport.generate instead.');
-    
-    // Get job details
-    const job = await db.getJobById(input.jobId);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+
+    // Get job details (scoped to the caller's company)
+    const job = await db.assertJobCompany(input.jobId, ctx.user.companyId!);
     
     // Get site details
     const site = await db.getSiteById(job.siteId);
@@ -541,10 +549,9 @@ const reportRouter = router({
     // DEPRECATED: Use annualReport.generate instead
     console.warn('[DEPRECATED] report.generateCompliancePDF is deprecated. Use annualReport.generate instead.');
     
-    // Get job details
-    const job = await db.getJobById(input.jobId);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
-    
+    // Get job details (scoped to the caller's company)
+    const job = await db.assertJobCompany(input.jobId, ctx.user.companyId!);
+
     // Get site details
     const site = await db.getSiteById(job.siteId);
     if (!site) throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });

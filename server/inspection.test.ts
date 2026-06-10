@@ -3,20 +3,30 @@ import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
 // Mock database functions
-vi.mock("./db", () => ({
-  getDb: vi.fn().mockResolvedValue({}),
-  getJobById: vi.fn(),
-  getJobsByTechnician: vi.fn(),
-  getDevicesBySite: vi.fn(),
-  getInspectionResultsByJob: vi.fn(),
-  getInspectionResultByJobAndDevice: vi.fn(),
-  upsertInspectionResult: vi.fn(),
-  getInspectionStats: vi.fn(),
-  getDeficienciesByJob: vi.fn(),
-  createDeficiency: vi.fn(),
-  withAudit: vi.fn(async (_ctx: any, _name: any, fn: any) => fn({})),
-  assertJobNotFinalized: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock("./db", () => {
+  const getJobById = vi.fn();
+  return {
+    getDb: vi.fn().mockResolvedValue({}),
+    getJobById,
+    // Mirrors the real helper: loads the job via getJobById and enforces company scope.
+    assertJobCompany: vi.fn(async (jobId: number, companyId: number) => {
+      const job = await getJobById(jobId);
+      if (!job) throw new Error(`Job ${jobId} not found`);
+      if (job.companyId !== companyId) throw new Error("Access denied");
+      return job;
+    }),
+    getJobsByTechnician: vi.fn(),
+    getDevicesBySite: vi.fn(),
+    getInspectionResultsByJob: vi.fn(),
+    getInspectionResultByJobAndDevice: vi.fn(),
+    upsertInspectionResult: vi.fn(),
+    getInspectionStats: vi.fn(),
+    getDeficienciesByJob: vi.fn(),
+    createDeficiency: vi.fn(),
+    withAudit: vi.fn(async (_ctx: any, _name: any, fn: any) => fn({})),
+    assertJobNotFinalized: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 // Import mocked db
 import * as db from "./db";
@@ -102,15 +112,16 @@ describe("Job Router", () => {
   });
 
   it("technician can get job details", async () => {
-    const mockJob = { 
-      id: 1, 
-      title: "Annual Inspection", 
-      status: "scheduled", 
+    const mockJob = {
+      id: 1,
+      title: "Annual Inspection",
+      status: "scheduled",
       jobNumber: "JOB-123",
       siteId: 1,
       customerOrgId: 1,
+      companyId: 1,
     };
-    
+
     vi.mocked(db.getJobById).mockResolvedValue(mockJob as any);
     
     const ctx = createTechnicianContext();
@@ -193,10 +204,11 @@ describe("Deficiency Router", () => {
     };
     
     vi.mocked(db.createDeficiency).mockResolvedValue(mockDeficiency as any);
-    
+    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 1 } as any);
+
     const ctx = createTechnicianContext();
     const caller = appRouter.createCaller(ctx);
-    
+
     const result = await caller.deficiency.create({
       jobId: 1,
       deviceId: 1,
@@ -215,10 +227,11 @@ describe("Deficiency Router", () => {
     ];
     
     vi.mocked(db.getDeficienciesByJob).mockResolvedValue(mockDeficiencies as any);
-    
+    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 1 } as any);
+
     const ctx = createTechnicianContext();
     const caller = appRouter.createCaller(ctx);
-    
+
     const result = await caller.deficiency.listByJob({ jobId: 1 });
     
     expect(result).toEqual(mockDeficiencies);

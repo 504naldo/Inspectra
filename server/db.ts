@@ -1624,6 +1624,23 @@ export async function assertJobNotFinalized(
 }
 
 /**
+ * assertJobCompany
+ *
+ * Loads a job and verifies it belongs to `companyId`, preventing cross-company
+ * reads/writes when a job id is supplied directly by the client. Throws
+ * NOT_FOUND if the job is missing and FORBIDDEN if it belongs to another
+ * company. Returns the loaded job so callers can reuse it without re-fetching.
+ */
+export async function assertJobCompany(jobId: number, companyId: number) {
+  const job = await getJobById(jobId);
+  if (!job) throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found` });
+  if (job.companyId !== companyId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
+  }
+  return job;
+}
+
+/**
  * withAudit
  *
  * Executes a database mutation inside a single MySQL connection with:

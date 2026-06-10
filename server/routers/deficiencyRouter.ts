@@ -6,7 +6,8 @@ import { withAudit, assertJobNotFinalized } from "../db";
 
 // Deficiency router
 const deficiencyRouter = router({
-  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
+    await db.assertJobCompany(input.jobId, ctx.user.companyId!);
     return db.getDeficienciesByJob(input.jobId);
   }),
   
@@ -51,6 +52,7 @@ const deficiencyRouter = router({
     systemCategory: z.enum(['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING', 'SPRINKLER', 'SMOKE_ALARM']).optional(),
     estimatedCost: z.number().nonnegative().optional(),
   })).mutation(async ({ input, ctx }) => {
+    await db.assertJobCompany(input.jobId, ctx.user.companyId!);
     return withAudit(ctx, 'deficiency.create', async (_tx) => {
       await assertJobNotFinalized(input.jobId, _tx);
       const { estimatedCost, ...rest } = input;
@@ -106,6 +108,7 @@ const deficiencyRouter = router({
     // Fetch the deficiency to get jobId for finalization guard
     const existing = await db.getDeficiencyById(input.id);
     if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deficiency not found' });
+    await db.assertJobCompany(existing.jobId, ctx.user.companyId!);
     return withAudit(ctx, 'deficiency.update', async (_tx) => {
       await assertJobNotFinalized(existing.jobId, _tx);
       const { id, status, estimatedCost, ...data } = input;
@@ -126,12 +129,19 @@ const deficiencyRouter = router({
 
 // Repair router
 const repairRouter = router({
-  listByDeficiency: technicianProcedure.input(z.object({ deficiencyId: z.number() })).query(async ({ input }) => {
+  listByDeficiency: technicianProcedure.input(z.object({ deficiencyId: z.number() })).query(async ({ input, ctx }) => {
+    const deficiency = await db.getDeficiencyById(input.deficiencyId);
+    if (!deficiency) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deficiency not found' });
+    await db.assertJobCompany(deficiency.jobId, ctx.user.companyId!);
     return db.getRepairsByDeficiency(input.deficiencyId);
   }),
-  
-  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    return db.getRepairById(input.id);
+
+  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const repair = await db.getRepairById(input.id);
+    if (!repair) return null;
+    const deficiency = await db.getDeficiencyById(repair.deficiencyId);
+    if (deficiency) await db.assertJobCompany(deficiency.jobId, ctx.user.companyId!);
+    return repair;
   }),
   
   create: technicianProcedure.input(z.object({
@@ -144,6 +154,7 @@ const repairRouter = router({
     // Fetch deficiency to get jobId for finalization guard
     const deficiency = await db.getDeficiencyById(input.deficiencyId);
     if (!deficiency) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deficiency not found' });
+    await db.assertJobCompany(deficiency.jobId, ctx.user.companyId!);
     return withAudit(ctx, 'repair.create', async (_tx) => {
       await assertJobNotFinalized(deficiency.jobId, _tx);
       return db.createRepair({ ...input, technicianId: ctx.user.id });
@@ -161,6 +172,7 @@ const repairRouter = router({
     if (!repair) throw new TRPCError({ code: 'NOT_FOUND', message: 'Repair not found' });
     const deficiency = await db.getDeficiencyById(repair.deficiencyId);
     if (!deficiency) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deficiency not found' });
+    await db.assertJobCompany(deficiency.jobId, ctx.user.companyId!);
     return withAudit(ctx, 'repair.update', async (_tx) => {
       await assertJobNotFinalized(deficiency.jobId, _tx);
       const { id, status, ...data } = input;
