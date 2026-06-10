@@ -87,7 +87,9 @@ export const customerOrgs = mysqlTable("customer_orgs", {
   notifyJobScheduled: tinyint("notifyJobScheduled").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("customer_orgs_companyId_idx").on(table.companyId),
+}));
 
 export type CustomerOrg = typeof customerOrgs.$inferSelect;
 export type InsertCustomerOrg = typeof customerOrgs.$inferInsert;
@@ -172,7 +174,10 @@ export const sites = mysqlTable("sites", {
   keySignedOutBy: varchar("keySignedOutBy", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("sites_companyId_idx").on(table.companyId),
+  customerOrgIdIdx: index("sites_customerOrgId_idx").on(table.customerOrgId),
+}));
 
 export type Site = typeof sites.$inferSelect;
 export type InsertSite = typeof sites.$inferInsert;
@@ -246,7 +251,10 @@ export const devices = mysqlTable("devices", {
   serviceNotes: text("serviceNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("devices_companyId_idx").on(table.companyId),
+  siteIdIdx: index("devices_siteId_idx").on(table.siteId),
+}));
 
 export type Device = typeof devices.$inferSelect;
 export type InsertDevice = typeof devices.$inferInsert;
@@ -297,7 +305,11 @@ export const jobs = mysqlTable("jobs", {
   techSignedAt: timestamp("tech_signed_at"),
   // Pre-fill audit: tracks which prior job's inspection_results were copied into this one
   copiedFromJobId: int("copied_from_job_id"),
-});
+}, (table) => ({
+  companyIdIdx: index("jobs_companyId_idx").on(table.companyId),
+  siteIdIdx: index("jobs_siteId_idx").on(table.siteId),
+  customerOrgIdIdx: index("jobs_customerOrgId_idx").on(table.customerOrgId),
+}));
 
 export type Job = typeof jobs.$inferSelect;
 export type InsertJob = typeof jobs.$inferInsert;
