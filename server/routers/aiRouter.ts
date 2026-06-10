@@ -140,10 +140,9 @@ Format your response as JSON with keys: troubleshootingSteps (array), partsAndTo
   // Inspection report summary writer
   generateReportSummary: officeProcedure.input(z.object({
     jobId: z.number(),
-  })).mutation(async ({ input }) => {
-    const job = await db.getJobById(input.jobId);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
-    
+  })).mutation(async ({ input, ctx }) => {
+    const job = await db.assertJobCompany(input.jobId, ctx.user.companyId!);
+
     const site = await db.getSiteById(job.siteId);
     const stats = await db.getInspectionStats(input.jobId);
     const deficiencies = await db.getDeficienciesByJob(input.jobId);
@@ -263,9 +262,8 @@ Format your response as JSON with keys: caption (short, 10 words max), inspectio
    */
   prePublishReview: technicianProcedure.input(z.object({
     jobId: z.number(),
-  })).mutation(async ({ input }) => {
-    const job = await db.getJobById(input.jobId);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+  })).mutation(async ({ input, ctx }) => {
+    const job = await db.assertJobCompany(input.jobId, ctx.user.companyId!);
 
     const site = await db.getSiteById(job.siteId);
     const allDevices = await db.getDevicesBySite(job.siteId);
@@ -422,7 +420,11 @@ Return JSON array only. No prose.`;
   saveReviewOverrides: technicianProcedure.input(z.object({
     reviewId: z.number(),
     dismissedIndices: z.array(z.number()),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    // Verify the review's parent job belongs to the caller's company
+    const review = await db.getAiReviewById(input.reviewId);
+    if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: 'Review not found' });
+    await db.assertJobCompany(review.jobId, ctx.user.companyId!);
     const overrides = input.dismissedIndices.map(idx => ({
       issueIndex: idx,
       dismissedAt: new Date().toISOString(),
@@ -433,10 +435,9 @@ Return JSON array only. No prose.`;
 
   runQACheck: adminProcedure.input(z.object({
     jobId: z.number(),
-  })).mutation(async ({ input }) => {
-    const job = await db.getJobById(input.jobId);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
-    
+  })).mutation(async ({ input, ctx }) => {
+    const job = await db.assertJobCompany(input.jobId, ctx.user.companyId!);
+
     const site = await db.getSiteById(job.siteId);
     const devices = await db.getDevicesBySite(job.siteId);
     const results = await db.getInspectionResultsByJob(input.jobId);

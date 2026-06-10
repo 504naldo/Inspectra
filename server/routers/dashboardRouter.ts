@@ -19,17 +19,29 @@ const userRouter = router({
     return users.filter((u: any) => ['technician', 'admin', 'office'].includes(u.role) && u.isActive === 1);
   }),
   
-  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    return db.getUserById(input.id);
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    const target = await db.getUserById(input.id);
+    if (!target) return null;
+    // Users may read their own record; otherwise the target must be in the caller's company.
+    if (target.id !== ctx.user.id && target.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
+    return target;
   }),
-  
+
   updateRole: adminProcedure.input(z.object({
     userId: z.number(),
     role: z.enum(['admin', 'office', 'technician', 'customer']),
     companyId: z.number().optional(),
     customerOrgId: z.number().optional(),
-  })).mutation(async ({ input }) => {
-    await db.updateUserRole(input.userId, input.role, input.companyId, input.customerOrgId);
+  })).mutation(async ({ input, ctx }) => {
+    // The target user must already belong to the admin's company; the role is
+    // always applied within the admin's own company (never another tenant).
+    const target = await db.getUserById(input.userId);
+    if (!target || target.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
+    await db.updateUserRole(input.userId, input.role, ctx.user.companyId ?? undefined, input.customerOrgId);
     return { success: true };
   }),
 });

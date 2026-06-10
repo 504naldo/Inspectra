@@ -365,12 +365,12 @@ export default function FeedbackCenter() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 mb-4">
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
+        <Select value={filterStatus || "all"} onValueChange={(v) => setFilterStatus(v === "all" ? "" : v)}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Statuses</SelectItem>
+            <SelectItem value="all">All Statuses</SelectItem>
             <SelectItem value="new">New</SelectItem>
             <SelectItem value="reviewed">Reviewed</SelectItem>
             <SelectItem value="in_progress">In Progress</SelectItem>
@@ -380,12 +380,12 @@ export default function FeedbackCenter() {
           </SelectContent>
         </Select>
 
-        <Select value={filterType} onValueChange={setFilterType}>
+        <Select value={filterType || "all"} onValueChange={(v) => setFilterType(v === "all" ? "" : v)}>
           <SelectTrigger className="w-44">
             <SelectValue placeholder="All Types" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Types</SelectItem>
+            <SelectItem value="all">All Types</SelectItem>
             <SelectItem value="bug">Bug</SelectItem>
             <SelectItem value="feature_request">Feature Request</SelectItem>
             <SelectItem value="confusing_workflow">Confusing Workflow</SelectItem>
@@ -397,12 +397,12 @@ export default function FeedbackCenter() {
           </SelectContent>
         </Select>
 
-        <Select value={filterPriority} onValueChange={setFilterPriority}>
+        <Select value={filterPriority || "all"} onValueChange={(v) => setFilterPriority(v === "all" ? "" : v)}>
           <SelectTrigger className="w-36">
             <SelectValue placeholder="All Priorities" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Priorities</SelectItem>
+            <SelectItem value="all">All Priorities</SelectItem>
             <SelectItem value="urgent">Urgent</SelectItem>
             <SelectItem value="high">High</SelectItem>
             <SelectItem value="medium">Medium</SelectItem>

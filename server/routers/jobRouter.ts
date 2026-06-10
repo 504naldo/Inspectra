@@ -49,10 +49,11 @@ async function syncWorkOrder(jobId: number, patch: Partial<schema.InsertWorkOrde
 
 // Job router
 const jobRouter = router({
-  listByCompany: officeProcedure.input(z.object({ 
+  listByCompany: officeProcedure.input(z.object({
     companyId: z.number(),
     status: z.string().optional()
-  })).query(async ({ input }) => {
+  })).query(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
     return db.getJobsByCompany(input.companyId, input.status);
   }),
   
@@ -69,24 +70,31 @@ const jobRouter = router({
     return db.getJobsByCustomerOrg(input.customerOrgId);
   }),
   
-  listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+  listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input, ctx }) => {
+    const site = await db.getSiteById(input.siteId);
+    if (!site || site.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
     return db.getJobsBySite(input.siteId);
   }),
   
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
     const job = await db.getJobById(input.id);
     if (!job) return null;
-    // Customer can only see their own jobs
-    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== job.customerOrgId) {
+    if (ctx.user.role === 'customer') {
+      // Customer can only see their own org's jobs
+      if (ctx.user.customerOrgId !== job.customerOrgId) throw new TRPCError({ code: 'FORBIDDEN' });
+    } else if (ctx.user.companyId !== job.companyId) {
+      // Office/technician/admin are scoped to their own company
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     return job;
   }),
-  
+
   getWithDetails: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
     const job = await db.getJobById(input.id);
     if (!job) return null;
-    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== job.customerOrgId) {
+    if (ctx.user.role === 'customer') {
+      if (ctx.user.customerOrgId !== job.customerOrgId) throw new TRPCError({ code: 'FORBIDDEN' });
+    } else if (ctx.user.companyId !== job.companyId) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     const site = await db.getSiteById(job.siteId);
@@ -291,9 +299,12 @@ const jobRouter = router({
     scheduledDate: z.date().optional(),
     notes: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
-    // Block updates to finalized jobs
     const job = await db.getJobById(input.id);
-    if (job?.finalizedAt) {
+    if (!job || job.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+    }
+    // Block updates to finalized jobs
+    if (job.finalizedAt) {
       throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
     }
     const { id, ...data } = input;
@@ -322,7 +333,10 @@ const jobRouter = router({
 
   start: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
     const job = await db.getJobById(input.id);
-    if (job?.finalizedAt) {
+    if (!job || job.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+    }
+    if (job.finalizedAt) {
       throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
     }
     const now = new Date();
@@ -334,8 +348,8 @@ const jobRouter = router({
 
   complete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
     const job = await db.getJobById(input.id);
-    if (!job) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+    if (!job || job.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
     }
     if (job.finalizedAt) {
       throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
@@ -396,9 +410,9 @@ const jobRouter = router({
     contactSignatureBase64: z.string().min(1).optional(),
     /** Optional: name of the on-site contact who signed */
     contactName: z.string().min(1).max(255).optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const job = await db.getJobById(input.jobId);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
+    if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
     if (job.finalizedAt) throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
 
     const now = new Date();
@@ -431,21 +445,22 @@ const jobRouter = router({
   search: officeProcedure.input(z.object({
     companyId: z.number(),
     query: z.string()
-  })).query(async ({ input }) => {
+  })).query(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN' });
     return db.searchJobs(input.companyId, input.query);
   }),
-  
+
   getSummary: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
-    const { getJobSummary } = await import('../jobSummary');
-    const summary = await getJobSummary(input.id);
-    
-    // Customer can only see their own job summaries
     const job = await db.getJobById(input.id);
-    if (ctx.user.role === 'customer' && job && ctx.user.customerOrgId !== job.customerOrgId) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
+    if (job) {
+      if (ctx.user.role === 'customer') {
+        if (ctx.user.customerOrgId !== job.customerOrgId) throw new TRPCError({ code: 'FORBIDDEN' });
+      } else if (ctx.user.companyId !== job.companyId) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
     }
-    
-    return summary;
+    const { getJobSummary } = await import('../jobSummary');
+    return getJobSummary(input.id);
   }),
   
   // Multi-tech assignment procedures
@@ -453,6 +468,7 @@ const jobRouter = router({
     jobId: z.number(),
     technicianId: z.number()
   })).mutation(async ({ input, ctx }) => {
+    await db.assertJobCompany(input.jobId, ctx.user.companyId!);
     // Verify technician exists and is active
     const technician = await db.getUserById(input.technicianId);
     if (!technician || !['technician', 'admin', 'office'].includes(technician.role) || !technician.isActive) {
@@ -477,8 +493,8 @@ const jobRouter = router({
     technicianId: z.number()
   })).mutation(async ({ input, ctx }) => {
     const job = await db.getJobById(input.jobId);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
-    
+    if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+
     // Cannot add lead as additional
     if (job.leadTechnicianId === input.technicianId) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Lead technician cannot be added as additional' });
@@ -504,7 +520,8 @@ const jobRouter = router({
   removeAdditionalTechnician: officeProcedure.input(z.object({
     jobId: z.number(),
     technicianId: z.number()
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    await db.assertJobCompany(input.jobId, ctx.user.companyId!);
     await db.removeJobAssignment(input.jobId, input.technicianId);
     return { success: true };
   }),
@@ -514,6 +531,7 @@ const jobRouter = router({
     leadTechnicianId: z.number(),
     additionalTechnicianIds: z.array(z.number())
   })).mutation(async ({ input, ctx }) => {
+    await db.assertJobCompany(input.jobId, ctx.user.companyId!);
     // Verify lead technician
     const leadTech = await db.getUserById(input.leadTechnicianId);
     if (!leadTech || !['technician', 'admin', 'office'].includes(leadTech.role) || !leadTech.isActive) {
@@ -563,7 +581,10 @@ const jobRouter = router({
     jobId: z.number()
   })).mutation(async ({ input, ctx }) => {
     const job = await db.getJobById(input.jobId);
-    if (job?.finalizedAt) {
+    if (!job || job.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+    }
+    if (job.finalizedAt) {
       throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
     }
     await db.updateJob(input.jobId, {
@@ -588,9 +609,11 @@ const jobRouter = router({
     jobId: z.number(),
     scheduledDate: z.date().optional(),
   })).mutation(async ({ input, ctx }) => {
-    // Load the source job
+    // Load the source job (scoped to the caller's company)
     const sourceJob = await db.getJobById(input.jobId);
-    if (!sourceJob) throw new TRPCError({ code: 'NOT_FOUND', message: 'Source job not found' });
+    if (!sourceJob || sourceJob.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+    }
 
     // Only allow cloning finalized or completed jobs
     if (!['completed', 'finalized'].includes(sourceJob.status)) {
@@ -646,7 +669,7 @@ const jobRouter = router({
 
   delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
     const job = await db.getJobById(input.id);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
+    if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
     if (job.finalizedAt) throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE });
 
     // Best-effort: remove Google Calendar event
@@ -671,7 +694,8 @@ const jobRouter = router({
     return { success: true };
   }),
 
-  getScheduleSummary: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+  getScheduleSummary: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
     const jobs = await db.getJobsByCompany(input.companyId);
     const now = new Date();
     const overdue = jobs.filter((j: any) => {
