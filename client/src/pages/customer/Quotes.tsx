@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { FileText, CheckCircle2, Clock, Eye, XCircle, ThumbsDown } from "lucide-react";
+import { getQuoteStatusLabel } from "@/lib/statusLabels";
 
 type Quote = {
   id: number;
@@ -40,7 +41,7 @@ function StatusBadge({ status }: { status: string }) {
     case "expired":
       return <Badge variant="secondary">Expired</Badge>;
     default:
-      return <Badge variant="outline">{status}</Badge>;
+      return <Badge variant="outline">{getQuoteStatusLabel(status)}</Badge>;
   }
 }
 

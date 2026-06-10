@@ -44,6 +44,7 @@ import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { formatDate, parseDateInput } from "@/lib/utils";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { getDeficiencyStatusLabel, getDeficiencyStatusBadgeClass } from "@/lib/statusLabels";
 
 function InfoField({ label, value, multiline, highlight }: {
   label: string; value: string; multiline?: boolean; highlight?: boolean;
@@ -900,12 +901,9 @@ export default function AdminJobDetails() {
                                     {def.systemCategory ? def.systemCategory.replace(/_/g, ' ') : '—'}
                                   </td>
                                   <td className="px-4 py-3">
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                      def.status === 'open' ? 'status-fail' :
-                                      def.status === 'in_progress' ? 'bg-accent/10 text-accent' :
-                                      def.status === 'resolved' || def.status === 'closed' ? 'status-pass' :
-                                      'status-na'
-                                    }`}>{def.status?.replace(/_/g, ' ')}</span>
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${getDeficiencyStatusBadgeClass(def.status)}`}>
+                                      {getDeficiencyStatusLabel(def.status)}
+                                    </span>
                                   </td>
                                   <td className="px-4 py-3 text-right font-mono">
                                     {cost != null && !isNaN(cost) && cost > 0

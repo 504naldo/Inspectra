@@ -2197,6 +2197,41 @@ export async function updateWorkOrder(id: number, data: Partial<InsertWorkOrder>
 export async function deleteJobCascade(jobId: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // Financial/billing records must never silently disappear with a job delete.
+  // Block the delete and let the caller decide (e.g. cancel/void those records first).
+  const [existingQuotes, existingInvoices, existingApprovedWork] = await Promise.all([
+    db.select({ id: quotes.id }).from(quotes).where(eq(quotes.jobId, jobId)).limit(1),
+    db.select({ id: invoices.id }).from(invoices).where(eq(invoices.jobId, jobId)).limit(1),
+    db.select({ id: approvedWork.id }).from(approvedWork).where(eq(approvedWork.jobId, jobId)).limit(1),
+  ]);
+  if (existingQuotes.length || existingInvoices.length || existingApprovedWork.length) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "This job has linked quotes, invoices, or approved work and cannot be deleted.",
+    });
+  }
+
+  // Delete derivative inspection/data rows that only make sense in the context of this job.
+  const jobDeficiencies = await db.select({ id: deficiencies.id }).from(deficiencies).where(eq(deficiencies.jobId, jobId));
+  const deficiencyIds = jobDeficiencies.map((d) => d.id);
+  if (deficiencyIds.length) {
+    await db.delete(repairs).where(inArray(repairs.deficiencyId, deficiencyIds));
+  }
+
+  const jobSprinklerInspections = await db.select({ id: schema.sprinklerInspections.id }).from(schema.sprinklerInspections).where(eq(schema.sprinklerInspections.jobId, jobId));
+  const sprinklerInspectionIds = jobSprinklerInspections.map((i) => i.id);
+  if (sprinklerInspectionIds.length) {
+    await db.delete(schema.sprinklerSystems).where(inArray(schema.sprinklerSystems.inspectionId, sprinklerInspectionIds));
+    await db.delete(schema.sprinklerChecklistItems).where(inArray(schema.sprinklerChecklistItems.inspectionId, sprinklerInspectionIds));
+    await db.delete(schema.sprinklerDevices).where(inArray(schema.sprinklerDevices.inspectionId, sprinklerInspectionIds));
+    await db.delete(schema.sprinklerInspections).where(eq(schema.sprinklerInspections.jobId, jobId));
+  }
+
+  await db.delete(aiReviews).where(eq(aiReviews.jobId, jobId));
+  await db.delete(attachments).where(eq(attachments.jobId, jobId));
+  await db.delete(schema.fireAlarmAttendanceLog).where(eq(schema.fireAlarmAttendanceLog.jobId, jobId));
+  await db.delete(schema.fireAlarmAncillaryCircuits).where(eq(schema.fireAlarmAncillaryCircuits.jobId, jobId));
   await db.delete(schema.inspectionChecklistResponses).where(eq(schema.inspectionChecklistResponses.jobId, jobId));
   await db.delete(jobAssignments).where(eq(jobAssignments.jobId, jobId));
   await db.delete(inspectionResults).where(eq(inspectionResults.jobId, jobId));
@@ -2205,6 +2240,11 @@ export async function deleteJobCascade(jobId: number): Promise<void> {
   await db.delete(schema.fireAlarmFormHeader).where(eq(schema.fireAlarmFormHeader.jobId, jobId));
   await db.delete(workOrders).where(eq(workOrders.jobId, jobId));
   await db.delete(reports).where(eq(reports.jobId, jobId));
+
+  // Stale references in tracking tables — null out rather than delete the tracking rows.
+  await db.update(monthlyServiceTracking).set({ linkedJobId: null }).where(eq(monthlyServiceTracking.linkedJobId, jobId));
+  await db.update(repairLetterTracking).set({ linkedJobId: null }).where(eq(repairLetterTracking.linkedJobId, jobId));
+
   await db.delete(jobs).where(eq(jobs.id, jobId));
 }
 

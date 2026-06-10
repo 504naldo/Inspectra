@@ -67,6 +67,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { getDeficiencyStatusLabel, getDeficiencyStatusBadgeClass } from "@/lib/statusLabels";
 
 // ─── Template inspection cards ─────────────────────────────────────────────────
 
@@ -1544,12 +1545,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                           }`}>
                             {def.severity}
                           </span>
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
-                            def.status === 'open' ? 'status-fail' :
-                            def.status === 'resolved' || def.status === 'closed' ? 'status-pass' :
-                            'status-pending'
-                          }`}>
-                            {def.status}
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getDeficiencyStatusBadgeClass(def.status)}`}>
+                            {getDeficiencyStatusLabel(def.status)}
                           </span>
                         </div>
                         <p className="font-medium truncate">{def.title}</p>

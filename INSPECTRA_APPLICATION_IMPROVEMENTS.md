@@ -216,3 +216,156 @@ pass was limited to:
 This is stated explicitly per "do not hide existing failures" — a real
 smoke test against a populated database and live login should be performed
 before/after deploying these changes to Railway.
+
+---
+
+# Phase 2 — Data Integrity & Workflows (Parts 4-7)
+
+This phase covers the first item of the "Recommended Next Phase" above:
+master data alignment, DB orphan/dependency audit, end-to-end workflow
+tracing, and status consistency.
+
+## Part 4 — Master Data Alignment (Fixed)
+
+Several create/update mutations accepted client-supplied foreign keys
+(`customerOrgId`, `siteId`, `areaId`, `companyId`) without verifying they
+belonged to the caller's company — a cross-tenant data-integrity gap (a
+malicious or buggy client could attach a job/site/device to another
+company's customer org).
+
+- `siteRouter.listByCompany` — now rejects if `input.companyId !==
+  ctx.user.companyId`.
+- `siteRouter.create` / `siteRouter.update` — now validate
+  `customerOrgId` via `db.getCustomerOrgById()` and check
+  `customerOrg.companyId === ctx.user.companyId`.
+- `deviceRouters.areaRouter.create` — now validates the parent site belongs
+  to the caller's company before creating the area.
+- `deviceRouters.deviceRouter.create` — now validates `companyId`, the
+  parent `siteId`, and (if provided) `areaId` belongs to that site.
+- `deviceRouters.deviceRouter.addDuringInspection` — replaced a manual job
+  lookup with `db.assertJobCompany()`, added a finalized-job guard, validated
+  the site, and **always attributes the new device to the job's own
+  `companyId`** rather than trusting client input.
+- `deviceRouters.smokeAlarmRouter.create` — same `companyId`/site validation
+  as `deviceRouter.create`.
+- `jobRouter.create` — now validates `siteId` and `customerOrgId` both
+  belong to the caller's company before creating the job.
+
+## Part 5 — DB Orphan / Dependency Audit (Fixed)
+
+`db.deleteJobCascade()` previously deleted a job and only some of its
+dependents, silently leaving orphaned rows in several derivative tables and
+allowing a job with **billing records** (quotes/invoices/approved work) to be
+deleted out from under them.
+
+- Added a pre-flight check: if the job has any `quotes`, `invoices`, or
+  `approvedWork` rows, deletion is now rejected with a `BAD_REQUEST` —
+  financial records must never silently disappear with a job delete.
+- Cascade now also deletes: `repairs` (via the job's deficiencies),
+  `sprinklerInspections` and its child tables (`sprinklerSystems`,
+  `sprinklerChecklistItems`, `sprinklerDevices`), `aiReviews`, `attachments`,
+  `fireAlarmAttendanceLog`, `fireAlarmAncillaryCircuits`,
+  `inspectionChecklistResponses`, `fireAlarmInspectionResults`,
+  `fireAlarmFormHeader`.
+- Tracking tables that merely *reference* a deleted job
+  (`monthlyServiceTracking.linkedJobId`, `repairLetterTracking.linkedJobId`)
+  are now nulled instead of left dangling.
+
+## Part 6 — End-to-End Workflow Tracing (Fixed)
+
+Two workflow breaks were found by tracing the inspection → finalize and
+quote → work-order paths end-to-end:
+
+- **P0 — Job finalization was unreachable.** `jobRouter.complete`
+  (technician-side "finish job") sets `status: 'completed'` *before*
+  `finalizeJob()` runs. But `finalizeJob()`'s status matrix threw
+  `JOB_ALREADY_FINALIZED` whenever `job.status === "completed"`, regardless
+  of whether `finalizedAt` was actually set. Since the only UI entry point
+  (`FinalizeJobDialog`, shown whenever `!job.finalizedAt`) always hit this
+  dead branch, **no job could ever be finalized** — the immutability/
+  compliance-hash sealing step was permanently dead code. Fixed by removing
+  that branch so a job with `status === 'completed' && finalizedAt === null`
+  can proceed through the existing signature-check and hash-computation
+  logic. `completedAt` is preserved if already set (`job.completedAt ?? now`)
+  rather than overwritten.
+- **P1 — Customer portal quote approval skipped work-order creation.**
+  `quoteRouter.approveFromPortal` only marked linked deficiencies `quoted`,
+  but never created the corresponding `work_orders` row — unlike the
+  office-side accept flow. Customers approving quotes via the portal left
+  office staff to manually run "Create Work Order" afterward. Fixed by
+  exporting `_createWorkOrderFromQuote()` from `repairQuoteRouter.ts` and
+  calling it from `approveFromPortal`, mirroring the office flow.
+
+## Part 7 — Status Consistency (Fixed)
+
+Status labels/colors for the same underlying enum were defined
+independently (and inconsistently) across many pages, and some statuses
+(`deferred`, `quoted` for deficiencies) had no UI mapping at all and rendered
+as raw enum strings (e.g. `in_progress`).
+
+Per the "centralized label maps over enum migrations" guidance, added
+`client/src/lib/statusLabels.ts` — presentation-only label/badge-class maps
+and getters for: quote status, deficiency status, job status, and approved-
+work status. No enum values changed.
+
+- **Quotes** (`AdminQuotes.tsx`, `BuildingQuoteDetail.tsx`,
+  `RepairQuoteDetail.tsx`, `customer/Quotes.tsx`) — replaced 4 separate
+  partial `STATUS_CONFIG`/`STATUS_BADGE`/`STATUS_LABELS` maps (some only
+  covering 4 of 11 statuses) with the shared `getQuoteStatusLabel` /
+  `getQuoteStatusBadgeClass`.
+- **Deficiencies** (`technician/DeficiencyList.tsx`,
+  `admin/JobDetails.tsx`, `technician/JobDetails.tsx`) — `deferred` and
+  `quoted` previously fell through to raw `def.status` text or a generic
+  "pending" color; now use `getDeficiencyStatusLabel` /
+  `getDeficiencyStatusBadgeClass`, which map all 6 statuses.
+- **Jobs** (`technician/JobsList.tsx`, `admin/Jobs.tsx`) — removed two
+  duplicated `getStatusBadgeClass` functions (which rendered `in_progress`
+  as raw `"in progress"` text with a one-off color) in favor of
+  `getJobStatusLabel` / `getJobStatusBadgeClass`, both now showing
+  "In Progress".
+- **Approved Work** (`admin/Dashboard.tsx`, `admin/ApprovedWorkDetail.tsx`)
+  — removed two diverging local color maps (`AW_STATUS_COLORS` vs.
+  `statusBadgeClass()`, which used different colors and dark-mode variants
+  for the same statuses) in favor of `getApprovedWorkStatusLabel` /
+  `getApprovedWorkStatusBadgeClass`, so the dashboard snapshot and the work
+  order detail page now render identical badges for the same status.
+
+## Deferred Items (Documented, Not Implemented)
+
+Per "no broad rewrites / no destructive master-data operations / requires
+manual migration":
+
+- **P3**: `scripts/backfillSiteBuildingIds.ts` defaults to a live run
+  instead of dry-run, inconsistent with sibling backfill scripts.
+- **P2**: `jobs`, `devices`, `sites`, and `customer_orgs` lack indexes on
+  their `companyId`/`siteId` foreign-key columns. Adding indexes is
+  additive and safe outside a transaction (per CLAUDE.md, PlanetScale just
+  doesn't support `ALTER TABLE` *inside* transactions), but should be run
+  manually on Railway as a follow-up migration, not bundled into this code
+  change.
+- **P3**: No manual "generate next job now" UI trigger for the recurring
+  work scheduler.
+- **P2**: `PAYROLL_STATUS_COLORS` is triplicated across
+  `admin/PayrollHours.tsx`, `admin/PayrollReview.tsx`, and
+  `technician/PayrollHours.tsx`. The three copies are currently identical
+  (no visible bug), so left as-is — a future cleanup could move this into
+  `statusLabels.ts` alongside the other maps added in this phase.
+
+## Phase 2 Checks / Build Results
+
+- `npx tsc --noEmit` — **clean**, no errors.
+- `npx vitest run` — **782 passed / 2 failed / 59 skipped (843 total)**,
+  same 2 pre-existing failures as Phase 1 (confirmed via `git stash` to
+  exist on the pre-change baseline too — unrelated to this phase).
+- `npx vite build` — **clean**.
+- `esbuild server/_core/index.ts ... --bundle --format=esm` — **clean**,
+  ~1.3 MB bundle.
+
+## Phase 2 Manual Smoke-Test Results
+
+As with Phase 1, this sandbox has no `DATABASE_URL`/OAuth configured, so a
+live UI smoke test was not possible. Verification was limited to static
+analysis and the build/test/typecheck commands above. A real smoke test of
+job finalization, customer-portal quote approval → work order creation, and
+the updated status badges should be performed against a populated
+environment before/after deploying.

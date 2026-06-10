@@ -12,7 +12,10 @@ function formatAddressForGeocoding(parts: { address?: string | null; city?: stri
 
 // Site router
 const siteRouter = router({
-  listByCompany: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+  listByCompany: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
     return db.getSitesByCompany(input.companyId);
   }),
   
@@ -52,7 +55,14 @@ const siteRouter = router({
     notes: z.string().optional(),
     keyLocation: z.string().optional(),
     keyNumber: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    const customerOrg = await db.getCustomerOrgById(input.customerOrgId);
+    if (!customerOrg || customerOrg.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid customer organization' });
+    }
     // Build summary object from form data - always initialize with complete structure
     const summary = {
       client: {
@@ -123,7 +133,13 @@ const siteRouter = router({
     if (existingSite.companyId !== ctx.user.companyId) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
     }
-    
+    if (data.customerOrgId !== undefined) {
+      const customerOrg = await db.getCustomerOrgById(data.customerOrgId);
+      if (!customerOrg || customerOrg.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid customer organization' });
+      }
+    }
+
     // Update summary to keep it in sync with flat columns
     const updatedSummary = {
       ...existingSite.summary,
