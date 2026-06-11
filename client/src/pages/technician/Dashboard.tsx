@@ -26,6 +26,7 @@ import {
 import { Link } from "wouter";
 import { FeedbackButton } from "@/components/FeedbackButton";
 import { PageHelpButton } from "@/components/help/PageHelpButton";
+import { NotificationBell } from "@/components/technician/NotificationBell";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -202,6 +203,7 @@ export default function TechnicianDashboard() {
                 {hasPendingSync && <span className="font-semibold">&nbsp;·&nbsp;{syncStatus.pendingResults + syncStatus.pendingDeficiencies} pending</span>}
               </span>
             </Link>
+            <NotificationBell />
             <PageHelpButton size="icon" routeKey="tech_dashboard" />
             <FeedbackButton variant="ghost" size="icon" className="text-muted-foreground" />
             <Button variant="ghost" size="icon" onClick={handleLogout} title="Log out">

@@ -189,6 +189,20 @@ export async function getAllUsers(companyId?: number) {
   return db.select().from(users).orderBy(desc(users.createdAt));
 }
 
+export async function getOnCallTechnicians(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(users)
+    .where(and(
+      eq(users.companyId, companyId),
+      eq(users.isOnCall, 1),
+      eq(users.isActive, 1),
+      inArray(users.role, ["technician", "admin", "office"]),
+    ));
+}
+
 export async function updateUserRole(userId: number, role: "admin" | "office" | "technician" | "customer", companyId?: number, customerOrgId?: number) {
   const db = await getDb();
   if (!db) return;
@@ -2726,6 +2740,7 @@ export async function getNotificationsForCompany(
     unreadOnly?: boolean;
     limit?: number;
     severity?: string;
+    userId?: number;
   } = {}
 ): Promise<Notification[]> {
   const db = await getDb();
@@ -2737,6 +2752,7 @@ export async function getNotificationsForCompany(
   ];
   if (options.unreadOnly) conditions.push(eq(notifications.isRead, 0));
   if (options.severity) conditions.push(eq(notifications.severity, options.severity as any));
+  if (options.userId !== undefined) conditions.push(eq(notifications.userId, options.userId));
 
   return db
     .select()
@@ -2746,45 +2762,53 @@ export async function getNotificationsForCompany(
     .limit(options.limit ?? 200);
 }
 
-export async function getUnreadNotificationCount(companyId: number): Promise<number> {
+export async function getUnreadNotificationCount(companyId: number, userId?: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
+  const conditions = [
+    eq(notifications.companyId, companyId),
+    eq(notifications.isRead, 0),
+    eq(notifications.isDismissed, 0),
+  ];
+  if (userId !== undefined) conditions.push(eq(notifications.userId, userId));
   const [row] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(notifications)
-    .where(and(
-      eq(notifications.companyId, companyId),
-      eq(notifications.isRead, 0),
-      eq(notifications.isDismissed, 0),
-    ));
+    .where(and(...conditions));
   return Number(row?.count ?? 0);
 }
 
-export async function markNotificationRead(id: number, companyId: number): Promise<void> {
+export async function markNotificationRead(id: number, companyId: number, userId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+  const conditions = [eq(notifications.id, id), eq(notifications.companyId, companyId)];
+  if (userId !== undefined) conditions.push(eq(notifications.userId, userId));
   await db
     .update(notifications)
     .set({ isRead: 1, readAt: new Date() })
-    .where(and(eq(notifications.id, id), eq(notifications.companyId, companyId)));
+    .where(and(...conditions));
 }
 
-export async function markAllNotificationsRead(companyId: number): Promise<void> {
+export async function markAllNotificationsRead(companyId: number, userId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+  const conditions = [eq(notifications.companyId, companyId), eq(notifications.isRead, 0)];
+  if (userId !== undefined) conditions.push(eq(notifications.userId, userId));
   await db
     .update(notifications)
     .set({ isRead: 1, readAt: new Date() })
-    .where(and(eq(notifications.companyId, companyId), eq(notifications.isRead, 0)));
+    .where(and(...conditions));
 }
 
-export async function dismissNotification(id: number, companyId: number): Promise<void> {
+export async function dismissNotification(id: number, companyId: number, userId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+  const conditions = [eq(notifications.id, id), eq(notifications.companyId, companyId)];
+  if (userId !== undefined) conditions.push(eq(notifications.userId, userId));
   await db
     .update(notifications)
     .set({ isDismissed: 1, dismissedAt: new Date() })
-    .where(and(eq(notifications.id, id), eq(notifications.companyId, companyId)));
+    .where(and(...conditions));
 }
 
 export async function createNotification(data: InsertNotification): Promise<void> {

@@ -31,6 +31,8 @@ export const users = mysqlTable("users", {
   // Push notification tokens (Capacitor / FCM)
   pushToken: text("pushToken"),
   pushPlatform: varchar("pushPlatform", { length: 10 }), // "ios" | "android"
+  // On-call status — technicians flagged as on-call receive emergency call alerts
+  isOnCall: tinyint("isOnCall").default(0).notNull(),
 });
 
 export type User = typeof users.$inferSelect;

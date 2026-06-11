@@ -24,7 +24,8 @@ import {
   Star,
   UserPlus,
   Info,
-  Trash2
+  Trash2,
+  Siren
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -51,7 +52,16 @@ export default function AdminJobs() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  
+  const [isEmergencyOpen, setIsEmergencyOpen] = useState(false);
+
+  // Emergency call form state
+  const [emergencyForm, setEmergencyForm] = useState({
+    siteId: "",
+    description: "",
+    callerName: "",
+    callerPhone: "",
+  });
+
   // Form state
   const [newJob, setNewJob] = useState({
     title: "",
@@ -146,6 +156,33 @@ export default function AdminJobs() {
     onError: () => toast.error('Failed to create job')
   });
 
+  const createEmergencyCall = trpc.job.createEmergencyCall.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(
+        data.notifiedCount > 0
+          ? `Emergency job created — ${data.notifiedCount} on-call technician${data.notifiedCount === 1 ? '' : 's'} notified`
+          : 'Emergency job created — no on-call technicians to notify'
+      );
+      setIsEmergencyOpen(false);
+      setEmergencyForm({ siteId: "", description: "", callerName: "", callerPhone: "" });
+      refetch();
+    },
+    onError: (err: any) => toast.error(err?.message ?? 'Failed to create emergency job'),
+  });
+
+  const handleCreateEmergencyCall = () => {
+    if (!emergencyForm.siteId || !emergencyForm.description) {
+      toast.error('Please select a site and describe the issue');
+      return;
+    }
+    createEmergencyCall.mutate({
+      siteId: parseInt(emergencyForm.siteId),
+      description: emergencyForm.description,
+      callerName: emergencyForm.callerName || undefined,
+      callerPhone: emergencyForm.callerPhone || undefined,
+    });
+  };
+
   const filteredJobs = jobs?.filter((job: any) => {
     // Search filter
     if (searchQuery) {
@@ -224,6 +261,78 @@ export default function AdminJobs() {
             </SelectContent>
           </Select>
           
+          <Dialog open={isEmergencyOpen} onOpenChange={setIsEmergencyOpen}>
+            <DialogTrigger asChild>
+              <Button variant="destructive">
+                <Siren className="h-4 w-4 mr-2" />
+                Report Emergency
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Siren className="h-5 w-5 text-destructive" />
+                  Report Emergency Call
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Site *</Label>
+                  <Select
+                    value={emergencyForm.siteId}
+                    onValueChange={(v) => setEmergencyForm({ ...emergencyForm, siteId: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select site" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sites?.map((s: any) => (
+                        <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Description *</Label>
+                  <Textarea
+                    value={emergencyForm.description}
+                    onChange={(e) => setEmergencyForm({ ...emergencyForm, description: e.target.value })}
+                    placeholder="Describe the emergency..."
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Caller Name</Label>
+                    <Input
+                      value={emergencyForm.callerName}
+                      onChange={(e) => setEmergencyForm({ ...emergencyForm, callerName: e.target.value })}
+                      placeholder="Optional"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Caller Phone</Label>
+                    <Input
+                      value={emergencyForm.callerPhone}
+                      onChange={(e) => setEmergencyForm({ ...emergencyForm, callerPhone: e.target.value })}
+                      placeholder="Optional"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  className="w-full"
+                  variant="destructive"
+                  onClick={handleCreateEmergencyCall}
+                  disabled={createEmergencyCall.isPending}
+                >
+                  {createEmergencyCall.isPending ? 'Creating...' : 'Create Emergency Job & Notify On-Call'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button>

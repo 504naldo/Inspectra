@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, officeProcedure } from "../_core/trpc";
+import { router, officeProcedure, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { eq, and, desc, inArray, lt, sql } from "drizzle-orm";
 import {
@@ -63,6 +63,44 @@ export const notificationRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       await db.dismissNotification(input.id, ctx.user.companyId!);
+      return { success: true };
+    }),
+
+  // ── Personal notifications (e.g. emergency call alerts for on-call technicians) ──
+
+  listMine: protectedProcedure
+    .input(z.object({
+      filter: z.enum(["all", "unread"]).default("all"),
+      limit: z.number().int().min(1).max(200).default(50),
+    }))
+    .query(async ({ ctx, input }) => {
+      return db.getNotificationsForCompany(ctx.user.companyId!, {
+        userId: ctx.user.id,
+        unreadOnly: input.filter === "unread",
+        limit: input.limit,
+      });
+    }),
+
+  getMyUnreadCount: protectedProcedure.query(async ({ ctx }) => {
+    return db.getUnreadNotificationCount(ctx.user.companyId!, ctx.user.id);
+  }),
+
+  markMineRead: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.markNotificationRead(input.id, ctx.user.companyId!, ctx.user.id);
+      return { success: true };
+    }),
+
+  markAllMineRead: protectedProcedure.mutation(async ({ ctx }) => {
+    await db.markAllNotificationsRead(ctx.user.companyId!, ctx.user.id);
+    return { success: true };
+  }),
+
+  dismissMine: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.dismissNotification(input.id, ctx.user.companyId!, ctx.user.id);
       return { success: true };
     }),
 
