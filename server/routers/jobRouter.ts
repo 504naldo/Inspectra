@@ -296,6 +296,95 @@ const jobRouter = router({
     return newJob;
   }),
 
+  // Quick-create an urgent service call and alert all on-call technicians
+  // (push + in-app notification) so they can respond immediately.
+  createEmergencyCall: officeProcedure.input(z.object({
+    siteId: z.number(),
+    description: z.string().min(1),
+    callerName: z.string().optional(),
+    callerPhone: z.string().optional(),
+  })).mutation(async ({ input, ctx }) => {
+    const site = await db.getSiteById(input.siteId);
+    if (!site || site.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid site" });
+    }
+
+    const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
+    const title = `Emergency Call - ${site.name}`;
+    const noteParts = [input.description];
+    if (input.callerName) noteParts.push(`Caller: ${input.callerName}`);
+    if (input.callerPhone) noteParts.push(`Phone: ${input.callerPhone}`);
+
+    const newJob = await withAudit(ctx, "job.createEmergencyCall", async (tx) => {
+      const insertResult = await tx.insert(schema.jobs).values({
+        companyId: ctx.user.companyId!,
+        siteId: input.siteId,
+        customerOrgId: site.customerOrgId,
+        jobNumber,
+        title,
+        description: noteParts.join("\n"),
+        jobType: "service_call",
+        priority: "urgent",
+      } as schema.InsertJob);
+      const newJobId = Number(insertResult[0].insertId);
+
+      await tx.insert(schema.workOrders).values({
+        companyId: ctx.user.companyId!,
+        siteId: input.siteId,
+        customerOrgId: site.customerOrgId,
+        jobId: newJobId,
+        workOrderNumber: `WO-${Date.now().toString(36).toUpperCase()}`,
+        title,
+        workType: "emergency",
+        status: "pending",
+        priority: "urgent",
+      } as schema.InsertWorkOrder);
+
+      const fetched = await tx
+        .select()
+        .from(schema.jobs)
+        .where(eq(schema.jobs.id, newJobId))
+        .limit(1);
+      const row = fetched[0];
+      if (!row) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Job creation failed" });
+      return row;
+    });
+
+    void logActivity({
+      ctx,
+      entityType: "job",
+      entityId: newJob.id,
+      eventType: "created",
+      title: `Emergency call: ${title}`,
+      description: input.description,
+    });
+
+    // Alert every on-call technician — push notification + in-app alert.
+    const onCallTechs = await db.getOnCallTechnicians(ctx.user.companyId!);
+    for (const tech of onCallTechs) {
+      void sendPushToUser(
+        tech.id,
+        "Emergency Call",
+        `${site.name}: ${input.description}`,
+        { jobId: String(newJob.id) }
+      );
+      void db.createNotification({
+        companyId: ctx.user.companyId!,
+        userId: tech.id,
+        roleTarget: "technician",
+        entityType: "job",
+        entityId: newJob.id,
+        type: "emergency_job",
+        severity: "critical",
+        title: "Emergency Call",
+        message: `${site.name}: ${input.description}`,
+        href: `/tech/jobs/${newJob.id}`,
+      });
+    }
+
+    return { ...newJob, notifiedCount: onCallTechs.length };
+  }),
+
   update: officeProcedure.input(z.object({
     id: z.number(),
     title: z.string().optional(),

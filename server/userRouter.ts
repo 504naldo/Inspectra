@@ -53,6 +53,7 @@ export const userRouter = router({
           certificationLevel: users.certificationLevel,
           certExpiry: users.certExpiry,
           customerOrgId: users.customerOrgId,
+          isOnCall: users.isOnCall,
         })
         .from(users)
         .where(and(...conditions))
@@ -72,9 +73,10 @@ export const userRouter = router({
       certificationLevel: z.string().max(128).optional().nullable(),
       certExpiry: z.string().optional().nullable(), // ISO date string YYYY-MM-DD
       customerOrgId: z.number().optional().nullable(),
+      isOnCall: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const { userId, name, role, isActive, certNumber, certificationLevel, certExpiry, customerOrgId } = input;
+      const { userId, name, role, isActive, certNumber, certificationLevel, certExpiry, customerOrgId, isOnCall } = input;
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
       
@@ -105,7 +107,8 @@ export const userRouter = router({
         updates.certExpiry = certExpiry ? new Date(certExpiry) : null;
       }
       if (customerOrgId !== undefined) updates.customerOrgId = customerOrgId;
-      
+      if (isOnCall !== undefined) updates.isOnCall = isOnCall;
+
       if (Object.keys(updates).length === 0) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No updates provided' });
       }

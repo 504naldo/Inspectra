@@ -24,6 +24,7 @@ export default function AdminUsers() {
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
+  const [editIsOnCall, setEditIsOnCall] = useState(false);
   const [editCertNumber, setEditCertNumber] = useState('');
   const [editCertLevel, setEditCertLevel] = useState('');
   const [editCertExpiry, setEditCertExpiry] = useState('');
@@ -88,6 +89,7 @@ export default function AdminUsers() {
     setEditRole(u.role);
     setEditCustomerOrgId(u.customerOrgId ? String(u.customerOrgId) : '');
     setEditIsActive(!!u.isActive);
+    setEditIsOnCall(!!u.isOnCall);
     setEditCertNumber(u.certNumber || '');
     setEditCertLevel(u.certificationLevel || '');
     // certExpiry comes back as a Date or ISO string; normalise to YYYY-MM-DD for <input type="date">
@@ -106,6 +108,7 @@ export default function AdminUsers() {
       name: editName,
       role: editRole as any,
       isActive: editIsActive,
+      isOnCall: editIsOnCall,
       certNumber: editCertNumber || null,
       certificationLevel: editCertLevel || null,
       certExpiry: editCertExpiry || null,
@@ -241,9 +244,14 @@ export default function AdminUsers() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={u.isActive ? 'default' : 'secondary'}>
-                        {u.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant={u.isActive ? 'default' : 'secondary'}>
+                          {u.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                        {u.role === 'technician' && u.isOnCall ? (
+                          <Badge variant="destructive">On Call</Badge>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {new Date(u.createdAt).toLocaleDateString()}
@@ -436,6 +444,19 @@ export default function AdminUsers() {
                   onCheckedChange={setEditIsActive}
                 />
               </div>
+              {editRole === 'technician' && (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="edit-oncall">On Call</Label>
+                    <p className="text-xs text-muted-foreground">Receives alerts for emergency calls.</p>
+                  </div>
+                  <Switch
+                    id="edit-oncall"
+                    checked={editIsOnCall}
+                    onCheckedChange={setEditIsOnCall}
+                  />
+                </div>
+              )}
 
               <Separator />
 
