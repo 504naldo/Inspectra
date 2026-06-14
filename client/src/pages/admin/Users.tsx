@@ -25,6 +25,7 @@ export default function AdminUsers() {
   const [editRole, setEditRole] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
   const [editIsOnCall, setEditIsOnCall] = useState(false);
+  const [editOnCallUntil, setEditOnCallUntil] = useState('');
   const [editCertNumber, setEditCertNumber] = useState('');
   const [editCertLevel, setEditCertLevel] = useState('');
   const [editCertExpiry, setEditCertExpiry] = useState('');
@@ -90,6 +91,14 @@ export default function AdminUsers() {
     setEditCustomerOrgId(u.customerOrgId ? String(u.customerOrgId) : '');
     setEditIsActive(!!u.isActive);
     setEditIsOnCall(!!u.isOnCall);
+    // onCallUntil comes back as a Date or ISO string; normalise for <input type="datetime-local">
+    if (u.onCallUntil) {
+      const d = new Date(u.onCallUntil);
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+      setEditOnCallUntil(local.toISOString().slice(0, 16));
+    } else {
+      setEditOnCallUntil('');
+    }
     setEditCertNumber(u.certNumber || '');
     setEditCertLevel(u.certificationLevel || '');
     // certExpiry comes back as a Date or ISO string; normalise to YYYY-MM-DD for <input type="date">
@@ -109,6 +118,7 @@ export default function AdminUsers() {
       role: editRole as any,
       isActive: editIsActive,
       isOnCall: editIsOnCall,
+      onCallUntil: editIsOnCall && editOnCallUntil ? new Date(editOnCallUntil).toISOString() : null,
       certNumber: editCertNumber || null,
       certificationLevel: editCertLevel || null,
       certExpiry: editCertExpiry || null,
@@ -248,7 +258,7 @@ export default function AdminUsers() {
                         <Badge variant={u.isActive ? 'default' : 'secondary'}>
                           {u.isActive ? 'Active' : 'Inactive'}
                         </Badge>
-                        {u.role === 'technician' && u.isOnCall ? (
+                        {u.role === 'technician' && u.isOnCall && (!u.onCallUntil || new Date(u.onCallUntil) > new Date()) ? (
                           <Badge variant="destructive">On Call</Badge>
                         ) : null}
                       </div>
@@ -445,16 +455,31 @@ export default function AdminUsers() {
                 />
               </div>
               {editRole === 'technician' && (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="edit-oncall">On Call</Label>
-                    <p className="text-xs text-muted-foreground">Receives alerts for emergency calls.</p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="edit-oncall">On Call</Label>
+                      <p className="text-xs text-muted-foreground">Receives alerts for emergency calls.</p>
+                    </div>
+                    <Switch
+                      id="edit-oncall"
+                      checked={editIsOnCall}
+                      onCheckedChange={setEditIsOnCall}
+                    />
                   </div>
-                  <Switch
-                    id="edit-oncall"
-                    checked={editIsOnCall}
-                    onCheckedChange={setEditIsOnCall}
-                  />
+                  {editIsOnCall && (
+                    <div className="space-y-1 pl-1">
+                      <Label htmlFor="edit-oncall-until" className="text-xs text-muted-foreground">
+                        Automatically turn off at (optional)
+                      </Label>
+                      <Input
+                        id="edit-oncall-until"
+                        type="datetime-local"
+                        value={editOnCallUntil}
+                        onChange={(e) => setEditOnCallUntil(e.target.value)}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -200,6 +200,7 @@ export async function getOnCallTechnicians(companyId: number) {
       eq(users.isOnCall, 1),
       eq(users.isActive, 1),
       inArray(users.role, ["technician", "admin", "office"]),
+      or(isNull(users.onCallUntil), gt(users.onCallUntil, new Date())),
     ));
 }
 

@@ -54,6 +54,7 @@ export const userRouter = router({
           certExpiry: users.certExpiry,
           customerOrgId: users.customerOrgId,
           isOnCall: users.isOnCall,
+          onCallUntil: users.onCallUntil,
         })
         .from(users)
         .where(and(...conditions))
@@ -74,9 +75,10 @@ export const userRouter = router({
       certExpiry: z.string().optional().nullable(), // ISO date string YYYY-MM-DD
       customerOrgId: z.number().optional().nullable(),
       isOnCall: z.boolean().optional(),
+      onCallUntil: z.string().optional().nullable(), // ISO datetime string, or null to clear
     }))
     .mutation(async ({ input, ctx }) => {
-      const { userId, name, role, isActive, certNumber, certificationLevel, certExpiry, customerOrgId, isOnCall } = input;
+      const { userId, name, role, isActive, certNumber, certificationLevel, certExpiry, customerOrgId, isOnCall, onCallUntil } = input;
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
       
@@ -108,6 +110,7 @@ export const userRouter = router({
       }
       if (customerOrgId !== undefined) updates.customerOrgId = customerOrgId;
       if (isOnCall !== undefined) updates.isOnCall = isOnCall;
+      if (onCallUntil !== undefined) updates.onCallUntil = onCallUntil ? new Date(onCallUntil) : null;
 
       if (Object.keys(updates).length === 0) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No updates provided' });
