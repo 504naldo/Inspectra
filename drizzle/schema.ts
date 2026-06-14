@@ -33,6 +33,9 @@ export const users = mysqlTable("users", {
   pushPlatform: varchar("pushPlatform", { length: 10 }), // "ios" | "android"
   // On-call status — technicians flagged as on-call receive emergency call alerts
   isOnCall: tinyint("isOnCall").default(0).notNull(),
+  // Optional auto-expiry for on-call status — once passed, the technician is
+  // treated as off-call even if isOnCall wasn't manually toggled back.
+  onCallUntil: timestamp("onCallUntil"),
 });
 
 export type User = typeof users.$inferSelect;
