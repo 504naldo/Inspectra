@@ -14,6 +14,7 @@ import { Link } from "wouter";
 import { toast } from "sonner";
 import { Plus, Search, FileText, Building2, DollarSign, Calendar, ChevronRight } from "lucide-react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "../../../../drizzle/schema";
+import { formatCurrency } from "@/lib/utils";
 
 const STATUS_LABELS: Record<InvoiceStatus, string> = {
   draft: "Draft",
@@ -48,8 +49,7 @@ const TABS = [
 ];
 
 function fmt(amount: string | number | null | undefined) {
-  if (amount === null || amount === undefined) return "$0.00";
-  return `$${parseFloat(String(amount)).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+  return formatCurrency(amount);
 }
 
 export default function AdminInvoices() {

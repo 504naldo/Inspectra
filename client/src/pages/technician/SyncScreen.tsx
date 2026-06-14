@@ -2,6 +2,16 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { useAllCachedPackets, removePacketById } from "@/hooks/useOfflineJobPacket";
@@ -38,6 +48,7 @@ export default function SyncScreen() {
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [isClearAllOpen, setIsClearAllOpen] = useState(false);
   const cachedPackets = useAllCachedPackets();
   const pendingPhotoCount = syncStatus.pendingAttachments;
 
@@ -167,10 +178,8 @@ export default function SyncScreen() {
   };
 
   const handleClearAll = () => {
-    if (confirm("Are you sure you want to clear all offline data? This cannot be undone.")) {
-      clearAllOfflineData();
-      toast.success("Offline data cleared");
-    }
+    clearAllOfflineData();
+    toast.success("Offline data cleared");
   };
 
   const offlineResults = getOfflineResults();
@@ -439,13 +448,28 @@ export default function SyncScreen() {
           )}
 
           {(offlineResults.length > 0 || offlineDeficiencies.length > 0) && (
-            <Button variant="outline" className="w-full" onClick={handleClearAll}>
+            <Button variant="outline" className="w-full" onClick={() => setIsClearAllOpen(true)}>
               <Trash2 className="h-4 w-4 mr-2" />
               Clear All Offline Data
             </Button>
           )}
         </div>
       </main>
+
+      <AlertDialog open={isClearAllOpen} onOpenChange={setIsClearAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all offline data?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all unsynced inspection results, deficiencies, and queued photos on this device. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearAll}>Clear Data</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

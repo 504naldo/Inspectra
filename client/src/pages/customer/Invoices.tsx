@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
+import { formatCurrency } from "@/lib/utils";
 import { Receipt, CheckCircle2, Clock, AlertTriangle, Download, ExternalLink } from "lucide-react";
 
 type Invoice = {
@@ -20,7 +21,7 @@ type Invoice = {
 };
 
 function fmt(n: unknown) {
-  return `$${Number(n ?? 0).toFixed(2)}`;
+  return formatCurrency(n);
 }
 
 function fmtDate(d: Date | string | null) {

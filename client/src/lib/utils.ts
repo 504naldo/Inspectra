@@ -22,3 +22,10 @@ export function formatDate(d: Date | string | null | undefined, fallback = "—"
   if (!d) return fallback;
   return new Date(d).toLocaleDateString(undefined, { timeZone: "UTC" });
 }
+
+/**
+ * Format a monetary amount as USD with thousands separators, e.g. "$12,345.00".
+ */
+export function formatCurrency(amount: unknown): string {
+  return `$${Number(amount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}

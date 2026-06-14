@@ -60,9 +60,9 @@ function PassFailNa({
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm font-medium transition-colors ${
             value === opt
               ? opt === "pass"
-                ? "bg-green-500 text-white border-green-500"
+                ? "bg-[var(--success)] text-white border-[var(--success)]"
                 : opt === "fail"
-                ? "bg-red-500 text-white border-red-500"
+                ? "bg-destructive text-white border-destructive"
                 : "bg-muted border-border text-muted-foreground"
               : "border-border hover:bg-muted"
           }`}
@@ -94,9 +94,9 @@ function YesNoNa({
           className={`px-3 py-1.5 rounded-md border text-sm font-medium transition-colors capitalize ${
             value === opt
               ? opt === "yes"
-                ? "bg-green-500 text-white border-green-500"
+                ? "bg-[var(--success)] text-white border-[var(--success)]"
                 : opt === "no"
-                ? "bg-red-500 text-white border-red-500"
+                ? "bg-destructive text-white border-destructive"
                 : "bg-muted border-border text-muted-foreground"
               : "border-border hover:bg-muted"
           }`}
@@ -243,7 +243,7 @@ function ItemRenderer({
             onClick={() => handleValueChange(response.responseValue === "checked" ? "" : "checked")}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm font-medium transition-colors ${
               response.responseValue === "checked"
-                ? "bg-green-500 text-white border-green-500"
+                ? "bg-[var(--success)] text-white border-[var(--success)]"
                 : "border-border hover:bg-muted"
             }`}
           >
@@ -297,7 +297,7 @@ function ItemRenderer({
           <div className="flex items-start gap-2 flex-wrap">
             <p className="text-sm font-medium flex-1">{item.questionText}</p>
             {item.isRequired === 1 && (
-              <span className="text-xs text-red-500 shrink-0">*</span>
+              <span className="text-xs text-destructive shrink-0">*</span>
             )}
           </div>
           {item.helpText && (
