@@ -282,13 +282,19 @@ export default function AdminJobs() {
                     value={emergencyForm.siteId}
                     onValueChange={(v) => setEmergencyForm({ ...emergencyForm, siteId: v })}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select site" />
                     </SelectTrigger>
                     <SelectContent>
-                      {sites?.map((s: any) => (
-                        <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
-                      ))}
+                      {!sites ? (
+                        <SelectItem value="__loading" disabled>Loading sites…</SelectItem>
+                      ) : sites.length === 0 ? (
+                        <SelectItem value="__none" disabled>No sites found</SelectItem>
+                      ) : (
+                        sites.map((s: any) => (
+                          <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
