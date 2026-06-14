@@ -9,6 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { FileText, CheckCircle2, Clock, Eye, XCircle, ThumbsDown } from "lucide-react";
 import { getQuoteStatusLabel } from "@/lib/statusLabels";
+import { formatCurrency } from "@/lib/utils";
 
 type Quote = {
   id: number;
@@ -26,7 +27,7 @@ type Quote = {
 };
 
 function fmt(n: unknown) {
-  return `$${Number(n ?? 0).toFixed(2)}`;
+  return formatCurrency(n);
 }
 
 function StatusBadge({ status }: { status: string }) {
