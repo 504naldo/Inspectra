@@ -146,7 +146,8 @@ export function DriveImportPicker({
     },
     onError: (error) => {
       setIsImporting(false);
-      toast.error(error.message || "Failed to import from Drive");
+      const isDriveError = error.message?.toLowerCase().includes("drive") || error.message?.toLowerCase().includes("google");
+      toast.error(isDriveError ? error.message : "Import failed — please try again or contact support");
     },
   });
 
@@ -169,7 +170,8 @@ export function DriveImportPicker({
     },
     onError: (error) => {
       setIsImporting(false);
-      toast.error(error.message || "Failed to import PDF from Drive");
+      const isDriveError = error.message?.toLowerCase().includes("drive") || error.message?.toLowerCase().includes("google");
+      toast.error(isDriveError ? error.message : "Import failed — please try again or contact support");
     },
   });
 
