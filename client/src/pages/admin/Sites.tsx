@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,6 +33,7 @@ import {
   Info,
   RotateCcw,
   ExternalLink,
+  Trash2,
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
@@ -42,10 +44,12 @@ function SiteCard({
   site,
   customerMap,
   onEdit,
+  onDelete,
 }: {
   site: any;
   customerMap: Map<number, string>;
   onEdit: (site: any) => void;
+  onDelete: (site: any) => void;
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const { data: info, isLoading: infoLoading } = trpc.workSiteInfo.getBySiteId.useQuery(
@@ -146,6 +150,13 @@ function SiteCard({
                           Fire Alarm Setup
                         </DropdownMenuItem>
                       </Link>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => onDelete(site)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Site
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -263,6 +274,7 @@ export default function AdminSites() {
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [, navigate] = useLocation();
   const [editSite, setEditSite] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [newSite, setNewSite] = useState({
     name: "",
     buildingId: "",
@@ -313,6 +325,11 @@ export default function AdminSites() {
       refetch();
     },
     onError: () => toast.error('Failed to create site')
+  });
+
+  const deleteSite = trpc.site.delete.useMutation({
+    onSuccess: () => { toast.success("Site deleted"); setDeleteTarget(null); refetch(); },
+    onError: (err) => toast.error(err.message || "Failed to delete site"),
   });
 
   const updateSite = trpc.site.update.useMutation({
@@ -629,6 +646,7 @@ export default function AdminSites() {
                 key={site.id}
                 site={site}
                 customerMap={customerMap}
+                onDelete={setDeleteTarget}
                 onEdit={(s) => {
                   setEditSite({
                     ...s,
@@ -783,6 +801,27 @@ export default function AdminSites() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Site Confirm */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete site?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{deleteTarget?.name}</strong> will be permanently deleted. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deleteSite.mutate({ id: deleteTarget.id })}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Google Drive Import Picker */}
       <DriveImportPicker

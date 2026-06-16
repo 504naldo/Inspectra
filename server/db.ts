@@ -371,6 +371,17 @@ export async function updateSite(id: number, data: Partial<InsertSite>) {
   await db.update(sites).set(data).where(eq(sites.id, id));
 }
 
+export async function deleteSite(id: number): Promise<{ blocked: false } | { blocked: true; reason: string }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [jobCount] = await db.select({ count: sql<number>`count(*)` }).from(jobs).where(eq(jobs.siteId, id));
+  if (Number(jobCount?.count ?? 0) > 0) {
+    return { blocked: true, reason: `This site has ${jobCount.count} job(s). Remove or reassign them first.` };
+  }
+  await db.delete(sites).where(eq(sites.id, id));
+  return { blocked: false };
+}
+
 // Sites with a usable address but no coordinates yet — candidates for the
 // one-time geocoding backfill (new sites are geocoded automatically on create).
 export async function getSitesMissingCoordinates(companyId: number) {

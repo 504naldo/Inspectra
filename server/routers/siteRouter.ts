@@ -212,6 +212,15 @@ const siteRouter = router({
   // One-time backfill for sites created before geocoding was wired into create/update.
   // Geocodes sequentially (Google's API has per-second rate limits) and is safe to
   // re-run — it only targets sites that still lack coordinates.
+  delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+    const site = await db.getSiteById(input.id);
+    if (!site) throw new TRPCError({ code: 'NOT_FOUND' });
+    if (site.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN' });
+    const result = await db.deleteSite(input.id);
+    if (result.blocked) throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+    return { success: true };
+  }),
+
   geocodeMissingSites: officeProcedure
     .input(z.object({ companyId: z.number() }))
     .mutation(async ({ input, ctx }) => {
