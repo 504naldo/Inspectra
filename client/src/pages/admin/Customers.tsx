@@ -234,47 +234,29 @@ export default function AdminCustomers() {
             {filteredCustomers.map((customer: any) => (
               <Card key={customer.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-primary/10 rounded-lg shrink-0">
-                      <Building2 className="h-5 w-5 text-primary" />
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-2 bg-primary/10 rounded-lg shrink-0">
+                        <Building2 className="h-5 w-5 text-primary" />
+                      </div>
+                      <h3 className="font-semibold leading-tight">{customer.name}</h3>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold truncate">{customer.name}</h3>
-                      {customer.contactName && (
-                        <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                          <User className="h-3 w-3" />
-                          {customer.contactName}
-                        </p>
-                      )}
-                      {customer.contactEmail && (
-                        <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                          <Mail className="h-3 w-3" />
-                          {customer.contactEmail}
-                        </p>
-                      )}
-                      {customer.contactPhone && (
-                        <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                          <Phone className="h-3 w-3" />
-                          {customer.contactPhone}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-0.5 shrink-0">
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-8 text-muted-foreground hover:text-primary text-xs"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-primary"
                         onClick={() => handleViewPortal(customer)}
                         title="Preview customer portal"
                       >
-                        <ExternalLink className="h-3.5 w-3.5 mr-1" />
-                        Portal
+                        <ExternalLink className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                         onClick={() => openEdit(customer)}
+                        title="Edit customer"
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -283,10 +265,37 @@ export default function AdminCustomers() {
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
                         onClick={() => setDeleteTarget(customer)}
+                        title="Delete customer"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
+                  </div>
+                  <div className="space-y-1 pl-1">
+                    {customer.contactName && (
+                      <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                        <User className="h-3 w-3 shrink-0" />
+                        <span>{customer.contactName}</span>
+                      </p>
+                    )}
+                    {customer.contactEmail && (
+                      <p className="text-sm text-muted-foreground flex items-start gap-1.5">
+                        <Mail className="h-3 w-3 shrink-0 mt-0.5" />
+                        <span className="break-all">{customer.contactEmail}</span>
+                      </p>
+                    )}
+                    {customer.contactPhone && (
+                      <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                        <Phone className="h-3 w-3 shrink-0" />
+                        <span>{customer.contactPhone}</span>
+                      </p>
+                    )}
+                    {customer.address && (
+                      <p className="text-sm text-muted-foreground flex items-start gap-1.5">
+                        <Building2 className="h-3 w-3 shrink-0 mt-0.5" />
+                        <span>{customer.address}</span>
+                      </p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
