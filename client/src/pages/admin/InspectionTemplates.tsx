@@ -81,7 +81,9 @@ function CreateTemplateDialog({
       toast.success("Template created");
       onCreated(data.id);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(
+      e.message.includes("Failed query") ? "Failed to create template — please contact support" : e.message
+    ),
   });
 
   const handleSubmit = () => {
@@ -168,7 +170,9 @@ function CloneDialog({
       toast.success("Template cloned");
       onCloned(data.id);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(
+      e.message.includes("Failed query") ? "Failed to clone template — please contact support" : e.message
+    ),
   });
 
   return (
@@ -208,7 +212,9 @@ export default function InspectionTemplates() {
 
   const archiveMutation = trpc.inspectionTemplate.update.useMutation({
     onSuccess: () => { toast.success("Template archived"); refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(
+      e.message.includes("Failed query") ? "Failed to archive template — please contact support" : e.message
+    ),
   });
 
   const filtered = templates.filter((t: any) => {
