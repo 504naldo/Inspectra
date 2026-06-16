@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -20,6 +21,7 @@ import {
   Save,
   Loader2,
   ExternalLink,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -39,6 +41,9 @@ export default function AdminCustomers() {
     contactPhone: "",
     address: "",
   });
+
+  // Delete state
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
 
   // Edit state
   const [editCustomer, setEditCustomer] = useState<any>(null);
@@ -61,6 +66,15 @@ export default function AdminCustomers() {
       refetch();
     },
     onError: () => toast.error("Failed to create customer"),
+  });
+
+  const deleteCustomer = trpc.customerOrg.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Customer deleted");
+      setDeleteTarget(null);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message || "Failed to delete customer"),
   });
 
   const updateCustomer = trpc.customerOrg.update.useMutation({
@@ -264,6 +278,14 @@ export default function AdminCustomers() {
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => setDeleteTarget(customer)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -272,6 +294,28 @@ export default function AdminCustomers() {
           </div>
         )}
       </div>
+
+      {/* Delete Confirm Dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the customer. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteCustomer.mutate({ id: deleteTarget.id })}
+              disabled={deleteCustomer.isPending}
+            >
+              {deleteCustomer.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Edit Customer Dialog */}
       <Dialog open={!!editCustomer} onOpenChange={(open) => { if (!open) setEditCustomer(null); }}>

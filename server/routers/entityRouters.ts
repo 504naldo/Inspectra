@@ -103,6 +103,12 @@ const customerOrgRouter = router({
     } as any);
     return { success: true };
   }),
+
+  delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    const result = await db.deleteCustomerOrg(input.id);
+    if (result.blocked) throw new TRPCError({ code: "BAD_REQUEST", message: result.reason });
+    return { success: true };
+  }),
 });
 
 export { companyRouter, customerOrgRouter };
