@@ -3,6 +3,14 @@ import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  JOB_STATUS_LABELS,
+  getJobStatusLabel,
+  getJobStatusBadgeClass,
+  getPriorityLabel,
+  getPriorityBadgeClass,
+  getJobTypeLabel,
+} from "@/lib/statusLabels";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,38 +30,6 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-
-const JOB_STATUS_LABELS: Record<string, string> = {
-  pending: "Pending",
-  scheduled: "Scheduled",
-  in_progress: "In Progress",
-  completed: "Completed",
-  cancelled: "Cancelled",
-};
-
-const JOB_STATUS_COLORS: Record<string, string> = {
-  pending: "bg-gray-100 text-gray-600 border-gray-200",
-  scheduled: "bg-blue-100 text-blue-700 border-blue-200",
-  in_progress: "bg-amber-100 text-amber-700 border-amber-200",
-  completed: "bg-green-100 text-green-700 border-green-200",
-  cancelled: "bg-red-100 text-red-600 border-red-200",
-};
-
-const PRIORITY_COLORS: Record<string, string> = {
-  low: "bg-gray-100 text-gray-500",
-  medium: "bg-sky-100 text-sky-700",
-  high: "bg-orange-100 text-orange-700",
-  urgent: "bg-red-100 text-red-700 font-semibold",
-};
-
-const JOB_TYPE_LABELS: Record<string, string> = {
-  annual: "Annual",
-  semi_annual: "Semi-Annual",
-  quarterly: "Quarterly",
-  monthly: "Monthly",
-  service_call: "Service Call",
-  repair: "Repair",
-};
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -168,8 +144,8 @@ function JobCard({
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {job.priority !== "low" && (
-            <span className={cn("text-[10px] rounded px-1 py-0.5 leading-none", PRIORITY_COLORS[job.priority])}>
-              {job.priority}
+            <span className={cn("text-[10px] rounded px-1 py-0.5 leading-none", getPriorityBadgeClass(job.priority))}>
+              {getPriorityLabel(job.priority)}
             </span>
           )}
         </div>
@@ -187,7 +163,7 @@ function JobCard({
       {/* Type + time */}
       <div className="flex items-center gap-2 mt-0.5">
         {job.jobType && (
-          <span className="text-[10px] text-muted-foreground">{JOB_TYPE_LABELS[job.jobType] ?? job.jobType}</span>
+          <span className="text-[10px] text-muted-foreground">{getJobTypeLabel(job.jobType)}</span>
         )}
         {job.scheduledDate && (
           <span className="text-[10px] text-muted-foreground">{formatTime(job.scheduledDate)}</span>
@@ -199,8 +175,8 @@ function JobCard({
         {/* Status select */}
         <Select value={job.status} onValueChange={(v) => onStatus(job.id, v)}>
           <SelectTrigger className="h-6 text-[11px] px-2 py-0">
-            <span className={cn("rounded px-1 text-[10px]", JOB_STATUS_COLORS[job.status])}>
-              {JOB_STATUS_LABELS[job.status] ?? job.status}
+            <span className={cn("rounded px-1 text-[10px]", getJobStatusBadgeClass(job.status))}>
+              {getJobStatusLabel(job.status)}
             </span>
           </SelectTrigger>
           <SelectContent>

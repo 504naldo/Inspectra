@@ -30,6 +30,7 @@ import {
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { getJobStatusLabel, getJobStatusBadgeClass } from "@/lib/statusLabels";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function AdminJobs() {
   const { user } = useAuth();
@@ -477,8 +478,20 @@ export default function AdminJobs() {
 
         {/* Jobs List */}
         {isLoading ? (
-          <div className="flex justify-center py-8">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-5 w-24" />
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                  </div>
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </CardContent>
+              </Card>
+            ))}
           </div>
         ) : filteredJobs.length === 0 ? (
           <Card>

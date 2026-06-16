@@ -15,28 +15,8 @@ import { toast } from "sonner";
 import { Plus, Search, FileText, Building2, DollarSign, Calendar, ChevronRight } from "lucide-react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "../../../../drizzle/schema";
 import { formatCurrency } from "@/lib/utils";
-
-const STATUS_LABELS: Record<InvoiceStatus, string> = {
-  draft: "Draft",
-  sent: "Sent",
-  viewed: "Viewed",
-  approved: "Approved",
-  paid: "Paid",
-  partial: "Partial",
-  overdue: "Overdue",
-  void: "Void",
-};
-
-const STATUS_COLORS: Record<InvoiceStatus, string> = {
-  draft: "bg-gray-100 text-gray-700 border-gray-200",
-  sent: "bg-blue-50 text-blue-700 border-blue-200",
-  viewed: "bg-purple-50 text-purple-700 border-purple-200",
-  approved: "bg-cyan-50 text-cyan-700 border-cyan-200",
-  paid: "bg-green-50 text-green-700 border-green-200",
-  partial: "bg-yellow-50 text-yellow-700 border-yellow-200",
-  overdue: "bg-red-50 text-red-700 border-red-200",
-  void: "bg-gray-50 text-gray-400 border-gray-200",
-};
+import { getInvoiceStatusLabel, getInvoiceStatusBadgeClass } from "@/lib/statusLabels";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const TABS = [
   { label: "All", value: "" },
@@ -313,8 +293,19 @@ export default function AdminInvoices() {
 
         {/* Invoice list */}
         {isLoading ? (
-          <div className="flex justify-center py-8">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-5 w-28" />
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                  </div>
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-4 w-1/3" />
+                </CardContent>
+              </Card>
+            ))}
           </div>
         ) : filtered.length === 0 ? (
           <Card>
@@ -336,8 +327,8 @@ export default function AdminInvoices() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold font-mono text-sm">{inv.invoiceNumber}</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded border ${STATUS_COLORS[inv.status as InvoiceStatus] ?? ""}`}>
-                            {STATUS_LABELS[inv.status as InvoiceStatus] ?? inv.status}
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getInvoiceStatusBadgeClass(inv.status)}`}>
+                            {getInvoiceStatusLabel(inv.status)}
                           </span>
                           {inv.sageExportStatus === "exported" && (
                             <span className="text-xs font-medium px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">

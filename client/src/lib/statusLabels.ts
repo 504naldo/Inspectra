@@ -134,3 +134,77 @@ export function getApprovedWorkStatusLabel(status: string): string {
 export function getApprovedWorkStatusBadgeClass(status: string): string {
   return APPROVED_WORK_STATUS_COLORS[status] ?? "bg-muted text-muted-foreground";
 }
+
+// ── Invoices (drizzle `invoices.status`) ──────────────────────────────────────
+export const INVOICE_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  viewed: "Viewed",
+  approved: "Approved",
+  paid: "Paid",
+  partial: "Partial",
+  overdue: "Overdue",
+  void: "Void",
+};
+
+export const INVOICE_STATUS_BADGE_CLASS: Record<string, string> = {
+  draft: "bg-gray-100 text-gray-700 border-gray-200",
+  sent: "bg-blue-50 text-blue-700 border-blue-200",
+  viewed: "bg-purple-50 text-purple-700 border-purple-200",
+  approved: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  paid: "bg-green-50 text-green-700 border-green-200",
+  partial: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  overdue: "bg-red-50 text-red-700 border-red-200",
+  void: "bg-gray-50 text-gray-400 border-gray-200",
+};
+
+export function getInvoiceStatusLabel(status: string): string {
+  return INVOICE_STATUS_LABELS[status] ?? status;
+}
+
+export function getInvoiceStatusBadgeClass(status: string): string {
+  return INVOICE_STATUS_BADGE_CLASS[status] ?? "bg-gray-100 text-gray-600 border-gray-200";
+}
+
+// ── Job priority ──────────────────────────────────────────────────────────────
+export const PRIORITY_LABELS: Record<string, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  urgent: "Urgent",
+};
+
+export const PRIORITY_BADGE_CLASS: Record<string, string> = {
+  low: "bg-gray-100 text-gray-500",
+  medium: "bg-sky-100 text-sky-700",
+  high: "bg-orange-100 text-orange-700",
+  urgent: "bg-red-100 text-red-700 font-semibold",
+};
+
+export function getPriorityLabel(priority: string): string {
+  return PRIORITY_LABELS[priority] ?? priority;
+}
+
+export function getPriorityBadgeClass(priority: string): string {
+  return PRIORITY_BADGE_CLASS[priority] ?? "bg-gray-100 text-gray-500";
+}
+
+// ── Job type ──────────────────────────────────────────────────────────────────
+export const JOB_TYPE_LABELS: Record<string, string> = {
+  annual: "Annual",
+  semi_annual: "Semi-Annual",
+  quarterly: "Quarterly",
+  monthly: "Monthly",
+  service_call: "Service Call",
+  repair: "Repair",
+  emergency: "Emergency",
+  sprinkler_itm: "Sprinkler ITM",
+  fire_alarm: "Fire Alarm",
+  backflow: "Backflow",
+  special_hazard: "Special Hazard",
+  extinguisher: "Extinguisher",
+};
+
+export function getJobTypeLabel(type: string): string {
+  return JOB_TYPE_LABELS[type] ?? type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
