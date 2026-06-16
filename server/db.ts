@@ -286,6 +286,23 @@ export async function updateCustomerOrg(id: number, data: Partial<InsertCustomer
   await db.update(customerOrgs).set(data).where(eq(customerOrgs.id, id));
 }
 
+export async function deleteCustomerOrg(id: number): Promise<{ blocked: false } | { blocked: true; reason: string }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [jobCount] = await db.select({ count: sql<number>`count(*)` }).from(jobs).where(eq(jobs.customerOrgId, id));
+  if (Number(jobCount?.count ?? 0) > 0) {
+    return { blocked: true, reason: `This customer has ${jobCount.count} job(s). Remove or reassign them first.` };
+  }
+  const [siteCount] = await db.select({ count: sql<number>`count(*)` }).from(sites).where(eq(sites.customerOrgId, id));
+  if (Number(siteCount?.count ?? 0) > 0) {
+    return { blocked: true, reason: `This customer has ${siteCount.count} site(s). Remove or reassign them first.` };
+  }
+
+  await db.delete(customerOrgs).where(eq(customerOrgs.id, id));
+  return { blocked: false };
+}
+
 // ============================================
 // SITE QUERIES
 // ============================================
