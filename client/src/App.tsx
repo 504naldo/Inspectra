@@ -538,16 +538,6 @@ function Router() {
           <SetupWizard />
         </ProtectedRoute>
       </Route>
-      <Route path="/admin/inspection-templates/:id">
-        <ProtectedRoute allowedRoles={['admin', 'office']}>
-          <InspectionTemplateDetail />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/admin/inspection-templates">
-        <ProtectedRoute allowedRoles={['admin', 'office']}>
-          <InspectionTemplates />
-        </ProtectedRoute>
-      </Route>
       <Route path="/tech/jobs/:jobId/template/:templateId">
         <ProtectedRoute allowedRoles={['admin', 'office', 'technician']}>
           <TemplateFormRenderer />
