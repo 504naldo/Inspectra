@@ -89,7 +89,7 @@ export default function AdminJobs() {
     status: statusFilter === 'all' ? undefined : statusFilter,
   });
 
-  const { data: sites } = trpc.site.listByCompany.useQuery({ companyId });
+  const { data: sites, isLoading: sitesLoading } = trpc.site.listByCompany.useQuery({ companyId });
   const { data: customers } = trpc.customerOrg.list.useQuery({ companyId });
   const { data: technicians, isLoading: techsLoading, error: techsError } = trpc.jobAssignment.listTechnicians.useQuery({ companyId });
 
@@ -281,17 +281,16 @@ export default function AdminJobs() {
                   <Select
                     value={emergencyForm.siteId}
                     onValueChange={(v) => setEmergencyForm({ ...emergencyForm, siteId: v })}
+                    disabled={sitesLoading}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select site" />
+                      <SelectValue placeholder={sitesLoading ? "Loading sites…" : "Select site"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {!sites ? (
-                        <SelectItem value="__loading" disabled>Loading sites…</SelectItem>
-                      ) : sites.length === 0 ? (
+                      {sites?.length === 0 ? (
                         <SelectItem value="__none" disabled>No sites found</SelectItem>
                       ) : (
-                        sites.map((s: any) => (
+                        (sites ?? []).map((s: any) => (
                           <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
                         ))
                       )}
