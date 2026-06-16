@@ -316,13 +316,13 @@ export async function createSite(data: InsertSite) {
 export async function getSitesByCompany(companyId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(sites).where(eq(sites.companyId, companyId)).orderBy(asc(sites.name));
+  return db.select().from(sites).where(eq(sites.companyId, companyId)).orderBy(asc(sites.id));
 }
 
 export async function getSitesByCustomerOrg(customerOrgId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(sites).where(eq(sites.customerOrgId, customerOrgId)).orderBy(asc(sites.name));
+  return db.select().from(sites).where(eq(sites.customerOrgId, customerOrgId)).orderBy(asc(sites.id));
 }
 
 export async function getSiteById(id: number) {
