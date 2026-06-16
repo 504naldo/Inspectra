@@ -275,6 +275,7 @@ export default function AdminSites() {
   const [, navigate] = useLocation();
   const [editSite, setEditSite] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [filterCustomer, setFilterCustomer] = useState<string>("all");
   const [newSite, setNewSite] = useState({
     name: "",
     buildingId: "",
@@ -403,6 +404,7 @@ export default function AdminSites() {
   );
 
   const filteredSites = sites?.filter((site: any) => {
+    if (filterCustomer !== "all" && String(site.customerOrgId) !== filterCustomer) return false;
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -452,7 +454,19 @@ export default function AdminSites() {
               className="pl-10"
             />
           </div>
-          
+
+          <Select value={filterCustomer} onValueChange={setFilterCustomer}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="All customers" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All customers</SelectItem>
+              {customers?.map((c: any) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Button variant="outline" onClick={() => setShowDriveImport(true)}>
             <HardDrive className="h-4 w-4 mr-2" />
             Import from Drive
