@@ -28,22 +28,7 @@ export default function AdminCustomers() {
   const { setPreviewOrg } = usePortalPreview();
   const [, setLocation] = useLocation();
 
-  if (!user || !user.companyId) {
-    return (
-      <AdminLayout title="Customers">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <p className="text-muted-foreground">Loading session...</p>
-        </div>
-      </AdminLayout>
-    );
-  }
-
-  const companyId = user.companyId;
-
-  const handleViewPortal = (customer: any) => {
-    setPreviewOrg({ id: customer.id, name: customer.name });
-    setLocation("/customer");
-  };
+  const companyId = user?.companyId ?? 0;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -63,7 +48,10 @@ export default function AdminCustomers() {
   const [editContactPhone, setEditContactPhone] = useState("");
   const [editAddress, setEditAddress] = useState("");
 
-  const { data: customers, isLoading, refetch } = trpc.customerOrg.list.useQuery({ companyId });
+  const { data: customers, isLoading, refetch } = trpc.customerOrg.list.useQuery(
+    { companyId },
+    { enabled: !!user?.companyId }
+  );
 
   const createCustomer = trpc.customerOrg.create.useMutation({
     onSuccess: () => {
@@ -117,6 +105,21 @@ export default function AdminCustomers() {
       address: newCustomer.address || undefined,
     });
   };
+
+  const handleViewPortal = (customer: any) => {
+    setPreviewOrg({ id: customer.id, name: customer.name });
+    setLocation("/customer");
+  };
+
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout title="Customers">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p className="text-muted-foreground">Loading session...</p>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout title="Customers">

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import AdminLayout from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -514,6 +515,9 @@ function ContactRow({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ContactsPage() {
+  const { user } = useAuth();
+  const companyId = user?.companyId ?? 0;
+
   const [search, setSearch] = useState("");
   const [filterRole, setFilterRole] = useState<string>("all");
   const [filterCustomer, setFilterCustomer] = useState<string>("all");
@@ -540,12 +544,13 @@ export default function ContactsPage() {
 
   // Load customers and sites for dropdowns
   const { data: customerOrgs = [] } = trpc.customerOrg.list.useQuery(
-    { companyId: 0 },
-    { select: (d) => d }
+    { companyId },
+    { enabled: !!user?.companyId }
   );
-  // Use a simpler approach — fetch sites via a separate query if available
-  // For now, extract unique sites from contacts to minimise extra queries
-  const uniqueSiteIds = Array.from(new Set(contacts.filter((c) => c.siteId).map((c) => c.siteId!)));
+  const { data: sitesData = [] } = trpc.site.listByCompany.useQuery(
+    { companyId },
+    { enabled: !!user?.companyId }
+  );
 
   const deactivate = trpc.contact.deactivateContact.useMutation({
     onSuccess: () => { toast.success("Contact deactivated"); utils.contact.listContacts.invalidate(); utils.contact.getOverviewStats.invalidate(); },
@@ -595,15 +600,9 @@ export default function ContactsPage() {
 
   // Build lookup tables for display
   const customerMap = Object.fromEntries((customerOrgs as any[]).map((c: any) => [c.id, c]));
-  const sitesFromContacts = contacts
-    .filter((c) => c.siteId)
-    .reduce<Record<number, { id: number; name: string; customerOrgId: number | null }>>((acc, c) => {
-      if (c.siteId && !acc[c.siteId]) acc[c.siteId] = { id: c.siteId, name: `Site #${c.siteId}`, customerOrgId: c.customerOrgId };
-      return acc;
-    }, {});
 
   const customerList = (customerOrgs as any[]).map((c: any) => ({ id: c.id, name: c.name }));
-  const siteList = Object.values(sitesFromContacts);
+  const siteList = (sitesData as any[]).map((s: any) => ({ id: s.id, name: s.name, customerOrgId: s.customerOrgId }));
 
   return (
     <AdminLayout title="Contacts">
