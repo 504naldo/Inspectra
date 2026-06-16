@@ -378,11 +378,11 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
         {children}
       </main>
 
-      {/* Environment indicator */}
-      <div className="fixed bottom-4 right-4 bg-primary/10 text-primary text-xs px-2 py-1 rounded border border-primary/20">
-        {import.meta.env.MODE === "production" ? "PROD" : "DEV"} | DB:{" "}
-        {user?.companyId || "N/A"}
-      </div>
+      {import.meta.env.MODE !== "production" && (
+        <div className="fixed bottom-4 right-4 bg-primary/10 text-primary text-xs px-2 py-1 rounded border border-primary/20">
+          DEV | DB: {user?.companyId || "N/A"}
+        </div>
+      )}
     </div>
   );
 }

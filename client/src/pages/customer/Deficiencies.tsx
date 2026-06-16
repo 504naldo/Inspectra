@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { formatCurrency } from "@/lib/utils";
 import { usePortalPreview } from "@/contexts/PortalPreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -220,7 +221,7 @@ export default function CustomerDeficiencies() {
                   <p className="text-sm"><span className="font-medium">Code Reference:</span> {selected.codeReference}</p>
                 )}
                 {selected.estimatedRepairCost && (
-                  <p className="text-sm"><span className="font-medium">Estimated Repair Cost:</span> ${selected.estimatedRepairCost}</p>
+                  <p className="text-sm"><span className="font-medium">Estimated Repair Cost:</span> {formatCurrency(selected.estimatedRepairCost)}</p>
                 )}
 
                 {/* Full timeline */}

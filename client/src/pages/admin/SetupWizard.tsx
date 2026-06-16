@@ -348,13 +348,15 @@ export default function SetupWizard() {
   });
 
   const updateMutation = trpc.setup.updateStepStatus.useMutation({
-    onSuccess: () => utils.setup.getOverview.invalidate(),
+    onSuccess: (_, { status }) => {
+      utils.setup.getOverview.invalidate();
+      toast.success(status === "completed" ? "Step marked complete" : status === "skipped" ? "Step skipped" : "Step updated");
+    },
     onError: (e) => toast.error(e.message || "Failed to update step"),
   });
 
   const handleUpdate = (key: string, status: StepStatus) => {
     updateMutation.mutate({ stepKey: key as any, status });
-    toast.success(status === "completed" ? "Step marked complete" : status === "skipped" ? "Step skipped" : "Step updated");
   };
 
   if (isLoading || !data) {
