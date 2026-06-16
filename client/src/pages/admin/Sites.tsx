@@ -325,7 +325,7 @@ export default function AdminSites() {
       });
       refetch();
     },
-    onError: () => toast.error('Failed to create site')
+    onError: (err) => toast.error(err.message?.includes('Failed query') ? 'Failed to create site — please contact support' : (err.message || 'Failed to create site'))
   });
 
   const deleteSite = trpc.site.delete.useMutation({
@@ -340,7 +340,7 @@ export default function AdminSites() {
       setEditSite(null);
       refetch();
     },
-    onError: () => toast.error('Failed to update site')
+    onError: (err) => toast.error(err.message?.includes('Failed query') ? 'Failed to update site — please contact support' : (err.message || 'Failed to update site'))
   });
 
   // One-time backfill: geocodes any sites that predate the auto-geocode-on-save
