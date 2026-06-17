@@ -444,72 +444,75 @@ export default function AdminSites() {
     <AdminLayout title="Sites">
       <div className="space-y-6">
         {/* Actions Bar */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search sites..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search sites..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            <Select value={filterCustomer} onValueChange={setFilterCustomer}>
+              <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectValue placeholder="All customers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All customers</SelectItem>
+                {customers?.map((c: any) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <Select value={filterCustomer} onValueChange={setFilterCustomer}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="All customers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All customers</SelectItem>
-              {customers?.map((c: any) => (
-                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="outline" onClick={() => setShowDriveImport(true)}>
+              <HardDrive className="h-4 w-4 mr-2" />
+              Import from Drive
+            </Button>
 
-          <Button variant="outline" onClick={() => setShowDriveImport(true)}>
-            <HardDrive className="h-4 w-4 mr-2" />
-            Import from Drive
-          </Button>
+            <Button variant="outline" onClick={() => setShowPdfImport(true)}>
+              <FileText className="h-4 w-4 mr-2" />
+              Import from PDF
+            </Button>
 
-          <Button variant="outline" onClick={() => setShowPdfImport(true)}>
-            <FileText className="h-4 w-4 mr-2" />
-            Import from PDF
-          </Button>
+            <Button
+              variant="outline"
+              disabled={geocodeMissingSites.isPending}
+              onClick={() => geocodeMissingSites.mutate({ companyId })}
+              title="Resolve map coordinates for sites that predate route-aware scheduling"
+            >
+              {geocodeMissingSites.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <MapPin className="h-4 w-4 mr-2" />
+              )}
+              Geocode Sites
+            </Button>
 
-          <Button
-            variant="outline"
-            disabled={geocodeMissingSites.isPending}
-            onClick={() => geocodeMissingSites.mutate({ companyId })}
-            title="Resolve map coordinates for sites that predate route-aware scheduling"
-          >
-            {geocodeMissingSites.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <MapPin className="h-4 w-4 mr-2" />
-            )}
-            Geocode Sites
-          </Button>
-
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Site
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Add New Site</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Site Name *</Label>
-                  <Input
-                    value={newSite.name}
-                    onChange={(e) => setNewSite({ ...newSite, name: e.target.value })}
-                    placeholder="Site name"
-                  />
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Site
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Add New Site</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Site Name *</Label>
+                    <Input
+                      value={newSite.name}
+                      onChange={(e) => setNewSite({ ...newSite, name: e.target.value })}
+                      placeholder="Site name"
+                    />
                 </div>
                 
                 <div className="space-y-2">
@@ -635,6 +638,7 @@ export default function AdminSites() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Sites List */}
