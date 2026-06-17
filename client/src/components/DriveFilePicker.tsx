@@ -26,6 +26,7 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
+import { friendlyErrorMessage } from "@/lib/utils";
 
 interface DriveItem {
   id: string;
@@ -175,7 +176,7 @@ export function DriveFilePicker({
     },
     onError: (error) => {
       setDownloadingId(null);
-      toast.error(error.message || "Failed to download file from Drive");
+      toast.error(friendlyErrorMessage(error, "Failed to download file from Drive"));
     },
   });
 
@@ -186,7 +187,7 @@ export function DriveFilePicker({
     },
     onError: (error) => {
       setExtractingId(null);
-      toast.error(error.message || "Failed to extract data from PDF");
+      toast.error(friendlyErrorMessage(error, "Failed to extract data from PDF"));
     },
   });
 

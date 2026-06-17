@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { friendlyErrorMessage } from "@/lib/utils";
 import {
   Plus, Copy, Archive, ExternalLink, ClipboardList, Search, Filter,
 } from "lucide-react";
@@ -81,9 +82,7 @@ function CreateTemplateDialog({
       toast.success("Template created");
       onCreated(data.id);
     },
-    onError: (e) => toast.error(
-      e.message.includes("Failed query") ? "Failed to create template — please contact support" : e.message
-    ),
+    onError: (e) => toast.error(friendlyErrorMessage(e, "Failed to create template — please contact support")),
   });
 
   const handleSubmit = () => {
@@ -170,9 +169,7 @@ function CloneDialog({
       toast.success("Template cloned");
       onCloned(data.id);
     },
-    onError: (e) => toast.error(
-      e.message.includes("Failed query") ? "Failed to clone template — please contact support" : e.message
-    ),
+    onError: (e) => toast.error(friendlyErrorMessage(e, "Failed to clone template — please contact support")),
   });
 
   return (
@@ -212,9 +209,7 @@ export default function InspectionTemplates() {
 
   const archiveMutation = trpc.inspectionTemplate.update.useMutation({
     onSuccess: () => { toast.success("Template archived"); refetch(); },
-    onError: (e) => toast.error(
-      e.message.includes("Failed query") ? "Failed to archive template — please contact support" : e.message
-    ),
+    onError: (e) => toast.error(friendlyErrorMessage(e, "Failed to archive template — please contact support")),
   });
 
   const filtered = templates.filter((t: any) => {

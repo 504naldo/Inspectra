@@ -28,6 +28,7 @@ import { useParams, Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { isSpreadsheetFile, getSpreadsheetErrorMessage, getSpreadsheetAcceptAttribute } from "@/_core/utils/fileTypes";
 import { autoMapColumns } from "@/_core/utils/autoMapping";
+import { friendlyErrorMessage } from "@/lib/utils";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
 import { HardDrive } from "lucide-react";
 
@@ -171,8 +172,8 @@ export default function AssetImport() {
     onError: (error: any) => {
       // Extract error details from cause if available
       const details = error.data?.cause?.details || {};
-      const errorMessage = error.message || 'Failed to parse file';
-      
+      const errorMessage = friendlyErrorMessage(error, 'Failed to parse file');
+
       setParseError({
         message: errorMessage,
         fileName: details.fileName || selectedFile?.name,
@@ -197,7 +198,7 @@ export default function AssetImport() {
       setStep('preview');
     },
     onError: (error) => {
-      toast.error(`Validation failed: ${error.message}`);
+      toast.error(`Validation failed: ${friendlyErrorMessage(error, 'please contact support')}`);
     },
   });
   
@@ -208,7 +209,7 @@ export default function AssetImport() {
       toast.success(`Import completed: ${data.successCount} devices imported`);
     },
     onError: (error) => {
-      toast.error(`Import failed: ${error.message}`);
+      toast.error(`Import failed: ${friendlyErrorMessage(error, 'please contact support')}`);
     },
   });
   
@@ -218,7 +219,7 @@ export default function AssetImport() {
       setQuickStep('results');
     },
     onError: (err) => {
-      toast.error(err.message || 'Import failed');
+      toast.error(friendlyErrorMessage(err, 'Import failed'));
       setQuickStep('upload');
     },
   });
