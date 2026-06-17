@@ -39,6 +39,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { DriveImportPicker } from "@/components/DriveImportPicker";
+import { friendlyErrorMessage } from "@/lib/utils";
 
 function SiteCard({
   site,
@@ -325,7 +326,7 @@ export default function AdminSites() {
       });
       refetch();
     },
-    onError: (err) => toast.error(err.message?.includes('Failed query') ? 'Failed to create site — please contact support' : (err.message || 'Failed to create site'))
+    onError: (err) => toast.error(friendlyErrorMessage(err, 'Failed to create site — please contact support'))
   });
 
   const deleteSite = trpc.site.delete.useMutation({
@@ -340,7 +341,7 @@ export default function AdminSites() {
       setEditSite(null);
       refetch();
     },
-    onError: (err) => toast.error(err.message?.includes('Failed query') ? 'Failed to update site — please contact support' : (err.message || 'Failed to update site'))
+    onError: (err) => toast.error(friendlyErrorMessage(err, 'Failed to update site — please contact support'))
   });
 
   // One-time backfill: geocodes any sites that predate the auto-geocode-on-save

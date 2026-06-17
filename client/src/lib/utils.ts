@@ -29,3 +29,12 @@ export function formatDate(d: Date | string | null | undefined, fallback = "—"
 export function formatCurrency(amount: unknown): string {
   return `$${Number(amount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+
+/**
+ * tRPC/Drizzle errors can leak raw "Failed query: ... params: ..." SQL strings
+ * into error.message. Swap those for a generic fallback; pass through anything else.
+ */
+export function friendlyErrorMessage(err: { message?: string }, fallback: string): string {
+  if (!err.message || err.message.includes("Failed query")) return fallback;
+  return err.message;
+}
