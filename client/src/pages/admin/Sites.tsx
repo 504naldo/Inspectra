@@ -34,11 +34,13 @@ import {
   RotateCcw,
   ExternalLink,
   Trash2,
+  ClipboardList,
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { DriveImportPicker } from "@/components/DriveImportPicker";
+import { SummarySheetEditor } from "@/components/SummarySheetEditor";
 import { friendlyErrorMessage } from "@/lib/utils";
 
 function SiteCard({
@@ -46,11 +48,13 @@ function SiteCard({
   customerMap,
   onEdit,
   onDelete,
+  onSummarySheet,
 }: {
   site: any;
   customerMap: Map<number, string>;
   onEdit: (site: any) => void;
   onDelete: (site: any) => void;
+  onSummarySheet: (site: any) => void;
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const { data: info, isLoading: infoLoading } = trpc.workSiteInfo.getBySiteId.useQuery(
@@ -132,6 +136,10 @@ function SiteCard({
                       <DropdownMenuItem onClick={() => onEdit(site)}>
                         <KeyRound className="h-4 w-4 mr-2" />
                         Edit Site
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onSummarySheet(site)}>
+                        <ClipboardList className="h-4 w-4 mr-2" />
+                        Summary Sheet
                       </DropdownMenuItem>
                       <Link href={`/admin/sites/${site.id}/files`}>
                         <DropdownMenuItem>
@@ -275,6 +283,7 @@ export default function AdminSites() {
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [, navigate] = useLocation();
   const [editSite, setEditSite] = useState<any>(null);
+  const [summarySheetSite, setSummarySheetSite] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [filterCustomer, setFilterCustomer] = useState<string>("all");
   const [newSite, setNewSite] = useState({
@@ -666,6 +675,7 @@ export default function AdminSites() {
                 site={site}
                 customerMap={customerMap}
                 onDelete={setDeleteTarget}
+                onSummarySheet={setSummarySheetSite}
                 onEdit={(s) => {
                   setEditSite({
                     ...s,
@@ -820,6 +830,14 @@ export default function AdminSites() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Summary Sheet Editor */}
+      <SummarySheetEditor
+        site={summarySheetSite}
+        open={!!summarySheetSite}
+        onOpenChange={(o) => { if (!o) setSummarySheetSite(null); }}
+        onSaved={refetch}
+      />
 
       {/* Delete Site Confirm */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>

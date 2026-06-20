@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
+import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
 import { geocodeAddress } from "../_core/map";
 import * as db from "../db";
+import type { SiteSummary } from "../../drizzle/schema";
 
 // Joins the address fields into a single string for geocoding; skips empty parts
 // so a site with only a city still resolves to a usable (if coarse) location.
@@ -208,6 +209,77 @@ const siteRouter = router({
     .query(async ({ input }) => {
       return db.getLastInspectionSummaryForSite(input.siteId);
     }),
+
+  // Full Summary Sheet editor (admin/office) — covers the fields the quick Edit Site
+  // dialog doesn't touch: building details, billing address, monitoring, estimates,
+  // and the full contacts list. Never touches `totals`, which is derived from device counts.
+  updateSummarySheet: officeProcedure.input(z.object({
+    id: z.number(),
+    summary: z.object({
+      building: z.object({
+        year: z.string().optional(),
+        class: z.string().optional(),
+        stories: z.string().optional(),
+      }).optional(),
+      billing: z.object({
+        address: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        postalCode: z.string().optional(),
+      }).optional(),
+      contacts: z.array(z.object({
+        name: z.string().optional(),
+        role: z.string().optional(),
+        phone: z.string().optional(),
+        email: z.string().optional(),
+      })).optional(),
+      monitoring: z.object({
+        company: z.string().optional(),
+        accountNumber: z.string().optional(),
+        phone: z.string().optional(),
+        password: z.string().optional(),
+      }).optional(),
+      estimates: z.object({
+        servicingHours: z.string().optional(),
+        repairBudget: z.string().optional(),
+      }).optional(),
+    }),
+  })).mutation(async ({ input, ctx }) => {
+    const existingSite = await db.getSiteById(input.id);
+    if (!existingSite) throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });
+    if (existingSite.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN' });
+
+    const merged: SiteSummary = {
+      ...existingSite.summary,
+      building: { ...existingSite.summary?.building, ...input.summary.building },
+      billing: { ...existingSite.summary?.billing, ...input.summary.billing },
+      monitoring: { ...existingSite.summary?.monitoring, ...input.summary.monitoring },
+      estimates: { ...existingSite.summary?.estimates, ...input.summary.estimates },
+      contacts: input.summary.contacts ?? existingSite.summary?.contacts,
+    };
+
+    await db.updateSite(input.id, { summary: merged });
+    return { success: true };
+  }),
+
+  // Technician-editable slice of the Summary Sheet: just the servicing hours estimate,
+  // which techs are best placed to refine after walking the site.
+  updateEstimate: technicianProcedure.input(z.object({
+    id: z.number(),
+    servicingHours: z.string(),
+  })).mutation(async ({ input, ctx }) => {
+    const existingSite = await db.getSiteById(input.id);
+    if (!existingSite) throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });
+    if (existingSite.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN' });
+
+    const merged: SiteSummary = {
+      ...existingSite.summary,
+      estimates: { ...existingSite.summary?.estimates, servicingHours: input.servicingHours },
+    };
+
+    await db.updateSite(input.id, { summary: merged });
+    return { success: true };
+  }),
 
   // One-time backfill for sites created before geocoding was wired into create/update.
   // Geocodes sequentially (Google's API has per-second rate limits) and is safe to
