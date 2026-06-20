@@ -9,6 +9,7 @@ import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { SiteDetails } from "@/components/SiteDetails";
+import { FullSummarySheet } from "@/components/FullSummarySheet";
 import { FieldCopilotPanel } from "@/components/FieldCopilotPanel";
 import { PageHelpButton } from "@/components/help/PageHelpButton";
 import { InspectionHeader } from "@/components/inspection/InspectionHeader";
@@ -125,6 +126,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const { isOnline, getCachedJobData, syncStatus } = useOfflineStorage();
   const { status: packetStatus, cachedAt: packetCachedAt, packet, isCaching, preload, refresh: refreshPacket, remove: removePacket, checkStale } = useOfflineJobPacket(jobId);
   const [openGridSection, setOpenGridSection] = useState<string | null>(null);
+  const [showFullSummary, setShowFullSummary] = useState(false);
   const [woTechNotes, setWoTechNotes] = useState("");
   const [woActualHours, setWoActualHours] = useState("");
   const [woCompletionSummary, setWoCompletionSummary] = useState("");
@@ -602,12 +604,16 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
         </Card>
 
         {/* Site Details */}
-        <SiteDetails 
+        <SiteDetails
           summary={site.summary}
           siteName={site.name}
           siteAddress={site.address}
           siteCity={site.city}
         />
+        <Button variant="outline" size="sm" className="w-full" onClick={() => setShowFullSummary(true)}>
+          <ClipboardList className="h-4 w-4 mr-2" />
+          View Full Summary Sheet
+        </Button>
 
         {/* Inspection Summary */}
         <InspectionSummary jobId={jobId} />
@@ -1771,6 +1777,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <FullSummarySheet site={site} open={showFullSummary} onOpenChange={setShowFullSummary} />
     </div>
   );
 }
