@@ -1603,26 +1603,26 @@
 - [x] Handle missing/partial Summary Sheet gracefully (try-catch with logging)
 
 ### Technician UI - Inspection Summary
-- [ ] Add "Inspection Summary" section at top of job details page
-- [ ] Display system coverage checklist (Fire Alarm, Sprinkler, Extinguishers, Lights, Smoke Alarms)
-- [ ] Show totals by category (keep Smoke Alarms separate from Fire Alarm Devices)
-- [ ] Display deficiency counts by severity
-- [ ] Show key site summary fields (client/building/address + primary contact)
-- [ ] Add "View Full Summary Sheet" button
+- [x] Add "Inspection Summary" section at top of job details page
+- [x] Display system coverage checklist (Fire Alarm, Sprinkler, Extinguishers, Lights, Smoke Alarms)
+- [x] Show totals by category (keep Smoke Alarms separate from Fire Alarm Devices)
+- [x] Display deficiency counts by severity
+- [x] Show key site summary fields (client/building/address + primary contact)
+- [x] Add "View Full Summary Sheet" button
 
 ### Technician UI - Full Summary Sheet View
-- [ ] Create dedicated Full Summary Sheet page/modal
-- [ ] Layout resembling Excel Summary Sheet (grouped blocks)
-- [ ] Display: Client/Site, Billing, Contacts, Monitoring, Building info, estimates/budget
-- [ ] Allow tech edits for: servicing hours estimate, notes fields, field observations
-- [ ] Make admin-only fields read-only for technicians
-- [ ] Responsive design for mobile
+- [x] Create dedicated Full Summary Sheet page/modal (modal, via FullSummarySheet.tsx)
+- [x] Layout resembling Excel Summary Sheet (grouped blocks)
+- [x] Display: Client/Site, Billing, Contacts, Monitoring, Building info, estimates/budget
+- [ ] Allow tech edits for: servicing hours estimate (done), notes fields, field observations (not done)
+- [x] Make admin-only fields read-only for technicians (repair budget shown read-only)
+- [ ] Responsive design for mobile — not verified live (no DB/OAuth creds in this sandbox to log in and check)
 
 ### Admin UI - Summary Sheet Editor
-- [ ] Add "Summary Sheet" panel in admin site details page
-- [ ] Allow admin to edit all summary fields (client, billing, contacts)
-- [ ] Ensure editing summary does NOT alter inspection results
-- [ ] Save changes to site.summary JSON
+- [x] Add "Summary Sheet" panel in admin site details page (dialog via SummarySheetEditor.tsx, from Sites list dropdown)
+- [x] Allow admin to edit all summary fields (billing, monitoring, building, estimates, contacts — client/building name stays tied to the Edit Site name field)
+- [x] Ensure editing summary does NOT alter inspection results (only touches summary JSON, never devices/inspectionResults/totals)
+- [x] Save changes to site.summary JSON
 
 ### Acceptance Criteria
 - [ ] New sites show "Inspection Summary" section immediately (even if blank)
