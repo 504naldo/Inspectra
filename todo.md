@@ -1616,7 +1616,7 @@
 - [x] Display: Client/Site, Billing, Contacts, Monitoring, Building info, estimates/budget
 - [ ] Allow tech edits for: servicing hours estimate (done), notes fields, field observations (not done)
 - [x] Make admin-only fields read-only for technicians (repair budget shown read-only)
-- [ ] Responsive design for mobile — not verified live (no DB/OAuth creds in this sandbox to log in and check)
+- [x] Responsive design for mobile — verified live (self-provisioned disposable local MySQL DB + self-minted session JWTs + Playwright at 390px width: admin editor and technician view both scroll/render/save correctly)
 
 ### Admin UI - Summary Sheet Editor
 - [x] Add "Summary Sheet" panel in admin site details page (dialog via SummarySheetEditor.tsx, from Sites list dropdown)
