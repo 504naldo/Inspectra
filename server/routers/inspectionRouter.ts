@@ -2,27 +2,30 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, technicianProcedure, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
-import { withAudit, assertJobNotFinalized } from "../db";
+import { withAudit, assertJobNotFinalized, assertJobCompany } from "../db";
 
 // Inspection Result router
 const inspectionResultRouter = router({
-  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
+    await assertJobCompany(input.jobId, ctx.user.companyId!);
     return db.getInspectionResultsByJob(input.jobId);
   }),
-  
-  getByJobAndDevice: technicianProcedure.input(z.object({ 
+
+  getByJobAndDevice: technicianProcedure.input(z.object({
     jobId: z.number(),
     deviceId: z.number()
-  })).query(async ({ input }) => {
+  })).query(async ({ input, ctx }) => {
+    await assertJobCompany(input.jobId, ctx.user.companyId!);
     return db.getInspectionResultByJobAndDevice(input.jobId, input.deviceId);
   }),
-  
+
   upsert: technicianProcedure.input(z.object({
     jobId: z.number(),
     deviceId: z.number(),
     result: z.enum(['pass', 'fail', 'na', 'not_tested']),
     notes: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
+    await assertJobCompany(input.jobId, ctx.user.companyId!);
     return withAudit(ctx, 'inspectionResult.upsert', async (_tx) => {
       await assertJobNotFinalized(input.jobId, _tx);
       const data = {
@@ -34,12 +37,13 @@ const inspectionResultRouter = router({
       return db.upsertInspectionResult(data);
     });
   }),
-  
+
   bulkMarkPass: technicianProcedure.input(z.object({
     jobId: z.number(),
     deviceIds: z.array(z.number()),
     notes: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
+    await assertJobCompany(input.jobId, ctx.user.companyId!);
     return withAudit(ctx, 'inspectionResult.bulkMarkPass', async (_tx) => {
       await assertJobNotFinalized(input.jobId, _tx);
       const results = [];
@@ -59,18 +63,19 @@ const inspectionResultRouter = router({
       return { count: results.length, results };
     });
   }),
-  
-  getStats: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+
+  getStats: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
+    await assertJobCompany(input.jobId, ctx.user.companyId!);
     return db.getInspectionStats(input.jobId);
   }),
-  
+
   // Returns the result for this device from the most recent completed job at the same site.
   // Used to pre-fill suggestions and detect regressions on DeviceTest.
   getHistoricalForDevice: technicianProcedure
     .input(z.object({ jobId: z.number(), deviceId: z.number() }))
-    .query(async ({ input }) => {
-      const job = await db.getJobById(input.jobId);
-      if (!job?.siteId) return null;
+    .query(async ({ input, ctx }) => {
+      const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
+      if (!job.siteId) return null;
 
       const lastJob = await db.getLastCompletedJobForSite(job.siteId);
       if (!lastJob || lastJob.id === input.jobId) return null;
@@ -97,6 +102,12 @@ const inspectionResultRouter = router({
       testedAt: z.date().optional(),
     }))
   })).mutation(async ({ input, ctx }) => {
+    const jobIds = Array.from(new Set(input.results.map((r) => r.jobId)));
+    for (const jobId of jobIds) {
+      await assertJobCompany(jobId, ctx.user.companyId!);
+      await assertJobNotFinalized(jobId);
+    }
+
     const synced = [];
     for (const result of input.results) {
       const data = {
@@ -107,7 +118,7 @@ const inspectionResultRouter = router({
       };
       const saved = await db.upsertInspectionResult(data);
       synced.push(saved);
-      
+
       // Log sync
       await db.createSyncLog({
         userId: ctx.user.id,
@@ -123,18 +134,20 @@ const inspectionResultRouter = router({
 
 
 // Checklist router
-const checklistRouter = router({  
+const checklistRouter = router({
   saveResponse: technicianProcedure.input(z.object({
     jobId: z.number(),
     sectionNumber: z.string(),
     itemId: z.string(),
     status: z.enum(['PASS', 'DEFICIENT', 'NA']),
     comment: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    await assertJobCompany(input.jobId, ctx.user.companyId!);
+    await assertJobNotFinalized(input.jobId);
     await db.saveChecklistResponse(input);
     return { success: true };
   }),
-  
+
   bulkSaveResponses: technicianProcedure.input(z.object({
     responses: z.array(z.object({
       jobId: z.number(),
@@ -143,24 +156,32 @@ const checklistRouter = router({
       status: z.enum(['PASS', 'DEFICIENT', 'NA']),
       comment: z.string().optional(),
     })),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    const jobIds = Array.from(new Set(input.responses.map((r) => r.jobId)));
+    for (const jobId of jobIds) {
+      await assertJobCompany(jobId, ctx.user.companyId!);
+      await assertJobNotFinalized(jobId);
+    }
     await db.bulkSaveChecklistResponses(input.responses);
     return { success: true };
   }),
-  
-  getByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+
+  getByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
+    await assertJobCompany(input.jobId, ctx.user.companyId!);
     return db.getChecklistResponsesByJob(input.jobId);
   }),
-  
+
   getByJobAndItem: protectedProcedure.input(z.object({
     jobId: z.number(),
     sectionNumber: z.string(),
     itemId: z.string(),
-  })).query(async ({ input }) => {
+  })).query(async ({ input, ctx }) => {
+    await assertJobCompany(input.jobId, ctx.user.companyId!);
     return db.getChecklistResponseByJobAndItem(input.jobId, input.sectionNumber, input.itemId);
   }),
-  
-  deleteByJob: officeProcedure.input(z.object({ jobId: z.number() })).mutation(async ({ input }) => {
+
+  deleteByJob: officeProcedure.input(z.object({ jobId: z.number() })).mutation(async ({ input, ctx }) => {
+    await assertJobCompany(input.jobId, ctx.user.companyId!);
     await db.deleteChecklistResponsesByJob(input.jobId);
     return { success: true };
   }),

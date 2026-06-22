@@ -1,6 +1,6 @@
 import { router, protectedProcedure, technicianProcedure } from "./_core/trpc";
 import { z } from "zod";
-import { getDb } from "./db";
+import { getDb, assertJobCompany, assertJobNotFinalized } from "./db";
 import { fireAlarmSystems, fireAlarmChecklistTemplates, fireAlarmInspectionResults } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 
@@ -133,7 +133,8 @@ export const fireAlarmRouter = router({
    */
   getJobChecklist: technicianProcedure
     .input(z.object({ jobId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
       const database = await getDb();
       if (!database) return [];
 
@@ -180,7 +181,8 @@ export const fireAlarmRouter = router({
   // Get inspection results for a job (raw, backward compat)
   getInspectionResults: protectedProcedure
     .input(z.object({ jobId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
       const database = await getDb();
       if (!database) return [];
 
@@ -204,6 +206,8 @@ export const fireAlarmRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      await assertJobNotFinalized(input.jobId);
       const database = await getDb();
       if (!database) throw new Error("Database not available");
 

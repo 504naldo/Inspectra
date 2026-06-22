@@ -3,7 +3,11 @@ import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
 // Mock the DB so tests don't need a real database connection
-vi.mock("./db", () => ({ getDb: vi.fn() }));
+vi.mock("./db", () => ({
+  getDb: vi.fn(),
+  assertJobCompany: vi.fn().mockResolvedValue(undefined),
+  assertJobNotFinalized: vi.fn().mockResolvedValue(undefined),
+}));
 import * as db from "./db";
 import { createMockDb } from "./fireAlarmTestFixture";
 
