@@ -30,6 +30,20 @@ const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB decoded — well within the 50M
 const STORED_TEXT_CAP = 60000; // stay within MySQL TEXT (~64KB) and match what was classified
 const QA_MODEL = "gpt-4o-mini";
 
+// Mirrors the SYSTEM_OPTIONS list used elsewhere (e.g. RepairQuoteDetail) so
+// site-system knowledge pages line up with the same categories the rest of
+// the app already inspects/repairs against.
+const SITE_SYSTEM_TYPES = ["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER", "BACKFLOW", "OTHER"] as const;
+const SYSTEM_LABELS: Record<string, string> = {
+  FIRE_ALARM: "Fire Alarm",
+  SMOKE_ALARM: "Smoke Alarm",
+  FIRE_EXTINGUISHER: "Fire Extinguisher",
+  EMERGENCY_LIGHTING: "Emergency Lighting",
+  SPRINKLER: "Sprinkler",
+  BACKFLOW: "Backflow",
+  OTHER: "Other",
+};
+
 function sanitizeFilename(name: string): string {
   return name.replace(/\s+/g, "_").replace(/[^\w.\-]/g, "").replace(/_{2,}/g, "_").slice(0, 120) || "document";
 }
@@ -109,6 +123,49 @@ export const knowledgePageRouter = router({
         eventType: "knowledge_page.created",
         title: `Property knowledge page created for ${site.name}`,
         metadata: { siteId: input.siteId },
+      });
+
+      return page;
+    }),
+
+  /**
+   * Returns the site's existing knowledge page for one system category (e.g.
+   * this property's Sprinkler system), creating one if none exists. Distinct
+   * from the general property page so system-specific facts (test frequency,
+   * panel model, valve locations) stay scoped to readers asking about that
+   * system rather than mixed into general property knowledge.
+   */
+  getOrCreateForSiteSystem: officeProcedure
+    .input(z.object({
+      siteId: z.number().int().positive(),
+      systemType: z.enum(SITE_SYSTEM_TYPES),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const site = await assertSiteCompany(input.siteId, companyId);
+
+      const existing = await db.listKnowledgePagesBySite(companyId, input.siteId);
+      const systemPage = existing.find(
+        (p) => p.subjectType === "site_system" && p.systemType === input.systemType,
+      );
+      if (systemPage) return systemPage;
+
+      const page = await db.createKnowledgePage({
+        companyId,
+        subjectType: "site_system",
+        siteId: input.siteId,
+        systemType: input.systemType,
+        title: `${site.name} — ${SYSTEM_LABELS[input.systemType]} Knowledge`,
+        createdById: ctx.user.id,
+      });
+
+      void logActivity({
+        ctx,
+        entityType: "knowledge_page",
+        entityId: page.id,
+        eventType: "knowledge_page.created",
+        title: `${SYSTEM_LABELS[input.systemType]} knowledge page created for ${site.name}`,
+        metadata: { siteId: input.siteId, systemType: input.systemType },
       });
 
       return page;
