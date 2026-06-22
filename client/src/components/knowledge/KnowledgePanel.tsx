@@ -15,8 +15,12 @@ const DOCUMENT_TYPES = [
   { value: "equipment_manual", label: "Equipment Manual" },
   { value: "code_document", label: "Code / Standard" },
   { value: "company_procedure", label: "Company Procedure" },
+  { value: "voice_note", label: "Voice Note" },
   { value: "other", label: "Other" },
 ] as const;
+
+const AUDIO_ACCEPT = ".mp3,.mpga,.m4a,.wav,.webm,.ogg,audio/*";
+const PDF_ACCEPT = "application/pdf,.pdf";
 
 const STATUS_STYLES: Record<string, string> = {
   draft: "bg-amber-100 text-amber-800",
@@ -68,6 +72,7 @@ export default function KnowledgePanel({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [documentType, setDocumentType] = useState<string>(defaultDocumentType);
+  const isVoiceNote = documentType === "voice_note";
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<{
     answer: string;
@@ -221,12 +226,16 @@ export default function KnowledgePanel({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Upload source document</DialogTitle>
-            <DialogDescription>PDF only. Text is extracted and classified into draft facts for your review.</DialogDescription>
+            <DialogDescription>
+              {isVoiceNote
+                ? "Audio only. The recording is transcribed and classified into draft facts for your review."
+                : "PDF only. Text is extracted and classified into draft facts for your review."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label>Document type</Label>
-              <Select value={documentType} onValueChange={setDocumentType}>
+              <Select value={documentType} onValueChange={(v) => { setDocumentType(v); setPendingFile(null); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {DOCUMENT_TYPES.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
@@ -234,8 +243,12 @@ export default function KnowledgePanel({
               </Select>
             </div>
             <div>
-              <Label>PDF file</Label>
-              <Input type="file" accept="application/pdf,.pdf" onChange={(e) => setPendingFile(e.target.files?.[0] ?? null)} />
+              <Label>{isVoiceNote ? "Audio file" : "PDF file"}</Label>
+              <Input
+                type="file"
+                accept={isVoiceNote ? AUDIO_ACCEPT : PDF_ACCEPT}
+                onChange={(e) => setPendingFile(e.target.files?.[0] ?? null)}
+              />
             </div>
           </div>
           <DialogFooter>

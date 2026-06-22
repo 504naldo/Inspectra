@@ -43,12 +43,12 @@ vi.mock("./activityLogger", () => ({ logActivity: vi.fn() }));
 vi.mock("./storage", () => ({ storagePut: vi.fn(async () => ({ key: "k", url: "https://example/u" })) }));
 vi.mock("./_core/pdfImport", () => ({ extractPdfText: vi.fn(async () => "extracted text") }));
 vi.mock("./_core/knowledgeExtraction", () => ({ classifyDocumentText: vi.fn() }));
-vi.mock("./_core/llm", () => ({ invokeLLM: vi.fn() }));
+vi.mock("./_core/llm", () => ({ invokeLLM: vi.fn(), transcribeAudio: vi.fn() }));
 
 import * as db from "./db";
 import * as storage from "./storage";
 import { classifyDocumentText } from "./_core/knowledgeExtraction";
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, transcribeAudio } from "./_core/llm";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
@@ -285,6 +285,61 @@ describe("Equipment-model knowledge pages", () => {
     expect(db.createKnowledgeSourceDocument).toHaveBeenCalledWith(expect.objectContaining({ siteId: null, pageId: 8 }));
     expect(db.createKnowledgeFact).toHaveBeenCalledWith(expect.objectContaining({ status: "draft", generatedByAi: true }));
     expect(db.createKnowledgeFactCitation).toHaveBeenCalledWith(expect.objectContaining({ sourceType: "knowledge_source_document", sourceId: 300 }));
+  });
+});
+
+describe("Voice-note ingestion", () => {
+  it("transcribes audio (not PDF text extraction) into a draft technician-observation fact", async () => {
+    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 1, name: "Acme Tower" } as any);
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1, siteId: 5 } as any);
+    vi.mocked(db.createKnowledgeSourceDocument).mockResolvedValue({ id: 400 } as any);
+    vi.mocked(db.createKnowledgeFact).mockResolvedValue({ id: 401 } as any);
+    vi.mocked(db.createKnowledgeFactCitation).mockResolvedValue({ id: 1 } as any);
+    vi.mocked(transcribeAudio).mockResolvedValue("Panel battery looked corroded near the contacts.");
+    vi.mocked(classifyDocumentText).mockResolvedValue({
+      modelUsed: "gpt-4o-mini", promptHash: "h",
+      facts: [{ content: "Panel battery is corroded", sourceType: "technician_observation", citationExcerpt: "battery looked corroded", locationRef: null, confidence: "medium" }],
+    });
+
+    const caller = appRouter.createCaller(makeCtx(1));
+    const res = await caller.knowledgeIngestion.ingestDocument({
+      siteId: 5, pageId: 7, documentType: "voice_note", fileName: "walkthrough.m4a", fileDataBase64: PDF_B64,
+    });
+
+    expect(res.factsCreated).toBe(1);
+    expect(transcribeAudio).toHaveBeenCalledWith(expect.anything(), "walkthrough.m4a", "audio/mp4");
+    expect(db.createKnowledgeSourceDocument).toHaveBeenCalledWith(expect.objectContaining({ mimeType: "audio/mp4" }));
+    expect(storage.storagePut).toHaveBeenCalledWith(expect.any(String), expect.anything(), "audio/mp4");
+  });
+
+  it("rejects a non-audio file extension for documentType voice_note before any storage/transcription", async () => {
+    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 1, name: "Acme Tower" } as any);
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1, siteId: 5 } as any);
+
+    const caller = appRouter.createCaller(makeCtx(1));
+    await expect(
+      caller.knowledgeIngestion.ingestDocument({
+        siteId: 5, pageId: 7, documentType: "voice_note", fileName: "walkthrough.pdf", fileDataBase64: PDF_B64,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(storage.storagePut).not.toHaveBeenCalled();
+    expect(transcribeAudio).not.toHaveBeenCalled();
+  });
+
+  it("fails extraction when transcription returns no speech, without classifying", async () => {
+    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 1, name: "Acme Tower" } as any);
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1, siteId: 5 } as any);
+    vi.mocked(db.createKnowledgeSourceDocument).mockResolvedValue({ id: 400 } as any);
+    vi.mocked(transcribeAudio).mockResolvedValue("   ");
+
+    const caller = appRouter.createCaller(makeCtx(1));
+    await expect(
+      caller.knowledgeIngestion.ingestDocument({
+        siteId: 5, pageId: 7, documentType: "voice_note", fileName: "silent.wav", fileDataBase64: PDF_B64,
+      }),
+    ).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT" });
+    expect(db.updateKnowledgeSourceDocument).toHaveBeenCalledWith(400, expect.objectContaining({ extractionStatus: "failed" }));
+    expect(classifyDocumentText).not.toHaveBeenCalled();
   });
 });
 

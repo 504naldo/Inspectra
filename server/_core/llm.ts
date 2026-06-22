@@ -297,3 +297,36 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   return (await response.json()) as InvokeResult;
 }
+
+/** Transcribes an audio file to text via OpenAI's Whisper endpoint. */
+export async function transcribeAudio(
+  buffer: Buffer,
+  filename: string,
+  mimeType: string
+): Promise<string> {
+  const apiKey = ENV.openaiApiKey;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not configured");
+  }
+
+  const form = new FormData();
+  const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+  form.append("file", new Blob([arrayBuffer], { type: mimeType }), filename);
+  form.append("model", "whisper-1");
+
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Audio transcription failed: ${response.status} ${response.statusText} – ${errorText}`
+    );
+  }
+
+  const result = (await response.json()) as { text: string };
+  return result.text;
+}
