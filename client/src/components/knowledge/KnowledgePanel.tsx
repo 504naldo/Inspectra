@@ -198,6 +198,9 @@ export default function KnowledgePanel({
                 <span>{SOURCE_LABELS[f.sourceType] ?? f.sourceType}</span>
                 {f.generatedByAi && <Badge variant="outline">AI</Badge>}
                 {f.confidence && <span>· confidence: {f.confidence}</span>}
+                {f.potentiallyOutdated && (
+                  <Badge className="bg-orange-100 text-orange-800">Newer report available — review</Badge>
+                )}
               </div>
               {f.citations.length > 0 && (
                 <div className="text-xs text-muted-foreground border-l-2 pl-2 space-y-1">
