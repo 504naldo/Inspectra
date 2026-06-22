@@ -199,7 +199,7 @@ export default function KnowledgePanel({
                 {f.generatedByAi && <Badge variant="outline">AI</Badge>}
                 {f.confidence && <span>· confidence: {f.confidence}</span>}
                 {f.potentiallyOutdated && (
-                  <Badge className="bg-orange-100 text-orange-800">Newer report available — review</Badge>
+                  <Badge className="bg-orange-100 text-orange-800">May be outdated — review</Badge>
                 )}
               </div>
               {f.citations.length > 0 && (

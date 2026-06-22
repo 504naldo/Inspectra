@@ -38,6 +38,7 @@ vi.mock("./db", () => ({
   createEquipmentModel: vi.fn(),
   listEquipmentModels: vi.fn(),
   listKnowledgePagesByEquipmentModel: vi.fn(),
+  getServiceSchedulesBySite: vi.fn(async () => []),
 }));
 
 vi.mock("./activityLogger", () => ({ logActivity: vi.fn() }));
@@ -399,6 +400,75 @@ describe("Staleness indicator", () => {
     const res = await caller.knowledgeFact.listForPage({ pageId: 8 });
 
     expect(res[0].potentiallyOutdated).toBe(false);
+  });
+
+  it("flags a point-in-time fact once a relevant service schedule was completed after it was established", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1, siteId: 50, subjectType: "site", systemType: null } as any);
+    vi.mocked(db.listKnowledgeFactsByPage).mockResolvedValue([
+      { id: 10, pageId: 7, status: "verified", sourceType: "technician_observation", createdAt: new Date("2024-01-01") },
+    ] as any);
+    vi.mocked(db.listCitationsByFactIds).mockResolvedValue([] as any);
+    vi.mocked(db.getServiceSchedulesBySite).mockResolvedValue([
+      { id: 1, companyId: 1, siteId: 50, active: true, serviceType: "Fire Alarm Inspection", lastCompletedAt: new Date("2025-01-01") },
+    ] as any);
+
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const res = await caller.knowledgeFact.listForPage({ pageId: 7 });
+
+    expect(res[0].potentiallyOutdated).toBe(true);
+  });
+
+  it("does not flag a point-in-time fact when the schedule's last completion predates it", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1, siteId: 50, subjectType: "site", systemType: null } as any);
+    vi.mocked(db.listKnowledgeFactsByPage).mockResolvedValue([
+      { id: 10, pageId: 7, status: "verified", sourceType: "technician_observation", createdAt: new Date("2024-01-01") },
+    ] as any);
+    vi.mocked(db.listCitationsByFactIds).mockResolvedValue([] as any);
+    vi.mocked(db.getServiceSchedulesBySite).mockResolvedValue([
+      { id: 1, companyId: 1, siteId: 50, active: true, serviceType: "Fire Alarm Inspection", lastCompletedAt: new Date("2023-01-01") },
+    ] as any);
+
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const res = await caller.knowledgeFact.listForPage({ pageId: 7 });
+
+    expect(res[0].potentiallyOutdated).toBe(false);
+  });
+
+  it("never flags durable facts (manufacturer docs/code requirements) from a service visit, no matter how recent", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1, siteId: 50, subjectType: "site", systemType: null } as any);
+    vi.mocked(db.listKnowledgeFactsByPage).mockResolvedValue([
+      { id: 10, pageId: 7, status: "verified", sourceType: "manufacturer_doc", createdAt: new Date("2024-01-01") },
+    ] as any);
+    vi.mocked(db.listCitationsByFactIds).mockResolvedValue([] as any);
+    vi.mocked(db.getServiceSchedulesBySite).mockResolvedValue([
+      { id: 1, companyId: 1, siteId: 50, active: true, serviceType: "Fire Alarm Inspection", lastCompletedAt: new Date("2025-01-01") },
+    ] as any);
+
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const res = await caller.knowledgeFact.listForPage({ pageId: 7 });
+
+    expect(res[0].potentiallyOutdated).toBe(false);
+  });
+
+  it("on a site_system page, only flags facts when the completed schedule matches that system", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 9, companyId: 1, siteId: 60, subjectType: "site_system", systemType: "FIRE_ALARM" } as any);
+    vi.mocked(db.listKnowledgeFactsByPage).mockResolvedValue([
+      { id: 12, pageId: 9, status: "verified", sourceType: "technician_observation", createdAt: new Date("2024-01-01") },
+    ] as any);
+    vi.mocked(db.listCitationsByFactIds).mockResolvedValue([] as any);
+
+    vi.mocked(db.getServiceSchedulesBySite).mockResolvedValue([
+      { id: 1, companyId: 1, siteId: 60, active: true, serviceType: "Sprinkler Inspection", lastCompletedAt: new Date("2025-01-01") },
+    ] as any);
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const unrelated = await caller.knowledgeFact.listForPage({ pageId: 9 });
+    expect(unrelated[0].potentiallyOutdated).toBe(false);
+
+    vi.mocked(db.getServiceSchedulesBySite).mockResolvedValue([
+      { id: 2, companyId: 1, siteId: 60, active: true, serviceType: "Fire Alarm Inspection", lastCompletedAt: new Date("2025-01-01") },
+    ] as any);
+    const matching = await caller.knowledgeFact.listForPage({ pageId: 9 });
+    expect(matching[0].potentiallyOutdated).toBe(true);
   });
 });
 
