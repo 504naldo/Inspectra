@@ -24,6 +24,7 @@ vi.mock("./db", () => ({
   createKnowledgeSourceDocument: vi.fn(),
   updateKnowledgeSourceDocument: vi.fn(),
   listKnowledgeSourceDocumentsBySite: vi.fn(),
+  listKnowledgeSourceDocumentsByPage: vi.fn(async () => []),
   createKnowledgeFact: vi.fn(),
   createKnowledgeFactCitation: vi.fn(),
   listKnowledgeFactsByPage: vi.fn(),
@@ -340,6 +341,64 @@ describe("Voice-note ingestion", () => {
     ).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT" });
     expect(db.updateKnowledgeSourceDocument).toHaveBeenCalledWith(400, expect.objectContaining({ extractionStatus: "failed" }));
     expect(classifyDocumentText).not.toHaveBeenCalled();
+  });
+});
+
+describe("Staleness indicator", () => {
+  it("flags a fact cited from an inspection report once a newer inspection report exists for the page", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1 } as any);
+    vi.mocked(db.listKnowledgeFactsByPage).mockResolvedValue([
+      { id: 10, pageId: 7, status: "verified", sourceType: "technician_observation" },
+    ] as any);
+    vi.mocked(db.listCitationsByFactIds).mockResolvedValue([
+      { id: 1, factId: 10, sourceType: "knowledge_source_document", sourceId: 100 },
+    ] as any);
+    vi.mocked(db.listKnowledgeSourceDocumentsByPage).mockResolvedValue([
+      { id: 100, documentType: "inspection_report", createdAt: new Date("2024-01-01") },
+      { id: 101, documentType: "inspection_report", createdAt: new Date("2025-01-01") },
+    ] as any);
+
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const res = await caller.knowledgeFact.listForPage({ pageId: 7 });
+
+    expect(res[0].potentiallyOutdated).toBe(true);
+  });
+
+  it("does not flag a fact cited from the most recent document of its type", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1 } as any);
+    vi.mocked(db.listKnowledgeFactsByPage).mockResolvedValue([
+      { id: 10, pageId: 7, status: "verified", sourceType: "technician_observation" },
+    ] as any);
+    vi.mocked(db.listCitationsByFactIds).mockResolvedValue([
+      { id: 1, factId: 10, sourceType: "knowledge_source_document", sourceId: 100 },
+    ] as any);
+    vi.mocked(db.listKnowledgeSourceDocumentsByPage).mockResolvedValue([
+      { id: 100, documentType: "inspection_report", createdAt: new Date("2024-01-01") },
+    ] as any);
+
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const res = await caller.knowledgeFact.listForPage({ pageId: 7 });
+
+    expect(res[0].potentiallyOutdated).toBe(false);
+  });
+
+  it("never flags facts from durable document types (manuals/codes) even when a newer one exists", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 8, companyId: 1 } as any);
+    vi.mocked(db.listKnowledgeFactsByPage).mockResolvedValue([
+      { id: 11, pageId: 8, status: "verified", sourceType: "manufacturer_doc" },
+    ] as any);
+    vi.mocked(db.listCitationsByFactIds).mockResolvedValue([
+      { id: 2, factId: 11, sourceType: "knowledge_source_document", sourceId: 200 },
+    ] as any);
+    vi.mocked(db.listKnowledgeSourceDocumentsByPage).mockResolvedValue([
+      { id: 200, documentType: "equipment_manual", createdAt: new Date("2024-01-01") },
+      { id: 201, documentType: "equipment_manual", createdAt: new Date("2025-01-01") },
+    ] as any);
+
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const res = await caller.knowledgeFact.listForPage({ pageId: 8 });
+
+    expect(res[0].potentiallyOutdated).toBe(false);
   });
 });
 

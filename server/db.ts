@@ -4003,6 +4003,14 @@ export async function listKnowledgeSourceDocumentsBySite(companyId: number, site
     .orderBy(desc(knowledgeSourceDocuments.createdAt));
 }
 
+export async function listKnowledgeSourceDocumentsByPage(companyId: number, pageId: number): Promise<KnowledgeSourceDocument[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(knowledgeSourceDocuments)
+    .where(and(eq(knowledgeSourceDocuments.companyId, companyId), eq(knowledgeSourceDocuments.pageId, pageId)))
+    .orderBy(desc(knowledgeSourceDocuments.createdAt));
+}
+
 // ── Q&A audit log ──
 export async function createKnowledgeQuestion(data: InsertKnowledgeQuestion): Promise<KnowledgeQuestion> {
   const db = await getDb();

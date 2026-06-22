@@ -30,6 +30,11 @@ const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB decoded — under Whisper's 25M
 const STORED_TEXT_CAP = 60000; // stay within MySQL TEXT (~64KB) and match what was classified
 const QA_MODEL = "gpt-4o-mini";
 
+// Document types whose facts describe the property as of a single visit, so a
+// later document of the same type may supersede them (unlike manuals/codes/
+// procedures, which don't go stale just because a new inspection happened).
+const STALE_PRONE_DOCUMENT_TYPES = new Set(["inspection_report", "voice_note"]);
+
 // Whisper's supported container/codec list, minus formats this app has no other use for.
 const AUDIO_MIME_BY_EXT: Record<string, string> = {
   mp3: "audio/mpeg",
@@ -523,7 +528,25 @@ export const knowledgeFactRouter = router({
         byFact.set(c.factId, arr);
       }
 
-      return facts.map((f) => ({ ...f, citations: byFact.get(f.id) ?? [] }));
+      const sourceDocs = await db.listKnowledgeSourceDocumentsByPage(companyId, input.pageId);
+      const docById = new Map(sourceDocs.map((d) => [d.id, d]));
+      const latestByDocType = new Map<string, Date>();
+      for (const d of sourceDocs) {
+        const current = latestByDocType.get(d.documentType);
+        if (!current || d.createdAt > current) latestByDocType.set(d.documentType, d.createdAt);
+      }
+
+      return facts.map((f) => {
+        const factCitations = byFact.get(f.id) ?? [];
+        const potentiallyOutdated = factCitations.some((c) => {
+          if (c.sourceType !== "knowledge_source_document" || c.sourceId === null) return false;
+          const doc = docById.get(c.sourceId);
+          if (!doc || !STALE_PRONE_DOCUMENT_TYPES.has(doc.documentType)) return false;
+          const latest = latestByDocType.get(doc.documentType);
+          return latest !== undefined && latest > doc.createdAt;
+        });
+        return { ...f, citations: factCitations, potentiallyOutdated };
+      });
     }),
 
   markReviewed: officeProcedure
