@@ -66,7 +66,7 @@ import { feedbackRouter } from "./routers/feedbackRouter";
 import { workflowHealthRouter } from "./routers/workflowHealthRouter";
 import { contactRouter } from "./routers/contactRouter";
 import { mediaRouter } from "./routers/mediaRouter";
-import { knowledgePageRouter, knowledgeIngestionRouter, knowledgeFactRouter, knowledgeQARouter } from "./routers/knowledgeSystemRouter";
+import { knowledgePageRouter, knowledgeEquipmentRouter, knowledgeIngestionRouter, knowledgeFactRouter, knowledgeQARouter } from "./routers/knowledgeSystemRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -163,6 +163,7 @@ export const appRouter = router({
   contact: contactRouter,
   media: mediaRouter,
   knowledgePage: knowledgePageRouter,
+  knowledgeEquipment: knowledgeEquipmentRouter,
   knowledgeIngestion: knowledgeIngestionRouter,
   knowledgeFact: knowledgeFactRouter,
   knowledgeQA: knowledgeQARouter,

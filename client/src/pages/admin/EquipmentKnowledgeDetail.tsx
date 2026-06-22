@@ -7,10 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import KnowledgePanel from "@/components/knowledge/KnowledgePanel";
 import { trpc } from "@/lib/trpc";
 
-export default function SiteKnowledge() {
+export default function EquipmentKnowledgeDetail() {
   const { user } = useAuth();
-  const params = useParams<{ siteId: string }>();
-  const siteId = parseInt(params.siteId || "0");
+  const params = useParams<{ modelId: string }>();
+  const equipmentModelId = parseInt(params.modelId || "0");
 
   if (!user || !user.companyId) {
     return (
@@ -22,15 +22,18 @@ export default function SiteKnowledge() {
     );
   }
 
-  const { data: site } = trpc.site.get.useQuery({ id: siteId }, { enabled: siteId > 0 });
-  const { data: pages, refetch: refetchPages } = trpc.knowledgePage.listBySite.useQuery(
-    { siteId },
-    { enabled: siteId > 0 },
+  const { data: model } = trpc.knowledgeEquipment.getModel.useQuery(
+    { equipmentModelId },
+    { enabled: equipmentModelId > 0 },
   );
-  const sitePage = pages?.find((p) => p.subjectType === "site");
-  const pageId = sitePage?.id;
+  const { data: pages, refetch: refetchPages } = trpc.knowledgeEquipment.listPages.useQuery(
+    { equipmentModelId },
+    { enabled: equipmentModelId > 0 },
+  );
+  const modelPage = pages?.find((p) => p.subjectType === "equipment_model");
+  const pageId = modelPage?.id;
 
-  const getOrCreate = trpc.knowledgePage.getOrCreateForSite.useMutation({
+  const getOrCreate = trpc.knowledgeEquipment.getOrCreateForModel.useMutation({
     onSuccess: () => refetchPages(),
     onError: (e) => toast.error(e.message),
   });
@@ -39,9 +42,11 @@ export default function SiteKnowledge() {
     <AdminLayout>
       <div className="space-y-6 max-w-5xl">
         <div>
-          <Link href={`/admin/sites`} className="text-sm text-muted-foreground hover:underline">← Sites</Link>
-          <h1 className="text-2xl font-semibold mt-1">Property Knowledge</h1>
-          <p className="text-muted-foreground">{site?.name ?? `Site #${siteId}`}</p>
+          <Link href="/admin/equipment-knowledge" className="text-sm text-muted-foreground hover:underline">← Equipment Knowledge</Link>
+          <h1 className="text-2xl font-semibold mt-1">
+            {model ? `${model.manufacturer} ${model.model}` : `Equipment #${equipmentModelId}`}
+          </h1>
+          {model?.deviceType && <p className="text-muted-foreground">{model.deviceType}</p>}
         </div>
 
         {!pageId && (
@@ -49,13 +54,13 @@ export default function SiteKnowledge() {
             <CardHeader>
               <CardTitle>No knowledge page yet</CardTitle>
               <CardDescription>
-                Create a property knowledge page to start ingesting reports and manuals for this site.
+                Create a knowledge page to start ingesting manuals and documentation for this equipment model.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Button
                 disabled={getOrCreate.isPending}
-                onClick={() => getOrCreate.mutate({ siteId })}
+                onClick={() => getOrCreate.mutate({ equipmentModelId })}
               >
                 Create knowledge page
               </Button>
@@ -66,9 +71,8 @@ export default function SiteKnowledge() {
         {pageId && (
           <KnowledgePanel
             pageId={pageId}
-            siteId={siteId}
-            defaultDocumentType="inspection_report"
-            questionPlaceholder="e.g. What fire alarm panel is installed here?"
+            defaultDocumentType="equipment_manual"
+            questionPlaceholder="e.g. What is the battery specification for this panel?"
           />
         )}
       </div>

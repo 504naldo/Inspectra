@@ -32,6 +32,11 @@ vi.mock("./db", () => ({
   countCitationsForFact: vi.fn(),
   createKnowledgeQuestion: vi.fn(),
   listKnowledgeQuestionsByPage: vi.fn(),
+  getEquipmentModelById: vi.fn(),
+  findEquipmentModel: vi.fn(),
+  createEquipmentModel: vi.fn(),
+  listEquipmentModels: vi.fn(),
+  listKnowledgePagesByEquipmentModel: vi.fn(),
 }));
 
 vi.mock("./activityLogger", () => ({ logActivity: vi.fn() }));
@@ -196,6 +201,50 @@ describe("Editing is append-only", () => {
     expect(db.createKnowledgeFactCitation).toHaveBeenCalledWith(expect.objectContaining({ factId: 99, sourceId: 100 }));
     // Original marked stale, never deleted.
     expect(db.updateKnowledgeFact).toHaveBeenCalledWith(3, { status: "stale" });
+  });
+});
+
+describe("Equipment-model knowledge pages", () => {
+  it("createModel returns the existing model instead of duplicating it", async () => {
+    vi.mocked(db.findEquipmentModel).mockResolvedValue({ id: 42, companyId: 1, manufacturer: "Simplex", model: "4100" } as any);
+    const caller = appRouter.createCaller(makeCtx(1));
+    const res = await caller.knowledgeEquipment.createModel({ manufacturer: "Simplex", model: "4100" });
+    expect(res).toMatchObject({ id: 42 });
+    expect(db.createEquipmentModel).not.toHaveBeenCalled();
+  });
+
+  it("getOrCreateForModel rejects a model from another company", async () => {
+    vi.mocked(db.getEquipmentModelById).mockResolvedValue({ id: 42, companyId: 2 } as any);
+    const caller = appRouter.createCaller(makeCtx(1));
+    await expect(
+      caller.knowledgeEquipment.getOrCreateForModel({ equipmentModelId: 42 }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.createKnowledgePage).not.toHaveBeenCalled();
+  });
+
+  it("ingests an equipment manual into a model page with no site, citing the source", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({
+      id: 8, companyId: 1, subjectType: "equipment_model", equipmentModelId: 42, siteId: null, title: "Simplex 4100 — Equipment Knowledge",
+    } as any);
+    vi.mocked(db.getEquipmentModelById).mockResolvedValue({ id: 42, companyId: 1, manufacturer: "Simplex", model: "4100", deviceType: "Fire alarm panel" } as any);
+    vi.mocked(db.createKnowledgeSourceDocument).mockResolvedValue({ id: 300 } as any);
+    vi.mocked(db.createKnowledgeFact).mockResolvedValue({ id: 301 } as any);
+    vi.mocked(db.createKnowledgeFactCitation).mockResolvedValue({ id: 1 } as any);
+    vi.mocked(classifyDocumentText).mockResolvedValue({
+      modelUsed: "gpt-4o-mini", promptHash: "h",
+      facts: [{ content: "Battery is 24V", sourceType: "manufacturer_doc", citationExcerpt: "24V battery", locationRef: "p.5", confidence: "high" }],
+    });
+
+    const caller = appRouter.createCaller(makeCtx(1));
+    const res = await caller.knowledgeIngestion.ingestDocument({
+      pageId: 8, documentType: "equipment_manual", fileName: "manual.pdf", fileDataBase64: PDF_B64,
+    });
+
+    expect(res.factsCreated).toBe(1);
+    // Equipment source documents carry no site scope.
+    expect(db.createKnowledgeSourceDocument).toHaveBeenCalledWith(expect.objectContaining({ siteId: null, pageId: 8 }));
+    expect(db.createKnowledgeFact).toHaveBeenCalledWith(expect.objectContaining({ status: "draft", generatedByAi: true }));
+    expect(db.createKnowledgeFactCitation).toHaveBeenCalledWith(expect.objectContaining({ sourceType: "knowledge_source_document", sourceId: 300 }));
   });
 });
 
