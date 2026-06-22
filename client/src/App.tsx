@@ -38,6 +38,7 @@ import AdminReports from "./pages/admin/Reports";
 import JobAssignments from "./pages/admin/JobAssignments";
 import AdminQACheck from "./pages/admin/QACheck";
 import SiteFiles from "./pages/admin/SiteFiles";
+import SiteKnowledge from "./pages/admin/SiteKnowledge";
 import AssetImport from "./pages/admin/AssetImport";
 import WorkSiteInfo from "./pages/admin/WorkSiteInfo";
 import AdminSchedule from "./pages/admin/Schedule";
@@ -314,6 +315,11 @@ function Router() {
       <Route path="/admin/sites/:siteId/files">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <SiteFiles />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/sites/:siteId/knowledge">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <SiteKnowledge />
         </ProtectedRoute>
       </Route>
       <Route path="/admin/sites/:siteId/import">

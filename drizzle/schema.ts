@@ -2533,3 +2533,157 @@ export const customerContacts = mysqlTable("customer_contacts", {
 
 export type CustomerContact = typeof customerContacts.$inferSelect;
 export type InsertCustomerContact = typeof customerContacts.$inferInsert;
+
+// ============================================
+// PROPERTY & EQUIPMENT KNOWLEDGE SYSTEM
+// "Living operational memory": AI-extracted, human-reviewed knowledge about
+// properties (sites), systems, and equipment models — stored SEPARATELY from
+// original immutable inspection records. No code path in this feature ever
+// writes to reports / attachments / inspection_results / deficiencies; it only
+// reads them and references them by id via knowledge_fact_citations.
+// ============================================
+
+export const KNOWLEDGE_SUBJECT_TYPES = ["site", "site_system", "equipment_model"] as const;
+export const KNOWLEDGE_FACT_SOURCE_TYPES = ["manufacturer_doc", "code_requirement", "company_procedure", "technician_observation", "ai_inference"] as const;
+export const KNOWLEDGE_FACT_STATUSES = ["draft", "reviewed", "verified", "rejected", "stale"] as const;
+export const KNOWLEDGE_CITATION_SOURCE_TYPES = ["knowledge_source_document", "report", "job", "device", "deficiency", "attachment", "manual_entry"] as const;
+export const KNOWLEDGE_DOCUMENT_TYPES = ["inspection_report", "equipment_manual", "code_document", "company_procedure", "voice_note", "other"] as const;
+export const KNOWLEDGE_EXTRACTION_STATUSES = ["uploaded", "extracting", "classifying", "ready", "failed"] as const;
+
+// Company-scoped lookup of a manufacturer + model pair (equipment-model pages, Phase 3).
+export const equipmentModels = mysqlTable("equipment_models", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  manufacturer: varchar("manufacturer", { length: 100 }).notNull(),
+  model: varchar("model", { length: 100 }).notNull(),
+  deviceType: varchar("deviceType", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdx: index("equipment_models_companyId_idx").on(table.companyId),
+  lookupIdx: uniqueIndex("equipment_models_lookup_idx").on(table.companyId, table.manufacturer, table.model),
+}));
+
+export type EquipmentModel = typeof equipmentModels.$inferSelect;
+export type InsertEquipmentModel = typeof equipmentModels.$inferInsert;
+
+// A knowledge page is the container for facts about one subject (a site, a
+// site+system pair, or an equipment model).
+export const knowledgePages = mysqlTable("knowledge_pages", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  subjectType: mysqlEnum("subjectType", KNOWLEDGE_SUBJECT_TYPES).notNull(),
+  siteId: int("siteId"),
+  systemType: varchar("systemType", { length: 50 }),
+  equipmentModelId: int("equipmentModelId"),
+  title: varchar("title", { length: 255 }).notNull(),
+  createdById: int("createdById").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdx: index("knowledge_pages_companyId_idx").on(table.companyId),
+  siteIdx: index("knowledge_pages_siteId_idx").on(table.siteId),
+}));
+
+export type KnowledgePage = typeof knowledgePages.$inferSelect;
+export type InsertKnowledgePage = typeof knowledgePages.$inferInsert;
+
+// An individual reviewable statement on a page. Edits create a NEW row pointing
+// back at the previous via supersedesFactId — content is never overwritten, so
+// the full history survives. AI-generated facts carry provenance columns
+// (mirrors deficiencies.aiGeneratedAt/aiModelId/...) and MUST have >=1 citation.
+export const knowledgeFacts = mysqlTable("knowledge_facts", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  pageId: int("pageId").notNull(),
+  content: text("content").notNull(),
+  sourceType: mysqlEnum("sourceType", KNOWLEDGE_FACT_SOURCE_TYPES).notNull(),
+  status: mysqlEnum("status", KNOWLEDGE_FACT_STATUSES).default("draft").notNull(),
+  confidence: mysqlEnum("confidence", ["high", "medium", "low"]),
+  generatedByAi: boolean("generatedByAi").default(false).notNull(),
+  aiModelId: varchar("aiModelId", { length: 64 }),
+  aiPromptHash: varchar("aiPromptHash", { length: 64 }),
+  aiContext: json("aiContext"),
+  supersedesFactId: int("supersedesFactId"),
+  reviewedById: int("reviewedById"),
+  reviewedAt: timestamp("reviewedAt"),
+  rejectionReason: text("rejectionReason"),
+  createdById: int("createdById").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdx: index("knowledge_facts_companyId_idx").on(table.companyId),
+  pageIdx: index("knowledge_facts_pageId_idx").on(table.pageId),
+  statusIdx: index("knowledge_facts_status_idx").on(table.pageId, table.status),
+}));
+
+export type KnowledgeFact = typeof knowledgeFacts.$inferSelect;
+export type InsertKnowledgeFact = typeof knowledgeFacts.$inferInsert;
+
+// A source reference for a fact. Polymorphic: can point at a newly uploaded
+// knowledge_source_document OR at an existing immutable record (report/job/
+// device/deficiency/attachment) by id. Original records are never modified.
+export const knowledgeFactCitations = mysqlTable("knowledge_fact_citations", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  factId: int("factId").notNull(),
+  sourceType: mysqlEnum("sourceType", KNOWLEDGE_CITATION_SOURCE_TYPES).notNull(),
+  sourceId: int("sourceId"),
+  excerpt: text("excerpt"),
+  locationRef: varchar("locationRef", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  factIdx: index("knowledge_fact_citations_factId_idx").on(table.factId),
+  companyIdx: index("knowledge_fact_citations_companyId_idx").on(table.companyId),
+}));
+
+export type KnowledgeFactCitation = typeof knowledgeFactCitations.$inferSelect;
+export type InsertKnowledgeFactCitation = typeof knowledgeFactCitations.$inferInsert;
+
+// An uploaded source file (PDF report/manual, later voice-note audio). File
+// bytes live in S3/R2; this table holds metadata + the extracted text used for
+// classification. extractedText is stored truncated to stay within TEXT limits
+// and to exactly match what was sent to the model.
+export const knowledgeSourceDocuments = mysqlTable("knowledge_source_documents", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  siteId: int("siteId"),
+  pageId: int("pageId"),
+  documentType: mysqlEnum("documentType", KNOWLEDGE_DOCUMENT_TYPES).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  fileKey: varchar("fileKey", { length: 500 }),
+  fileUrl: text("fileUrl"),
+  mimeType: varchar("mimeType", { length: 100 }),
+  fileSize: int("fileSize"),
+  extractionStatus: mysqlEnum("extractionStatus", KNOWLEDGE_EXTRACTION_STATUSES).default("uploaded").notNull(),
+  extractedText: text("extractedText"),
+  errorMessage: text("errorMessage"),
+  uploadedById: int("uploadedById").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdx: index("knowledge_source_documents_companyId_idx").on(table.companyId),
+  siteIdx: index("knowledge_source_documents_siteId_idx").on(table.siteId),
+}));
+
+export type KnowledgeSourceDocument = typeof knowledgeSourceDocuments.$inferSelect;
+export type InsertKnowledgeSourceDocument = typeof knowledgeSourceDocuments.$inferInsert;
+
+// Audit log of every source-linked Q&A round-trip against a page.
+export const knowledgeQuestions = mysqlTable("knowledge_questions", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  pageId: int("pageId").notNull(),
+  askedById: int("askedById").notNull(),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  citedFactIds: json("citedFactIds").$type<number[]>(),
+  modelUsed: varchar("modelUsed", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  pageIdx: index("knowledge_questions_pageId_idx").on(table.pageId),
+  companyIdx: index("knowledge_questions_companyId_idx").on(table.companyId),
+}));
+
+export type KnowledgeQuestion = typeof knowledgeQuestions.$inferSelect;
+export type InsertKnowledgeQuestion = typeof knowledgeQuestions.$inferInsert;
