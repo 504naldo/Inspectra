@@ -58,6 +58,14 @@ async function assertFactCompany(factId: number, companyId: number) {
   return fact;
 }
 
+/** Load an equipment model and assert it belongs to the caller's company. */
+async function assertEquipmentModelCompany(modelId: number, companyId: number) {
+  const model = await db.getEquipmentModelById(modelId);
+  if (!model) throw new TRPCError({ code: "NOT_FOUND", message: "Equipment model not found" });
+  if (model.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
+  return model;
+}
+
 // ── Pages ───────────────────────────────────────────────────────────────────
 
 export const knowledgePageRouter = router({
@@ -107,6 +115,92 @@ export const knowledgePageRouter = router({
     }),
 });
 
+// ── Equipment models ──────────────────────────────────────────────────────────
+
+export const knowledgeEquipmentRouter = router({
+  listModels: technicianProcedure.query(async ({ ctx }) => {
+    return db.listEquipmentModels(ctx.user.companyId!);
+  }),
+
+  getModel: technicianProcedure
+    .input(z.object({ equipmentModelId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      return assertEquipmentModelCompany(input.equipmentModelId, ctx.user.companyId!);
+    }),
+
+  listPages: technicianProcedure
+    .input(z.object({ equipmentModelId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      await assertEquipmentModelCompany(input.equipmentModelId, companyId);
+      return db.listKnowledgePagesByEquipmentModel(companyId, input.equipmentModelId);
+    }),
+
+  /** Find an existing manufacturer+model for the company, or register a new one. */
+  createModel: officeProcedure
+    .input(z.object({
+      manufacturer: z.string().min(1).max(100),
+      model: z.string().min(1).max(100),
+      deviceType: z.string().max(100).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const manufacturer = input.manufacturer.trim();
+      const model = input.model.trim();
+
+      const existing = await db.findEquipmentModel(companyId, manufacturer, model);
+      if (existing) return existing;
+
+      const created = await db.createEquipmentModel({
+        companyId,
+        manufacturer,
+        model,
+        deviceType: input.deviceType?.trim() || null,
+      });
+
+      void logActivity({
+        ctx,
+        entityType: "equipment_model",
+        entityId: created.id,
+        eventType: "equipment_model.created",
+        title: `Equipment model registered: ${manufacturer} ${model}`,
+      });
+
+      return created;
+    }),
+
+  /** Returns the equipment model's knowledge page, creating one if none exists. */
+  getOrCreateForModel: officeProcedure
+    .input(z.object({ equipmentModelId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId!;
+      const model = await assertEquipmentModelCompany(input.equipmentModelId, companyId);
+
+      const existing = await db.listKnowledgePagesByEquipmentModel(companyId, input.equipmentModelId);
+      const modelPage = existing.find((p) => p.subjectType === "equipment_model");
+      if (modelPage) return modelPage;
+
+      const page = await db.createKnowledgePage({
+        companyId,
+        subjectType: "equipment_model",
+        equipmentModelId: input.equipmentModelId,
+        title: `${model.manufacturer} ${model.model} — Equipment Knowledge`,
+        createdById: ctx.user.id,
+      });
+
+      void logActivity({
+        ctx,
+        entityType: "knowledge_page",
+        entityId: page.id,
+        eventType: "knowledge_page.created",
+        title: `Equipment knowledge page created for ${model.manufacturer} ${model.model}`,
+        metadata: { equipmentModelId: input.equipmentModelId },
+      });
+
+      return page;
+    }),
+});
+
 // ── Ingestion ─────────────────────────────────────────────────────────────────
 
 export const knowledgeIngestionRouter = router({
@@ -117,8 +211,10 @@ export const knowledgeIngestionRouter = router({
    */
   ingestDocument: officeProcedure
     .input(z.object({
-      siteId: z.number().int().positive(),
       pageId: z.number().int().positive(),
+      // Optional: site-scoped callers still pass siteId so the cross-tenant
+      // check fails fast. Equipment-model pages omit it.
+      siteId: z.number().int().positive().optional(),
       documentType: z.enum(KNOWLEDGE_DOCUMENT_TYPES),
       fileName: z.string().min(1).max(255),
       fileDataBase64: z.string().min(1),
@@ -126,10 +222,49 @@ export const knowledgeIngestionRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId!;
-      const site = await assertSiteCompany(input.siteId, companyId);
+
+      // Validate siteId first (when supplied) so site-scoped uploads reject
+      // cross-tenant access before any page lookup or storage work.
+      const preValidatedSite = input.siteId !== undefined
+        ? await assertSiteCompany(input.siteId, companyId)
+        : null;
+
       const page = await assertPageCompany(input.pageId, companyId);
-      if (page.siteId !== input.siteId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Page does not belong to this site" });
+
+      // Resolve the subject (site or equipment model) for storage scoping and
+      // classification context. The page's subjectType — not the caller — is the
+      // source of truth for which kind of document this is.
+      let propertyContext: string;
+      let scopeSegment: string;
+      let docSiteId: number | null;
+      if (page.subjectType === "equipment_model") {
+        if (!page.equipmentModelId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Equipment page has no associated model" });
+        }
+        const model = await assertEquipmentModelCompany(page.equipmentModelId, companyId);
+        propertyContext = [
+          `Equipment: ${model.manufacturer} ${model.model}`,
+          model.deviceType ? `Type: ${model.deviceType}` : "",
+        ].filter(Boolean).join("\n");
+        scopeSegment = `equipment-${model.id}`;
+        docSiteId = null;
+      } else {
+        if (!page.siteId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Site page has no associated site" });
+        }
+        if (input.siteId !== undefined && input.siteId !== page.siteId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Page does not belong to this site" });
+        }
+        const site = preValidatedSite && preValidatedSite.id === page.siteId
+          ? preValidatedSite
+          : await assertSiteCompany(page.siteId, companyId);
+        propertyContext = [
+          `Site: ${site.name}`,
+          site.address ? `Address: ${site.address}` : "",
+          site.city ? `City: ${site.city}` : "",
+        ].filter(Boolean).join("\n");
+        scopeSegment = String(page.siteId);
+        docSiteId = page.siteId;
       }
 
       // Decode + validate the upload.
@@ -155,12 +290,12 @@ export const knowledgeIngestionRouter = router({
 
       // Store original to S3/R2 under a company-scoped key.
       const safeName = sanitizeFilename(input.fileName);
-      const fileKey = `${companyId}/knowledge/${input.siteId}/${safeName}-${crypto.randomBytes(4).toString("hex")}`;
+      const fileKey = `${companyId}/knowledge/${scopeSegment}/${safeName}-${crypto.randomBytes(4).toString("hex")}`;
       const { url: fileUrl } = await storagePut(fileKey, buffer, "application/pdf");
 
       const sourceDoc = await db.createKnowledgeSourceDocument({
         companyId,
-        siteId: input.siteId,
+        siteId: docSiteId,
         pageId: input.pageId,
         documentType: input.documentType,
         title: input.title?.trim() || input.fileName,
@@ -199,12 +334,6 @@ export const knowledgeIngestionRouter = router({
       }
 
       // Classify into candidate facts.
-      const propertyContext = [
-        `Site: ${site.name}`,
-        site.address ? `Address: ${site.address}` : "",
-        site.city ? `City: ${site.city}` : "",
-      ].filter(Boolean).join("\n");
-
       let classification;
       try {
         classification = await classifyDocumentText({
@@ -258,8 +387,8 @@ export const knowledgeIngestionRouter = router({
         entityType: "knowledge_source_document",
         entityId: sourceDoc.id,
         eventType: "knowledge_document.ingested",
-        title: `Ingested ${input.documentType} for ${site.name}`,
-        metadata: { siteId: input.siteId, pageId: input.pageId, factsCreated, model: classification.modelUsed },
+        title: `Ingested ${input.documentType} into ${page.title}`,
+        metadata: { siteId: docSiteId, pageId: input.pageId, factsCreated, model: classification.modelUsed },
       });
 
       return {

@@ -3816,6 +3816,63 @@ export async function getPayrollReviewSummary(
 // tables written here are the knowledge_* tables.
 // ============================================
 
+// ── Equipment models ──
+export async function createEquipmentModel(data: InsertEquipmentModel): Promise<EquipmentModel> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(equipmentModels).values(data);
+  const id = Number(result[0].insertId);
+  const row = await getEquipmentModelById(id);
+  if (!row) throw new Error("Failed to load created equipment model");
+  return row;
+}
+
+export async function getEquipmentModelById(id: number): Promise<EquipmentModel | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(equipmentModels).where(eq(equipmentModels.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function findEquipmentModel(
+  companyId: number,
+  manufacturer: string,
+  model: string,
+): Promise<EquipmentModel | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(equipmentModels)
+    .where(and(
+      eq(equipmentModels.companyId, companyId),
+      eq(equipmentModels.manufacturer, manufacturer),
+      eq(equipmentModels.model, model),
+    ))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listEquipmentModels(companyId: number): Promise<EquipmentModel[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(equipmentModels)
+    .where(eq(equipmentModels.companyId, companyId))
+    .orderBy(asc(equipmentModels.manufacturer), asc(equipmentModels.model));
+}
+
+export async function listKnowledgePagesByEquipmentModel(
+  companyId: number,
+  equipmentModelId: number,
+): Promise<KnowledgePage[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(knowledgePages)
+    .where(and(
+      eq(knowledgePages.companyId, companyId),
+      eq(knowledgePages.equipmentModelId, equipmentModelId),
+    ))
+    .orderBy(desc(knowledgePages.updatedAt));
+}
+
 // ── Knowledge pages ──
 export async function createKnowledgePage(data: InsertKnowledgePage): Promise<KnowledgePage> {
   const db = await getDb();
