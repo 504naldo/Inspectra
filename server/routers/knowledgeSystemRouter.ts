@@ -22,13 +22,25 @@ import * as db from "../db";
 import { storagePut } from "../storage";
 import { extractPdfText } from "../_core/pdfImport";
 import { classifyDocumentText } from "../_core/knowledgeExtraction";
-import { invokeLLM } from "../_core/llm";
+import { invokeLLM, transcribeAudio } from "../_core/llm";
 import { logActivity } from "../activityLogger";
 import { KNOWLEDGE_DOCUMENT_TYPES } from "../../drizzle/schema";
 
-const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB decoded — well within the 50MB body limit
+const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB decoded — under Whisper's 25MB cap too
 const STORED_TEXT_CAP = 60000; // stay within MySQL TEXT (~64KB) and match what was classified
 const QA_MODEL = "gpt-4o-mini";
+
+// Whisper's supported container/codec list, minus formats this app has no other use for.
+const AUDIO_MIME_BY_EXT: Record<string, string> = {
+  mp3: "audio/mpeg",
+  mpga: "audio/mpeg",
+  mpeg: "audio/mpeg",
+  m4a: "audio/mp4",
+  mp4: "audio/mp4",
+  wav: "audio/wav",
+  webm: "audio/webm",
+  ogg: "audio/ogg",
+};
 
 // Mirrors the SYSTEM_OPTIONS list used elsewhere (e.g. RepairQuoteDetail) so
 // site-system knowledge pages line up with the same categories the rest of
@@ -338,17 +350,27 @@ export const knowledgeIngestionRouter = router({
       if (buffer.length > MAX_FILE_BYTES) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "File exceeds 20MB limit" });
       }
-      const isPdf =
-        input.fileName.toLowerCase().endsWith(".pdf") ||
-        buffer.subarray(0, 5).toString("latin1") === "%PDF-";
-      if (!isPdf) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Only PDF documents are supported in this version" });
+
+      const isVoiceNote = input.documentType === "voice_note";
+      const ext = input.fileName.toLowerCase().split(".").pop() ?? "";
+      let mimeType: string;
+      if (isVoiceNote) {
+        if (!AUDIO_MIME_BY_EXT[ext]) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Only audio files (mp3, m4a, wav, webm, ogg) are supported for voice notes" });
+        }
+        mimeType = AUDIO_MIME_BY_EXT[ext];
+      } else {
+        const isPdf = ext === "pdf" || buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+        if (!isPdf) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Only PDF documents are supported for this document type" });
+        }
+        mimeType = "application/pdf";
       }
 
       // Store original to S3/R2 under a company-scoped key.
       const safeName = sanitizeFilename(input.fileName);
       const fileKey = `${companyId}/knowledge/${scopeSegment}/${safeName}-${crypto.randomBytes(4).toString("hex")}`;
-      const { url: fileUrl } = await storagePut(fileKey, buffer, "application/pdf");
+      const { url: fileUrl } = await storagePut(fileKey, buffer, mimeType);
 
       const sourceDoc = await db.createKnowledgeSourceDocument({
         companyId,
@@ -358,22 +380,27 @@ export const knowledgeIngestionRouter = router({
         title: input.title?.trim() || input.fileName,
         fileKey,
         fileUrl,
-        mimeType: "application/pdf",
+        mimeType,
         fileSize: buffer.length,
         extractionStatus: "extracting",
         uploadedById: ctx.user.id,
       });
 
-      // Extract text.
+      // Extract text — transcribe audio for voice notes, parse text for PDFs.
       let extractedText = "";
       try {
-        extractedText = await extractPdfText(buffer);
+        extractedText = isVoiceNote
+          ? await transcribeAudio(buffer, safeName, mimeType)
+          : await extractPdfText(buffer);
       } catch (err) {
         await db.updateKnowledgeSourceDocument(sourceDoc.id, {
           extractionStatus: "failed",
-          errorMessage: `Text extraction failed: ${String(err)}`.slice(0, 2000),
+          errorMessage: `${isVoiceNote ? "Transcription" : "Text extraction"} failed: ${String(err)}`.slice(0, 2000),
         });
-        throw new TRPCError({ code: "UNPROCESSABLE_CONTENT", message: "Could not extract text from this PDF" });
+        throw new TRPCError({
+          code: "UNPROCESSABLE_CONTENT",
+          message: isVoiceNote ? "Could not transcribe this audio file" : "Could not extract text from this PDF",
+        });
       }
 
       const storedText = extractedText.slice(0, STORED_TEXT_CAP);
@@ -385,9 +412,12 @@ export const knowledgeIngestionRouter = router({
       if (!extractedText.trim()) {
         await db.updateKnowledgeSourceDocument(sourceDoc.id, {
           extractionStatus: "failed",
-          errorMessage: "No extractable text (document may be a scanned image)",
+          errorMessage: isVoiceNote ? "Transcription returned no speech" : "No extractable text (document may be a scanned image)",
         });
-        throw new TRPCError({ code: "UNPROCESSABLE_CONTENT", message: "No extractable text found (is this a scanned image?)" });
+        throw new TRPCError({
+          code: "UNPROCESSABLE_CONTENT",
+          message: isVoiceNote ? "No speech detected in this audio file" : "No extractable text found (is this a scanned image?)",
+        });
       }
 
       // Classify into candidate facts.
