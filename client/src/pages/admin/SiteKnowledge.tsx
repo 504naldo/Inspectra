@@ -1,0 +1,318 @@
+import { useState } from "react";
+import { useParams, Link } from "wouter";
+import { toast } from "sonner";
+import { useAuth } from "@/_core/hooks/useAuth";
+import AdminLayout from "@/components/AdminLayout";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { trpc } from "@/lib/trpc";
+
+const DOCUMENT_TYPES = [
+  { value: "inspection_report", label: "Inspection Report" },
+  { value: "equipment_manual", label: "Equipment Manual" },
+  { value: "code_document", label: "Code / Standard" },
+  { value: "company_procedure", label: "Company Procedure" },
+  { value: "other", label: "Other" },
+] as const;
+
+const STATUS_STYLES: Record<string, string> = {
+  draft: "bg-amber-100 text-amber-800",
+  reviewed: "bg-blue-100 text-blue-800",
+  verified: "bg-green-100 text-green-800",
+  rejected: "bg-red-100 text-red-700",
+  stale: "bg-gray-200 text-gray-600",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  manufacturer_doc: "Manufacturer doc",
+  code_requirement: "Code requirement",
+  company_procedure: "Company procedure",
+  technician_observation: "Technician observation",
+  ai_inference: "AI inference",
+};
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+export default function SiteKnowledge() {
+  const { user } = useAuth();
+  const params = useParams<{ siteId: string }>();
+  const siteId = parseInt(params.siteId || "0");
+  const utils = trpc.useUtils();
+
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [documentType, setDocumentType] = useState<string>("inspection_report");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<{
+    answer: string;
+    citedFacts: Array<{ id: number; content: string; status: string; sourceType: string }>;
+    disclaimer: string;
+  } | null>(null);
+  const [editingFactId, setEditingFactId] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState("");
+
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p className="text-muted-foreground">Loading session...</p>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  const { data: site } = trpc.site.get.useQuery({ id: siteId }, { enabled: siteId > 0 });
+  const { data: pages, refetch: refetchPages } = trpc.knowledgePage.listBySite.useQuery(
+    { siteId },
+    { enabled: siteId > 0 },
+  );
+  const sitePage = pages?.find((p) => p.subjectType === "site");
+  const pageId = sitePage?.id;
+
+  const { data: facts, refetch: refetchFacts } = trpc.knowledgeFact.listForPage.useQuery(
+    { pageId: pageId! },
+    { enabled: !!pageId },
+  );
+
+  const getOrCreate = trpc.knowledgePage.getOrCreateForSite.useMutation({
+    onSuccess: () => refetchPages(),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const ingest = trpc.knowledgeIngestion.ingestDocument.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Ingested — ${res.factsCreated} draft fact(s) created for review`);
+      setUploadOpen(false);
+      setPendingFile(null);
+      refetchFacts();
+    },
+    onError: (e) => toast.error(`Ingest failed: ${e.message}`),
+  });
+
+  const approve = trpc.knowledgeFact.approve.useMutation({
+    onSuccess: () => { refetchFacts(); toast.success("Verified"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const reject = trpc.knowledgeFact.reject.useMutation({
+    onSuccess: () => { refetchFacts(); toast.success("Rejected"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const editFact = trpc.knowledgeFact.edit.useMutation({
+    onSuccess: () => { refetchFacts(); setEditingFactId(null); toast.success("New version created (draft)"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const ask = trpc.knowledgeQA.ask.useMutation({
+    onSuccess: (res) => setAnswer(res),
+    onError: (e) => toast.error(e.message),
+  });
+
+  async function handleIngest() {
+    if (!pendingFile || !pageId) return;
+    const dataUrl = await fileToBase64(pendingFile);
+    ingest.mutate({
+      siteId,
+      pageId,
+      documentType: documentType as (typeof DOCUMENT_TYPES)[number]["value"],
+      fileName: pendingFile.name,
+      fileDataBase64: dataUrl,
+    });
+  }
+
+  const activeFacts = (facts ?? []).filter((f) => f.status !== "stale");
+  const draftCount = activeFacts.filter((f) => f.status === "draft" || f.status === "reviewed").length;
+  const verifiedCount = activeFacts.filter((f) => f.status === "verified").length;
+
+  return (
+    <AdminLayout>
+      <div className="space-y-6 max-w-5xl">
+        <div className="flex items-center justify-between">
+          <div>
+            <Link href={`/admin/sites`} className="text-sm text-muted-foreground hover:underline">← Sites</Link>
+            <h1 className="text-2xl font-semibold mt-1">Property Knowledge</h1>
+            <p className="text-muted-foreground">{site?.name ?? `Site #${siteId}`}</p>
+          </div>
+          {pageId && (
+            <Button onClick={() => setUploadOpen(true)}>Upload source document</Button>
+          )}
+        </div>
+
+        {!pageId && (
+          <Card>
+            <CardHeader>
+              <CardTitle>No knowledge page yet</CardTitle>
+              <CardDescription>
+                Create a property knowledge page to start ingesting reports and manuals for this site.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                disabled={getOrCreate.isPending}
+                onClick={() => getOrCreate.mutate({ siteId })}
+              >
+                Create knowledge page
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {pageId && (
+          <>
+            <div className="flex gap-3 text-sm">
+              <Badge variant="secondary">{verifiedCount} verified</Badge>
+              <Badge variant="secondary">{draftCount} awaiting review</Badge>
+            </div>
+
+            {/* Q&A */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Ask about this property</CardTitle>
+                <CardDescription>Answers are grounded only in stored facts and cite their sources.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    value={question}
+                    placeholder="e.g. What fire alarm panel is installed here?"
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && question.trim()) ask.mutate({ pageId, question }); }}
+                  />
+                  <Button
+                    disabled={ask.isPending || !question.trim()}
+                    onClick={() => ask.mutate({ pageId, question })}
+                  >
+                    Ask
+                  </Button>
+                </div>
+                {answer && (
+                  <div className="rounded-md border p-3 space-y-2">
+                    <p className="whitespace-pre-wrap text-sm">{answer.answer}</p>
+                    {answer.citedFacts.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground">Sources:</p>
+                        {answer.citedFacts.map((c) => (
+                          <div key={c.id} className="text-xs flex items-start gap-2">
+                            <Badge className={STATUS_STYLES[c.status]}>{c.status}</Badge>
+                            <span className="text-muted-foreground">{SOURCE_LABELS[c.sourceType] ?? c.sourceType}:</span>
+                            <span>{c.content}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[11px] text-muted-foreground italic">{answer.disclaimer}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Facts */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Knowledge facts</CardTitle>
+                <CardDescription>Review AI-extracted facts. Verify accurate ones; reject the rest. Originals are never overwritten.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {activeFacts.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No facts yet. Upload a source document to extract some.</p>
+                )}
+                {activeFacts.map((f) => (
+                  <div key={f.id} className="rounded-md border p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm">{f.content}</p>
+                      <Badge className={STATUS_STYLES[f.status]}>{f.status}</Badge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{SOURCE_LABELS[f.sourceType] ?? f.sourceType}</span>
+                      {f.generatedByAi && <Badge variant="outline">AI</Badge>}
+                      {f.confidence && <span>· confidence: {f.confidence}</span>}
+                    </div>
+                    {f.citations.length > 0 && (
+                      <div className="text-xs text-muted-foreground border-l-2 pl-2 space-y-1">
+                        {f.citations.map((c) => (
+                          <div key={c.id}>
+                            <span className="italic">“{c.excerpt}”</span>
+                            {c.locationRef && <span> — {c.locationRef}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(f.status === "draft" || f.status === "reviewed") && (
+                      <div className="flex gap-2 pt-1">
+                        <Button size="sm" disabled={approve.isPending} onClick={() => approve.mutate({ factId: f.id })}>Verify</Button>
+                        <Button size="sm" variant="outline" disabled={reject.isPending} onClick={() => reject.mutate({ factId: f.id })}>Reject</Button>
+                        <Button size="sm" variant="ghost" onClick={() => { setEditingFactId(f.id); setEditContent(f.content); }}>Edit</Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+
+      {/* Upload dialog */}
+      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload source document</DialogTitle>
+            <DialogDescription>PDF only. Text is extracted and classified into draft facts for your review.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Document type</Label>
+              <Select value={documentType} onValueChange={setDocumentType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {DOCUMENT_TYPES.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>PDF file</Label>
+              <Input type="file" accept="application/pdf,.pdf" onChange={(e) => setPendingFile(e.target.files?.[0] ?? null)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadOpen(false)}>Cancel</Button>
+            <Button disabled={!pendingFile || ingest.isPending} onClick={handleIngest}>
+              {ingest.isPending ? "Ingesting…" : "Ingest"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit dialog */}
+      <Dialog open={editingFactId !== null} onOpenChange={(o) => { if (!o) setEditingFactId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit fact</DialogTitle>
+            <DialogDescription>This creates a new draft version and keeps the original in history.</DialogDescription>
+          </DialogHeader>
+          <Textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={4} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingFactId(null)}>Cancel</Button>
+            <Button
+              disabled={!editContent.trim() || editFact.isPending}
+              onClick={() => editingFactId && editFact.mutate({ factId: editingFactId, content: editContent })}
+            >
+              Save new version
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AdminLayout>
+  );
+}

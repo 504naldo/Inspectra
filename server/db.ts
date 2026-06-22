@@ -50,6 +50,12 @@ import {
   partsRequestItems, InsertPartsRequestItem, PartsRequestItem,
   inventoryTransactions, InsertInventoryTransaction, InventoryTransaction,
   PARTS_REQUEST_STATUSES, PARTS_REQUEST_PRIORITIES,
+  knowledgePages, InsertKnowledgePage, KnowledgePage,
+  knowledgeFacts, InsertKnowledgeFact, KnowledgeFact,
+  knowledgeFactCitations, InsertKnowledgeFactCitation, KnowledgeFactCitation,
+  knowledgeSourceDocuments, InsertKnowledgeSourceDocument, KnowledgeSourceDocument,
+  knowledgeQuestions, InsertKnowledgeQuestion, KnowledgeQuestion,
+  equipmentModels, InsertEquipmentModel, EquipmentModel,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3801,4 +3807,160 @@ export async function getPayrollReviewSummary(
   }
   result.uniqueEmployees = employeeIds.size;
   return result;
+}
+
+// ============================================
+// PROPERTY & EQUIPMENT KNOWLEDGE SYSTEM
+// All helpers take companyId/ids already validated at the router layer. These
+// only read existing records (sites/jobs/etc.) and never mutate them; the only
+// tables written here are the knowledge_* tables.
+// ============================================
+
+// ── Knowledge pages ──
+export async function createKnowledgePage(data: InsertKnowledgePage): Promise<KnowledgePage> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(knowledgePages).values(data);
+  const id = Number(result[0].insertId);
+  const row = await getKnowledgePageById(id);
+  if (!row) throw new Error("Failed to load created knowledge page");
+  return row;
+}
+
+export async function getKnowledgePageById(id: number): Promise<KnowledgePage | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(knowledgePages).where(eq(knowledgePages.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listKnowledgePagesBySite(companyId: number, siteId: number): Promise<KnowledgePage[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(knowledgePages)
+    .where(and(eq(knowledgePages.companyId, companyId), eq(knowledgePages.siteId, siteId)))
+    .orderBy(desc(knowledgePages.updatedAt));
+}
+
+export async function touchKnowledgePage(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(knowledgePages).set({ updatedAt: new Date() }).where(eq(knowledgePages.id, id));
+}
+
+// ── Knowledge facts ──
+export async function createKnowledgeFact(data: InsertKnowledgeFact): Promise<KnowledgeFact> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(knowledgeFacts).values(data);
+  const id = Number(result[0].insertId);
+  const row = await getKnowledgeFactById(id);
+  if (!row) throw new Error("Failed to load created knowledge fact");
+  return row;
+}
+
+export async function getKnowledgeFactById(id: number): Promise<KnowledgeFact | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(knowledgeFacts).where(eq(knowledgeFacts.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listKnowledgeFactsByPage(
+  pageId: number,
+  opts: { statuses?: string[]; limit?: number } = {}
+): Promise<KnowledgeFact[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(knowledgeFacts.pageId, pageId)];
+  if (opts.statuses && opts.statuses.length > 0) {
+    conditions.push(inArray(knowledgeFacts.status, opts.statuses as any));
+  }
+  return db.select().from(knowledgeFacts)
+    .where(and(...conditions))
+    .orderBy(desc(knowledgeFacts.createdAt))
+    .limit(opts.limit ?? 500);
+}
+
+export async function updateKnowledgeFact(id: number, data: Partial<InsertKnowledgeFact>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(knowledgeFacts).set(data).where(eq(knowledgeFacts.id, id));
+}
+
+// ── Citations ──
+export async function createKnowledgeFactCitation(data: InsertKnowledgeFactCitation): Promise<KnowledgeFactCitation> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(knowledgeFactCitations).values(data);
+  const id = Number(result[0].insertId);
+  const rows = await db.select().from(knowledgeFactCitations).where(eq(knowledgeFactCitations.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function listCitationsByFactIds(factIds: number[]): Promise<KnowledgeFactCitation[]> {
+  const db = await getDb();
+  if (!db || factIds.length === 0) return [];
+  return db.select().from(knowledgeFactCitations)
+    .where(inArray(knowledgeFactCitations.factId, factIds))
+    .orderBy(asc(knowledgeFactCitations.id));
+}
+
+export async function countCitationsForFact(factId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db.select({ id: knowledgeFactCitations.id }).from(knowledgeFactCitations)
+    .where(eq(knowledgeFactCitations.factId, factId));
+  return rows.length;
+}
+
+// ── Source documents ──
+export async function createKnowledgeSourceDocument(data: InsertKnowledgeSourceDocument): Promise<KnowledgeSourceDocument> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(knowledgeSourceDocuments).values(data);
+  const id = Number(result[0].insertId);
+  const row = await getKnowledgeSourceDocumentById(id);
+  if (!row) throw new Error("Failed to load created source document");
+  return row;
+}
+
+export async function getKnowledgeSourceDocumentById(id: number): Promise<KnowledgeSourceDocument | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(knowledgeSourceDocuments).where(eq(knowledgeSourceDocuments.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateKnowledgeSourceDocument(id: number, data: Partial<InsertKnowledgeSourceDocument>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(knowledgeSourceDocuments).set(data).where(eq(knowledgeSourceDocuments.id, id));
+}
+
+export async function listKnowledgeSourceDocumentsBySite(companyId: number, siteId: number): Promise<KnowledgeSourceDocument[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(knowledgeSourceDocuments)
+    .where(and(eq(knowledgeSourceDocuments.companyId, companyId), eq(knowledgeSourceDocuments.siteId, siteId)))
+    .orderBy(desc(knowledgeSourceDocuments.createdAt));
+}
+
+// ── Q&A audit log ──
+export async function createKnowledgeQuestion(data: InsertKnowledgeQuestion): Promise<KnowledgeQuestion> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(knowledgeQuestions).values(data);
+  const id = Number(result[0].insertId);
+  const rows = await db.select().from(knowledgeQuestions).where(eq(knowledgeQuestions.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function listKnowledgeQuestionsByPage(pageId: number, limit = 50): Promise<KnowledgeQuestion[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(knowledgeQuestions)
+    .where(eq(knowledgeQuestions.pageId, pageId))
+    .orderBy(desc(knowledgeQuestions.createdAt))
+    .limit(limit);
 }
