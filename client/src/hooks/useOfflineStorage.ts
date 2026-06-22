@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { OfflineInspectionResult, OfflineDeficiency, SyncStatus } from '@shared/types';
+import type { OfflineInspectionResult, OfflineDeficiency, OfflineChecklistResponse, OfflineTemplateResponse, SyncStatus } from '@shared/types';
 import { usePendingPhotoCount } from './usePendingPhotoCount';
 
 const STORAGE_KEYS = {
   INSPECTION_RESULTS: 'fire_inspect_offline_results',
   DEFICIENCIES: 'fire_inspect_offline_deficiencies',
+  CHECKLIST_RESPONSES: 'fire_inspect_offline_checklist_responses',
+  TEMPLATE_RESPONSES: 'fire_inspect_offline_template_responses',
   CACHED_JOBS: 'fire_inspect_cached_jobs',
   LAST_SYNC: 'fire_inspect_last_sync',
 };
@@ -14,6 +16,8 @@ export function useOfflineStorage() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     pendingResults: 0,
     pendingDeficiencies: 0,
+    pendingChecklistResponses: 0,
+    pendingTemplateResponses: 0,
     pendingAttachments: 0,
     isOnline: navigator.onLine,
   });
@@ -46,12 +50,16 @@ export function useOfflineStorage() {
   const updateSyncStatus = useCallback(() => {
     const results = getOfflineResults();
     const deficiencies = getOfflineDeficiencies();
+    const checklistResponses = getOfflineChecklistResponses();
+    const templateResponses = getOfflineTemplateResponses();
     const lastSync = localStorage.getItem(STORAGE_KEYS.LAST_SYNC);
 
     setSyncStatus(prev => ({
       ...prev,
       pendingResults: results.filter(r => !r.synced).length,
       pendingDeficiencies: deficiencies.filter(d => !d.synced).length,
+      pendingChecklistResponses: checklistResponses.filter(r => !r.synced).length,
+      pendingTemplateResponses: templateResponses.filter(r => !r.synced).length,
       lastSyncAt: lastSync ? new Date(lastSync) : undefined,
       isOnline: navigator.onLine,
     }));
@@ -148,6 +156,92 @@ export function useOfflineStorage() {
     updateSyncStatus();
   }, [getOfflineDeficiencies, updateSyncStatus]);
 
+  // Checklist (inspection template) responses
+  const getOfflineChecklistResponses = useCallback((): OfflineChecklistResponse[] => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.CHECKLIST_RESPONSES);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const saveOfflineChecklistResponse = useCallback((response: OfflineChecklistResponse) => {
+    const responses = getOfflineChecklistResponses();
+    const existingIndex = responses.findIndex(r => r.localId === response.localId);
+
+    if (existingIndex >= 0) {
+      responses[existingIndex] = response;
+    } else {
+      responses.push(response);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.CHECKLIST_RESPONSES, JSON.stringify(responses));
+    updateSyncStatus();
+  }, [getOfflineChecklistResponses, updateSyncStatus]);
+
+  const getChecklistResponsesForJob = useCallback((jobId: number): OfflineChecklistResponse[] => {
+    return getOfflineChecklistResponses().filter(r => r.jobId === jobId);
+  }, [getOfflineChecklistResponses]);
+
+  const markChecklistResponsesSynced = useCallback((localIds: string[]) => {
+    const responses = getOfflineChecklistResponses();
+    const updated = responses.map(r =>
+      localIds.includes(r.localId) ? { ...r, synced: true } : r
+    );
+    localStorage.setItem(STORAGE_KEYS.CHECKLIST_RESPONSES, JSON.stringify(updated));
+    updateSyncStatus();
+  }, [getOfflineChecklistResponses, updateSyncStatus]);
+
+  const clearSyncedChecklistResponses = useCallback(() => {
+    const responses = getOfflineChecklistResponses().filter(r => !r.synced);
+    localStorage.setItem(STORAGE_KEYS.CHECKLIST_RESPONSES, JSON.stringify(responses));
+    updateSyncStatus();
+  }, [getOfflineChecklistResponses, updateSyncStatus]);
+
+  // Inspection template (custom form) responses
+  const getOfflineTemplateResponses = useCallback((): OfflineTemplateResponse[] => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.TEMPLATE_RESPONSES);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const saveOfflineTemplateResponse = useCallback((response: OfflineTemplateResponse) => {
+    const responses = getOfflineTemplateResponses();
+    const existingIndex = responses.findIndex(r => r.localId === response.localId);
+
+    if (existingIndex >= 0) {
+      responses[existingIndex] = response;
+    } else {
+      responses.push(response);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.TEMPLATE_RESPONSES, JSON.stringify(responses));
+    updateSyncStatus();
+  }, [getOfflineTemplateResponses, updateSyncStatus]);
+
+  const getTemplateResponsesForJob = useCallback((jobId: number, templateId: number): OfflineTemplateResponse[] => {
+    return getOfflineTemplateResponses().filter(r => r.jobId === jobId && r.templateId === templateId);
+  }, [getOfflineTemplateResponses]);
+
+  const markTemplateResponsesSynced = useCallback((localIds: string[]) => {
+    const responses = getOfflineTemplateResponses();
+    const updated = responses.map(r =>
+      localIds.includes(r.localId) ? { ...r, synced: true } : r
+    );
+    localStorage.setItem(STORAGE_KEYS.TEMPLATE_RESPONSES, JSON.stringify(updated));
+    updateSyncStatus();
+  }, [getOfflineTemplateResponses, updateSyncStatus]);
+
+  const clearSyncedTemplateResponses = useCallback(() => {
+    const responses = getOfflineTemplateResponses().filter(r => !r.synced);
+    localStorage.setItem(STORAGE_KEYS.TEMPLATE_RESPONSES, JSON.stringify(responses));
+    updateSyncStatus();
+  }, [getOfflineTemplateResponses, updateSyncStatus]);
+
   // Job caching for offline access
   const cacheJobData = useCallback((jobId: number, data: any) => {
     try {
@@ -176,6 +270,8 @@ export function useOfflineStorage() {
   const clearAllOfflineData = useCallback(() => {
     localStorage.removeItem(STORAGE_KEYS.INSPECTION_RESULTS);
     localStorage.removeItem(STORAGE_KEYS.DEFICIENCIES);
+    localStorage.removeItem(STORAGE_KEYS.CHECKLIST_RESPONSES);
+    localStorage.removeItem(STORAGE_KEYS.TEMPLATE_RESPONSES);
     localStorage.removeItem(STORAGE_KEYS.CACHED_JOBS);
     localStorage.removeItem(STORAGE_KEYS.LAST_SYNC);
     updateSyncStatus();
@@ -196,6 +292,18 @@ export function useOfflineStorage() {
     getDeficienciesForJob,
     markDeficienciesSynced,
     clearSyncedDeficiencies,
+    // Checklist responses
+    getOfflineChecklistResponses,
+    saveOfflineChecklistResponse,
+    getChecklistResponsesForJob,
+    markChecklistResponsesSynced,
+    clearSyncedChecklistResponses,
+    // Template responses
+    getOfflineTemplateResponses,
+    saveOfflineTemplateResponse,
+    getTemplateResponsesForJob,
+    markTemplateResponsesSynced,
+    clearSyncedTemplateResponses,
     // Job caching
     cacheJobData,
     getCachedJobData,

@@ -55,9 +55,34 @@ export interface OfflineDeficiency {
   synced: boolean;
 }
 
+export interface OfflineChecklistResponse {
+  localId: string;
+  jobId: number;
+  sectionNumber: string;
+  itemId: string;
+  status: 'PASS' | 'DEFICIENT' | 'NA';
+  comment?: string;
+  synced: boolean;
+}
+
+export interface OfflineTemplateResponse {
+  localId: string;
+  jobId: number;
+  templateId: number;
+  sectionId: number;
+  itemId: number;
+  responseValue?: string | null;
+  responseText?: string | null;
+  notes?: string | null;
+  deficiencyId?: number | null;
+  synced: boolean;
+}
+
 export interface SyncStatus {
   pendingResults: number;
   pendingDeficiencies: number;
+  pendingChecklistResponses: number;
+  pendingTemplateResponses: number;
   pendingAttachments: number;
   lastSyncAt?: Date;
   isOnline: boolean;

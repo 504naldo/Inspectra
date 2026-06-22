@@ -6,7 +6,8 @@ import { storagePut } from './storage';
 import * as fs from 'fs';
 import * as path from 'path';
 
-describe('Asset Import from Excel', () => {
+// Requires a real S3/R2 bucket — skips gracefully when credentials aren't configured.
+describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => {
   let testCompanyId: number;
   let testSiteId: number;
   let testJobId: number;

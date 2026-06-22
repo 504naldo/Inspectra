@@ -53,7 +53,11 @@ export const inspectionChecklistResponses = mysqlTable("inspection_checklist_res
   comment: text("comment"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+  // Defense-in-depth: denormalized company ownership (nullable, not backfilled for existing rows)
+  companyId: int("companyId"),
+}, (table) => ({
+  companyIdIdx: index("inspection_checklist_responses_companyId_idx").on(table.companyId),
+}));
 
 export type InspectionChecklistResponse = typeof inspectionChecklistResponses.$inferSelect;
 export type InsertInspectionChecklistResponse = typeof inspectionChecklistResponses.$inferInsert;
@@ -330,9 +334,12 @@ export const jobAssignments = mysqlTable("job_assignments", {
   assignedAt: timestamp("assignedAt").defaultNow().notNull(),
   assignedByUserId: int("assignedByUserId"), // who assigned this technician
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // Defense-in-depth: denormalized company ownership (nullable, not backfilled for existing rows)
+  companyId: int("companyId"),
 }, (table) => ({
   // Prevent duplicate assignments
   uniqueJobUser: unique().on(table.jobId, table.userId),
+  companyIdIdx: index("job_assignments_companyId_idx").on(table.companyId),
 }));
 
 export type JobAssignment = typeof jobAssignments.$inferSelect;
@@ -357,8 +364,11 @@ export const inspectionResults = mysqlTable("inspection_results", {
   technicianCertificationSnapshot: json("technicianCertificationSnapshot"),
   // Pre-fill: true when this row was auto-created from a prior job's inspection_results
   carriedForward: tinyint("carried_forward").default(0).notNull(),
+  // Defense-in-depth: denormalized company ownership (nullable, not backfilled for existing rows)
+  companyId: int("companyId"),
 }, (table) => ({
   jobIdIdx: index("inspection_results_jobId_idx").on(table.jobId),
+  companyIdIdx: index("inspection_results_companyId_idx").on(table.companyId),
 }));
 
 export type InspectionResult = typeof inspectionResults.$inferSelect;
@@ -464,7 +474,11 @@ export const attachments = mysqlTable("attachments", {
   importSummary: json("importSummary"), // { imported: {}, updated: {}, excluded: [] }
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+  // Defense-in-depth: denormalized company ownership (nullable, not backfilled for existing rows)
+  companyId: int("companyId"),
+}, (table) => ({
+  companyIdIdx: index("attachments_companyId_idx").on(table.companyId),
+}));
 
 export type Attachment = typeof attachments.$inferSelect;
 export type InsertAttachment = typeof attachments.$inferInsert;

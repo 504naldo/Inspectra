@@ -38,10 +38,16 @@ export default function SyncScreen() {
     syncStatus,
     getOfflineResults,
     getOfflineDeficiencies,
+    getOfflineChecklistResponses,
+    getOfflineTemplateResponses,
     markResultsSynced,
     markDeficienciesSynced,
+    markChecklistResponsesSynced,
+    markTemplateResponsesSynced,
     clearSyncedResults,
     clearSyncedDeficiencies,
+    clearSyncedChecklistResponses,
+    clearSyncedTemplateResponses,
     setLastSyncTime,
     clearAllOfflineData,
   } = useOfflineStorage();
@@ -55,6 +61,8 @@ export default function SyncScreen() {
   const syncBatch = trpc.inspectionResult.syncBatch.useMutation();
   const createDeficiency = trpc.deficiency.create.useMutation();
   const uploadMedia = trpc.media.uploadDeficiencyMedia.useMutation();
+  const bulkSaveChecklistResponses = trpc.checklist.bulkSaveResponses.useMutation();
+  const saveTemplateResponse = trpc.inspectionTemplate.saveResponse.useMutation();
 
   const handleSync = async () => {
     if (!isOnline) {
@@ -67,8 +75,12 @@ export default function SyncScreen() {
 
     let resultsFailed = 0;
     let defsFailed = 0;
+    let checklistFailed = 0;
+    let templateFailed = 0;
     let resultsSynced = 0;
     let defsSynced = 0;
+    let checklistSynced = 0;
+    let templateSynced = 0;
 
     try {
       // Sync inspection results (batch)
@@ -129,6 +141,53 @@ export default function SyncScreen() {
         clearSyncedDeficiencies();
       }
 
+      // Sync offline checklist (inspection template) responses in one batch
+      const pendingChecklist = getOfflineChecklistResponses().filter((r) => !r.synced);
+      if (pendingChecklist.length > 0) {
+        try {
+          await bulkSaveChecklistResponses.mutateAsync({
+            responses: pendingChecklist.map((r) => ({
+              jobId: r.jobId,
+              sectionNumber: r.sectionNumber,
+              itemId: r.itemId,
+              status: r.status,
+              comment: r.comment,
+            })),
+          });
+          checklistSynced = pendingChecklist.length;
+          markChecklistResponsesSynced(pendingChecklist.map((r) => r.localId));
+          clearSyncedChecklistResponses();
+        } catch {
+          checklistFailed = pendingChecklist.length;
+        }
+      }
+
+      // Sync offline inspection-template responses one by one (no bulk endpoint)
+      const pendingTemplate = getOfflineTemplateResponses().filter((r) => !r.synced);
+      const syncedTemplateLocalIds: string[] = [];
+      for (const r of pendingTemplate) {
+        try {
+          await saveTemplateResponse.mutateAsync({
+            jobId: r.jobId,
+            templateId: r.templateId,
+            sectionId: r.sectionId,
+            itemId: r.itemId,
+            responseValue: r.responseValue,
+            responseText: r.responseText,
+            notes: r.notes,
+            deficiencyId: r.deficiencyId,
+          });
+          syncedTemplateLocalIds.push(r.localId);
+          templateSynced++;
+        } catch {
+          templateFailed++;
+        }
+      }
+      if (syncedTemplateLocalIds.length > 0) {
+        markTemplateResponsesSynced(syncedTemplateLocalIds);
+        clearSyncedTemplateResponses();
+      }
+
       // Upload any queued photos whose parent deficiency has a known server id —
       // covers both freshly-synced deficiencies and ones left over from a failed retry
       let photosFailed = 0;
@@ -150,8 +209,8 @@ export default function SyncScreen() {
         }
       }
 
-      const totalSynced = resultsSynced + defsSynced;
-      const totalFailed = resultsFailed + defsFailed;
+      const totalSynced = resultsSynced + defsSynced + checklistSynced + templateSynced;
+      const totalFailed = resultsFailed + defsFailed + checklistFailed + templateFailed;
 
       if (photosFailed > 0) {
         toast.warning(`${photosFailed} photo${photosFailed !== 1 ? "s" : ""} failed to upload — they'll retry on the next sync`);
@@ -184,13 +243,19 @@ export default function SyncScreen() {
 
   const offlineResults = getOfflineResults();
   const offlineDeficiencies = getOfflineDeficiencies();
+  const offlineChecklistResponses = getOfflineChecklistResponses();
+  const offlineTemplateResponses = getOfflineTemplateResponses();
   const pendingResults = offlineResults.filter((r) => !r.synced);
   const syncedResults = offlineResults.filter((r) => r.synced);
   const pendingDefs = offlineDeficiencies.filter((d) => !d.synced);
   const syncedDefs = offlineDeficiencies.filter((d) => d.synced);
+  const pendingChecklist = offlineChecklistResponses.filter((r) => !r.synced);
+  const syncedChecklist = offlineChecklistResponses.filter((r) => r.synced);
+  const pendingTemplate = offlineTemplateResponses.filter((r) => !r.synced);
+  const syncedTemplate = offlineTemplateResponses.filter((r) => r.synced);
 
-  const totalPending = pendingResults.length + pendingDefs.length + pendingPhotoCount;
-  const totalSynced = syncedResults.length + syncedDefs.length;
+  const totalPending = pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length + pendingPhotoCount;
+  const totalSynced = syncedResults.length + syncedDefs.length + syncedChecklist.length + syncedTemplate.length;
 
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom">
@@ -252,11 +317,13 @@ export default function SyncScreen() {
               <Clock className="h-8 w-8 mx-auto text-amber-500 mb-2" />
               <p className="text-2xl font-bold">{totalPending}</p>
               <p className="text-sm text-muted-foreground">Pending Upload</p>
-              {(pendingResults.length > 0 ? 1 : 0) + (pendingDefs.length > 0 ? 1 : 0) + (pendingPhotoCount > 0 ? 1 : 0) > 1 && (
+              {(pendingResults.length > 0 ? 1 : 0) + (pendingDefs.length > 0 ? 1 : 0) + (pendingChecklist.length > 0 ? 1 : 0) + (pendingTemplate.length > 0 ? 1 : 0) + (pendingPhotoCount > 0 ? 1 : 0) > 1 && (
                 <p className="text-xs text-muted-foreground mt-1">
                   {[
                     pendingResults.length > 0 ? `${pendingResults.length} test${pendingResults.length !== 1 ? "s" : ""}` : null,
                     pendingDefs.length > 0 ? `${pendingDefs.length} def.` : null,
+                    pendingChecklist.length > 0 ? `${pendingChecklist.length} checklist` : null,
+                    pendingTemplate.length > 0 ? `${pendingTemplate.length} template` : null,
                     pendingPhotoCount > 0 ? `${pendingPhotoCount} photo${pendingPhotoCount !== 1 ? "s" : ""}` : null,
                   ].filter(Boolean).join(" · ")}
                 </p>
@@ -344,6 +411,32 @@ export default function SyncScreen() {
                   </span>
                 </div>
               ))}
+              {Array.from(new Set(pendingChecklist.map((r) => r.jobId))).slice(0, 8).map((jId) => {
+                const count = pendingChecklist.filter((r) => r.jobId === jId).length;
+                return (
+                  <div key={`checklist-${jId}`} className="flex items-center justify-between p-2 bg-muted rounded">
+                    <p className="text-sm font-medium">
+                      Checklist · Job #{jId}
+                    </p>
+                    <span className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                      {count} item{count !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                );
+              })}
+              {Array.from(new Set(pendingTemplate.map((r) => r.jobId))).slice(0, 8).map((jId) => {
+                const count = pendingTemplate.filter((r) => r.jobId === jId).length;
+                return (
+                  <div key={`template-${jId}`} className="flex items-center justify-between p-2 bg-muted rounded">
+                    <p className="text-sm font-medium">
+                      Template · Job #{jId}
+                    </p>
+                    <span className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                      {count} item{count !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                );
+              })}
               {pendingPhotoCount > 0 && (
                 <div className="flex items-center justify-between p-2 bg-muted rounded">
                   <p className="text-sm font-medium">
@@ -354,9 +447,9 @@ export default function SyncScreen() {
                   </span>
                 </div>
               )}
-              {pendingResults.length + pendingDefs.length > 16 && (
+              {pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length > 16 && (
                 <p className="text-sm text-muted-foreground text-center">
-                  +{pendingResults.length + pendingDefs.length - 16} more items
+                  +{pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length - 16} more items
                 </p>
               )}
             </CardContent>
@@ -447,7 +540,7 @@ export default function SyncScreen() {
             </Button>
           )}
 
-          {(offlineResults.length > 0 || offlineDeficiencies.length > 0) && (
+          {(offlineResults.length > 0 || offlineDeficiencies.length > 0 || offlineChecklistResponses.length > 0 || offlineTemplateResponses.length > 0) && (
             <Button variant="outline" className="w-full" onClick={() => setIsClearAllOpen(true)}>
               <Trash2 className="h-4 w-4 mr-2" />
               Clear All Offline Data
@@ -461,7 +554,7 @@ export default function SyncScreen() {
           <AlertDialogHeader>
             <AlertDialogTitle>Clear all offline data?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all unsynced inspection results, deficiencies, and queued photos on this device. This cannot be undone.
+              This will permanently delete all unsynced inspection results, deficiencies, checklist/template responses, and queued photos on this device. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
