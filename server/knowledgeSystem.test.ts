@@ -204,6 +204,46 @@ describe("Editing is append-only", () => {
   });
 });
 
+describe("Site-system knowledge pages", () => {
+  it("creates a new site_system page when none exists for that system type", async () => {
+    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 1, name: "Acme Tower" } as any);
+    vi.mocked(db.listKnowledgePagesBySite).mockResolvedValue([]);
+    vi.mocked(db.createKnowledgePage).mockResolvedValue({ id: 9, companyId: 1, subjectType: "site_system", siteId: 5, systemType: "SPRINKLER" } as any);
+
+    const caller = appRouter.createCaller(makeCtx(1));
+    const page = await caller.knowledgePage.getOrCreateForSiteSystem({ siteId: 5, systemType: "SPRINKLER" });
+
+    expect(page).toMatchObject({ id: 9, systemType: "SPRINKLER" });
+    expect(db.createKnowledgePage).toHaveBeenCalledWith(expect.objectContaining({
+      subjectType: "site_system", siteId: 5, systemType: "SPRINKLER",
+    }));
+  });
+
+  it("returns the existing site_system page instead of creating a duplicate", async () => {
+    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 1, name: "Acme Tower" } as any);
+    vi.mocked(db.listKnowledgePagesBySite).mockResolvedValue([
+      { id: 9, companyId: 1, subjectType: "site_system", siteId: 5, systemType: "SPRINKLER" },
+      { id: 10, companyId: 1, subjectType: "site", siteId: 5, systemType: null },
+    ] as any);
+
+    const caller = appRouter.createCaller(makeCtx(1));
+    const page = await caller.knowledgePage.getOrCreateForSiteSystem({ siteId: 5, systemType: "SPRINKLER" });
+
+    expect(page).toMatchObject({ id: 9 });
+    expect(db.createKnowledgePage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a site from another company before any page lookup", async () => {
+    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 2, name: "S" } as any);
+    const caller = appRouter.createCaller(makeCtx(1));
+    await expect(
+      caller.knowledgePage.getOrCreateForSiteSystem({ siteId: 5, systemType: "FIRE_ALARM" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.listKnowledgePagesBySite).not.toHaveBeenCalled();
+    expect(db.createKnowledgePage).not.toHaveBeenCalled();
+  });
+});
+
 describe("Equipment-model knowledge pages", () => {
   it("createModel returns the existing model instead of duplicating it", async () => {
     vi.mocked(db.findEquipmentModel).mockResolvedValue({ id: 42, companyId: 1, manufacturer: "Simplex", model: "4100" } as any);
