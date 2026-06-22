@@ -75,11 +75,24 @@ const getFieldsForImportType = (importType: ImportType) => {
 
 export default function AssetImport() {
   const { user } = useAuth();
+
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <p className="text-muted-foreground">Loading session...</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
   const params = useParams<{ siteId: string }>();
   const [, navigate] = useLocation();
   const siteId = parseInt(params.siteId || "0");
-  const companyId = user?.companyId || 1;
-  
+  const companyId = user.companyId;
+
   const [step, setStep] = useState<ImportStep>('selectType');
   const [importType, setImportType] = useState<ImportType>('fireAlarmDevices');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

@@ -36,10 +36,23 @@ import { toast } from "sonner";
 
 export default function SiteFiles() {
   const { user } = useAuth();
+
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <p className="text-muted-foreground">Loading session...</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
   const params = useParams<{ siteId: string }>();
   const siteId = parseInt(params.siteId || "0");
   const utils = trpc.useUtils();
-  
+
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedFiles, setSelectedFiles] = useState<number[]>([]);
@@ -55,8 +68,8 @@ export default function SiteFiles() {
   const [newTag, setNewTag] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const companyId = user?.companyId || 1;
-  
+  const companyId = user.companyId;
+
   // Queries
   const { data: site } = trpc.site.get.useQuery({ id: siteId }, { enabled: siteId > 0 });
   const { data: files, refetch: refetchFiles } = trpc.attachment.listBySite.useQuery(
