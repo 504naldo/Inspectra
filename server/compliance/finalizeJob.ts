@@ -87,6 +87,10 @@ export async function finalizeJob(
   // ctx.user is guaranteed non-null by protectedProcedure + adminOrOfficeProcedure
   const user = ctx.user!;
 
+  if (job.companyId !== user.companyId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
+  }
+
   if (user.role === "customer") {
     throw new TRPCError({
       code: "FORBIDDEN",

@@ -71,6 +71,7 @@ const complianceRouter = router({
       const jobRows = await dbConn
         .select({
           id: jobsTable.id,
+          companyId: jobsTable.companyId,
           finalizationHash: jobsTable.finalizationHash,
           finalizedAt: jobsTable.finalizedAt,
           status: jobsTable.status,
@@ -83,6 +84,10 @@ const complianceRouter = router({
       }
 
       const job = jobRows[0];
+
+      if (job.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
+      }
 
       if (!job.finalizationHash || !job.finalizedAt) {
         return {
