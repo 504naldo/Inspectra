@@ -35,6 +35,11 @@ const QA_MODEL = "gpt-4o-mini";
 // procedures, which don't go stale just because a new inspection happened).
 const STALE_PRONE_DOCUMENT_TYPES = new Set(["inspection_report", "voice_note"]);
 
+// Fact source types that describe the property's current state, as opposed to
+// a durable reference (manufacturer_doc/code_requirement/company_procedure)
+// that doesn't change just because a service visit occurred.
+const POINT_IN_TIME_FACT_SOURCE_TYPES = new Set(["technician_observation", "ai_inference"]);
+
 // Whisper's supported container/codec list, minus formats this app has no other use for.
 const AUDIO_MIME_BY_EXT: Record<string, string> = {
   mp3: "audio/mpeg",
@@ -87,6 +92,29 @@ async function assertFactCompany(factId: number, companyId: number) {
   if (!fact) throw new TRPCError({ code: "NOT_FOUND", message: "Fact not found" });
   if (fact.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   return fact;
+}
+
+/**
+ * Active, completed service schedules for a page's site that are relevant to
+ * what the page covers — all systems for a site/equipment page, or only the
+ * matching system for a site_system page (matched against serviceType text
+ * since requiredSystems is never populated by any current write path).
+ */
+async function getRelevantServiceSchedules(
+  page: { siteId: number | null; subjectType: string; systemType: string | null },
+  companyId: number,
+) {
+  if (!page.siteId) return [];
+  const schedules = await db.getServiceSchedulesBySite(page.siteId);
+  const completed = schedules.filter((s) => s.companyId === companyId && s.active && s.lastCompletedAt);
+
+  if (page.subjectType !== "site_system" || !page.systemType) return completed;
+
+  const systemLabel = SYSTEM_LABELS[page.systemType]?.toLowerCase();
+  return completed.filter((s) => {
+    if (s.requiredSystems?.includes(page.systemType!)) return true;
+    return !!systemLabel && s.serviceType.toLowerCase().includes(systemLabel);
+  });
 }
 
 /** Load an equipment model and assert it belongs to the caller's company. */
@@ -512,7 +540,7 @@ export const knowledgeFactRouter = router({
     .input(z.object({ pageId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId!;
-      await assertPageCompany(input.pageId, companyId);
+      const page = await assertPageCompany(input.pageId, companyId);
 
       const isReviewer = ctx.user.role === "admin" || ctx.user.role === "office";
       const facts = await db.listKnowledgeFactsByPage(
@@ -536,16 +564,35 @@ export const knowledgeFactRouter = router({
         if (!current || d.createdAt > current) latestByDocType.set(d.documentType, d.createdAt);
       }
 
+      const relevantSchedules = await getRelevantServiceSchedules(page, companyId);
+
       return facts.map((f) => {
         const factCitations = byFact.get(f.id) ?? [];
-        const potentiallyOutdated = factCitations.some((c) => {
-          if (c.sourceType !== "knowledge_source_document" || c.sourceId === null) return false;
-          const doc = docById.get(c.sourceId);
-          if (!doc || !STALE_PRONE_DOCUMENT_TYPES.has(doc.documentType)) return false;
+
+        const docCitations = factCitations
+          .filter((c) => c.sourceType === "knowledge_source_document" && c.sourceId !== null)
+          .map((c) => docById.get(c.sourceId!))
+          .filter((d): d is NonNullable<typeof d> => d !== undefined);
+
+        const supersededByNewerDocument = docCitations.some((doc) => {
+          if (!STALE_PRONE_DOCUMENT_TYPES.has(doc.documentType)) return false;
           const latest = latestByDocType.get(doc.documentType);
           return latest !== undefined && latest > doc.createdAt;
         });
-        return { ...f, citations: factCitations, potentiallyOutdated };
+
+        // Anchor: when this fact's truth was established — the latest of its
+        // cited source documents, falling back to the fact's own createdAt.
+        const establishedAt = docCitations.length > 0
+          ? new Date(Math.max(...docCitations.map((d) => d.createdAt.getTime())))
+          : f.createdAt;
+        const supersededByServiceVisit = POINT_IN_TIME_FACT_SOURCE_TYPES.has(f.sourceType)
+          && relevantSchedules.some((s) => s.lastCompletedAt && s.lastCompletedAt > establishedAt);
+
+        return {
+          ...f,
+          citations: factCitations,
+          potentiallyOutdated: supersededByNewerDocument || supersededByServiceVisit,
+        };
       });
     }),
 
