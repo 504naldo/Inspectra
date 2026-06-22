@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 
 // Define checklist sections based on existing complianceChecklists.ts
 interface ChecklistItem {
@@ -257,7 +258,13 @@ export default function ChecklistCompletion() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['22.1']));
   const [responses, setResponses] = useState<Map<string, { status: 'PASS' | 'DEFICIENT' | 'NA'; comment?: string }>>(new Map());
   const [activeCommentItem, setActiveCommentItem] = useState<string | null>(null);
-  
+  const {
+    getChecklistResponsesForJob,
+    saveOfflineChecklistResponse,
+    markChecklistResponsesSynced,
+    clearSyncedChecklistResponses,
+  } = useOfflineStorage();
+
   const { data: job } = trpc.job.get.useQuery({ id: jobId });
   const { data: savedResponses, refetch } = trpc.checklist.getByJob.useQuery({ jobId });
   
@@ -280,20 +287,24 @@ export default function ChecklistCompletion() {
     }
   });
   
-  // Load saved responses into state
+  // Load saved responses into state, then overlay any unsynced offline edits for
+  // this job — those haven't reached the server yet, so they take precedence.
   useEffect(() => {
-    if (savedResponses) {
-      const newResponses = new Map();
-      savedResponses.forEach((resp) => {
-        const key = `${resp.sectionNumber}-${resp.itemId}`;
-        newResponses.set(key, {
-          status: resp.status,
-          comment: resp.comment || undefined,
-        });
+    const newResponses = new Map<string, { status: 'PASS' | 'DEFICIENT' | 'NA'; comment?: string }>();
+    savedResponses?.forEach((resp) => {
+      const key = `${resp.sectionNumber}-${resp.itemId}`;
+      newResponses.set(key, {
+        status: resp.status,
+        comment: resp.comment || undefined,
       });
-      setResponses(newResponses);
-    }
-  }, [savedResponses]);
+    });
+    getChecklistResponsesForJob(jobId)
+      .filter((r) => !r.synced)
+      .forEach((r) => {
+        newResponses.set(`${r.sectionNumber}-${r.itemId}`, { status: r.status, comment: r.comment });
+      });
+    setResponses(newResponses);
+  }, [savedResponses, jobId, getChecklistResponsesForJob]);
   
   const toggleSection = (sectionNumber: string) => {
     const newExpanded = new Set(expandedSections);
@@ -305,29 +316,35 @@ export default function ChecklistCompletion() {
     setExpandedSections(newExpanded);
   };
   
+  const saveItem = (sectionNumber: string, itemId: string, status: 'PASS' | 'DEFICIENT' | 'NA', comment?: string) => {
+    const key = `${sectionNumber}-${itemId}`;
+    const localId = `${jobId}-${key}`;
+    if (isOnline) {
+      saveResponse.mutate(
+        { jobId, sectionNumber, itemId, status, comment },
+        // Clears any stale offline copy of this item so a later sync can't overwrite
+        // this fresher, already-saved value.
+        { onSuccess: () => markChecklistResponsesSynced([localId]) }
+      );
+    } else {
+      saveOfflineChecklistResponse({ localId, jobId, sectionNumber, itemId, status, comment, synced: false });
+    }
+  };
+
   const handleStatusChange = (sectionNumber: string, itemId: string, status: 'PASS' | 'DEFICIENT' | 'NA') => {
     const key = `${sectionNumber}-${itemId}`;
     const current = responses.get(key);
     const newResponse = { status, comment: current?.comment };
     setResponses(new Map(responses.set(key, newResponse)));
-    
-    // Auto-save (skip when offline — local state is preserved)
-    if (isOnline) {
-      saveResponse.mutate({
-        jobId,
-        sectionNumber,
-        itemId,
-        status,
-        comment: current?.comment,
-      });
-    }
-    
+
+    saveItem(sectionNumber, itemId, status, current?.comment);
+
     // Show comment box if DEFICIENT or NA
     if (status === 'DEFICIENT' || status === 'NA') {
       setActiveCommentItem(key);
     }
   };
-  
+
   const handleCommentChange = (sectionNumber: string, itemId: string, comment: string) => {
     const key = `${sectionNumber}-${itemId}`;
     const current = responses.get(key);
@@ -336,22 +353,16 @@ export default function ChecklistCompletion() {
       setResponses(new Map(responses.set(key, newResponse)));
     }
   };
-  
+
   const handleCommentBlur = (sectionNumber: string, itemId: string) => {
     const key = `${sectionNumber}-${itemId}`;
     const current = responses.get(key);
-    if (current && isOnline) {
-      saveResponse.mutate({
-        jobId,
-        sectionNumber,
-        itemId,
-        status: current.status,
-        comment: current.comment,
-      });
+    if (current) {
+      saveItem(sectionNumber, itemId, current.status, current.comment);
     }
     setActiveCommentItem(null);
   };
-  
+
   const handleSaveAll = () => {
     const responsesArray = Array.from(responses.entries()).map(([key, value]) => {
       const [sectionNumber, itemId] = key.split('-');
@@ -363,8 +374,19 @@ export default function ChecklistCompletion() {
         comment: value.comment,
       };
     });
-    
-    bulkSave.mutate({ responses: responsesArray });
+
+    bulkSave.mutate({ responses: responsesArray }, {
+      // The bulk save just pushed the canonical current state for every item in
+      // `responses` (which already incorporates any offline edits) — clear them
+      // all so a later sync doesn't replay stale local copies over this.
+      onSuccess: () => {
+        const localIds = getChecklistResponsesForJob(jobId).map((r) => r.localId);
+        if (localIds.length > 0) {
+          markChecklistResponsesSynced(localIds);
+          clearSyncedChecklistResponses();
+        }
+      },
+    });
   };
   
   const getTotalItems = () => {

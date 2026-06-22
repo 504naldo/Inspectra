@@ -13,8 +13,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import {
   ArrowLeft, CheckCircle2, XCircle, Minus, AlertTriangle,
-  HelpCircle, Tag, ChevronDown, ChevronUp,
+  HelpCircle, Tag, ChevronDown, ChevronUp, WifiOff,
 } from "lucide-react";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 
 type DeficiencyTrigger = {
   onValues: string[];
@@ -116,6 +118,7 @@ function DeficiencyPrompt({
   defaultTitle,
   defaultSeverity,
   questionText,
+  isOnline,
   onLinked,
   onSkip,
 }: {
@@ -124,6 +127,7 @@ function DeficiencyPrompt({
   defaultTitle: string;
   defaultSeverity: "critical" | "major" | "minor" | "observation";
   questionText: string;
+  isOnline: boolean;
   onLinked: (deficiencyId: number) => void;
   onSkip: () => void;
 }) {
@@ -178,7 +182,8 @@ function DeficiencyPrompt({
           <Button
             variant="destructive"
             onClick={() => createMutation.mutate({ jobId, title, severity, description: description || undefined })}
-            disabled={createMutation.isPending}
+            disabled={createMutation.isPending || !isOnline}
+            title={!isOnline ? "Connect to the internet to log a deficiency" : undefined}
           >
             {createMutation.isPending ? "Logging…" : "Log Deficiency"}
           </Button>
@@ -197,6 +202,7 @@ function ItemRenderer({
   onDeficiencyLinked,
   jobId,
   readOnly,
+  isOnline,
 }: {
   item: Item;
   response: ResponseState;
@@ -204,6 +210,7 @@ function ItemRenderer({
   onDeficiencyLinked: (deficiencyId: number) => void;
   jobId: number;
   readOnly: boolean;
+  isOnline: boolean;
 }) {
   const [showDefPrompt, setShowDefPrompt] = useState(false);
   const trigger = item.deficiencyTrigger as DeficiencyTrigger | null;
@@ -336,6 +343,7 @@ function ItemRenderer({
           defaultTitle={trigger.defaultTitle ?? ""}
           defaultSeverity={trigger.severity}
           questionText={item.questionText}
+          isOnline={isOnline}
           onLinked={(id) => { setShowDefPrompt(false); onDeficiencyLinked(id); }}
           onSkip={() => setShowDefPrompt(false)}
         />
@@ -353,6 +361,14 @@ export default function TemplateFormRenderer() {
   const jId = parseInt(jobId!);
   const tId = parseInt(templateId!);
 
+  const isOnline = useOnlineStatus();
+  const {
+    getTemplateResponsesForJob,
+    saveOfflineTemplateResponse,
+    markTemplateResponsesSynced,
+    clearSyncedTemplateResponses,
+  } = useOfflineStorage();
+
   const [responses, setResponses] = useState<Record<number, ResponseState & { deficiencyId?: number }>>({});
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -364,7 +380,8 @@ export default function TemplateFormRenderer() {
 
   const saveResponse = trpc.inspectionTemplate.saveResponse.useMutation();
 
-  // Pre-fill from existing responses
+  // Pre-fill from existing responses, then overlay any unsynced offline edits
+  // for this job/template — those haven't reached the server yet, so they win.
   useEffect(() => {
     if (!data?.responses) return;
     const init: typeof responses = {};
@@ -376,12 +393,22 @@ export default function TemplateFormRenderer() {
         deficiencyId: r.deficiencyId ?? undefined,
       };
     }
+    getTemplateResponsesForJob(jId, tId)
+      .filter((r) => !r.synced)
+      .forEach((r) => {
+        init[r.itemId] = {
+          responseValue: r.responseValue ?? "",
+          responseText: r.responseText ?? "",
+          notes: r.notes ?? "",
+          deficiencyId: r.deficiencyId ?? undefined,
+        };
+      });
     setResponses(init);
     // Expand all sections initially
     if (data.sections) {
       setExpandedSections(new Set(data.sections.map((s: any) => s.id)));
     }
-  }, [data]);
+  }, [data, jId, tId, getTemplateResponsesForJob]);
 
   const handleChange = (itemId: number, partial: Partial<ResponseState>) => {
     setResponses((prev) => ({
@@ -399,6 +426,29 @@ export default function TemplateFormRenderer() {
     setSaving(true);
     try {
       const items = data.items;
+
+      if (!isOnline) {
+        items.forEach((item: any) => {
+          const r = responses[item.id];
+          if (!r || (!r.responseValue && !r.responseText)) return;
+          saveOfflineTemplateResponse({
+            localId: `${jId}-${tId}-${item.id}`,
+            jobId: jId,
+            templateId: tId,
+            sectionId: item.sectionId,
+            itemId: item.id,
+            responseValue: r.responseValue || null,
+            responseText: r.responseText || null,
+            notes: r.notes || null,
+            deficiencyId: r.deficiencyId ?? null,
+            synced: false,
+          });
+        });
+        toast.success("Responses saved offline — will sync when you're back online");
+        setLocation(`/tech/jobs/${jId}`);
+        return;
+      }
+
       await Promise.all(
         items.map((item: any) => {
           const r = responses[item.id];
@@ -415,6 +465,13 @@ export default function TemplateFormRenderer() {
           });
         })
       );
+      // Clear any stale offline copies for this template so a later sync can't
+      // overwrite these fresher, already-saved values.
+      const localIds = getTemplateResponsesForJob(jId, tId).map((r) => r.localId);
+      if (localIds.length > 0) {
+        markTemplateResponsesSynced(localIds);
+        clearSyncedTemplateResponses();
+      }
       toast.success("Responses saved");
       setLocation(`/tech/jobs/${jId}`);
     } catch {
@@ -476,6 +533,13 @@ export default function TemplateFormRenderer() {
       </div>
 
       <div className="max-w-2xl mx-auto p-4 space-y-4">
+        {!isOnline && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-300">
+            <WifiOff className="h-4 w-4 shrink-0" />
+            You are offline. Responses are saved locally and will sync once you reconnect.
+          </div>
+        )}
+
         {sortedSections.map((section) => {
           const sectionItems = (itemsBySectionId[section.id] ?? []).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
           const sectionAnswered = sectionItems.filter((i: any) => responses[i.id]?.responseValue || responses[i.id]?.responseText).length;
@@ -514,6 +578,7 @@ export default function TemplateFormRenderer() {
                           onDeficiencyLinked={(defId) => handleDeficiencyLinked(item.id, defId)}
                           jobId={jId}
                           readOnly={false}
+                          isOnline={isOnline}
                         />
                       </div>
                     </div>

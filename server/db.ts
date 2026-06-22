@@ -651,8 +651,14 @@ export async function searchJobs(companyId: number, query: string) {
 export async function addJobAssignment(data: InsertJobAssignment) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(jobAssignments).values(data);
-  return { id: Number(result[0].insertId), ...data };
+  // Defense-in-depth: populate companyId from the parent job when not already supplied.
+  let insertData = data;
+  if (insertData.companyId == null) {
+    const job = await getJobById(insertData.jobId);
+    if (job) insertData = { ...insertData, companyId: job.companyId };
+  }
+  const result = await db.insert(jobAssignments).values(insertData);
+  return { id: Number(result[0].insertId), ...insertData };
 }
 
 export async function removeJobAssignment(jobId: number, userId: number) {
@@ -726,8 +732,14 @@ export async function getJobTechnicians(jobId: number) {
 export async function createInspectionResult(data: InsertInspectionResult) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(inspectionResults).values(data);
-  return { id: Number(result[0].insertId), ...data };
+  // Defense-in-depth: populate companyId from the parent job when not already supplied.
+  let insertData = data;
+  if (insertData.companyId == null) {
+    const job = await getJobById(insertData.jobId);
+    if (job) insertData = { ...insertData, companyId: job.companyId };
+  }
+  const result = await db.insert(inspectionResults).values(insertData);
+  return { id: Number(result[0].insertId), ...insertData };
 }
 
 export async function getInspectionResultsByJob(jobId: number) {
@@ -825,6 +837,10 @@ export async function bulkUpsertInspectionResults(
   // 2. Get current max walkOrder once (not per-device)
   let nextWalkOrder = await getNextWalkOrder(jobId);
 
+  // Defense-in-depth: resolve the job's companyId once for any new rows we insert.
+  const job = await getJobById(jobId);
+  const companyId = job?.companyId;
+
   // 3. Separate into updates vs inserts
   const toInsert: InsertInspectionResult[] = [];
   const toUpdate: { id: number; data: Partial<InsertInspectionResult> }[] = [];
@@ -846,7 +862,7 @@ export async function bulkUpsertInspectionResults(
       toUpdate.push({ id: row.id, data: { ...common, walkOrder: row.walkOrder ?? undefined } });
     } else {
       const walkOrder = shared.result !== 'not_tested' ? nextWalkOrder++ : undefined;
-      toInsert.push({ ...common, walkOrder });
+      toInsert.push({ ...common, walkOrder, companyId });
     }
   }
 
@@ -991,8 +1007,26 @@ export async function updateRepair(id: number, data: Partial<InsertRepair>) {
 export async function createAttachment(data: InsertAttachment) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(attachments).values(data);
-  return { id: Number(result[0].insertId), ...data };
+  const insertData = await resolveAttachmentCompanyId(data);
+  const result = await db.insert(attachments).values(insertData);
+  return { id: Number(result[0].insertId), ...insertData };
+}
+
+/**
+ * Defense-in-depth: derive an attachment's companyId from its linked job or
+ * site when the caller didn't already supply one directly.
+ */
+async function resolveAttachmentCompanyId(data: InsertAttachment): Promise<InsertAttachment> {
+  if (data.companyId != null) return data;
+  if (data.jobId != null) {
+    const job = await getJobById(data.jobId);
+    if (job) return { ...data, companyId: job.companyId };
+  }
+  if (data.siteId != null) {
+    const site = await getSiteById(data.siteId);
+    if (site) return { ...data, companyId: site.companyId };
+  }
+  return data;
 }
 
 export async function getAttachmentsByEntity(entityType: string, entityId: number) {
@@ -1303,8 +1337,9 @@ export async function createBulkAttachments(dataList: InsertAttachment[]) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   if (dataList.length === 0) return [];
-  const result = await db.insert(attachments).values(dataList);
-  return dataList.map((data, index) => ({ id: Number(result[0].insertId) + index, ...data }));
+  const resolvedList = await Promise.all(dataList.map(resolveAttachmentCompanyId));
+  const result = await db.insert(attachments).values(resolvedList);
+  return resolvedList.map((data, index) => ({ id: Number(result[0].insertId) + index, ...data }));
 }
 
 // ============================================
@@ -1538,7 +1573,13 @@ export async function saveChecklistResponse(data: InsertInspectionChecklistRespo
       })
       .where(eq(inspectionChecklistResponses.id, existing[0].id));
   } else {
-    await db.insert(inspectionChecklistResponses).values(data);
+    // Defense-in-depth: populate companyId from the parent job when not already supplied.
+    let insertData = data;
+    if (insertData.companyId == null) {
+      const job = await getJobById(insertData.jobId);
+      if (job) insertData = { ...insertData, companyId: job.companyId };
+    }
+    await db.insert(inspectionChecklistResponses).values(insertData);
   }
 }
 

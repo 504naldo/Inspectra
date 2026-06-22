@@ -5,7 +5,8 @@ import { eq } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import { storagePut } from "./storage";
 
-describe("Sheet Selection and Detection", () => {
+// Requires a real S3/R2 bucket — skips gracefully when credentials aren't configured.
+describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Sheet Selection and Detection", () => {
   let testCompanyId: number;
   let testUserId: number;
   let testSiteId: number;
@@ -64,9 +65,10 @@ describe("Sheet Selection and Detection", () => {
         companyId: testCompanyId,
         siteId: testSiteId,
         customerOrgId: testCompanyId, // Required field
+        jobNumber: `SHEET-TEST-${Date.now()}`,
         title: "Sheet Test Job",
-        jobType: "ANNUAL_INSPECTION",
-        status: "IN_PROGRESS",
+        jobType: "annual",
+        status: "in_progress",
         createdAt: new Date(),
         updatedAt: new Date(),
       })

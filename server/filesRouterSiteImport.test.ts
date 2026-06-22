@@ -33,7 +33,8 @@ function createTestContext(role: "admin" | "office" | "technician" = "office") {
   };
 }
 
-describe("filesRouter Site Sheet Import", () => {
+// Requires a real S3/R2 bucket — skips gracefully when credentials aren't configured.
+describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("filesRouter Site Sheet Import", () => {
   let testCompanyId: number;
   let testCustomerOrgId: number;
   let testSiteId: number;

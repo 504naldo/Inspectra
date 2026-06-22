@@ -1,5 +1,29 @@
 # Offline Sync Hardening v1 — Implementation Notes
 
+## v2 Update — Real Offline Queues for Deficiencies, Checklist & Template Responses
+
+Items 4 and 5 below, and the "Deficiency Offline Queue" gap note, described a v1
+design where deficiencies and checklist responses were intentionally online-only
+("honest disabled controls" rather than a local queue). That has since changed:
+
+- **DeficiencyEditor.tsx** now calls `saveOfflineDeficiency` when offline (queued
+  in `useOfflineStorage`, synced one-by-one via `deficiency.create` in SyncScreen).
+- **ChecklistCompletion.tsx** (CAN/ULC-S536 checklist) now persists each
+  online/offline edit via `saveOfflineChecklistResponse`/`OfflineChecklistResponse`,
+  synced via `checklist.bulkSaveResponses`.
+- **TemplateFormRenderer.tsx** (generic inspection-template responses) now has the
+  same offline queue via `saveOfflineTemplateResponse`/`OfflineTemplateResponse`,
+  synced one-by-one via `inspectionTemplate.saveResponse` (no bulk endpoint exists
+  for templates). The nested deficiency-logging dialog inside it is still
+  online-only by design (disabled with a tooltip when offline), since that always
+  requires a server round-trip.
+
+All three queues follow the same pattern: a `localId`-keyed CRUD set in
+`useOfflineStorage.ts`, an "overlay unsynced edits on top of server data" effect on
+load, and a "mark-synced-on-successful-online-save" call so a later bulk sync
+can't replay a stale local copy over a fresher server value. See
+`OFFLINE_SYNC_AUDIT.md` for the current, accurate per-flow table.
+
 ## What Was Changed
 
 ### 1. `client/src/hooks/useOfflineStorage.ts`
