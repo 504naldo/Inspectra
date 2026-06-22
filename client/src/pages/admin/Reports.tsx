@@ -76,7 +76,20 @@ function ReportRecipientSuggestion({
 
 export default function AdminReports() {
   const { user } = useAuth();
-  const companyId = user?.companyId || 1;
+
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout title="Reports">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <p className="text-muted-foreground">Loading session...</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  const companyId = user.companyId;
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>("");

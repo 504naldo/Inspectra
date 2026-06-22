@@ -100,7 +100,20 @@ function SortableDeviceRow({
 
 export default function AdminDevices() {
   const { user } = useAuth();
-  const companyId = user?.companyId || 1;
+
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout title="Devices">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <p className="text-muted-foreground">Loading session...</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  const companyId = user.companyId;
 
   const [selectedSiteId, setSelectedSiteId] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");

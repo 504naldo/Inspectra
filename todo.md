@@ -402,7 +402,9 @@
 - [x] Verify progress tracker works with expanded item count
 
 
-## Definitive Reporting Pipeline Refactor
+## Definitive Reporting Pipeline Refactor — PARTIALLY SUPERSEDED
+> Steps 1, 2, 5, and 6 are superseded by "Phase 2: Explicit Endpoints & UI Updates" and "Deficiency Report Refactoring (New)" below, which implemented the explicit-endpoints + dual-button approach. Steps 3 (location enforcement) and 4 (power-supply exclusion) were never implemented and remain genuinely outstanding — see open checkboxes below.
+
 ### Step 1: Identify Active Generators
 - [x] Search codebase for all PDF generation references
 - [x] Document which generator is used by which endpoint
@@ -522,7 +524,9 @@
 - [x] Create tests for sprinkler section in PDF (6 tests passing)
 - [x] Test end-to-end with real sprinkler deficiencies (verified via test PDFs)
 
-## Sprinkler ITM Inspection Report Module (NFPA 25 / Vancouver Fire By-law)
+## Sprinkler ITM Inspection Report Module (NFPA 25 / Vancouver Fire By-law) — SUPERSEDED
+> Remaining unchecked UI items below were completed under "Sprinkler ITM UI Completion (NFPA 25 Numeric Measurements)" further down. PDF generator and unit tests for this module are still genuinely outstanding (not covered by that section) — see open items.
+
 - [x] Analyze Excel template structure (Sprinkler Systems, Sprinkler Report, Sprinkler Devices tabs)
 - [x] Design database schema for sprinkler ITM data (systems, checklist items, devices)
 - [x] Create database migrations and push schema changes (0007_rapid_ultron.sql)
@@ -903,32 +907,19 @@
 - [ ] Test: modal shows each technician exactly once (user to verify)
 - [ ] Test: dashboard metrics reflect actual data (user to verify)
 
-## Fix CompanyId Fallbacks + Technician Dedup + Missing Cards (Critical)
-- [ ] Remove all `user?.companyId || 1` fallbacks from admin pages
-- [ ] Remove all `user?.companyId || 1` fallbacks from technician pages
-- [ ] Add blocking loading state when user or companyId is missing
-- [ ] Fix technician deduplication with normalized lowercase email keys
-- [ ] Dedupe by userId as fallback when email is missing
-- [ ] Use uniqueTechnicians for both Lead and Additional sections
-- [ ] Show clear error message when technician query fails
-- [ ] Always render Fire Extinguisher card (show empty state if count=0)
-- [ ] Always render Emergency Light card (show empty state if count=0)
-- [ ] Add "Import Assets" link in empty state
-- [ ] Add debug console logs for device counts in JobDetails
-- [ ] Test: companyId never defaults to 1 after login
-- [ ] Test: technicians appear exactly once in modal
-- [ ] Test: Extinguisher/Emergency cards always visible
+## Fix CompanyId Fallbacks + Technician Dedup + Missing Cards (Critical) — SUPERSEDED
+> Superseded by "Fix CompanyId Fallbacks + Missing Cards + Deduplication (Critical)" below. Kept for history only.
 
 ## Fix CompanyId Fallbacks + Missing Cards + Deduplication (Critical)
-- [x] Remove all `user?.companyId || 1` fallbacks from admin pages (Jobs, Dashboard, Sites, Customers)
+- [x] Remove all `user?.companyId || 1` fallbacks from admin pages (Jobs, Dashboard, Sites, Customers, Schedule, SiteFiles, Devices, AssetImport, Reports — verified zero remaining `companyId || 1` / `companyId ?? 1` matches repo-wide)
 - [x] Remove all `user?.companyId || 1` fallbacks from technician pages (JobsList)
-- [x] Add loading guard when user or companyId missing ("Loading session..." message)
+- [x] Add loading guard when user or companyId missing ("Loading session..." message) on all 9 admin pages above
 - [x] Fix technician deduplication with normalized lowercase email keys (Set-based dedup)
 - [x] Always render Extinguisher card (empty state when count=0)
 - [x] Always render Emergency Light card (empty state when count=0)
 - [x] Add "Import Assets" button in empty state cards (links to /admin/devices)
 - [x] Add debug console logging for device counts (totalDevices, extinguishers, emergency, fire, smoke)
-- [ ] Test: companyId never defaults to 1 (user to verify)
+- [x] Test: companyId never defaults to 1 (verified via grep audit + typecheck; no live-session click test performed)
 - [ ] Test: technicians show exactly once in assignment modal (user to verify)
 - [ ] Test: Extinguisher/Emergency cards always visible (user to verify)
 
@@ -943,7 +934,9 @@
 - [ ] Add navigation link in AdminLayout sidebar
 - [ ] Test user management functionality
 
-## Asset Import Pipeline (Excel → Fire Extinguishers + Emergency Lights)
+## Asset Import Pipeline (Excel → Fire Extinguishers + Emergency Lights) — SUPERSEDED
+> Superseded by "Asset Import Pipeline from Excel (New)" below, which implemented this entire list under a different heading.
+
 - [ ] Define canonical device categories (FIRE_EXTINGUISHER, EMERGENCY_LIGHT, FIRE_ALARM_DEVICE)
 - [ ] Update device schema to support externalRef for stable import keys
 - [ ] Create Excel parsing backend procedure (detect tabs by fuzzy name matching)
@@ -1288,7 +1281,9 @@
 - [ ] Capture and return detailed error information
 - [ ] Test to identify exact error source
 
-## XLSM Import Refactoring (Critical)
+## XLSM Import Refactoring (Critical) — SUPERSEDED
+> Superseded by "XLSM Import Refactoring (Completed)" below, which implemented this entire list under a different heading.
+
 - [ ] Add Import Type selection step (site, fireAlarmDevices, fireExtinguishers, emergencyLights, sprinklerDevices)
 - [ ] Update parseFile to return sheetNames and suggestedSheetName based on Import Type
 - [ ] Add Sheet Picker dropdown with smart default selection

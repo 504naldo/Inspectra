@@ -116,7 +116,20 @@ function monthStr(d: Date) {
 
 export default function AdminSchedule() {
   const { user } = useAuth();
-  const companyId = (user as any)?.companyId ?? 1;
+
+  if (!user || !user.companyId) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <p className="text-muted-foreground">Loading session...</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  const companyId = user.companyId;
   const utils = trpc.useUtils();
 
   return (
