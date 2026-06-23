@@ -35,6 +35,7 @@ import {
   ExternalLink,
   Trash2,
   ClipboardList,
+  BookOpen,
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
@@ -157,6 +158,12 @@ function SiteCard({
                         <DropdownMenuItem>
                           <Flame className="h-4 w-4 mr-2" />
                           Fire Alarm Setup
+                        </DropdownMenuItem>
+                      </Link>
+                      <Link href={`/admin/sites/${site.id}/knowledge`}>
+                        <DropdownMenuItem>
+                          <BookOpen className="h-4 w-4 mr-2" />
+                          Knowledge
                         </DropdownMenuItem>
                       </Link>
                       <DropdownMenuItem
