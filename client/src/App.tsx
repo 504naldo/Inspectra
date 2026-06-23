@@ -41,6 +41,7 @@ import SiteFiles from "./pages/admin/SiteFiles";
 import SiteKnowledge from "./pages/admin/SiteKnowledge";
 import EquipmentKnowledgeList from "./pages/admin/EquipmentKnowledgeList";
 import EquipmentKnowledgeDetail from "./pages/admin/EquipmentKnowledgeDetail";
+import KnowledgeReviewQueue from "./pages/admin/KnowledgeReviewQueue";
 import AssetImport from "./pages/admin/AssetImport";
 import WorkSiteInfo from "./pages/admin/WorkSiteInfo";
 import AdminSchedule from "./pages/admin/Schedule";
@@ -332,6 +333,11 @@ function Router() {
       <Route path="/admin/equipment-knowledge">
         <ProtectedRoute allowedRoles={['admin', 'office']}>
           <EquipmentKnowledgeList />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/knowledge-review">
+        <ProtectedRoute allowedRoles={['admin', 'office']}>
+          <KnowledgeReviewQueue />
         </ProtectedRoute>
       </Route>
       <Route path="/admin/sites/:siteId/import">

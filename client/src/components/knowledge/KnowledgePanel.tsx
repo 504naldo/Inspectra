@@ -76,7 +76,7 @@ export default function KnowledgePanel({
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<{
     answer: string;
-    citedFacts: Array<{ id: number; content: string; status: string; sourceType: string }>;
+    citedFacts: Array<{ id: number; content: string; status: string; sourceType: string; potentiallyOutdated: boolean }>;
     disclaimer: string;
   } | null>(null);
   const [editingFactId, setEditingFactId] = useState<number | null>(null);
@@ -103,6 +103,10 @@ export default function KnowledgePanel({
   });
   const editFact = trpc.knowledgeFact.edit.useMutation({
     onSuccess: () => { refetchFacts(); setEditingFactId(null); toast.success("New version created (draft)"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const markStale = trpc.knowledgeFact.markStale.useMutation({
+    onSuccess: () => { refetchFacts(); toast.success("Marked stale"); },
     onError: (e) => toast.error(e.message),
   });
   const ask = trpc.knowledgeQA.ask.useMutation({
@@ -168,6 +172,9 @@ export default function KnowledgePanel({
                       <Badge className={STATUS_STYLES[c.status]}>{c.status}</Badge>
                       <span className="text-muted-foreground">{SOURCE_LABELS[c.sourceType] ?? c.sourceType}:</span>
                       <span>{c.content}</span>
+                      {c.potentiallyOutdated && (
+                        <Badge className="bg-orange-100 text-orange-800">May be outdated</Badge>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -216,6 +223,12 @@ export default function KnowledgePanel({
                 <div className="flex gap-2 pt-1">
                   <Button size="sm" disabled={approve.isPending} onClick={() => approve.mutate({ factId: f.id })}>Verify</Button>
                   <Button size="sm" variant="outline" disabled={reject.isPending} onClick={() => reject.mutate({ factId: f.id })}>Reject</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setEditingFactId(f.id); setEditContent(f.content); }}>Edit</Button>
+                </div>
+              )}
+              {f.status === "verified" && f.potentiallyOutdated && (
+                <div className="flex gap-2 pt-1">
+                  <Button size="sm" variant="outline" disabled={markStale.isPending} onClick={() => markStale.mutate({ factId: f.id })}>Mark stale</Button>
                   <Button size="sm" variant="ghost" onClick={() => { setEditingFactId(f.id); setEditContent(f.content); }}>Edit</Button>
                 </div>
               )}

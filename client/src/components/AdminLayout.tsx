@@ -167,6 +167,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "AI Assistant",    href: "/admin/ai-assistant",    icon: Bot                       },
       { label: "Knowledge Base",  href: "/admin/knowledge-base",  icon: BookOpen                  },
       { label: "Equipment Knowledge", href: "/admin/equipment-knowledge", icon: Wrench           },
+      { label: "Knowledge Review", href: "/admin/knowledge-review", icon: ClipboardCheck         },
       { label: "Feedback Center", href: "/admin/feedback",        icon: MessageSquare             },
     ],
   },

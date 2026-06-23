@@ -28,6 +28,8 @@ vi.mock("./db", () => ({
   createKnowledgeFact: vi.fn(),
   createKnowledgeFactCitation: vi.fn(),
   listKnowledgeFactsByPage: vi.fn(),
+  listKnowledgeFactsByCompany: vi.fn(async () => []),
+  listKnowledgePagesByCompany: vi.fn(async () => []),
   updateKnowledgeFact: vi.fn(),
   listCitationsByFactIds: vi.fn(async () => []),
   countCitationsForFact: vi.fn(),
@@ -112,6 +114,13 @@ describe("Role gating", () => {
   it("technicians cannot approve facts (office-only)", async () => {
     const caller = appRouter.createCaller(makeCtx(1, "technician"));
     await expect(caller.knowledgeFact.approve({ factId: 3 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.updateKnowledgeFact).not.toHaveBeenCalled();
+  });
+
+  it("technicians cannot mark facts stale or read the review queue (office-only)", async () => {
+    const caller = appRouter.createCaller(makeCtx(1, "technician"));
+    await expect(caller.knowledgeFact.markStale({ factId: 3 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.knowledgeFact.reviewQueue()).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(db.updateKnowledgeFact).not.toHaveBeenCalled();
   });
 
@@ -472,6 +481,48 @@ describe("Staleness indicator", () => {
   });
 });
 
+describe("Resolving staleness", () => {
+  it("retires a verified fact by marking it stale", async () => {
+    vi.mocked(db.getKnowledgeFactById).mockResolvedValue({ id: 10, companyId: 1, pageId: 7, status: "verified" } as any);
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+
+    await caller.knowledgeFact.markStale({ factId: 10 });
+
+    expect(db.updateKnowledgeFact).toHaveBeenCalledWith(10, { status: "stale" });
+  });
+
+  it("refuses to mark a non-verified fact stale", async () => {
+    vi.mocked(db.getKnowledgeFactById).mockResolvedValue({ id: 10, companyId: 1, pageId: 7, status: "draft" } as any);
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+
+    await expect(caller.knowledgeFact.markStale({ factId: 10 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(db.updateKnowledgeFact).not.toHaveBeenCalled();
+  });
+});
+
+describe("Cross-site review queue", () => {
+  it("returns drafts awaiting review and verified facts flagged outdated, across pages", async () => {
+    vi.mocked(db.listKnowledgePagesByCompany).mockResolvedValue([
+      { id: 7, companyId: 1, title: "Acme Tower", subjectType: "site", siteId: 50, systemType: null, equipmentModelId: null },
+    ] as any);
+    vi.mocked(db.listKnowledgeFactsByCompany).mockImplementation(async (_companyId, opts: any) => {
+      if (opts?.statuses?.includes("draft")) {
+        return [{ id: 1, pageId: 7, content: "Pending fact", status: "draft", sourceType: "technician_observation", generatedByAi: true, createdAt: new Date("2024-01-01") }];
+      }
+      return [{ id: 2, pageId: 7, content: "Flagged fact", status: "verified", sourceType: "technician_observation", generatedByAi: true, createdAt: new Date("2024-01-01") }];
+    });
+    vi.mocked(db.getServiceSchedulesBySite).mockResolvedValue([
+      { id: 1, companyId: 1, siteId: 50, active: true, serviceType: "Fire Alarm Inspection", lastCompletedAt: new Date("2025-01-01") },
+    ] as any);
+
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const res = await caller.knowledgeFact.reviewQueue();
+
+    expect(res.awaitingReview).toEqual([expect.objectContaining({ id: 1, pageTitle: "Acme Tower" })]);
+    expect(res.potentiallyOutdated).toEqual([expect.objectContaining({ id: 2, pageTitle: "Acme Tower" })]);
+  });
+});
+
 describe("Q&A grounding", () => {
   it("only cites facts from the scoped set and logs the question", async () => {
     vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1, title: "Acme Tower" } as any);
@@ -489,5 +540,24 @@ describe("Q&A grounding", () => {
     // The hallucinated id 999 is dropped; only the in-scope fact 10 remains.
     expect(res.citedFacts.map((f) => f.id)).toEqual([10]);
     expect(db.createKnowledgeQuestion).toHaveBeenCalledWith(expect.objectContaining({ citedFactIds: [10], pageId: 7 }));
+  });
+
+  it("flags a cited fact as potentially outdated and warns in the disclaimer", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1, title: "Acme Tower", siteId: 50, subjectType: "site", systemType: null } as any);
+    vi.mocked(db.listKnowledgeFactsByPage).mockResolvedValue([
+      { id: 10, content: "Fact A", status: "verified", sourceType: "technician_observation", createdAt: new Date("2024-01-01") },
+    ] as any);
+    vi.mocked(db.getServiceSchedulesBySite).mockResolvedValue([
+      { id: 1, companyId: 1, siteId: 50, active: true, serviceType: "Fire Alarm Inspection", lastCompletedAt: new Date("2025-01-01") },
+    ] as any);
+    vi.mocked(invokeLLM).mockResolvedValue({
+      choices: [{ message: { content: JSON.stringify({ answer: "It is A.", cited_fact_ids: [10] }) } }],
+    } as any);
+
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const res = await caller.knowledgeQA.ask({ pageId: 7, question: "Which fact?" });
+
+    expect(res.citedFacts[0].potentiallyOutdated).toBe(true);
+    expect(res.disclaimer).toMatch(/may be outdated/i);
   });
 });
