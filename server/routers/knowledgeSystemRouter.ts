@@ -117,6 +117,55 @@ async function getRelevantServiceSchedules(
   });
 }
 
+/**
+ * Per-page lookups needed to tell whether a fact's truth may have been
+ * superseded — by a newer document of the same type, or by a real service
+ * visit completed after the fact was established. Computed once per page
+ * and reused across every fact on it.
+ */
+async function buildStalenessLookups(
+  page: { id: number; siteId: number | null; subjectType: string; systemType: string | null },
+  companyId: number,
+) {
+  const sourceDocs = await db.listKnowledgeSourceDocumentsByPage(companyId, page.id);
+  const docById = new Map(sourceDocs.map((d) => [d.id, d]));
+  const latestByDocType = new Map<string, Date>();
+  for (const d of sourceDocs) {
+    const current = latestByDocType.get(d.documentType);
+    if (!current || d.createdAt > current) latestByDocType.set(d.documentType, d.createdAt);
+  }
+  const relevantSchedules = await getRelevantServiceSchedules(page, companyId);
+  return { docById, latestByDocType, relevantSchedules };
+}
+
+/** Whether a fact may no longer be current, given its citations and page-level staleness lookups. */
+function computeFactOutdated(
+  fact: { sourceType: string; createdAt: Date },
+  citations: Array<{ sourceType: string; sourceId: number | null }>,
+  lookups: Awaited<ReturnType<typeof buildStalenessLookups>>,
+): boolean {
+  const docCitations = citations
+    .filter((c) => c.sourceType === "knowledge_source_document" && c.sourceId !== null)
+    .map((c) => lookups.docById.get(c.sourceId!))
+    .filter((d): d is NonNullable<typeof d> => d !== undefined);
+
+  const supersededByNewerDocument = docCitations.some((doc) => {
+    if (!STALE_PRONE_DOCUMENT_TYPES.has(doc.documentType)) return false;
+    const latest = lookups.latestByDocType.get(doc.documentType);
+    return latest !== undefined && latest > doc.createdAt;
+  });
+
+  // Anchor: when this fact's truth was established — the latest of its
+  // cited source documents, falling back to the fact's own createdAt.
+  const establishedAt = docCitations.length > 0
+    ? new Date(Math.max(...docCitations.map((d) => d.createdAt.getTime())))
+    : fact.createdAt;
+  const supersededByServiceVisit = POINT_IN_TIME_FACT_SOURCE_TYPES.has(fact.sourceType)
+    && lookups.relevantSchedules.some((s) => s.lastCompletedAt && s.lastCompletedAt > establishedAt);
+
+  return supersededByNewerDocument || supersededByServiceVisit;
+}
+
 /** Load an equipment model and assert it belongs to the caller's company. */
 async function assertEquipmentModelCompany(modelId: number, companyId: number) {
   const model = await db.getEquipmentModelById(modelId);
@@ -556,42 +605,14 @@ export const knowledgeFactRouter = router({
         byFact.set(c.factId, arr);
       }
 
-      const sourceDocs = await db.listKnowledgeSourceDocumentsByPage(companyId, input.pageId);
-      const docById = new Map(sourceDocs.map((d) => [d.id, d]));
-      const latestByDocType = new Map<string, Date>();
-      for (const d of sourceDocs) {
-        const current = latestByDocType.get(d.documentType);
-        if (!current || d.createdAt > current) latestByDocType.set(d.documentType, d.createdAt);
-      }
-
-      const relevantSchedules = await getRelevantServiceSchedules(page, companyId);
+      const lookups = await buildStalenessLookups(page, companyId);
 
       return facts.map((f) => {
         const factCitations = byFact.get(f.id) ?? [];
-
-        const docCitations = factCitations
-          .filter((c) => c.sourceType === "knowledge_source_document" && c.sourceId !== null)
-          .map((c) => docById.get(c.sourceId!))
-          .filter((d): d is NonNullable<typeof d> => d !== undefined);
-
-        const supersededByNewerDocument = docCitations.some((doc) => {
-          if (!STALE_PRONE_DOCUMENT_TYPES.has(doc.documentType)) return false;
-          const latest = latestByDocType.get(doc.documentType);
-          return latest !== undefined && latest > doc.createdAt;
-        });
-
-        // Anchor: when this fact's truth was established — the latest of its
-        // cited source documents, falling back to the fact's own createdAt.
-        const establishedAt = docCitations.length > 0
-          ? new Date(Math.max(...docCitations.map((d) => d.createdAt.getTime())))
-          : f.createdAt;
-        const supersededByServiceVisit = POINT_IN_TIME_FACT_SOURCE_TYPES.has(f.sourceType)
-          && relevantSchedules.some((s) => s.lastCompletedAt && s.lastCompletedAt > establishedAt);
-
         return {
           ...f,
           citations: factCitations,
-          potentiallyOutdated: supersededByNewerDocument || supersededByServiceVisit,
+          potentiallyOutdated: computeFactOutdated(f, factCitations, lookups),
         };
       });
     }),
@@ -672,6 +693,31 @@ export const knowledgeFactRouter = router({
     }),
 
   /**
+   * Retire a verified fact once it's been superseded by new information (a
+   * newer report or a real service visit) — distinct from reject (the fact
+   * was never accurate) and edit (replace the wording with a corrected
+   * value). The original row is kept, just moved out of the active set.
+   */
+  markStale: officeProcedure
+    .input(z.object({ factId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const fact = await assertFactCompany(input.factId, ctx.user.companyId!);
+      if (fact.status !== "verified") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only a verified fact can be marked stale" });
+      }
+      await db.updateKnowledgeFact(input.factId, { status: "stale" });
+      void logActivity({
+        ctx,
+        entityType: "knowledge_fact",
+        entityId: input.factId,
+        eventType: "knowledge_fact.marked_stale",
+        title: "Knowledge fact marked stale",
+        metadata: { pageId: fact.pageId },
+      });
+      return { success: true as const };
+    }),
+
+  /**
    * Edit a fact's wording. Append-only: creates a NEW draft fact pointing back
    * at the original via supersedesFactId, copies its citations forward, and
    * marks the original 'stale'. The original row is never destroyed.
@@ -721,6 +767,67 @@ export const knowledgeFactRouter = router({
 
       return { newFactId: newFact.id };
     }),
+
+  /**
+   * Company-wide queue for office/admin: every draft/reviewed fact awaiting a
+   * first decision, plus every verified fact flagged potentiallyOutdated,
+   * across all knowledge pages — so reviewers don't have to open each page
+   * individually to find what needs attention.
+   */
+  reviewQueue: officeProcedure.query(async ({ ctx }) => {
+    const companyId = ctx.user.companyId!;
+
+    const pages = await db.listKnowledgePagesByCompany(companyId);
+    const pageById = new Map(pages.map((p) => [p.id, p]));
+
+    const [pendingFacts, verifiedFacts] = await Promise.all([
+      db.listKnowledgeFactsByCompany(companyId, { statuses: ["draft", "reviewed"] }),
+      db.listKnowledgeFactsByCompany(companyId, { statuses: ["verified"] }),
+    ]);
+
+    const verifiedCitations = await db.listCitationsByFactIds(verifiedFacts.map((f) => f.id));
+    const citationsByFact = new Map<number, typeof verifiedCitations>();
+    for (const c of verifiedCitations) {
+      const arr = citationsByFact.get(c.factId) ?? [];
+      arr.push(c);
+      citationsByFact.set(c.factId, arr);
+    }
+
+    const lookupsByPage = new Map<number, Awaited<ReturnType<typeof buildStalenessLookups>>>();
+    const outdatedFacts: typeof verifiedFacts = [];
+    for (const f of verifiedFacts) {
+      const page = pageById.get(f.pageId);
+      if (!page) continue;
+      let lookups = lookupsByPage.get(page.id);
+      if (!lookups) {
+        lookups = await buildStalenessLookups(page, companyId);
+        lookupsByPage.set(page.id, lookups);
+      }
+      if (computeFactOutdated(f, citationsByFact.get(f.id) ?? [], lookups)) outdatedFacts.push(f);
+    }
+
+    const withPageInfo = (f: (typeof pendingFacts)[number]) => {
+      const page = pageById.get(f.pageId);
+      return {
+        id: f.id,
+        pageId: f.pageId,
+        pageTitle: page?.title ?? "Unknown page",
+        subjectType: page?.subjectType ?? null,
+        siteId: page?.siteId ?? null,
+        equipmentModelId: page?.equipmentModelId ?? null,
+        content: f.content,
+        status: f.status,
+        sourceType: f.sourceType,
+        generatedByAi: f.generatedByAi,
+        createdAt: f.createdAt,
+      };
+    };
+
+    return {
+      awaitingReview: pendingFacts.map(withPageInfo),
+      potentiallyOutdated: outdatedFacts.map(withPageInfo),
+    };
+  }),
 });
 
 // ── Source-linked Q&A ──────────────────────────────────────────────────────────
@@ -750,7 +857,7 @@ export const knowledgeQARouter = router({
       if (facts.length === 0) {
         return {
           answer: "There is no approved knowledge for this property yet. Upload and verify source documents before asking questions.",
-          citedFacts: [] as Array<{ id: number; content: string; status: string; sourceType: string }>,
+          citedFacts: [] as Array<{ id: number; content: string; status: string; sourceType: string; potentiallyOutdated: boolean }>,
           disclaimer: "AI answer grounded only in stored knowledge facts. Verify against original records.",
         };
       }
@@ -804,11 +911,26 @@ export const knowledgeQARouter = router({
       // the model can never surface a fact it wasn't given.
       const validIds = new Set(facts.map((f) => f.id));
       const citedIds = (parsed.cited_fact_ids ?? []).filter((id) => validIds.has(id));
-      const citedFacts = facts
-        .filter((f) => citedIds.includes(f.id))
-        .map((f) => ({ id: f.id, content: f.content, status: f.status, sourceType: f.sourceType }));
 
       const citations = await db.listCitationsByFactIds(citedIds);
+      const citationsByFact = new Map<number, typeof citations>();
+      for (const c of citations) {
+        const arr = citationsByFact.get(c.factId) ?? [];
+        arr.push(c);
+        citationsByFact.set(c.factId, arr);
+      }
+
+      const lookups = await buildStalenessLookups(page, companyId);
+      const citedFacts = facts
+        .filter((f) => citedIds.includes(f.id))
+        .map((f) => ({
+          id: f.id,
+          content: f.content,
+          status: f.status,
+          sourceType: f.sourceType,
+          potentiallyOutdated: computeFactOutdated(f, citationsByFact.get(f.id) ?? [], lookups),
+        }));
+      const anyOutdated = citedFacts.some((f) => f.potentiallyOutdated);
 
       await db.createKnowledgeQuestion({
         companyId,
@@ -839,7 +961,9 @@ export const knowledgeQARouter = router({
           excerpt: c.excerpt,
           locationRef: c.locationRef,
         })),
-        disclaimer: "AI answer grounded only in stored knowledge facts. Verify against original records before acting.",
+        disclaimer: anyOutdated
+          ? "AI answer grounded only in stored knowledge facts. One or more cited facts may be outdated — verify against the latest report or service record before acting."
+          : "AI answer grounded only in stored knowledge facts. Verify against original records before acting.",
       };
     }),
 

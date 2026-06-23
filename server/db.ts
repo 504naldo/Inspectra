@@ -3899,6 +3899,14 @@ export async function listKnowledgePagesBySite(companyId: number, siteId: number
     .orderBy(desc(knowledgePages.updatedAt));
 }
 
+export async function listKnowledgePagesByCompany(companyId: number): Promise<KnowledgePage[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(knowledgePages)
+    .where(eq(knowledgePages.companyId, companyId))
+    .orderBy(desc(knowledgePages.updatedAt));
+}
+
 export async function touchKnowledgePage(id: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -3930,6 +3938,22 @@ export async function listKnowledgeFactsByPage(
   const db = await getDb();
   if (!db) return [];
   const conditions = [eq(knowledgeFacts.pageId, pageId)];
+  if (opts.statuses && opts.statuses.length > 0) {
+    conditions.push(inArray(knowledgeFacts.status, opts.statuses as any));
+  }
+  return db.select().from(knowledgeFacts)
+    .where(and(...conditions))
+    .orderBy(desc(knowledgeFacts.createdAt))
+    .limit(opts.limit ?? 500);
+}
+
+export async function listKnowledgeFactsByCompany(
+  companyId: number,
+  opts: { statuses?: string[]; limit?: number } = {}
+): Promise<KnowledgeFact[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(knowledgeFacts.companyId, companyId)];
   if (opts.statuses && opts.statuses.length > 0) {
     conditions.push(inArray(knowledgeFacts.status, opts.statuses as any));
   }
