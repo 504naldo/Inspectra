@@ -1333,3 +1333,121 @@ CREATE TABLE IF NOT EXISTS `inspection_template_responses` (
   `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+-- ---------------------------------------------------------------------------
+-- 0076_companyid_hardening
+-- ---------------------------------------------------------------------------
+ALTER TABLE `attachments` ADD COLUMN IF NOT EXISTS `companyId` INT NULL;
+ALTER TABLE `attachments` ADD INDEX `attachments_companyId_idx` (`companyId`);
+
+ALTER TABLE `inspection_checklist_responses` ADD COLUMN IF NOT EXISTS `companyId` INT NULL;
+ALTER TABLE `inspection_checklist_responses` ADD INDEX `inspection_checklist_responses_companyId_idx` (`companyId`);
+
+ALTER TABLE `job_assignments` ADD COLUMN IF NOT EXISTS `companyId` INT NULL;
+ALTER TABLE `job_assignments` ADD INDEX `job_assignments_companyId_idx` (`companyId`);
+
+ALTER TABLE `inspection_results` ADD COLUMN IF NOT EXISTS `companyId` INT NULL;
+ALTER TABLE `inspection_results` ADD INDEX `inspection_results_companyId_idx` (`companyId`);
+
+-- ---------------------------------------------------------------------------
+-- 0077_knowledge_system
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `equipment_models` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `companyId` INT NOT NULL,
+  `manufacturer` VARCHAR(100) NOT NULL,
+  `model` VARCHAR(100) NOT NULL,
+  `deviceType` VARCHAR(100) NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE `equipment_models_lookup_idx` (`companyId`,`manufacturer`,`model`)
+);
+
+CREATE TABLE IF NOT EXISTS `knowledge_pages` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `companyId` INT NOT NULL,
+  `subjectType` ENUM('site','site_system','equipment_model') NOT NULL,
+  `siteId` INT NULL,
+  `systemType` VARCHAR(50) NULL,
+  `equipmentModelId` INT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `createdById` INT NOT NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS `knowledge_facts` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `companyId` INT NOT NULL,
+  `pageId` INT NOT NULL,
+  `content` TEXT NOT NULL,
+  `sourceType` ENUM('manufacturer_doc','code_requirement','company_procedure','technician_observation','ai_inference') NOT NULL,
+  `status` ENUM('draft','reviewed','verified','rejected','stale') NOT NULL DEFAULT 'draft',
+  `confidence` ENUM('high','medium','low') NULL,
+  `generatedByAi` TINYINT(1) NOT NULL DEFAULT 0,
+  `aiModelId` VARCHAR(64) NULL,
+  `aiPromptHash` VARCHAR(64) NULL,
+  `aiContext` JSON NULL,
+  `supersedesFactId` INT NULL,
+  `reviewedById` INT NULL,
+  `reviewedAt` TIMESTAMP NULL,
+  `rejectionReason` TEXT NULL,
+  `createdById` INT NOT NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS `knowledge_fact_citations` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `companyId` INT NOT NULL,
+  `factId` INT NOT NULL,
+  `sourceType` ENUM('knowledge_source_document','report','job','device','deficiency','attachment','manual_entry') NOT NULL,
+  `sourceId` INT NULL,
+  `excerpt` TEXT NULL,
+  `locationRef` VARCHAR(100) NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS `knowledge_source_documents` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `companyId` INT NOT NULL,
+  `siteId` INT NULL,
+  `pageId` INT NULL,
+  `documentType` ENUM('inspection_report','equipment_manual','code_document','company_procedure','voice_note','other') NOT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `fileKey` VARCHAR(500) NULL,
+  `fileUrl` TEXT NULL,
+  `mimeType` VARCHAR(100) NULL,
+  `fileSize` INT NULL,
+  `extractionStatus` ENUM('uploaded','extracting','classifying','ready','failed') NOT NULL DEFAULT 'uploaded',
+  `extractedText` TEXT NULL,
+  `errorMessage` TEXT NULL,
+  `uploadedById` INT NOT NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS `knowledge_questions` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `companyId` INT NOT NULL,
+  `pageId` INT NOT NULL,
+  `askedById` INT NOT NULL,
+  `question` TEXT NOT NULL,
+  `answer` TEXT NOT NULL,
+  `citedFactIds` JSON NULL,
+  `modelUsed` VARCHAR(64) NULL,
+  `createdAt` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE `equipment_models` ADD INDEX `equipment_models_companyId_idx` (`companyId`);
+ALTER TABLE `knowledge_pages` ADD INDEX `knowledge_pages_companyId_idx` (`companyId`);
+ALTER TABLE `knowledge_pages` ADD INDEX `knowledge_pages_siteId_idx` (`siteId`);
+ALTER TABLE `knowledge_facts` ADD INDEX `knowledge_facts_companyId_idx` (`companyId`);
+ALTER TABLE `knowledge_facts` ADD INDEX `knowledge_facts_pageId_idx` (`pageId`);
+ALTER TABLE `knowledge_facts` ADD INDEX `knowledge_facts_status_idx` (`pageId`,`status`);
+ALTER TABLE `knowledge_fact_citations` ADD INDEX `knowledge_fact_citations_factId_idx` (`factId`);
+ALTER TABLE `knowledge_fact_citations` ADD INDEX `knowledge_fact_citations_companyId_idx` (`companyId`);
+ALTER TABLE `knowledge_source_documents` ADD INDEX `knowledge_source_documents_companyId_idx` (`companyId`);
+ALTER TABLE `knowledge_source_documents` ADD INDEX `knowledge_source_documents_siteId_idx` (`siteId`);
+ALTER TABLE `knowledge_questions` ADD INDEX `knowledge_questions_pageId_idx` (`pageId`);
+ALTER TABLE `knowledge_questions` ADD INDEX `knowledge_questions_companyId_idx` (`companyId`);
