@@ -1336,17 +1336,21 @@ CREATE TABLE IF NOT EXISTS `inspection_template_responses` (
 
 -- ---------------------------------------------------------------------------
 -- 0076_companyid_hardening
+-- NOTE: this Railway database is vanilla MySQL, not MariaDB — it rejects
+-- "ADD COLUMN IF NOT EXISTS". If a column already exists, MySQL errors with
+-- "Duplicate column name" — same as the "Duplicate key name" caveat above,
+-- ignore it and move to the next statement.
 -- ---------------------------------------------------------------------------
-ALTER TABLE `attachments` ADD COLUMN IF NOT EXISTS `companyId` INT NULL;
+ALTER TABLE `attachments` ADD COLUMN `companyId` INT NULL;
 ALTER TABLE `attachments` ADD INDEX `attachments_companyId_idx` (`companyId`);
 
-ALTER TABLE `inspection_checklist_responses` ADD COLUMN IF NOT EXISTS `companyId` INT NULL;
+ALTER TABLE `inspection_checklist_responses` ADD COLUMN `companyId` INT NULL;
 ALTER TABLE `inspection_checklist_responses` ADD INDEX `inspection_checklist_responses_companyId_idx` (`companyId`);
 
-ALTER TABLE `job_assignments` ADD COLUMN IF NOT EXISTS `companyId` INT NULL;
+ALTER TABLE `job_assignments` ADD COLUMN `companyId` INT NULL;
 ALTER TABLE `job_assignments` ADD INDEX `job_assignments_companyId_idx` (`companyId`);
 
-ALTER TABLE `inspection_results` ADD COLUMN IF NOT EXISTS `companyId` INT NULL;
+ALTER TABLE `inspection_results` ADD COLUMN `companyId` INT NULL;
 ALTER TABLE `inspection_results` ADD INDEX `inspection_results_companyId_idx` (`companyId`);
 
 -- ---------------------------------------------------------------------------
