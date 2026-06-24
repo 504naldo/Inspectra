@@ -3,6 +3,8 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, technicianProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { withAudit, assertJobNotFinalized } from "../db";
+import { assertCustomerOrgCompany } from "../tenantGuards";
+import { toCustomerSafeDeficiency, toCustomerSafeRepair } from "../customerDto";
 
 // Deficiency router
 const deficiencyRouter = router({
@@ -12,12 +14,17 @@ const deficiencyRouter = router({
   }),
   
   listByCustomerOrg: protectedProcedure.input(z.object({ customerOrgId: z.number() })).query(async ({ input, ctx }) => {
-    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== input.customerOrgId) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
+    if (ctx.user.role === 'customer') {
+      if (ctx.user.customerOrgId !== input.customerOrgId) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+    } else {
+      await assertCustomerOrgCompany(input.customerOrgId, ctx.user.companyId!);
     }
-    return db.getDeficienciesByCustomerOrg(input.customerOrgId);
+    const deficiencies = await db.getDeficienciesByCustomerOrg(input.customerOrgId);
+    return ctx.user.role === 'customer' ? deficiencies.map(toCustomerSafeDeficiency) : deficiencies;
   }),
-  
+
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
     const deficiency = await db.getDeficiencyById(input.id);
     if (!deficiency) return null;
@@ -34,7 +41,12 @@ const deficiencyRouter = router({
     }
     const attachments = await db.getAttachmentsByEntity('deficiency', input.id);
     const repairs = await db.getRepairsByDeficiency(input.id);
-    return { deficiency, attachments, repairs };
+    const isCustomer = ctx.user.role === 'customer';
+    return {
+      deficiency: isCustomer ? toCustomerSafeDeficiency(deficiency) : deficiency,
+      attachments: isCustomer ? attachments.filter((a) => a.isCustomerFacing === 1) : attachments,
+      repairs: isCustomer ? repairs.map(toCustomerSafeRepair) : repairs,
+    };
   }),
   
   create: technicianProcedure.input(z.object({

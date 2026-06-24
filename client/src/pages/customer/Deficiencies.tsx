@@ -255,11 +255,11 @@ export default function CustomerDeficiencies() {
                   })}
                 </div>
 
-                {(selected.resolutionNotes || selected.correctiveAction) && (
+                {selected.correctiveAction && (
                   <div className="border rounded-lg p-3 bg-blue-50 dark:bg-blue-950/20">
                     <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 mb-1">Recommended Action</p>
                     <p className="text-sm text-blue-900 dark:text-blue-200">
-                      {selected.correctiveAction || selected.resolutionNotes}
+                      {selected.correctiveAction}
                     </p>
                   </div>
                 )}

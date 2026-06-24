@@ -12,6 +12,8 @@ import { fetchImageBuffer } from "../pdfSharedStyles";
 import * as checklists from "../complianceChecklists";
 import { sendReportEmail, sendReportReadyEmail, sendReportApprovedNotification } from "../emailService";
 import { ENV } from "../_core/env";
+import { toCustomerSafeReport } from "../customerDto";
+import { assertCustomerOrgCompany } from "../tenantGuards";
 import {
   inspectionTemplates,
   inspectionTemplateSections,
@@ -136,14 +138,20 @@ const reportRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
       }
     }
-    return db.getReportsByJob(input.jobId);
+    const reports = await db.getReportsByJob(input.jobId);
+    return ctx.user.role === 'customer' ? reports.map(toCustomerSafeReport) : reports;
   }),
-  
+
   listByCustomerOrg: protectedProcedure.input(z.object({ customerOrgId: z.number() })).query(async ({ input, ctx }) => {
-    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== input.customerOrgId) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
+    if (ctx.user.role === 'customer') {
+      if (ctx.user.customerOrgId !== input.customerOrgId) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+    } else {
+      await assertCustomerOrgCompany(input.customerOrgId, ctx.user.companyId!);
     }
-    return db.getReportsByCustomerOrg(input.customerOrgId);
+    const reports = await db.getReportsByCustomerOrg(input.customerOrgId);
+    return ctx.user.role === 'customer' ? reports.map(toCustomerSafeReport) : reports;
   }),
 
   getDownloadUrl: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
@@ -177,7 +185,7 @@ const reportRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
       }
     }
-    return report;
+    return ctx.user.role === 'customer' ? toCustomerSafeReport(report) : report;
   }),
   
   create: officeProcedure.input(z.object({
