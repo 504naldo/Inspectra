@@ -4,17 +4,20 @@ import { router, protectedProcedure, officeProcedure, technicianProcedure } from
 import * as db from "../db";
 import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
+import { assertSiteCompany, assertAttachmentCompany, assertEntityCompany, assertDeviceCompany } from "../tenantGuards";
 
 // Attachment router - Enhanced with bulk upload, tagging, and linking
 const attachmentRouter = router({
   listByEntity: protectedProcedure.input(z.object({
     entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org']),
     entityId: z.number()
-  })).query(async ({ input }) => {
+  })).query(async ({ input, ctx }) => {
+    await assertEntityCompany(input.entityType, input.entityId, ctx.user.companyId!);
     return db.getAttachmentsByEntity(input.entityType, input.entityId);
   }),
   
-  listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+  listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input, ctx }) => {
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     return db.getAttachmentsBySite(input.siteId);
   }),
   
@@ -64,10 +67,16 @@ const attachmentRouter = router({
     jobId: z.number().optional(),
     deviceId: z.number().optional(),
   })).mutation(async ({ input, ctx }) => {
+    const companyId = ctx.user.companyId!;
+    await assertEntityCompany(input.entityType, input.entityId, companyId);
+    if (input.siteId !== undefined) await assertSiteCompany(input.siteId, companyId);
+    if (input.jobId !== undefined) await db.assertJobCompany(input.jobId, companyId);
+    if (input.deviceId !== undefined) await assertDeviceCompany(input.deviceId, companyId);
+
     const buffer = Buffer.from(input.fileData, 'base64');
     const fileKey = `attachments/${input.entityType}/${input.entityId}/${nanoid()}-${input.fileName}`;
     const { url } = await storagePut(fileKey, buffer, input.mimeType);
-    
+
     return db.createAttachment({
       entityType: input.entityType,
       entityId: input.entityId,
@@ -100,8 +109,14 @@ const attachmentRouter = router({
     jobId: z.number().optional(),
     deviceId: z.number().optional(),
   })).mutation(async ({ input, ctx }) => {
+    const companyId = ctx.user.companyId!;
+    await assertEntityCompany(input.entityType, input.entityId, companyId);
+    if (input.siteId !== undefined) await assertSiteCompany(input.siteId, companyId);
+    if (input.jobId !== undefined) await db.assertJobCompany(input.jobId, companyId);
+    if (input.deviceId !== undefined) await assertDeviceCompany(input.deviceId, companyId);
+
     const results = [];
-    
+
     for (const file of input.files) {
       const buffer = Buffer.from(file.fileData, 'base64');
       const fileKey = `attachments/${input.entityType}/${input.entityId}/${nanoid()}-${file.fileName}`;
@@ -136,34 +151,38 @@ const attachmentRouter = router({
     siteId: z.number().optional(),
     jobId: z.number().optional(),
     deviceId: z.number().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { id, ...data } = input;
+    await assertAttachmentCompany(id, ctx.user.companyId!);
     await db.updateAttachment(id, { ...data, tags: data.tags as any });
     return { success: true };
   }),
-  
+
   // Update tags only
   updateTags: officeProcedure.input(z.object({
     id: z.number(),
     tags: z.array(z.string()),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    await assertAttachmentCompany(input.id, ctx.user.companyId!);
     await db.updateAttachmentTags(input.id, input.tags);
     return { success: true };
   }),
-  
+
   // Link attachment to additional entities
   linkToEntities: officeProcedure.input(z.object({
     id: z.number(),
     siteId: z.number().optional(),
     jobId: z.number().optional(),
     deviceId: z.number().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { id, ...links } = input;
+    await assertAttachmentCompany(id, ctx.user.companyId!);
     await db.updateAttachment(id, links);
     return { success: true };
   }),
-  
-  delete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+
+  delete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+    await assertAttachmentCompany(input.id, ctx.user.companyId!);
     await db.deleteAttachment(input.id);
     return { success: true };
   }),
@@ -210,12 +229,14 @@ const uploadQueueRouter = router({
     tags: z.array(z.string()).optional(),
     caption: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
+    await assertEntityCompany(input.entityType, input.entityId, ctx.user.companyId!);
+
     // Check if already exists
     const existing = await db.getUploadQueueItemByLocalId(ctx.user.id, input.localFileId);
     if (existing) {
       return existing;
     }
-    
+
     return db.createUploadQueueItem({
       userId: ctx.user.id,
       localFileId: input.localFileId,
@@ -269,7 +290,10 @@ const uploadQueueRouter = router({
     if (!item) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Upload queue item not found' });
     }
-    
+    if (item.userId !== ctx.user.id) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
+    }
+
     // Create the attachment
     const attachment = await db.createAttachment({
       entityType: item.entityType,

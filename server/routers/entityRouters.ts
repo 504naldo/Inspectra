@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure, officeProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertCustomerOrgCompany } from "../tenantGuards";
 
 // Company router
 const companyRouter = router({
@@ -43,19 +44,27 @@ const companyRouter = router({
 
 // Customer Organization router
 const customerOrgRouter = router({
-  list: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+  list: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
     return db.getCustomerOrgsByCompany(input.companyId);
   }),
-  
+
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
     const org = await db.getCustomerOrgById(input.id);
-    // Customer can only see their own org
-    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== input.id) {
+    if (!org) return org;
+    // Customer can only see their own org; other roles are scoped to their own company
+    if (ctx.user.role === 'customer') {
+      if (ctx.user.customerOrgId !== input.id) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+    } else if (org.companyId !== ctx.user.companyId) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     return org;
   }),
-  
+
   create: officeProcedure.input(z.object({
     companyId: z.number(),
     name: z.string().min(1),
@@ -63,10 +72,13 @@ const customerOrgRouter = router({
     contactEmail: z.string().email().optional(),
     contactPhone: z.string().optional(),
     address: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
     return db.createCustomerOrg(input);
   }),
-  
+
   update: officeProcedure.input(z.object({
     id: z.number(),
     name: z.string().optional(),
@@ -74,8 +86,9 @@ const customerOrgRouter = router({
     contactEmail: z.string().optional(),
     contactPhone: z.string().optional(),
     address: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { id, ...data } = input;
+    await assertCustomerOrgCompany(id, ctx.user.companyId!);
     await db.updateCustomerOrg(id, data);
     return { success: true };
   }),
@@ -104,7 +117,8 @@ const customerOrgRouter = router({
     return { success: true };
   }),
 
-  delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+  delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+    await assertCustomerOrgCompany(input.id, ctx.user.companyId!);
     const result = await db.deleteCustomerOrg(input.id);
     if (result.blocked) throw new TRPCError({ code: "BAD_REQUEST", message: result.reason });
     return { success: true };

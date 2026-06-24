@@ -97,13 +97,16 @@ export const customerRecordsRouter = router({
   search: officeProcedure
     .input(
       z.object({
-        companyId: z.number().int().positive(),
         query: z.string().min(1).max(200).trim(),
       })
     )
     .query(async ({ input, ctx }) => {
+      // Use the caller's own company — never trust a client-supplied companyId.
+      const companyId = ctx.user.companyId;
+      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "User has no company assignment" });
+
       auditLog("customer_records_search", ctx, {
-        companyId: input.companyId,
+        companyId,
         query: input.query,
       });
 
@@ -112,9 +115,9 @@ export const customerRecordsRouter = router({
 
       // Parallel: DB queries + Drive search
       const [customers, sites, jobs, driveResult] = await Promise.all([
-        db.getCustomerOrgsByCompany(input.companyId),
-        db.getSitesByCompany(input.companyId),
-        db.searchJobs(input.companyId, input.query),
+        db.getCustomerOrgsByCompany(companyId),
+        db.getSitesByCompany(companyId),
+        db.searchJobs(companyId, input.query),
         drive.searchInRoot(input.query, token),
       ]);
 
