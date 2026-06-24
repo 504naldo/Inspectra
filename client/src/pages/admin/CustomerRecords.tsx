@@ -134,7 +134,7 @@ export default function CustomerRecords() {
     isLoading: isSearching,
     isFetching: isRefetching,
   } = trpc.customerRecords.search.useQuery(
-    { companyId: user.companyId, query: submittedQuery },
+    { query: submittedQuery },
     { enabled: submittedQuery.length >= 1, retry: false }
   );
 

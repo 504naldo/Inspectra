@@ -480,6 +480,12 @@ export async function updateDevice(id: number, data: Partial<InsertDevice>) {
   await db.update(devices).set(data).where(eq(devices.id, id));
 }
 
+export async function getDevicesByIds(ids: number[]) {
+  const db = await getDb();
+  if (!db || ids.length === 0) return [];
+  return db.select().from(devices).where(inArray(devices.id, ids));
+}
+
 export async function getDeviceCountBySite(siteId: number) {
   const db = await getDb();
   if (!db) return 0;
@@ -746,6 +752,13 @@ export async function createInspectionResult(data: InsertInspectionResult) {
   }
   const result = await db.insert(inspectionResults).values(insertData);
   return { id: Number(result[0].insertId), ...insertData };
+}
+
+export async function getInspectionResultById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(inspectionResults).where(eq(inspectionResults.id, id)).limit(1);
+  return result[0];
 }
 
 export async function getInspectionResultsByJob(jobId: number) {

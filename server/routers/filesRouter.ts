@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
+import { getDb, assertJobCompany } from "../db";
 import { attachments, devices, jobs, sites } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import fetch from "node-fetch";
 import crypto from "crypto";
 import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
+import { assertSiteCompany, assertEntityCompany, getAttachmentOwnerCompanyId } from "../tenantGuards";
 
 export const filesRouter = router({
   // Upload file to S3 and return URL
@@ -95,6 +96,13 @@ export const filesRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const companyId = ctx.user.companyId;
+      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "User has no company assignment" });
+
+      await assertEntityCompany(input.entityType, input.entityId, companyId);
+      if (input.siteId !== undefined) await assertSiteCompany(input.siteId, companyId);
+      if (input.jobId !== undefined) await assertJobCompany(input.jobId, companyId);
+
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -126,6 +134,11 @@ export const filesRouter = router({
 
       if (!file) {
         throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
+      }
+
+      const ownerCompanyId = await getAttachmentOwnerCompanyId(file);
+      if (ownerCompanyId !== null && ownerCompanyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
       }
 
       // Download file
@@ -323,6 +336,9 @@ export const filesRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "User must belong to a company" });
       }
 
+      await assertSiteCompany(input.siteId, ctx.user.companyId);
+      await assertJobCompany(input.jobId, ctx.user.companyId);
+
       // Get file record
       const [file] = await db
         .select()
@@ -331,6 +347,11 @@ export const filesRouter = router({
 
       if (!file) {
         throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
+      }
+
+      const ownerCompanyId = await getAttachmentOwnerCompanyId(file);
+      if (ownerCompanyId !== null && ownerCompanyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
       }
 
       // Download file

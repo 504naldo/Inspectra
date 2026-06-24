@@ -2,17 +2,19 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertSiteCompany, assertAreaCompany, assertDeviceCompany } from "../tenantGuards";
 
 // Area router
 const areaRouter = router({
-  listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+  listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input, ctx }) => {
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     return db.getAreasBySite(input.siteId);
   }),
-  
-  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    return db.getAreaById(input.id);
+
+  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    return assertAreaCompany(input.id, ctx.user.companyId!);
   }),
-  
+
   create: officeProcedure.input(z.object({
     siteId: z.number(),
     name: z.string().min(1),
@@ -26,15 +28,16 @@ const areaRouter = router({
     }
     return db.createArea(input);
   }),
-  
+
   update: officeProcedure.input(z.object({
     id: z.number(),
     name: z.string().optional(),
     floor: z.string().optional(),
     building: z.string().optional(),
     description: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { id, ...data } = input;
+    await assertAreaCompany(id, ctx.user.companyId!);
     await db.updateArea(id, data);
     return { success: true };
   }),
@@ -42,18 +45,20 @@ const areaRouter = router({
 
 // Device router
 const deviceRouter = router({
-  listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+  listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input, ctx }) => {
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     return db.getDevicesBySite(input.siteId);
   }),
-  
-  listByArea: technicianProcedure.input(z.object({ areaId: z.number() })).query(async ({ input }) => {
+
+  listByArea: technicianProcedure.input(z.object({ areaId: z.number() })).query(async ({ input, ctx }) => {
+    await assertAreaCompany(input.areaId, ctx.user.companyId!);
     return db.getDevicesByArea(input.areaId);
   }),
-  
-  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    return db.getDeviceById(input.id);
+
+  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    return assertDeviceCompany(input.id, ctx.user.companyId!);
   }),
-  
+
   create: officeProcedure.input(z.object({
     companyId: z.number(),
     siteId: z.number(),
@@ -109,12 +114,13 @@ const deviceRouter = router({
     batterySize: z.string().optional(),
     batteryCount: z.number().optional(),
     lampCount: z.number().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { id, ...data } = input;
+    await assertDeviceCompany(id, ctx.user.companyId!);
     await db.updateDevice(id, data);
     return { success: true };
   }),
-  
+
   // Technicians can update inspection-time fields during a job
   technicianUpdate: technicianProcedure.input(z.object({
     id: z.number(),
@@ -145,8 +151,9 @@ const deviceRouter = router({
     batteryReplaced: z.string().optional(),
     maintenanceRequired: z.string().optional(),
     lampCount: z.number().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { id, ...rawData } = input;
+    await assertDeviceCompany(id, ctx.user.companyId!);
 
     // Normalize payload so cleared text fields (empty string) persist as NULL.
     // Also drop undefined keys so we don't generate no-op/invalid updates.
@@ -165,7 +172,8 @@ const deviceRouter = router({
     return { success: true };
   }),
 
-  getCount: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+  getCount: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input, ctx }) => {
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     return db.getDeviceCountBySite(input.siteId);
   }),
 
@@ -195,14 +203,20 @@ const deviceRouter = router({
 
   reorder: officeProcedure.input(z.object({
     orderedIds: z.array(z.number()),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    if (input.orderedIds.length === 0) return { success: true };
+    const ownedDevices = await db.getDevicesByIds(input.orderedIds);
+    if (ownedDevices.length !== input.orderedIds.length || ownedDevices.some((d) => d.companyId !== ctx.user.companyId)) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
     await db.reorderDevices(input.orderedIds);
     return { success: true };
   }),
 
   clearSortOrder: officeProcedure.input(z.object({
     siteId: z.number(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     await db.clearDeviceSortOrder(input.siteId);
     return { success: true };
   }),
@@ -211,10 +225,10 @@ const deviceRouter = router({
   softDelete: technicianProcedure.input(z.object({
     deviceId: z.number(),
     jobId: z.number(),
-  })).mutation(async ({ input }) => {
-    const job = await db.getJobById(input.jobId);
-    if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+  })).mutation(async ({ input, ctx }) => {
+    const job = await db.assertJobCompany(input.jobId, ctx.user.companyId!);
     if ((job as any).finalizedAt) throw new TRPCError({ code: 'FORBIDDEN', message: 'Job is finalized' });
+    await assertDeviceCompany(input.deviceId, ctx.user.companyId!);
     await db.updateDevice(input.deviceId, { isActive: false } as any);
     return { success: true };
   }),
@@ -222,7 +236,8 @@ const deviceRouter = router({
 
 // Smoke Alarm router
 const smokeAlarmRouter = router({
-  listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+  listBySite: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input, ctx }) => {
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     const { calculateSmokeAlarmExpiry } = await import('../../shared/smokeAlarmExpiry');
     const smokeAlarms = await db.getSmokeAlarmsBySite(input.siteId);
     return smokeAlarms.map(alarm => ({
@@ -230,8 +245,9 @@ const smokeAlarmRouter = router({
       expiryInfo: calculateSmokeAlarmExpiry(alarm.installDate, alarm.powerType),
     }));
   }),
-  
-  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+
+  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
+    await db.assertJobCompany(input.jobId, ctx.user.companyId!);
     const { calculateSmokeAlarmExpiry } = await import('../../shared/smokeAlarmExpiry');
     const smokeAlarms = await db.getSmokeAlarmsByJob(input.jobId);
     return smokeAlarms.map(alarm => ({
@@ -239,11 +255,11 @@ const smokeAlarmRouter = router({
       expiryInfo: calculateSmokeAlarmExpiry(alarm.installDate, alarm.powerType),
     }));
   }),
-  
-  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    return db.getDeviceById(input.id);
+
+  get: technicianProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    return assertDeviceCompany(input.id, ctx.user.companyId!);
   }),
-  
+
   create: technicianProcedure.input(z.object({
     companyId: z.number(),
     siteId: z.number(),
@@ -276,31 +292,34 @@ const smokeAlarmRouter = router({
     powerType: z.enum(['hardwired', 'battery', 'sealed', 'unknown']).optional(),
     installDate: z.string().optional(), // ISO date string
     notes: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { id, installDate, ...data } = input;
+    await assertDeviceCompany(id, ctx.user.companyId!);
     await db.updateDevice(id, {
       ...data,
       installDate: installDate ? new Date(installDate) : undefined,
     });
     return { success: true };
   }),
-  
+
   recordTest: technicianProcedure.input(z.object({
     id: z.number(),
     testResult: z.enum(['pass', 'fail', 'no_access', 'na']),
     notes: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    await assertDeviceCompany(input.id, ctx.user.companyId!);
     await db.updateSmokeAlarmTestResult(input.id, input.testResult, input.notes);
-    
+
     // If test failed or no access, prompt for deficiency
     if (input.testResult === 'fail' || input.testResult === 'no_access') {
       return { success: true, requiresDeficiency: true };
     }
-    
+
     return { success: true, requiresDeficiency: false };
   }),
-  
-  getCount: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+
+  getCount: technicianProcedure.input(z.object({ siteId: z.number() })).query(async ({ input, ctx }) => {
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     return db.getSmokeAlarmCountBySite(input.siteId);
   }),
 });
