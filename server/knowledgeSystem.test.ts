@@ -23,7 +23,6 @@ vi.mock("./db", () => ({
   touchKnowledgePage: vi.fn(),
   createKnowledgeSourceDocument: vi.fn(),
   updateKnowledgeSourceDocument: vi.fn(),
-  listKnowledgeSourceDocumentsBySite: vi.fn(),
   listKnowledgeSourceDocumentsByPage: vi.fn(async () => []),
   createKnowledgeFact: vi.fn(),
   createKnowledgeFactCitation: vi.fn(),
@@ -111,6 +110,28 @@ describe("Role gating", () => {
     await expect(caller.knowledgeFact.listForPage({ pageId: 7 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
+  it("customers are rejected on every write and Q&A path, before any handler logic runs", async () => {
+    const caller = appRouter.createCaller(makeCtx(1, "customer"));
+    await expect(
+      caller.knowledgeIngestion.ingestDocument({
+        siteId: 5, pageId: 7, documentType: "inspection_report", fileName: "r.pdf", fileDataBase64: PDF_B64,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.knowledgeFact.markReviewed({ factId: 3 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.knowledgeFact.approve({ factId: 3 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.knowledgeFact.reject({ factId: 3 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.knowledgeFact.edit({ factId: 3, content: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.knowledgeFact.markStale({ factId: 3 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.knowledgeFact.reviewQueue()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.knowledgeQA.ask({ pageId: 7, question: "q" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.knowledgeIngestion.listSourceDocuments({ pageId: 7 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    expect(db.getKnowledgeFactById).not.toHaveBeenCalled();
+    expect(db.updateKnowledgeFact).not.toHaveBeenCalled();
+    expect(db.createKnowledgeFact).not.toHaveBeenCalled();
+    expect(storage.storagePut).not.toHaveBeenCalled();
+  });
+
   it("technicians cannot approve facts (office-only)", async () => {
     const caller = appRouter.createCaller(makeCtx(1, "technician"));
     await expect(caller.knowledgeFact.approve({ factId: 3 })).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -134,6 +155,33 @@ describe("Role gating", () => {
     vi.mocked(db.listKnowledgeFactsByPage).mockClear();
     await appRouter.createCaller(makeCtx(1, "office")).knowledgeFact.listForPage({ pageId: 7 });
     expect(db.listKnowledgeFactsByPage).toHaveBeenCalledWith(7, {});
+  });
+});
+
+describe("Reviewing drafts", () => {
+  it("marks a draft fact as reviewed, recording who and when", async () => {
+    vi.mocked(db.getKnowledgeFactById).mockResolvedValue({ id: 3, companyId: 1, pageId: 7, status: "draft" } as any);
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+
+    await expect(caller.knowledgeFact.markReviewed({ factId: 3 })).resolves.toEqual({ success: true });
+
+    expect(db.updateKnowledgeFact).toHaveBeenCalledWith(3, expect.objectContaining({
+      status: "reviewed", reviewedById: 1,
+    }));
+  });
+
+  it("refuses to review a rejected fact", async () => {
+    vi.mocked(db.getKnowledgeFactById).mockResolvedValue({ id: 3, companyId: 1, pageId: 7, status: "rejected" } as any);
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+
+    await expect(caller.knowledgeFact.markReviewed({ factId: 3 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(db.updateKnowledgeFact).not.toHaveBeenCalled();
+  });
+
+  it("technicians cannot mark a fact reviewed (office-only)", async () => {
+    const caller = appRouter.createCaller(makeCtx(1, "technician"));
+    await expect(caller.knowledgeFact.markReviewed({ factId: 3 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.updateKnowledgeFact).not.toHaveBeenCalled();
   });
 });
 
@@ -190,6 +238,28 @@ describe("Ingestion produces only cited drafts", () => {
     for (const call of vi.mocked(db.createKnowledgeFactCitation).mock.calls) {
       expect(call[0]).toMatchObject({ sourceType: "knowledge_source_document", sourceId: 100 });
     }
+  });
+});
+
+describe("Source document upload history", () => {
+  it("lists a page's source documents without the raw extracted text", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 1 } as any);
+    vi.mocked(db.listKnowledgeSourceDocumentsByPage).mockResolvedValue([
+      { id: 100, companyId: 1, pageId: 7, siteId: 5, documentType: "inspection_report", title: "r.pdf", extractionStatus: "ready", extractedText: "secret raw text" } as any,
+    ]);
+
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    const res = await caller.knowledgeIngestion.listSourceDocuments({ pageId: 7 });
+
+    expect(res).toEqual([expect.objectContaining({ id: 100, title: "r.pdf" })]);
+    expect(res[0]).not.toHaveProperty("extractedText");
+  });
+
+  it("rejects a page from another company before listing", async () => {
+    vi.mocked(db.getKnowledgePageById).mockResolvedValue({ id: 7, companyId: 2 } as any);
+    const caller = appRouter.createCaller(makeCtx(1, "office"));
+    await expect(caller.knowledgeIngestion.listSourceDocuments({ pageId: 7 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.listKnowledgeSourceDocumentsByPage).not.toHaveBeenCalled();
   });
 });
 

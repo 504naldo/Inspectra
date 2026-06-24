@@ -567,12 +567,13 @@ export const knowledgeIngestionRouter = router({
       };
     }),
 
+  /** Upload history for one knowledge page — works for site, site_system, and equipment_model pages alike. */
   listSourceDocuments: officeProcedure
-    .input(z.object({ siteId: z.number().int().positive() }))
+    .input(z.object({ pageId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId!;
-      await assertSiteCompany(input.siteId, companyId);
-      const docs = await db.listKnowledgeSourceDocumentsBySite(companyId, input.siteId);
+      await assertPageCompany(input.pageId, companyId);
+      const docs = await db.listKnowledgeSourceDocumentsByPage(companyId, input.pageId);
       // Never return the raw extracted text in list view.
       return docs.map(({ extractedText: _omit, ...rest }) => rest);
     }),

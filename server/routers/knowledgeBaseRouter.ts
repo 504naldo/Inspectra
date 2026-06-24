@@ -10,7 +10,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure, protectedProcedure } from "../_core/trpc";
+import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { logActivity } from "../activityLogger";
 

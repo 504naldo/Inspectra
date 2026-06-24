@@ -4019,14 +4019,6 @@ export async function updateKnowledgeSourceDocument(id: number, data: Partial<In
   await db.update(knowledgeSourceDocuments).set(data).where(eq(knowledgeSourceDocuments.id, id));
 }
 
-export async function listKnowledgeSourceDocumentsBySite(companyId: number, siteId: number): Promise<KnowledgeSourceDocument[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(knowledgeSourceDocuments)
-    .where(and(eq(knowledgeSourceDocuments.companyId, companyId), eq(knowledgeSourceDocuments.siteId, siteId)))
-    .orderBy(desc(knowledgeSourceDocuments.createdAt));
-}
-
 export async function listKnowledgeSourceDocumentsByPage(companyId: number, pageId: number): Promise<KnowledgeSourceDocument[]> {
   const db = await getDb();
   if (!db) return [];

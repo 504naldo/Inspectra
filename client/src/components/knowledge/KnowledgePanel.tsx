@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
+import { formatDate } from "@/lib/utils";
 
 const DOCUMENT_TYPES = [
   { value: "inspection_report", label: "Inspection Report" },
@@ -36,6 +37,18 @@ const SOURCE_LABELS: Record<string, string> = {
   company_procedure: "Company procedure",
   technician_observation: "Technician observation",
   ai_inference: "AI inference",
+};
+
+const DOCUMENT_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  DOCUMENT_TYPES.map((d) => [d.value, d.label]),
+);
+
+const EXTRACTION_STATUS_STYLES: Record<string, string> = {
+  uploaded: "bg-gray-100 text-gray-700",
+  extracting: "bg-blue-100 text-blue-800",
+  classifying: "bg-blue-100 text-blue-800",
+  ready: "bg-green-100 text-green-800",
+  failed: "bg-red-100 text-red-700",
 };
 
 function fileToBase64(file: File): Promise<string> {
@@ -83,6 +96,7 @@ export default function KnowledgePanel({
   const [editContent, setEditContent] = useState("");
 
   const { data: facts, refetch: refetchFacts } = trpc.knowledgeFact.listForPage.useQuery({ pageId });
+  const { data: sourceDocs, refetch: refetchSourceDocs } = trpc.knowledgeIngestion.listSourceDocuments.useQuery({ pageId });
 
   const ingest = trpc.knowledgeIngestion.ingestDocument.useMutation({
     onSuccess: (res) => {
@@ -90,8 +104,13 @@ export default function KnowledgePanel({
       setUploadOpen(false);
       setPendingFile(null);
       refetchFacts();
+      refetchSourceDocs();
     },
     onError: (e) => toast.error(`Ingest failed: ${e.message}`),
+  });
+  const markReviewed = trpc.knowledgeFact.markReviewed.useMutation({
+    onSuccess: () => { refetchFacts(); toast.success("Marked reviewed"); },
+    onError: (e) => toast.error(e.message),
   });
   const approve = trpc.knowledgeFact.approve.useMutation({
     onSuccess: () => { refetchFacts(); toast.success("Verified"); },
@@ -185,6 +204,35 @@ export default function KnowledgePanel({
         </CardContent>
       </Card>
 
+      {/* Source documents */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Source documents</CardTitle>
+          <CardDescription>Upload history for this page. Originals are stored as-is and never modified.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {(sourceDocs ?? []).length === 0 && (
+            <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>
+          )}
+          {(sourceDocs ?? []).map((d) => (
+            <div key={d.id} className="flex items-center justify-between gap-3 text-sm border-b pb-2 last:border-b-0 last:pb-0">
+              <div className="space-y-0.5">
+                {d.fileUrl ? (
+                  <a href={d.fileUrl} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">{d.title}</a>
+                ) : (
+                  <span className="font-medium">{d.title}</span>
+                )}
+                <div className="text-xs text-muted-foreground">
+                  {DOCUMENT_TYPE_LABELS[d.documentType] ?? d.documentType} · {formatDate(d.createdAt)}
+                  {d.extractionStatus === "failed" && d.errorMessage && <> · {d.errorMessage}</>}
+                </div>
+              </div>
+              <Badge className={EXTRACTION_STATUS_STYLES[d.extractionStatus]}>{d.extractionStatus}</Badge>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
       {/* Facts */}
       <Card>
         <CardHeader>
@@ -221,6 +269,9 @@ export default function KnowledgePanel({
               )}
               {(f.status === "draft" || f.status === "reviewed") && (
                 <div className="flex gap-2 pt-1">
+                  {f.status === "draft" && (
+                    <Button size="sm" variant="outline" disabled={markReviewed.isPending} onClick={() => markReviewed.mutate({ factId: f.id })}>Mark reviewed</Button>
+                  )}
                   <Button size="sm" disabled={approve.isPending} onClick={() => approve.mutate({ factId: f.id })}>Verify</Button>
                   <Button size="sm" variant="outline" disabled={reject.isPending} onClick={() => reject.mutate({ factId: f.id })}>Reject</Button>
                   <Button size="sm" variant="ghost" onClick={() => { setEditingFactId(f.id); setEditContent(f.content); }}>Edit</Button>
