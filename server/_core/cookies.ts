@@ -1,6 +1,13 @@
+import { parse as parseCookieHeader } from "cookie";
 import type { CookieOptions, Request } from "express";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+/** Manually parse the `Cookie` request header (no cookie-parser middleware is installed). */
+export function parseCookies(cookieHeader: string | undefined): Map<string, string> {
+  if (!cookieHeader) return new Map();
+  return new Map(Object.entries(parseCookieHeader(cookieHeader)));
+}
 
 function isIpAddress(host: string) {
   // Basic IPv4 check and IPv6 presence detection.

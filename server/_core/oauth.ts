@@ -1,13 +1,73 @@
-import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { COOKIE_NAME, OAUTH_STATE_COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import type { Express, Request, Response } from "express";
 import * as db from "../db";
-import { getSessionCookieOptions } from "./cookies";
-import { sdk } from "./sdk";
+import { getSessionCookieOptions, parseCookies } from "./cookies";
+import { sdk, type UserInfoResponse } from "./sdk";
 import { ENV } from "./env";
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
   return typeof value === "string" ? value : undefined;
+}
+
+type DecodedOAuthState = { route: string; nonce: string };
+
+/** The `state` param is base64(JSON({ route, nonce })) — see client/src/const.ts's getLoginUrl. */
+export function decodeOAuthState(state: string): DecodedOAuthState | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(state, "base64").toString("utf-8"));
+    if (typeof parsed?.route === "string" && typeof parsed?.nonce === "string") {
+      return { route: parsed.route, nonce: parsed.nonce };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Prevents open redirects: only same-origin paths starting with a single "/" are honored. */
+export function isSafeReturnRoute(route: string): boolean {
+  return Boolean(route) && route.startsWith("/") && !route.startsWith("//");
+}
+
+/**
+ * CSRF guard for the OAuth login flow: the nonce embedded in `state` must match
+ * the cookie getLoginUrl() set in this same browser before redirecting to Google.
+ * A forged callback URL (login CSRF) won't carry the victim's matching cookie.
+ */
+export function isOAuthNonceValid(cookieNonce: string | undefined, stateNonce: string | undefined): boolean {
+  return Boolean(cookieNonce) && Boolean(stateNonce) && cookieNonce === stateNonce;
+}
+
+/** Google's `email_verified` must be true whenever an email is present before it's trusted for role/identity. */
+export function hasUnverifiedEmail(userInfo: Pick<UserInfoResponse, "email" | "emailVerified">): boolean {
+  return Boolean(userInfo.email) && userInfo.emailVerified !== true;
+}
+
+function renderLoginErrorPage(title: string, message: string): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f5f5f5; }
+          .message { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 500px; }
+          h1 { color: #e53e3e; margin-top: 0; }
+          p { color: #666; line-height: 1.6; }
+          .button { display: inline-block; background: #3b82f6; color: white; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; margin-top: 1rem; }
+          .button:hover { background: #2563eb; }
+        </style>
+      </head>
+      <body>
+        <div class="message">
+          <h1>${title}</h1>
+          <p>${message}</p>
+          <a href="/" class="button">Return to Home & Try Again</a>
+        </div>
+      </body>
+    </html>
+  `;
 }
 
 /** Determine role and activation status from email using environment config */
@@ -82,12 +142,35 @@ export function registerOAuthRoutes(app: Express) {
       return;
     }
 
+    // CSRF guard: validate the state nonce against this browser's cookie before
+    // doing anything stateful (network calls, DB writes, session creation).
+    const decodedState = decodeOAuthState(state);
+    const stateCookieNonce = parseCookies(req.headers.cookie).get(OAUTH_STATE_COOKIE_NAME);
+    if (!decodedState || !isOAuthNonceValid(stateCookieNonce, decodedState.nonce)) {
+      console.error("[OAuth] State/nonce validation failed — possible CSRF attempt or expired login session");
+      res.status(400).send(renderLoginErrorPage(
+        "Login Failed",
+        "Your sign-in session could not be verified. This can happen if the link is old or was opened in a different browser. Please return home and try signing in again."
+      ));
+      return;
+    }
+    res.clearCookie(OAUTH_STATE_COOKIE_NAME, { path: "/" });
+
     try {
       const tokenResponse = await sdk.exchangeCodeForToken(code, state);
       const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
 
       if (!userInfo.openId) {
         res.status(400).json({ error: "openId missing from user info" });
+        return;
+      }
+
+      if (hasUnverifiedEmail(userInfo)) {
+        console.error("[OAuth] Rejected login with unverified email:", userInfo.email);
+        res.status(403).send(renderLoginErrorPage(
+          "Email Not Verified",
+          "Your Google account's email address is not verified. Please verify your email with Google, then try signing in again."
+        ));
         return;
       }
 
@@ -177,19 +260,8 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      // Decode state parameter to get the intended post-login route
-      let targetRoute = '';
-      if (state) {
-        try {
-          const decodedState = Buffer.from(state, 'base64').toString('utf-8');
-          // Validate to prevent open redirects: must be same-origin path starting with "/"
-          if (decodedState && decodedState.startsWith('/') && !decodedState.startsWith('//')) {
-            targetRoute = decodedState;
-          }
-        } catch (error) {
-          console.warn('[OAuth] Failed to decode state, using role-based redirect:', error);
-        }
-      }
+      // Resolve the intended post-login route from the already-validated state
+      let targetRoute = isSafeReturnRoute(decodedState.route) ? decodedState.route : '';
 
       // Customer portal not active — block any /customer/* routes from state param
       if (targetRoute.startsWith('/customer')) {
