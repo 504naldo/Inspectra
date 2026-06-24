@@ -13,6 +13,48 @@ import { handleMultipartUpload } from "./upload";
 import { serveStatic, setupVite } from "./vite";
 import { runMigrations } from "../runMigrations";
 import { runAutoScheduler } from "../scheduler";
+import { validateJwtSecret } from "./env";
+
+/**
+ * Builds CSP directives for production. script-src/connect-src additions
+ * beyond 'self' are limited to the Google Maps JS API (used by client/src/components/Map.tsx)
+ * plus whatever analytics/storage origins are actually configured for this
+ * deployment — img-src/style-src stay broader since attachment/Drive thumbnails
+ * and component-library inline styles come from origins not known at build time.
+ */
+function buildCspDirectives() {
+  const scriptSrc = ["'self'", "https://maps.googleapis.com", "https://maps.gstatic.com"];
+  const connectSrc = ["'self'", "https://maps.googleapis.com"];
+
+  for (const envVar of [process.env.VITE_ANALYTICS_ENDPOINT, process.env.S3_ENDPOINT]) {
+    if (!envVar) continue;
+    try {
+      connectSrc.push(new URL(envVar).origin);
+    } catch {
+      // Malformed/unset — simply not allowlisted.
+    }
+  }
+  if (process.env.VITE_ANALYTICS_ENDPOINT) {
+    try {
+      scriptSrc.push(new URL(process.env.VITE_ANALYTICS_ENDPOINT).origin);
+    } catch {}
+  }
+
+  return {
+    defaultSrc: ["'self'"],
+    scriptSrc,
+    styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+    fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+    imgSrc: ["'self'", "data:", "blob:", "https:"],
+    connectSrc,
+    workerSrc: ["'self'"],
+    manifestSrc: ["'self'"],
+    objectSrc: ["'none'"],
+    baseUri: ["'self'"],
+    formAction: ["'self'"],
+    frameAncestors: ["'self'"],
+  };
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -34,6 +76,10 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // Fail fast on an unset/placeholder JWT_SECRET rather than letting every
+  // login fail later with a lazy error once a user actually tries to sign in.
+  validateJwtSecret();
+
   // Run pending database migrations before starting the server
   await runMigrations();
 
@@ -42,8 +88,13 @@ async function startServer() {
   const server = createServer(app);
 
   // ── Security headers ──
+  // CSP is enforced only in production: Vite's dev server relies on inline/eval'd
+  // HMR scripts that a real policy would block.
   app.use(helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy:
+      process.env.NODE_ENV === "production"
+        ? { directives: buildCspDirectives() }
+        : false,
     crossOriginEmbedderPolicy: false,
   }));
 
@@ -153,7 +204,10 @@ async function startServer() {
   });
 }
 
-startServer().catch(console.error);
+startServer().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
 
 // Auto-scheduler: create pending jobs 14 days before nextDueAt.
 // Runs once 2 minutes after startup, then every 24 hours.

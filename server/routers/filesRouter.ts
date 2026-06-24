@@ -9,6 +9,8 @@ import fetch from "node-fetch";
 import crypto from "crypto";
 import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
 import { assertSiteCompany, assertEntityCompany, getAttachmentOwnerCompanyId } from "../tenantGuards";
+import { assertPublicHttpUrl } from "../_core/ssrfGuard";
+import { safeXlsxRead } from "../_core/safeXlsxRead";
 
 export const filesRouter = router({
   // Upload file to S3 and return URL
@@ -142,13 +144,14 @@ export const filesRouter = router({
       }
 
       // Download file
-      const response = await fetch(file.fileUrl);
+      await assertPublicHttpUrl(file.fileUrl);
+      const response = await fetch(file.fileUrl, { redirect: "error" });
       if (!response.ok) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to download file" });
       }
 
       const buffer = await response.buffer();
-      const workbook = XLSX.read(buffer, { type: "buffer" });
+      const workbook = await safeXlsxRead(buffer, { type: "buffer" });
 
       // Helper: Detect if sheet is a device sheet
       const isDeviceSheet = (sheetName: string, sheet: any): { isDevice: boolean; reason: string } => {
@@ -355,13 +358,14 @@ export const filesRouter = router({
       }
 
       // Download file
-      const response = await fetch(file.fileUrl);
+      await assertPublicHttpUrl(file.fileUrl);
+      const response = await fetch(file.fileUrl, { redirect: "error" });
       if (!response.ok) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to download file" });
       }
 
       const buffer = await response.buffer();
-      const workbook = XLSX.read(buffer, { type: "buffer" });
+      const workbook = await safeXlsxRead(buffer, { type: "buffer" });
 
       const imported = {
         fireAlarm: 0,

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
+import { safeXlsxRead } from "../_core/safeXlsxRead.js";
 
 const repairLetterStatusEnum = z.enum([
   "not_started",
@@ -110,7 +111,7 @@ export const repairLetterRouter = router({
 
       const buffer = Buffer.from(input.fileData, "base64");
       const XLSX = await import("xlsx");
-      const wb = XLSX.read(new Uint8Array(buffer), { type: "array", cellDates: true });
+      const wb = await safeXlsxRead(new Uint8Array(buffer), { type: "array", cellDates: true });
       const rows: any[][] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
       if (rows.length < 2) throw new TRPCError({ code: "BAD_REQUEST", message: "Spreadsheet appears empty." });
 
@@ -181,7 +182,7 @@ export const repairLetterRouter = router({
 
       const buffer = Buffer.from(input.fileData, "base64");
       const XLSX = await import("xlsx");
-      const wb = XLSX.read(new Uint8Array(buffer), { type: "array", cellDates: true });
+      const wb = await safeXlsxRead(new Uint8Array(buffer), { type: "array", cellDates: true });
       const rows: any[][] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
       if (rows.length < 2) throw new TRPCError({ code: "BAD_REQUEST", message: "Spreadsheet appears empty." });
 

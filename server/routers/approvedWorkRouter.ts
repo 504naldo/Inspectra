@@ -13,6 +13,11 @@ const APPROVAL_SOURCE_ENUM = z.enum([
 
 const TYPE_ENUM = z.enum(["job_order", "repair_order"]);
 
+/** Approved work linked to a finalized job is part of its immutable record — block further changes. */
+async function assertApprovedWorkJobNotFinalized(jobId: number | null | undefined) {
+  if (jobId != null) await db.assertJobNotFinalized(jobId);
+}
+
 export const approvedWorkRouter = router({
 
   // ── Queries ──────────────────────────────────────────────────────────────
@@ -134,6 +139,7 @@ export const approvedWorkRouter = router({
       if (input.companyId !== ctx.user.companyId) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
+      await assertApprovedWorkJobNotFinalized(input.jobId);
 
       // Prevent duplicate from same quote item
       if (input.quoteItemId) {
@@ -258,6 +264,8 @@ export const approvedWorkRouter = router({
           message: `Cannot edit a ${record.status} record.`,
         });
       }
+      await assertApprovedWorkJobNotFinalized(record.jobId);
+      await assertApprovedWorkJobNotFinalized(input.jobId);
 
       const { id, approvedAmount, ...rest } = input;
       await db.updateApprovedWork(id, {
@@ -403,6 +411,7 @@ export const approvedWorkRouter = router({
           message: "A linked Job is required to create a Work Order. Link a Job to this Approved Work first.",
         });
       }
+      await db.assertJobNotFinalized(record.jobId);
 
       if (!record.siteId || !record.customerOrgId) {
         throw new TRPCError({

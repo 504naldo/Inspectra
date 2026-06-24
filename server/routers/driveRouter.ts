@@ -4,6 +4,9 @@ import { router, adminOrOfficeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { getValidGoogleToken } from "../_core/googleAuth";
 import { uploadReportToDrive } from "../_core/driveUpload";
+import { escapeDriveQueryValue } from "../_core/driveQuery";
+import { assertPublicHttpUrl } from "../_core/ssrfGuard";
+import { safeXlsxRead } from "../_core/safeXlsxRead";
 import { storageGet, storagePut } from "../storage";
 import { nanoid } from "nanoid";
 
@@ -57,7 +60,8 @@ export const driveRouter = router({
       let pdfBuffer: Buffer;
       try {
         const pdfUrl = report.fileUrl || (await storageGet(report.fileKey!)).url;
-        const pdfResponse = await fetch(pdfUrl);
+        await assertPublicHttpUrl(pdfUrl);
+        const pdfResponse = await fetch(pdfUrl, { redirect: "error" });
         if (!pdfResponse.ok) throw new Error(`PDF download failed: ${pdfResponse.status}`);
         pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
       } catch (error) {
@@ -169,7 +173,7 @@ export const driveRouter = router({
       if (input.sharedWithMe) {
         q = `sharedWithMe=true and trashed=false${input.allFiles ? "" : " and " + mimeFilter}`;
       } else {
-        const parent = input.folderId ? `'${input.folderId}'` : "'root'";
+        const parent = input.folderId ? `'${escapeDriveQueryValue(input.folderId)}'` : "'root'";
         q = `${parent} in parents and trashed=false${input.allFiles ? "" : " and " + mimeFilter}`;
       }
 
@@ -253,7 +257,7 @@ export const driveRouter = router({
         });
       }
 
-      const q = `name='${input.name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+      const q = `name='${escapeDriveQueryValue(input.name)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
 
       const baseUrl = new URL(`${DRIVE_API}/files`);
       baseUrl.searchParams.set("q", q);
@@ -448,7 +452,7 @@ export const driveRouter = router({
 
       // 2. Parse the spreadsheet
       const XLSX = await import("xlsx");
-      const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+      const workbook = await safeXlsxRead(fileBuffer, { type: "buffer" });
       const sheetNames = workbook.SheetNames;
 
       if (sheetNames.length === 0) {

@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
+import { assertPublicHttpUrl } from './_core/ssrfGuard';
 
 /**
  * Shared PDF Styling Utilities
@@ -947,7 +948,8 @@ export function drawSignatureTable(
  */
 export async function fetchImageBuffer(url: string): Promise<Buffer | undefined> {
   try {
-    const res = await fetch(url);
+    await assertPublicHttpUrl(url);
+    const res = await fetch(url, { redirect: "error" });
     if (!res.ok) return undefined;
     const ab = await res.arrayBuffer();
     return Buffer.from(ab);

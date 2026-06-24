@@ -22,6 +22,7 @@
  */
 
 import * as XLSX from 'xlsx';
+import { safeXlsxRead } from '../_core/safeXlsxRead';
 import { getDb } from '../db';
 import { devices, sites } from '../../drizzle/schema';
 import { eq, and } from 'drizzle-orm';
@@ -183,7 +184,7 @@ export interface WorkbookImportSummary {
 export async function importWorkbookForSite(options: ImportWorkbookOptions): Promise<WorkbookImportSummary> {
   const { fileBuffer, siteId, companyId } = options;
 
-  const workbook = XLSX.read(fileBuffer, {
+  const workbook = await safeXlsxRead(fileBuffer, {
     type: 'buffer',
     cellDates: true,
     cellFormula: false,

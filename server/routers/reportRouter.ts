@@ -195,6 +195,7 @@ const reportRouter = router({
     aiSummary: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
     await db.assertJobCompany(input.jobId, ctx.user.companyId!);
+    await assertJobNotFinalized(input.jobId);
     const stats = await db.getInspectionStats(input.jobId);
     const deficiencies = await db.getDeficienciesByJob(input.jobId);
     const reportNumber = `RPT-${Date.now().toString(36).toUpperCase()}`;

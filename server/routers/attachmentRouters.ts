@@ -6,6 +6,11 @@ import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
 import { assertSiteCompany, assertAttachmentCompany, assertEntityCompany, assertDeviceCompany } from "../tenantGuards";
 
+/** Finalized jobs are immutable — skip the check for attachments not linked to a job. */
+async function assertAttachmentJobNotFinalized(jobId: number | null | undefined) {
+  if (jobId != null) await db.assertJobNotFinalized(jobId);
+}
+
 // Attachment router - Enhanced with bulk upload, tagging, and linking
 const attachmentRouter = router({
   listByEntity: protectedProcedure.input(z.object({
@@ -72,6 +77,7 @@ const attachmentRouter = router({
     if (input.siteId !== undefined) await assertSiteCompany(input.siteId, companyId);
     if (input.jobId !== undefined) await db.assertJobCompany(input.jobId, companyId);
     if (input.deviceId !== undefined) await assertDeviceCompany(input.deviceId, companyId);
+    await assertAttachmentJobNotFinalized(input.jobId);
 
     const buffer = Buffer.from(input.fileData, 'base64');
     const fileKey = `attachments/${input.entityType}/${input.entityId}/${nanoid()}-${input.fileName}`;
@@ -114,6 +120,7 @@ const attachmentRouter = router({
     if (input.siteId !== undefined) await assertSiteCompany(input.siteId, companyId);
     if (input.jobId !== undefined) await db.assertJobCompany(input.jobId, companyId);
     if (input.deviceId !== undefined) await assertDeviceCompany(input.deviceId, companyId);
+    await assertAttachmentJobNotFinalized(input.jobId);
 
     const results = [];
 
@@ -153,7 +160,9 @@ const attachmentRouter = router({
     deviceId: z.number().optional(),
   })).mutation(async ({ input, ctx }) => {
     const { id, ...data } = input;
-    await assertAttachmentCompany(id, ctx.user.companyId!);
+    const attachment = await assertAttachmentCompany(id, ctx.user.companyId!);
+    await assertAttachmentJobNotFinalized(attachment.jobId);
+    await assertAttachmentJobNotFinalized(data.jobId);
     await db.updateAttachment(id, { ...data, tags: data.tags as any });
     return { success: true };
   }),
@@ -163,7 +172,8 @@ const attachmentRouter = router({
     id: z.number(),
     tags: z.array(z.string()),
   })).mutation(async ({ input, ctx }) => {
-    await assertAttachmentCompany(input.id, ctx.user.companyId!);
+    const attachment = await assertAttachmentCompany(input.id, ctx.user.companyId!);
+    await assertAttachmentJobNotFinalized(attachment.jobId);
     await db.updateAttachmentTags(input.id, input.tags);
     return { success: true };
   }),
@@ -176,13 +186,16 @@ const attachmentRouter = router({
     deviceId: z.number().optional(),
   })).mutation(async ({ input, ctx }) => {
     const { id, ...links } = input;
-    await assertAttachmentCompany(id, ctx.user.companyId!);
+    const attachment = await assertAttachmentCompany(id, ctx.user.companyId!);
+    await assertAttachmentJobNotFinalized(attachment.jobId);
+    await assertAttachmentJobNotFinalized(links.jobId);
     await db.updateAttachment(id, links);
     return { success: true };
   }),
 
   delete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
-    await assertAttachmentCompany(input.id, ctx.user.companyId!);
+    const attachment = await assertAttachmentCompany(input.id, ctx.user.companyId!);
+    await assertAttachmentJobNotFinalized(attachment.jobId);
     await db.deleteAttachment(input.id);
     return { success: true };
   }),
