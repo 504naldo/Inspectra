@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
+import { safeXlsxRead } from "../_core/safeXlsxRead";
 
 // Import router for CSV/XLSX imports
 const importRouter = router({
@@ -80,8 +81,8 @@ const importRouter = router({
       const uint8Data = new Uint8Array(buffer);
       
       // Use correct SheetJS configuration for XLSM
-      const workbook = XLSX.read(uint8Data, { 
-        type: 'array', 
+      const workbook = await safeXlsxRead(uint8Data, {
+        type: 'array',
         cellDates: true,
         cellFormula: false,
         cellStyles: false
@@ -251,7 +252,7 @@ const importRouter = router({
   })).mutation(async ({ input }) => {
     const XLSX = await import('xlsx');
     const buffer = Buffer.from(input.fileData, 'base64');
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const workbook = await safeXlsxRead(buffer, { type: 'buffer' });
     
     // Validate sheet exists
     if (!workbook.Sheets[input.sheetName]) {
@@ -362,7 +363,7 @@ const importRouter = router({
   })).mutation(async ({ input, ctx }) => {
     const XLSX = await import('xlsx');
     const buffer = Buffer.from(input.fileData, 'base64');
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const workbook = await safeXlsxRead(buffer, { type: 'buffer' });
     
     // Validate sheet exists
     if (!workbook.Sheets[input.sheetName]) {

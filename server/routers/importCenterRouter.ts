@@ -2,6 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { safeXlsxRead } from "../_core/safeXlsxRead";
+import type { WorkBook } from "xlsx";
 
 const PARTS_SHEET = "Parts List";
 const PARTS_DATA_START = 4; // 0-based index (row 5 in Excel)
@@ -106,9 +108,9 @@ export const importCenterRouter = router({
       }
 
       const XLSX = await import("xlsx");
-      let workbook: ReturnType<typeof XLSX.read>;
+      let workbook: WorkBook;
       try {
-        workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+        workbook = await safeXlsxRead(new Uint8Array(buffer), { type: "array" });
       } catch {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Could not parse file. Ensure it is a valid .xlsx workbook." });
       }

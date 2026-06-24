@@ -182,6 +182,7 @@ const checklistRouter = router({
 
   deleteByJob: officeProcedure.input(z.object({ jobId: z.number() })).mutation(async ({ input, ctx }) => {
     await assertJobCompany(input.jobId, ctx.user.companyId!);
+    await assertJobNotFinalized(input.jobId);
     await db.deleteChecklistResponsesByJob(input.jobId);
     return { success: true };
   }),

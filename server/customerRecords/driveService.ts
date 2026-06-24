@@ -18,6 +18,7 @@
  */
 
 import { ENV } from "../_core/env.js";
+import { escapeDriveQueryValue } from "../_core/driveQuery.js";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
@@ -142,7 +143,7 @@ export async function listRootChildren(
 ): Promise<{ entries: DriveEntry[]; error?: string }> {
   const rootId = ENV.googleDriveCustomerRootId;
   const { files, error } = await driveList(accessToken, {
-    q: `'${rootId}' in parents and trashed=false`,
+    q: `'${escapeDriveQueryValue(rootId)}' in parents and trashed=false`,
     fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,webViewLink)",
     orderBy: "folder,name",
     pageSize: "500",
@@ -161,7 +162,7 @@ export async function listFolderById(
   accessToken: string
 ): Promise<{ entries: DriveEntry[]; error?: string }> {
   const { files, error } = await driveList(accessToken, {
-    q: `'${folderId}' in parents and trashed=false`,
+    q: `'${escapeDriveQueryValue(folderId)}' in parents and trashed=false`,
     fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,webViewLink)",
     orderBy: "folder,name",
     pageSize: "500",
@@ -181,10 +182,9 @@ export async function searchInRoot(
   accessToken: string
 ): Promise<{ entries: DriveEntry[]; error?: string }> {
   const rootId = ENV.googleDriveCustomerRootId;
-  // Escape single quotes in query to avoid Drive API query injection
-  const safeQ = query.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeQ = escapeDriveQueryValue(query);
   const { files, error } = await driveList(accessToken, {
-    q: `name contains '${safeQ}' and '${rootId}' in ancestors and trashed=false`,
+    q: `name contains '${safeQ}' and '${escapeDriveQueryValue(rootId)}' in ancestors and trashed=false`,
     fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,webViewLink)",
     orderBy: "folder,name",
     pageSize: "50",

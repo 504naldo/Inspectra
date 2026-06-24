@@ -49,3 +49,36 @@ export const ENV = {
   firebaseProjectId: process.env.FIREBASE_PROJECT_ID ?? "",
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? "",
 };
+
+// The literal placeholder committed in .env.example — public on GitHub, so
+// any deployment that forgot to override it would let an attacker forge a
+// valid session JWT for any user (including admins) using a known secret.
+const PLACEHOLDER_JWT_SECRET = "change-me-to-a-long-random-string";
+
+const RECOMMENDED_JWT_SECRET_MIN_LENGTH = 32; // 256 bits — HS256's recommended minimum key size (RFC 7518 §3.2)
+
+/**
+ * Fails fast at startup on unambiguous JWT_SECRET misconfiguration (unset, or
+ * still the public .env.example placeholder) rather than letting every login
+ * fail later with `getSessionSecret()`'s lazy "JWT_SECRET is not configured"
+ * error. A merely-short secret only warns, since this can't safely assume an
+ * already-deployed secret it can't see is wrong.
+ */
+export function validateJwtSecret(): void {
+  const secret = ENV.cookieSecret;
+  if (!secret) {
+    throw new Error(
+      "JWT_SECRET is not set. Sessions cannot be signed or verified. Set it to a long random string before starting the server."
+    );
+  }
+  if (secret === PLACEHOLDER_JWT_SECRET) {
+    throw new Error(
+      "JWT_SECRET is set to the placeholder value from .env.example, which is public. Generate a real random secret."
+    );
+  }
+  if (secret.length < RECOMMENDED_JWT_SECRET_MIN_LENGTH) {
+    console.warn(
+      `[Startup] JWT_SECRET is shorter than the recommended ${RECOMMENDED_JWT_SECRET_MIN_LENGTH} characters. Consider rotating to a longer random value.`
+    );
+  }
+}

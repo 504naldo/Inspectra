@@ -4,7 +4,32 @@
 //
 // Env: OPENAI_API_KEY
 
+import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
+
+// ── Rate limiting ──
+// Every OpenAI call in the app funnels through invokeLLM/transcribeAudio
+// below, so limiting here — rather than per tRPC procedure — covers every
+// current and future caller. This is distinct from (and stricter than) the
+// blanket Express apiLimiter, since these calls are the app's actual
+// cost/abuse surface (gpt-4o, vision, Whisper).
+const LLM_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const LLM_RATE_LIMIT_MAX_CALLS = 60;
+const llmCallTimestamps: number[] = [];
+
+function enforceLlmRateLimit(): void {
+  const now = Date.now();
+  while (llmCallTimestamps.length > 0 && now - llmCallTimestamps[0] >= LLM_RATE_LIMIT_WINDOW_MS) {
+    llmCallTimestamps.shift();
+  }
+  if (llmCallTimestamps.length >= LLM_RATE_LIMIT_MAX_CALLS) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: "Too many AI requests right now. Please wait a moment and try again.",
+    });
+  }
+  llmCallTimestamps.push(now);
+}
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -232,6 +257,7 @@ const normalizeResponseFormat = ({
 const DEFAULT_MODEL = "gpt-4o-mini";
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
+  enforceLlmRateLimit();
   const apiKey = ENV.openaiApiKey;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured");
@@ -304,6 +330,7 @@ export async function transcribeAudio(
   filename: string,
   mimeType: string
 ): Promise<string> {
+  enforceLlmRateLimit();
   const apiKey = ENV.openaiApiKey;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured");

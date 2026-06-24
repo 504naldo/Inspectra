@@ -1,4 +1,5 @@
 import { getValidGoogleToken } from "./googleAuth";
+import { escapeDriveQueryValue } from "./driveQuery";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
@@ -11,9 +12,10 @@ async function findFolder(
   name: string,
   parentId?: string
 ): Promise<string | null> {
+  const safeName = escapeDriveQueryValue(name);
   const query = parentId
-    ? `name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
-    : `name='${name}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`;
+    ? `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and '${escapeDriveQueryValue(parentId)}' in parents and trashed=false`
+    : `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`;
 
   const response = await fetch(
     `${DRIVE_API}/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=1`,

@@ -4,6 +4,7 @@ import { getDb } from "../db";
 import { attachments, sites } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { importWorkbookForSite } from "../services/workbookImport";
+import { assertPublicHttpUrl } from "../_core/ssrfGuard";
 
 /**
  * Asset Import Router
@@ -72,7 +73,8 @@ export const assetImportRouter = router({
       }
 
       // Download and run the canonical import pipeline
-      const response = await fetch(attachment.fileUrl);
+      await assertPublicHttpUrl(attachment.fileUrl);
+      const response = await fetch(attachment.fileUrl, { redirect: "error" });
       if (!response.ok) throw new Error("Failed to download Excel file from storage");
 
       const fileBuffer = Buffer.from(await response.arrayBuffer());

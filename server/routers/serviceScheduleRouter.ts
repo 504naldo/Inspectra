@@ -15,6 +15,7 @@ import * as db from "../db.js";
 import { logActivity } from "../activityLogger.js";
 import { sendJobScheduledEmail } from "../emailService.js";
 import { ENV } from "../_core/env.js";
+import { safeXlsxRead } from "../_core/safeXlsxRead.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -475,7 +476,7 @@ export const serviceScheduleRouter = router({
       if (ctx.user.companyId !== input.companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const buffer = Buffer.from(input.fileData, "base64");
       const XLSX = await import("xlsx");
-      const wb = XLSX.read(new Uint8Array(buffer), { type: "array" });
+      const wb = await safeXlsxRead(new Uint8Array(buffer), { type: "array" });
       const rows: any[][] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
       if (!rows.length) throw new TRPCError({ code: "BAD_REQUEST", message: "File appears empty." });
 
@@ -521,7 +522,7 @@ export const serviceScheduleRouter = router({
 
       const buffer = Buffer.from(input.fileData, "base64");
       const XLSX = await import("xlsx");
-      const workbook = XLSX.read(new Uint8Array(buffer), { type: "array", cellDates: true });
+      const workbook = await safeXlsxRead(new Uint8Array(buffer), { type: "array", cellDates: true });
 
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
@@ -639,7 +640,7 @@ export const serviceScheduleRouter = router({
 
       const buffer = Buffer.from(input.fileData, "base64");
       const XLSX = await import("xlsx");
-      const workbook = XLSX.read(new Uint8Array(buffer), { type: "array", cellDates: true });
+      const workbook = await safeXlsxRead(new Uint8Array(buffer), { type: "array", cellDates: true });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
       if (rows.length < 2) throw new TRPCError({ code: "BAD_REQUEST", message: "Spreadsheet appears empty." });

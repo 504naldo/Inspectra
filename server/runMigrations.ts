@@ -100,9 +100,15 @@ export async function runMigrations(): Promise<void> {
       return;
     }
 
+    // RAILWAY_CATCHUP.sql is a consolidated, manual-only reference (its own
+    // header says to paste statements one at a time into Railway's query
+    // console) — it uses MariaDB-only "IF NOT EXISTS" ALTER syntax that
+    // throws a real syntax error on Railway's vanilla MySQL, which isn't
+    // one of the "already applied" errors this loop knows how to ignore.
+    // Auto-applying it here would needlessly retry on every boot.
     const migrationFiles = fs
       .readdirSync(migrationsDir)
-      .filter((f) => f.endsWith(".sql"))
+      .filter((f) => f.endsWith(".sql") && f !== "RAILWAY_CATCHUP.sql")
       .sort();
 
     // Get already-applied migrations
@@ -111,7 +117,10 @@ export async function runMigrations(): Promise<void> {
     );
     const applied = new Set(rows.map((r) => r.migration_name as string));
 
-    // Apply pending migrations
+    // Apply pending migrations. Each file is handled independently — a file
+    // that fails (e.g. a statement incompatible with this MySQL version)
+    // logs and is left unapplied for retry on the next boot, but must not
+    // stop later files in the list from being attempted.
     for (const file of migrationFiles) {
       if (applied.has(file)) continue;
 
@@ -124,35 +133,41 @@ export async function runMigrations(): Promise<void> {
       const statements = splitSqlStatements(sql);
 
       console.log(`[Migrations] Applying: ${file}`);
-      for (const stmt of statements) {
-        try {
-          await connection.execute(stmt);
-        } catch (err: unknown) {
-          const error = err as { code?: string; message?: string };
-          // Ignore "column already exists" and "table already exists" errors
-          // so migrations are idempotent
-          if (
-            error.code === "ER_DUP_FIELDNAME" ||
-            error.code === "ER_TABLE_EXISTS_ERROR" ||
-            error.message?.includes("Duplicate column name") ||
-            error.message?.includes("already exists")
-          ) {
-            console.warn(`[Migrations] Skipping already-applied statement in ${file}: ${error.message}`);
-          } else {
-            throw err;
+      try {
+        for (const stmt of statements) {
+          try {
+            await connection.execute(stmt);
+          } catch (err: unknown) {
+            const error = err as { code?: string; message?: string };
+            // Ignore "column/key/table already exists" errors so migrations
+            // are idempotent across retries of a partially-applied file.
+            if (
+              error.code === "ER_DUP_FIELDNAME" ||
+              error.code === "ER_TABLE_EXISTS_ERROR" ||
+              error.code === "ER_DUP_KEYNAME" ||
+              error.message?.includes("Duplicate column name") ||
+              error.message?.includes("Duplicate key name") ||
+              error.message?.includes("already exists")
+            ) {
+              console.warn(`[Migrations] Skipping already-applied statement in ${file}: ${error.message}`);
+            } else {
+              throw err;
+            }
           }
         }
-      }
 
-      // Mark migration as applied
-      await connection.execute(
-        "INSERT INTO __schema_migrations (migration_name) VALUES (?)",
-        [file]
-      );
-      console.log(`[Migrations] Applied: ${file}`);
+        // Mark migration as applied
+        await connection.execute(
+          "INSERT INTO __schema_migrations (migration_name) VALUES (?)",
+          [file]
+        );
+        console.log(`[Migrations] Applied: ${file}`);
+      } catch (err) {
+        console.error(`[Migrations] Failed to apply ${file}, will retry on next boot:`, err);
+      }
     }
 
-    console.log("[Migrations] All migrations up to date.");
+    console.log("[Migrations] Finished migration pass.");
   } catch (err) {
     console.error("[Migrations] Migration failed:", err);
     // Don't crash the server — log and continue

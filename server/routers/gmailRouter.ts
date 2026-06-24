@@ -3,13 +3,23 @@ import { TRPCError } from "@trpc/server";
 import { router, adminOrOfficeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { getValidGoogleToken } from "../_core/googleAuth";
+import { assertPublicHttpUrl } from "../_core/ssrfGuard";
 import { storageGet } from "../storage";
+
+/**
+ * Strips CR/LF from a value bound for a single MIME header line. Without
+ * this, a value containing "\r\n" can terminate the header early and smuggle
+ * in arbitrary extra headers (e.g. a forged Bcc) once joined with "\r\n".
+ */
+export function sanitizeHeaderValue(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
 
 /**
  * Build a MIME message with PDF attachment for Gmail API.
  * Gmail API accepts base64url-encoded MIME messages.
  */
-function buildMimeMessage(opts: {
+export function buildMimeMessage(opts: {
   from: string;
   to: string;
   subject: string;
@@ -21,9 +31,9 @@ function buildMimeMessage(opts: {
   const boundary = "inspectra_boundary_" + Date.now();
 
   const parts: string[] = [];
-  parts.push(`From: ${opts.from}`);
-  parts.push(`To: ${opts.to}`);
-  parts.push(`Subject: ${opts.subject}`);
+  parts.push(`From: ${sanitizeHeaderValue(opts.from)}`);
+  parts.push(`To: ${sanitizeHeaderValue(opts.to)}`);
+  parts.push(`Subject: ${sanitizeHeaderValue(opts.subject)}`);
   parts.push(`MIME-Version: 1.0`);
   parts.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
   parts.push("");
@@ -41,9 +51,10 @@ function buildMimeMessage(opts: {
   }
 
   // PDF attachment
+  const safeAttachmentName = sanitizeHeaderValue(opts.attachmentName);
   parts.push(`--${boundary}`);
-  parts.push(`Content-Type: application/pdf; name="${opts.attachmentName}"`);
-  parts.push(`Content-Disposition: attachment; filename="${opts.attachmentName}"`);
+  parts.push(`Content-Type: application/pdf; name="${safeAttachmentName}"`);
+  parts.push(`Content-Disposition: attachment; filename="${safeAttachmentName}"`);
   parts.push(`Content-Transfer-Encoding: base64`);
   parts.push("");
   parts.push(opts.attachmentBase64);
@@ -99,7 +110,8 @@ export const gmailRouter = router({
       let pdfBuffer: Buffer;
       try {
         const pdfUrl = report.fileUrl || (await storageGet(report.fileKey!)).url;
-        const pdfResponse = await fetch(pdfUrl);
+        await assertPublicHttpUrl(pdfUrl);
+        const pdfResponse = await fetch(pdfUrl, { redirect: "error" });
         if (!pdfResponse.ok) {
           throw new Error(`Failed to download PDF: ${pdfResponse.status}`);
         }
