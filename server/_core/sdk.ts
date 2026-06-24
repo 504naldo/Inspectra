@@ -1,10 +1,10 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
-import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
+import { parseCookies } from "./cookies";
 import { ENV } from "./env";
 
 // ============================================================================
@@ -24,6 +24,7 @@ export type UserInfoResponse = {
   openId: string;       // Google's `sub` claim
   name: string;
   email: string | null;
+  emailVerified: boolean; // Google's `email_verified` claim — false if absent
   loginMethod: string;  // Always "google" after migration
   platform: string;     // Same as loginMethod
 };
@@ -120,6 +121,7 @@ async function googleGetUserInfo(accessToken: string): Promise<UserInfoResponse>
     openId: data.sub,                          // Maps to users.openId
     name: data.name || "",
     email: data.email || null,
+    emailVerified: data.email_verified === true,
     loginMethod: "google",
     platform: "google",
   };
@@ -154,14 +156,6 @@ class SDKServer {
   }
 
   // ── Session management (unchanged — fully self-contained) ──
-
-  private parseCookies(cookieHeader: string | undefined) {
-    if (!cookieHeader) {
-      return new Map<string, string>();
-    }
-    const parsed = parseCookieHeader(cookieHeader);
-    return new Map(Object.entries(parsed));
-  }
 
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
@@ -254,7 +248,7 @@ class SDKServer {
    * It does NOT call any external OAuth provider.
    */
   async authenticateRequest(req: Request): Promise<User> {
-    const cookies = this.parseCookies(req.headers.cookie);
+    const cookies = parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await this.verifySession(sessionCookie);
 

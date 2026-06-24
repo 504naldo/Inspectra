@@ -1,4 +1,15 @@
+import { OAUTH_STATE_COOKIE_NAME, OAUTH_STATE_MAX_AGE_SECONDS } from "@shared/const";
+
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+
+// Sets a short-lived nonce cookie this browser will send back on the OAuth
+// callback. The server checks it against the nonce embedded in `state` to
+// reject forged callback URLs (login CSRF) — a request crafted by an
+// attacker won't have the victim's matching cookie.
+function setOAuthStateCookie(nonce: string) {
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${OAUTH_STATE_COOKIE_NAME}=${nonce}; Path=/; Max-Age=${OAUTH_STATE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
+}
 
 // Generate Google OAuth login URL at runtime so redirect URI reflects the current origin.
 export const getLoginUrl = (returnTo?: string) => {
@@ -11,7 +22,9 @@ export const getLoginUrl = (returnTo?: string) => {
   // If returnTo is provided, use it; otherwise use empty string to let OAuth callback
   // determine the redirect based on the user's actual role
   const targetRoute = returnTo || '';
-  const state = btoa(targetRoute);
+  const nonce = crypto.randomUUID().replace(/-/g, '');
+  setOAuthStateCookie(nonce);
+  const state = btoa(JSON.stringify({ route: targetRoute, nonce }));
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   url.searchParams.set('client_id', clientId);

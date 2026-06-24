@@ -135,8 +135,7 @@ export async function handleMultipartUpload(req: Request, res: Response) {
       mimeType: contentType,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Upload failed";
     console.error("Upload error:", error);
-    res.status(500).json({ error: message });
+    res.status(500).json({ error: "Upload failed. Please try again." });
   }
 }

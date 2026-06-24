@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import type { ErrorRequestHandler } from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { createServer } from "http";
@@ -132,6 +133,17 @@ async function startServer() {
   } else {
     await setupVite(app, server);
   }
+
+  // Catch-all error handler — defense in depth so any error that escapes a
+  // route's own try/catch never leaks a raw message (stack traces, SQL/driver
+  // errors) to the client. Must be registered last and take 4 args so Express
+  // recognizes it as an error handler.
+  const handleUnhandledError: ErrorRequestHandler = (err, _req, res, _next) => {
+    console.error("[Express] Unhandled error:", err);
+    if (res.headersSent) return;
+    res.status(500).json({ error: "Internal server error" });
+  };
+  app.use(handleUnhandledError);
 
   // Use PORT from environment (production) or find available port (development)
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : await findAvailablePort();

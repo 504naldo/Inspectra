@@ -2,9 +2,55 @@ import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
+import { ENV } from "./env";
+
+const GENERIC_SERVER_ERROR_MESSAGE = "Something went wrong. Please try again.";
+
+/**
+ * Extracts only the non-standard fields from an error's `cause` — e.g. the
+ * `{ code, details }` payload importRouter.ts attaches for client-facing
+ * diagnostics — while dropping `message`/`stack`/`name`. This lets deliberate
+ * structured payloads through without ever forwarding a raw internal Error's
+ * stack or driver-specific message (DB/SQL errors, file paths, etc).
+ */
+export function safeErrorCause(cause: unknown): Record<string, unknown> | undefined {
+  if (!cause || typeof cause !== "object") return undefined;
+  const { message, stack, name, ...rest } = cause as Record<string, unknown>;
+  return Object.keys(rest).length > 0 ? rest : undefined;
+}
+
+type ErrorShapeInput = {
+  shape: { message: string; data: { code: string; [key: string]: unknown } };
+  error: { cause?: unknown };
+  isProduction: boolean;
+};
+
+/**
+ * Sanitizes the error shape sent to clients. Unexpected (INTERNAL_SERVER_ERROR)
+ * exceptions get a generic message in production instead of the raw internal
+ * error text — tRPC's default formatter otherwise forwards `error.message`
+ * verbatim, which can be a raw SQL/driver error. Deliberate TRPCErrors (any
+ * other code) keep their developer-authored message and may forward a safe
+ * structured `cause`.
+ */
+export function formatErrorForClient({ shape, error, isProduction }: ErrorShapeInput) {
+  const isInternal = shape.data.code === "INTERNAL_SERVER_ERROR";
+  const safeCause = isInternal ? undefined : safeErrorCause(error.cause);
+
+  return {
+    ...shape,
+    message: isInternal && isProduction ? GENERIC_SERVER_ERROR_MESSAGE : shape.message,
+    data: {
+      ...shape.data,
+      ...(safeCause ? { cause: safeCause } : {}),
+    },
+  };
+}
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
+  errorFormatter: ({ shape, error }) =>
+    formatErrorForClient({ shape, error, isProduction: ENV.isProduction }),
 });
 
 export const router = t.router;
