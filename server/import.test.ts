@@ -146,6 +146,7 @@ describe('Import Schemas', () => {
     expect(getImportSchema('fireAlarmDevices').category).toBe('FIRE_ALARM_DEVICE');
     expect(getImportSchema('fireExtinguishers').category).toBe('FIRE_EXTINGUISHER');
     expect(getImportSchema('emergencyLights').category).toBe('EMERGENCY_LIGHT');
-    expect(getImportSchema('sprinklerDevices').category).toBe('SPRINKLER');
+    // Domain rule (importSchemas.ts): sprinkler devices are stored under FIRE_ALARM_DEVICE.
+    expect(getImportSchema('sprinklerDevices').category).toBe('FIRE_ALARM_DEVICE');
   });
 });
