@@ -127,6 +127,11 @@ interface ReportData {
   // Branding — sourced from company settings (optional; falls back to disk logo / generic footer)
   companyLogoBuffer?: Buffer;
   reportFooterText?: string;
+
+  // Tax rates — sourced from company settings (decimal strings, e.g. "0.0500" for 5%).
+  // Falls back to the BC default (5% GST + 7% PST) when not provided.
+  gstRate?: string | number | null;
+  pstRate?: string | number | null;
 }
 
 // ─── Template checklist types ─────────────────────────────────────────────────
@@ -939,7 +944,10 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
 
         const subtotal   = data.deficiencies.reduce((s, d) =>
           s + (typeof d.estimatedCost === 'string' ? parseFloat(d.estimatedCost) : (d.estimatedCost || 0)), 0);
-        const tax        = subtotal * 0.12;
+        const gstRate    = data.gstRate != null ? parseFloat(String(data.gstRate)) : 0.05;
+        const pstRate    = data.pstRate != null ? parseFloat(String(data.pstRate)) : 0.07;
+        const taxRate    = gstRate + pstRate;
+        const tax        = subtotal * taxRate;
         const grandTotal = subtotal + tax;
 
         const tX  = M + CW - 200;
@@ -953,8 +961,12 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
           defY += 18;
         };
 
+        doc.fontSize(8).font('Helvetica-Oblique').fillColor(GRAY_TEXT)
+           .text('All amounts in CAD', tX, defY, { width: tLW + tVW, align: 'right' });
+        defY += 14;
+
         drawTotalRow('Subtotal:', `$${subtotal.toFixed(2)}`);
-        drawTotalRow('GST + PST (12%):', `$${tax.toFixed(2)}`);
+        drawTotalRow(`GST + PST (${(taxRate * 100).toFixed(1)}%):`, `$${tax.toFixed(2)}`);
         doc.moveTo(tX, defY - 3).lineTo(tX + tLW + tVW, defY - 3).lineWidth(0.5).stroke(BLACK);
         defY += 4;
         drawTotalRow('Total:', `$${grandTotal.toFixed(2)}`, true);

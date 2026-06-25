@@ -26,6 +26,29 @@ export interface LocationValidationResult {
 }
 
 /**
+ * Device-type classifiers for the Annual report's device tables.
+ *
+ * These are allow-lists, not a power-supply blocklist: a device only lands in a
+ * table if its deviceType matches one of these category keywords. Power supplies,
+ * control panels, and any other non-listed device type are excluded by omission —
+ * they still drive the Power Supply / Emergency Power Supply checklist sections
+ * (22.4 / 22.5), independent of these device tables.
+ */
+export function isFireAlarmDeviceType(deviceType: string | null | undefined): boolean {
+  const t = deviceType?.toLowerCase() ?? '';
+  return t.includes('smoke') || t.includes('heat') || t.includes('pull') || t.includes('horn') || t.includes('strobe');
+}
+
+export function isFireExtinguisherType(deviceType: string | null | undefined): boolean {
+  return (deviceType?.toLowerCase() ?? '').includes('extinguisher');
+}
+
+export function isEmergencyLightType(deviceType: string | null | undefined): boolean {
+  const t = deviceType?.toLowerCase() ?? '';
+  return t.includes('emergency') || t.includes('exit');
+}
+
+/**
  * Validate that all Fire Alarm devices have locations
  */
 export function validateFireAlarmDeviceLocations(
