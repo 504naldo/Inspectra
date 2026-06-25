@@ -622,6 +622,16 @@ const reportRouter = router({
     // Fetch saved checklist responses
     const savedResponses = await db.getChecklistResponsesByJob(input.jobId);
 
+    // Validate checklist completeness before generating Annual report
+    const { auditChecklistCompleteness, formatMissingItemsMessage } = await import('../checklistValidation');
+    const checklistAudit = auditChecklistCompleteness(savedResponses);
+    if (!checklistAudit.isComplete) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: `Cannot generate Annual report: ${checklistAudit.missingItems.length} checklist item(s) incomplete.\n\n${formatMissingItemsMessage(checklistAudit.missingItems)}\n\nPlease complete the CAN/ULC-S536 checklist before generating the Annual Inspection Report.`,
+      });
+    }
+
     // Build a map of responses for quick lookup
     const responseMap = new Map<string, { status: 'PASS' | 'DEFICIENT' | 'NA'; comment?: string }>();
     savedResponses.forEach(r => {

@@ -403,7 +403,7 @@
 
 
 ## Definitive Reporting Pipeline Refactor — PARTIALLY SUPERSEDED
-> Steps 1, 2, 5, and 6 are superseded by "Phase 2: Explicit Endpoints & UI Updates" and "Deficiency Report Refactoring (New)" below, which implemented the explicit-endpoints + dual-button approach. Steps 3 (location enforcement) and 4 (power-supply exclusion) were verified against the live code and are now complete — `validateAnnualReportLocations`/`validateDeficiencyReportLocations` block generation with per-item error detail (`server/routers/reportRouter.ts`), and the device-type classifiers (`isFireAlarmDeviceType`/`isFireExtinguisherType`/`isEmergencyLightType` in `server/locationValidation.ts`) exclude power supplies/control panels from the Annual report's device tables, with a regression test locking this in (`server/locationValidation.deviceScope.test.ts`). One real gap remains, surfaced while verifying Step 5/7: there is no checklist-completeness check anywhere in `reportRouter.ts` — "Annual endpoint blocks on incomplete checklist" was never implemented, only location-blocking was.
+> Steps 1, 2, 5, and 6 are superseded by "Phase 2: Explicit Endpoints & UI Updates" and "Deficiency Report Refactoring (New)" below, which implemented the explicit-endpoints + dual-button approach. Steps 3 (location enforcement) and 4 (power-supply exclusion) were verified against the live code and are now complete — `validateAnnualReportLocations`/`validateDeficiencyReportLocations` block generation with per-item error detail (`server/routers/reportRouter.ts`), and the device-type classifiers (`isFireAlarmDeviceType`/`isFireExtinguisherType`/`isEmergencyLightType` in `server/locationValidation.ts`) exclude power supplies/control panels from the Annual report's device tables, with a regression test locking this in (`server/locationValidation.deviceScope.test.ts`). The remaining gap noted previously is now closed: `generateCompliancePDF`/`annualReport.generate` calls `auditChecklistCompleteness` right after fetching saved checklist responses and throws `PRECONDITION_FAILED` with the missing-items list when incomplete, mirroring the location-validation pattern with no override flag — see `server/reportRouter.checklistGate.test.ts`.
 
 ### Step 1: Identify Active Generators
 - [x] Search codebase for all PDF generation references
@@ -434,7 +434,7 @@
 - [ ] Create POST /api/reports/deficiencies endpoint (always uses FirePro generator)
 - [ ] Add backward compatibility redirects from old endpoints
 - [ ] Add server-side deprecation warnings for old endpoints
-- [ ] Ensure Annual endpoint blocks on incomplete checklist — genuinely outstanding, no such check exists
+- [x] Ensure Annual endpoint blocks on incomplete checklist (`auditChecklistCompleteness` gate in `generateCompliancePDF`)
 - [x] Ensure Annual endpoint blocks on missing locations
 - [x] Ensure Deficiency endpoint only includes deficiencies (no passing items)
 
@@ -443,12 +443,12 @@
 - [x] Add separate "Generate Deficiency Report" button
 - [x] Wire Annual button to new annual endpoint
 - [x] Wire Deficiency button to new deficiencies endpoint
-- [ ] Add error modal for checklist incomplete with missing items list — blocked on the missing backend check above
+- [x] Add error modal for checklist incomplete with missing items list (existing generic error modal + "Go to Job Details" link in `Reports.tsx` surfaces the new backend error)
 - [x] Add error modal for missing locations with device/deficiency list
 - [x] Add links to checklist/devices screens from error modals (modal's "Go to Job Details" button)
 
 ### Step 7: Acceptance Testing
-- [ ] Test: Annual report blocks if checklist incomplete and returns missing list
+- [x] Test: Annual report blocks if checklist incomplete and returns missing list (`server/reportRouter.checklistGate.test.ts`)
 - [ ] Test: Annual report blocks if device locations missing and returns missing list
 - [ ] Test: Annual report includes ALL checklist sections with correct PASS/DEFICIENT/N/A
 - [ ] Test: Annual report device tables include locations and exclude power supplies
