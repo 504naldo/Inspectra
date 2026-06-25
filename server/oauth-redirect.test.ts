@@ -1,127 +1,78 @@
 import { describe, it, expect } from 'vitest';
+import { resolveOAuthRedirectTarget } from './_core/oauth';
 
 /**
- * Unit tests for OAuth callback role-based redirect logic
- * Tests that users are redirected to the correct dashboard based on their role
+ * Unit tests for OAuth callback role-based redirect logic.
+ *
+ * These exercise the real exported resolveOAuthRedirectTarget() from
+ * server/_core/oauth.ts (previously this file re-implemented the logic as a
+ * local copy, which had drifted: it asserted customer -> '/customer', but the
+ * real code redirects customers to '/forbidden' since the customer portal is
+ * disabled). Testing the real function closes that gap.
  */
-
-describe('OAuth Callback Role-Based Redirect', () => {
-  // Simulate the redirect logic from server/_core/oauth.ts
-  function determineRedirectPath(userRole: string | undefined, decodedState: string): string {
-    let targetRoute = decodedState;
-    
-    // If target route is empty or "/", redirect to role-based dashboard
-    if (!targetRoute || targetRoute === '/') {
-      if (userRole === 'customer') {
-        targetRoute = '/customer';
-      } else if (userRole === 'technician') {
-        targetRoute = '/tech/jobs';
-      } else if (userRole === 'office') {
-        targetRoute = '/admin';
-      } else {
-        targetRoute = '/admin'; // admin role or fallback
-      }
-    }
-    
-    return targetRoute;
-  }
-
-  describe('Role-based redirect when state is empty', () => {
-    it('should redirect admin users to /admin', () => {
-      const result = determineRedirectPath('admin', '');
-      expect(result).toBe('/admin');
+describe('resolveOAuthRedirectTarget', () => {
+  describe('role-based redirect when state route is empty', () => {
+    it('redirects admin users to /admin', () => {
+      expect(resolveOAuthRedirectTarget('', 'admin')).toBe('/admin');
     });
 
-    it('should redirect office users to /admin', () => {
-      const result = determineRedirectPath('office', '');
-      expect(result).toBe('/admin');
+    it('redirects office users to /admin', () => {
+      expect(resolveOAuthRedirectTarget('', 'office')).toBe('/admin');
     });
 
-    it('should redirect technician users to /tech/jobs', () => {
-      const result = determineRedirectPath('technician', '');
-      expect(result).toBe('/tech/jobs');
+    it('redirects technician users to /tech/jobs', () => {
+      expect(resolveOAuthRedirectTarget('', 'technician')).toBe('/tech/jobs');
     });
 
-    it('should redirect customer users to /customer', () => {
-      const result = determineRedirectPath('customer', '');
-      expect(result).toBe('/customer');
+    it('redirects customer users to /forbidden (customer portal disabled)', () => {
+      expect(resolveOAuthRedirectTarget('', 'customer')).toBe('/forbidden');
     });
 
-    it('should redirect unknown roles to /admin (fallback)', () => {
-      const result = determineRedirectPath('unknown', '');
-      expect(result).toBe('/admin');
+    it('redirects unknown roles to /admin (fallback)', () => {
+      expect(resolveOAuthRedirectTarget('', 'unknown')).toBe('/admin');
     });
 
-    it('should redirect undefined roles to /admin (fallback)', () => {
-      const result = determineRedirectPath(undefined, '');
-      expect(result).toBe('/admin');
+    it('redirects undefined roles to /admin (fallback)', () => {
+      expect(resolveOAuthRedirectTarget('', undefined)).toBe('/admin');
     });
   });
 
-  describe('Role-based redirect when state is "/"', () => {
-    it('should redirect admin users to /admin when state is "/"', () => {
-      const result = determineRedirectPath('admin', '/');
-      expect(result).toBe('/admin');
+  describe('role-based redirect when state route is "/"', () => {
+    it('redirects admin users to /admin when state route is "/"', () => {
+      expect(resolveOAuthRedirectTarget('/', 'admin')).toBe('/admin');
     });
 
-    it('should redirect technician users to /tech/jobs when state is "/"', () => {
-      const result = determineRedirectPath('technician', '/');
-      expect(result).toBe('/tech/jobs');
+    it('redirects technician users to /tech/jobs when state route is "/"', () => {
+      expect(resolveOAuthRedirectTarget('/', 'technician')).toBe('/tech/jobs');
     });
 
-    it('should redirect customer users to /customer when state is "/"', () => {
-      const result = determineRedirectPath('customer', '/');
-      expect(result).toBe('/customer');
+    it('redirects customer users to /forbidden when state route is "/"', () => {
+      expect(resolveOAuthRedirectTarget('/', 'customer')).toBe('/forbidden');
     });
   });
 
-  describe('Respect explicit returnTo in state', () => {
-    it('should redirect to /tech/jobs/123 if explicitly specified in state', () => {
-      const result = determineRedirectPath('technician', '/tech/jobs/123');
-      expect(result).toBe('/tech/jobs/123');
+  describe('respects an explicit safe return route in state', () => {
+    it('redirects to /tech/jobs/123 if explicitly specified', () => {
+      expect(resolveOAuthRedirectTarget('/tech/jobs/123', 'technician')).toBe('/tech/jobs/123');
     });
 
-    it('should redirect to /admin/users if explicitly specified in state', () => {
-      const result = determineRedirectPath('customer', '/admin/users');
-      expect(result).toBe('/admin/users');
+    it('redirects to /admin/users if explicitly specified', () => {
+      expect(resolveOAuthRedirectTarget('/admin/users', 'admin')).toBe('/admin/users');
     });
 
-    it('should redirect to /customer/reports if explicitly specified in state', () => {
-      const result = determineRedirectPath('admin', '/customer/reports');
-      expect(result).toBe('/customer/reports');
+    it('blocks /customer/* return routes regardless of role (portal disabled)', () => {
+      expect(resolveOAuthRedirectTarget('/customer/reports', 'admin')).toBe('/forbidden');
+      expect(resolveOAuthRedirectTarget('/customer/reports', 'customer')).toBe('/forbidden');
     });
   });
 
-  describe('State decoding and validation', () => {
-    it('should handle base64 encoded empty string', () => {
-      const emptyState = btoa('');
-      const decodedState = Buffer.from(emptyState, 'base64').toString('utf-8');
-      const result = determineRedirectPath('technician', decodedState);
-      expect(result).toBe('/tech/jobs');
+  describe('security — prevent open redirects', () => {
+    it('falls back to role-based dashboard for protocol-relative URLs', () => {
+      expect(resolveOAuthRedirectTarget('//evil.com', 'admin')).toBe('/admin');
     });
 
-    it('should handle base64 encoded "/tech/jobs"', () => {
-      const encodedState = btoa('/tech/jobs');
-      const decodedState = Buffer.from(encodedState, 'base64').toString('utf-8');
-      const result = determineRedirectPath('admin', decodedState);
-      expect(result).toBe('/tech/jobs');
-    });
-  });
-
-  describe('Security - prevent open redirects', () => {
-    it('should not redirect to protocol-relative URLs', () => {
-      // This would be caught by the validation in oauth.ts before reaching this function
-      // but we test that if it somehow gets here, it doesn't redirect
-      const result = determineRedirectPath('admin', '//evil.com');
-      // The validation in oauth.ts would prevent this, but if it got here,
-      // it would be treated as a literal path
-      expect(result).toBe('//evil.com');
-    });
-
-    it('should not redirect to absolute URLs', () => {
-      // This would be caught by validation in oauth.ts
-      const result = determineRedirectPath('admin', 'https://evil.com');
-      expect(result).toBe('https://evil.com');
+    it('falls back to role-based dashboard for absolute URLs', () => {
+      expect(resolveOAuthRedirectTarget('https://evil.com', 'technician')).toBe('/tech/jobs');
     });
   });
 });

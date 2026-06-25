@@ -1629,13 +1629,14 @@
 
 
 ## Chrome Mobile Login Redirect Bug (Critical)
-- [ ] Add comprehensive debug logging to OAuth callback
-- [ ] Add debug logging to App.tsx auth guard
-- [ ] Add debug logging to Home.tsx redirect logic
-- [ ] Test login flow on Chrome mobile and capture logs
-- [ ] Identify why user is redirected to homepage instead of role-based dashboard
-- [ ] Fix the redirect logic
-- [ ] Verify fix works on Chrome mobile
+- [x] Add comprehensive debug logging to OAuth callback (was gated behind `!ENV.isProduction` — added unconditional `[OAuth] Final redirect decision` / missing-code logs so production reports actually show up in Railway logs)
+- [x] Add debug logging to App.tsx auth guard (was silent — added unconditional `[AuthGuard] Redirecting from / to role-based dashboard` log before the hard redirect)
+- [x] Add debug logging to Home.tsx redirect logic — N/A, Home.tsx no longer contains redirect logic (removed in an earlier pass per line 235); the redirect now lives solely in App.tsx's global auth guard
+- [x] Extract the redirect-decision logic into a real exported `resolveOAuthRedirectTarget()` (server/_core/oauth.ts) and fix `oauth-redirect.test.ts`, which had drifted into testing a re-implemented copy whose expectations no longer matched prod (it asserted customer → `/customer`; real code redirects to `/forbidden` since the customer portal is disabled)
+- [ ] Test login flow on Chrome mobile and capture logs — needs a real device; the logging above is now in place to capture this next time it's reproduced
+- [ ] Identify why user is redirected to homepage instead of role-based dashboard — code review found the known fixes already applied (server redirects directly to the role path, never to "/"; `window.location.href` hard redirect; `sameSite: lax` cookie for mobile Chrome). No remaining bug found by static review; needs live-device logs to confirm whether it's still reproducible or was already fixed by one of those prior changes
+- [ ] Fix the redirect logic — blocked on the above
+- [ ] Verify fix works on Chrome mobile — blocked on device access
 - [x] Replace wouter setLocation with window.location.href for hard redirect in App.tsx
 
 

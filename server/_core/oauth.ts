@@ -44,6 +44,34 @@ export function hasUnverifiedEmail(userInfo: Pick<UserInfoResponse, "email" | "e
   return Boolean(userInfo.email) && userInfo.emailVerified !== true;
 }
 
+/** Customer portal is disabled — every other role lands on /admin or /tech/jobs. */
+function getRoleBasedDashboard(role: string | undefined): string {
+  if (role === 'customer') return '/forbidden';
+  if (role === 'technician') return '/tech/jobs';
+  return '/admin'; // office, admin, and any unrecognized role
+}
+
+/**
+ * Resolves the post-login redirect target. Honors a safe explicit return route from
+ * `state` (set when the user followed a deep link into login), but always falls back
+ * to the user's role-based dashboard — never to "/" — since landing an already-
+ * authenticated user back on "/" is what produces a "stuck on homepage" symptom.
+ */
+export function resolveOAuthRedirectTarget(rawRoute: string, role: string | undefined): string {
+  let targetRoute = isSafeReturnRoute(rawRoute) ? rawRoute : '';
+
+  // Customer portal not active — block any /customer/* routes from state param
+  if (targetRoute.startsWith('/customer')) {
+    targetRoute = '/forbidden';
+  }
+
+  if (!targetRoute || targetRoute === '/') {
+    targetRoute = getRoleBasedDashboard(role);
+  }
+
+  return targetRoute;
+}
+
 function renderLoginErrorPage(title: string, message: string): string {
   return `
     <!DOCTYPE html>
@@ -97,6 +125,7 @@ export function registerOAuthRoutes(app: Express) {
     
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state") || "";
+    const userAgent = (req.headers["user-agent"] || "unknown").slice(0, 200);
 
     if (!ENV.isProduction) {
       console.log('[OAuth] Extracted code:', code ? 'present' : 'missing');
@@ -104,7 +133,9 @@ export function registerOAuthRoutes(app: Express) {
     }
 
     if (!code) {
-      console.error('[OAuth] Missing required code parameter');
+      // Logged unconditionally (including production) since this is the exact
+      // failure mode reported on mobile Chrome — no code/state ever reaches us.
+      console.error('[OAuth] Missing required code parameter', { userAgent, hasState: Boolean(state) });
       
       // Return user-friendly HTML error page
       res.status(400).send(`
@@ -260,30 +291,17 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      // Resolve the intended post-login route from the already-validated state
-      let targetRoute = isSafeReturnRoute(decodedState.route) ? decodedState.route : '';
+      const targetRoute = resolveOAuthRedirectTarget(decodedState.route, user?.role);
 
-      // Customer portal not active — block any /customer/* routes from state param
-      if (targetRoute.startsWith('/customer')) {
-        targetRoute = '/forbidden';
-      }
-
-      // If target route is empty or "/", redirect to role-based dashboard
-      if (!targetRoute || targetRoute === '/') {
-        if (user?.role === 'customer') {
-          targetRoute = '/forbidden'; // customer portal not active
-        } else if (user?.role === 'technician') {
-          targetRoute = '/tech/jobs';
-        } else if (user?.role === 'office') {
-          targetRoute = '/admin';
-        } else {
-          targetRoute = '/admin'; // admin role or fallback
-        }
-      }
-
-      if (!ENV.isProduction) {
-        console.log('[OAuth] Final redirect to:', targetRoute, { email: userInfo.email, role: user?.role });
-      }
+      // Logged unconditionally (including production) — this is the decision point for the
+      // "redirected to homepage instead of role-based dashboard" bug reported on mobile Chrome.
+      console.log('[OAuth] Final redirect decision', {
+        userId: user?.id,
+        role: user?.role,
+        targetRoute,
+        stateRoute: decodedState.route,
+        userAgent,
+      });
       res.redirect(302, targetRoute);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

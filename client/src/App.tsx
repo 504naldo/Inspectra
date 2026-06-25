@@ -199,8 +199,16 @@ function Router() {
   useEffect(() => {
     if (loading) return;
     if (isAuthenticated && user && location === "/") {
+      const targetPath = getRoleBasedPath(user.role);
+      // Logged unconditionally (not just IS_DEV) so a remote-debugging session on a
+      // real device can confirm this guard actually ran and where it sent the user —
+      // needed to diagnose the "stuck on homepage" report on mobile Chrome.
+      console.log("[AuthGuard] Redirecting from / to role-based dashboard", {
+        role: user.role,
+        targetPath,
+      });
       // Use window.location.href for hard redirect (more reliable on mobile Chrome)
-      window.location.href = getRoleBasedPath(user.role);
+      window.location.href = targetPath;
     }
   }, [loading, isAuthenticated, user, location]);
 
