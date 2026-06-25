@@ -397,6 +397,8 @@ const reportRouter = router({
       companyEmail: company?.email || undefined,
       companyLogoBuffer,
       reportFooterText: companySettings.reportFooterText || undefined,
+      gstRate: companySettings.gstRate,
+      pstRate: companySettings.pstRate,
       summary: input.summary,
       deviceSummaries,
       deficiencies: await Promise.all(deficiencies.map(async (d) => {
@@ -581,14 +583,10 @@ const reportRouter = router({
     const technician = await db.getUserById(job.assignedTechnicianId || ctx.user.id);
     
     // Validate device locations before generating Annual report
-    const { validateAnnualReportLocations } = await import('../locationValidation');
+    const { validateAnnualReportLocations, isFireAlarmDeviceType, isFireExtinguisherType, isEmergencyLightType } = await import('../locationValidation');
     const locationValidation = validateAnnualReportLocations({
       fireAlarmDevices: inspectionResults
-        .filter(r => r.deviceType?.toLowerCase().includes('smoke') || 
-                     r.deviceType?.toLowerCase().includes('heat') || 
-                     r.deviceType?.toLowerCase().includes('pull') ||
-                     r.deviceType?.toLowerCase().includes('horn') ||
-                     r.deviceType?.toLowerCase().includes('strobe'))
+        .filter(r => isFireAlarmDeviceType(r.deviceType))
         .map(r => ({
           id: r.id,
           deviceType: r.deviceType || 'Unknown',
@@ -596,15 +594,14 @@ const reportRouter = router({
           identification: r.serialNumber,
         })),
       fireExtinguishers: inspectionResults
-        .filter(r => r.deviceType?.toLowerCase().includes('extinguisher'))
+        .filter(r => isFireExtinguisherType(r.deviceType))
         .map(r => ({
           id: r.id,
           location: r.location,
           serialNumber: r.serialNumber,
         })),
       emergencyLights: inspectionResults
-        .filter(r => r.deviceType?.toLowerCase().includes('emergency') || 
-                     r.deviceType?.toLowerCase().includes('exit'))
+        .filter(r => isEmergencyLightType(r.deviceType))
         .map(r => ({
           id: r.id,
           location: r.location,
@@ -723,11 +720,7 @@ const reportRouter = router({
       ),
     ]; // Build device records
     const fireAlarmDevices = inspectionResults
-      .filter(r => r.deviceType?.toLowerCase().includes('smoke') || 
-                   r.deviceType?.toLowerCase().includes('heat') || 
-                   r.deviceType?.toLowerCase().includes('pull') ||
-                   r.deviceType?.toLowerCase().includes('horn') ||
-                   r.deviceType?.toLowerCase().includes('strobe'))
+      .filter(r => isFireAlarmDeviceType(r.deviceType))
       .sort((a, b) => {
         // Sort by walkOrder (nulls last), then by location as fallback
         if (a.walkOrder === null && b.walkOrder === null) return (a.location || '').localeCompare(b.location || '');
@@ -743,7 +736,7 @@ const reportRouter = router({
       }));
     
     const fireExtinguishers = inspectionResults
-      .filter(r => r.deviceType?.toLowerCase().includes('extinguisher'))
+      .filter(r => isFireExtinguisherType(r.deviceType))
       .sort((a, b) => {
         // Sort by walkOrder (nulls last), then by location as fallback
         if (a.walkOrder === null && b.walkOrder === null) return (a.location || '').localeCompare(b.location || '');
@@ -759,8 +752,7 @@ const reportRouter = router({
       }));
     
     const emergencyLights = inspectionResults
-      .filter(r => r.deviceType?.toLowerCase().includes('emergency') || 
-                   r.deviceType?.toLowerCase().includes('exit'))
+      .filter(r => isEmergencyLightType(r.deviceType))
       .sort((a, b) => {
         // Sort by walkOrder (nulls last), then by location as fallback
         if (a.walkOrder === null && b.walkOrder === null) return (a.location || '').localeCompare(b.location || '');
