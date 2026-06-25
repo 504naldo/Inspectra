@@ -25,6 +25,8 @@ vi.mock("./db", () => {
     createDeficiency: vi.fn(),
     withAudit: vi.fn(async (_ctx: any, _name: any, fn: any) => fn({})),
     assertJobNotFinalized: vi.fn().mockResolvedValue(undefined),
+    // logout invalidates the server-side session by bumping sessionVersion.
+    incrementUserSessionVersion: vi.fn().mockResolvedValue(undefined),
   };
 });
 
