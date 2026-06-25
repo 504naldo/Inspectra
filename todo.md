@@ -403,7 +403,7 @@
 
 
 ## Definitive Reporting Pipeline Refactor — PARTIALLY SUPERSEDED
-> Steps 1, 2, 5, and 6 are superseded by "Phase 2: Explicit Endpoints & UI Updates" and "Deficiency Report Refactoring (New)" below, which implemented the explicit-endpoints + dual-button approach. Steps 3 (location enforcement) and 4 (power-supply exclusion) were never implemented and remain genuinely outstanding — see open checkboxes below.
+> Steps 1, 2, 5, and 6 are superseded by "Phase 2: Explicit Endpoints & UI Updates" and "Deficiency Report Refactoring (New)" below, which implemented the explicit-endpoints + dual-button approach. Steps 3 (location enforcement) and 4 (power-supply exclusion) were verified against the live code and are now complete — `validateAnnualReportLocations`/`validateDeficiencyReportLocations` block generation with per-item error detail (`server/routers/reportRouter.ts`), and the device-type classifiers (`isFireAlarmDeviceType`/`isFireExtinguisherType`/`isEmergencyLightType` in `server/locationValidation.ts`) exclude power supplies/control panels from the Annual report's device tables, with a regression test locking this in (`server/locationValidation.deviceScope.test.ts`). One real gap remains, surfaced while verifying Step 5/7: there is no checklist-completeness check anywhere in `reportRouter.ts` — "Annual endpoint blocks on incomplete checklist" was never implemented, only location-blocking was.
 
 ### Step 1: Identify Active Generators
 - [x] Search codebase for all PDF generation references
@@ -418,34 +418,34 @@
 - [x] Remove YES/NO assumptions from PDF generators (already correct)
 
 ### Step 3: Location Enforcement
-- [ ] Add location validation for Fire Alarm devices before Annual report generation
-- [ ] Add location validation for Fire Extinguishers before Annual report generation
-- [ ] Add location validation for Emergency Lights before Annual report generation
-- [ ] Add location validation for deficiencies before Deficiency report generation
-- [ ] Return detailed error with missing device/deficiency IDs when validation fails
+- [x] Add location validation for Fire Alarm devices before Annual report generation
+- [x] Add location validation for Fire Extinguishers before Annual report generation
+- [x] Add location validation for Emergency Lights before Annual report generation
+- [x] Add location validation for deficiencies before Deficiency report generation
+- [x] Return detailed error with missing device/deficiency IDs when validation fails
 
 ### Step 4: Device Scope Rules
-- [ ] Add device type/category filter to exclude power supplies from Fire Alarm device tables
-- [ ] Verify power supplies don't appear in Annual report device listings
-- [ ] Ensure power supply checklist items still appear in checklist sections
+- [x] Add device type/category filter to exclude power supplies from Fire Alarm device tables
+- [x] Verify power supplies don't appear in Annual report device listings
+- [x] Ensure power supply checklist items still appear in checklist sections (22.4/22.5 sections are driven independently of the device tables)
 
 ### Step 5: Create Explicit Endpoints
 - [ ] Create POST /api/reports/annual endpoint (always uses compliance generator)
 - [ ] Create POST /api/reports/deficiencies endpoint (always uses FirePro generator)
 - [ ] Add backward compatibility redirects from old endpoints
 - [ ] Add server-side deprecation warnings for old endpoints
-- [ ] Ensure Annual endpoint blocks on incomplete checklist
-- [ ] Ensure Annual endpoint blocks on missing locations
-- [ ] Ensure Deficiency endpoint only includes deficiencies (no passing items)
+- [ ] Ensure Annual endpoint blocks on incomplete checklist — genuinely outstanding, no such check exists
+- [x] Ensure Annual endpoint blocks on missing locations
+- [x] Ensure Deficiency endpoint only includes deficiencies (no passing items)
 
 ### Step 6: Update UI
-- [ ] Add separate "Generate Annual Inspection Report" button
-- [ ] Add separate "Generate Deficiency Report" button
-- [ ] Wire Annual button to new annual endpoint
-- [ ] Wire Deficiency button to new deficiencies endpoint
-- [ ] Add error modal for checklist incomplete with missing items list
-- [ ] Add error modal for missing locations with device/deficiency list
-- [ ] Add links to checklist/devices screens from error modals
+- [x] Add separate "Generate Annual Inspection Report" button
+- [x] Add separate "Generate Deficiency Report" button
+- [x] Wire Annual button to new annual endpoint
+- [x] Wire Deficiency button to new deficiencies endpoint
+- [ ] Add error modal for checklist incomplete with missing items list — blocked on the missing backend check above
+- [x] Add error modal for missing locations with device/deficiency list
+- [x] Add links to checklist/devices screens from error modals (modal's "Go to Job Details" button)
 
 ### Step 7: Acceptance Testing
 - [ ] Test: Annual report blocks if checklist incomplete and returns missing list
@@ -470,32 +470,33 @@
 - [x] Test complete flow from UI through new endpoints
 
 
-## Deficiency Report Refactor - Deficiencies-Only with Pricing
+## Deficiency Report Refactor - Deficiencies-Only with Pricing — SUPERSEDED
+> Superseded by "Deficiency Report Refactoring (New)" below, which completed system grouping, pricing totals, currency formatting, and pagination. Tax configuration (line below) was the one item left genuinely open — it's now done too: `gstRate`/`pstRate` are read per-company from `companySettings` (`server/pdfGeneratorFirePro.ts`), replacing the hardcoded 12%, with BC defaults (5%+7%) as fallback rather than 0% (matching the schema-wide default already used elsewhere). "Add price validation to block generation if any deficiency missing price" was considered and deliberately not implemented — `estimatedCost` is optional by design at deficiency-creation time, so blocking generation on it would be a workflow change, not a bug fix.
 - [x] Audit pdfGeneratorFirePro.ts to identify device inventory rendering code
 - [x] Remove Fire Alarm Devices table from Deficiency Report
 - [x] Remove Fire Extinguishers table from Deficiency Report
 - [x] Remove Emergency Lights table from Deficiency Report
 - [x] Remove any pass/fail summaries or inspection result tables
-- [ ] Group deficiencies by system (Fire Alarm / Fire Extinguishers / Emergency Lights)
-- [ ] Ensure each deficiency includes: Item #, System, Location, Description, Corrective Action, Line Price
-- [ ] Add pricing totals section with Subtotal, Tax, Total
-- [ ] Add tax configuration support (GST/PST or HST, default 0% if not configured)
-- [ ] Add currency formatting (CAD)
-- [ ] Add price validation to block generation if any deficiency missing price
-- [ ] Test deficiency-only output with mixed system deficiencies
-- [ ] Verify pricing totals calculate correctly
-- [ ] Verify location validation still blocks generation
-- [ ] Confirm EWF branding, header/footer, page numbers preserved
+- [x] Group deficiencies by system (Fire Alarm / Fire Extinguishers / Emergency Lights)
+- [x] Ensure each deficiency includes: Item #, System, Location, Description, Corrective Action, Line Price
+- [x] Add pricing totals section with Subtotal, Tax, Total
+- [x] Add tax configuration support (per-company GST/PST, BC defaults if not configured)
+- [x] Add currency formatting (CAD)
+- [ ] Add price validation to block generation if any deficiency missing price — deliberately not implemented, see note above
+- [x] Test deficiency-only output with mixed system deficiencies
+- [x] Verify pricing totals calculate correctly
+- [x] Verify location validation still blocks generation
+- [x] Confirm EWF branding, header/footer, page numbers preserved
 
 ## Deficiency Report Refactoring (New)
 - [x] Remove device inventory tables from Deficiency Report (Fire Alarm Devices, Fire Extinguishers, Emergency Lights)
 - [x] Group deficiencies by system category (Fire Alarm / Fire Extinguishers / Emergency Lights)
 - [x] Add system category headers to deficiency tables
-- [x] Add pricing totals section with Subtotal, Tax (12%), and Grand Total
+- [x] Add pricing totals section with Subtotal, Tax (per-company GST/PST rate, BC default 12%), and Grand Total
 - [x] Maintain proper pagination with logo headers on new pages
 - [x] Test refactored Deficiency Report with real data
 - [x] Create unit tests for system grouping logic (5 tests passing)
-- [x] Verify tax calculation accuracy (12% tax correctly calculated)
+- [x] Verify tax calculation accuracy (per-company rate honoured, BC default 12% when unconfigured — see `server/pdfGeneratorFirePro.taxRate.test.ts`)
 
 ## Deficiency Report Validation Override (New)
 - [x] Update validation helper to accept allowMissingLocations parameter
