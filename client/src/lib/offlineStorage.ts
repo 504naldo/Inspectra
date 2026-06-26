@@ -47,6 +47,19 @@ export function subscribePendingPhotos(listener: () => void): () => void {
   return () => pendingPhotoListeners.delete(listener);
 }
 
+// Same pattern for pending fire-alarm/smoke-alarm checklist results, so SyncScreen
+// and OfflineBanner can react instantly instead of polling IndexedDB
+const pendingResultListeners = new Set<() => void>();
+
+function notifyPendingResultListeners() {
+  pendingResultListeners.forEach((l) => l());
+}
+
+export function subscribePendingResults(listener: () => void): () => void {
+  pendingResultListeners.add(listener);
+  return () => pendingResultListeners.delete(listener);
+}
+
 class OfflineStorage {
   private db: IDBDatabase | null = null;
 
@@ -104,14 +117,16 @@ class OfflineStorage {
       synced: false,
     };
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.add(item);
 
-      request.onsuccess = () => resolve(id);
+      request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
+    notifyPendingResultListeners();
+    return id;
   }
 
   /**
@@ -161,7 +176,7 @@ class OfflineStorage {
   async markAsSynced(id: string): Promise<void> {
     if (!this.db) await this.init();
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const getRequest = store.get(id);
@@ -180,6 +195,7 @@ class OfflineStorage {
 
       getRequest.onerror = () => reject(getRequest.error);
     });
+    notifyPendingResultListeners();
   }
 
   /**
@@ -188,7 +204,7 @@ class OfflineStorage {
   async deleteSyncedResult(id: string): Promise<void> {
     if (!this.db) await this.init();
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.delete(id);
@@ -196,6 +212,7 @@ class OfflineStorage {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
+    notifyPendingResultListeners();
   }
 
   /**
@@ -234,6 +251,23 @@ class OfflineStorage {
   async getPendingCount(): Promise<number> {
     const pending = await this.getPendingResults();
     return pending.length;
+  }
+
+  /**
+   * Delete all pending (unsynced) results — used by "Clear All Offline Data"
+   */
+  async clearAllResults(): Promise<void> {
+    if (!this.db) await this.init();
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = this.db!.transaction([STORE_NAME], "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.clear();
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+    notifyPendingResultListeners();
   }
 
   /**

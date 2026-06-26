@@ -15,6 +15,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { useAllCachedPackets, removePacketById } from "@/hooks/useOfflineJobPacket";
+import { usePendingFireAlarmResults } from "@/hooks/usePendingFireAlarmResults";
 import { offlineStorage } from "@/lib/offlineStorage";
 import {
   ArrowLeft,
@@ -57,12 +58,14 @@ export default function SyncScreen() {
   const [isClearAllOpen, setIsClearAllOpen] = useState(false);
   const cachedPackets = useAllCachedPackets();
   const pendingPhotoCount = syncStatus.pendingAttachments;
+  const pendingFireAlarmResults = usePendingFireAlarmResults();
 
   const syncBatch = trpc.inspectionResult.syncBatch.useMutation();
   const createDeficiency = trpc.deficiency.create.useMutation();
   const uploadMedia = trpc.media.uploadDeficiencyMedia.useMutation();
   const bulkSaveChecklistResponses = trpc.checklist.bulkSaveResponses.useMutation();
   const saveTemplateResponse = trpc.inspectionTemplate.saveResponse.useMutation();
+  const saveFireAlarmResult = trpc.fireAlarm.saveInspectionResult.useMutation();
 
   const handleSync = async () => {
     if (!isOnline) {
@@ -77,10 +80,12 @@ export default function SyncScreen() {
     let defsFailed = 0;
     let checklistFailed = 0;
     let templateFailed = 0;
+    let fireAlarmFailed = 0;
     let resultsSynced = 0;
     let defsSynced = 0;
     let checklistSynced = 0;
     let templateSynced = 0;
+    let fireAlarmSynced = 0;
 
     try {
       // Sync inspection results (batch)
@@ -188,6 +193,27 @@ export default function SyncScreen() {
         clearSyncedTemplateResponses();
       }
 
+      // Sync offline fire-alarm checklist results one by one (no bulk endpoint;
+      // these live in IndexedDB via offlineStorage.ts, not localStorage)
+      for (const item of pendingFireAlarmResults) {
+        try {
+          await saveFireAlarmResult.mutateAsync({
+            jobId: item.jobId,
+            fireAlarmSystemId: item.fireAlarmSystemId,
+            checklistItemId: item.checklistItemId,
+            result: item.result,
+            notes: item.notes,
+            numericValue: item.numericValue,
+            textValue: item.textValue,
+          });
+          await offlineStorage.markAsSynced(item.id);
+          await offlineStorage.deleteSyncedResult(item.id);
+          fireAlarmSynced++;
+        } catch {
+          fireAlarmFailed++;
+        }
+      }
+
       // Upload any queued photos whose parent deficiency has a known server id —
       // covers both freshly-synced deficiencies and ones left over from a failed retry
       let photosFailed = 0;
@@ -209,8 +235,8 @@ export default function SyncScreen() {
         }
       }
 
-      const totalSynced = resultsSynced + defsSynced + checklistSynced + templateSynced;
-      const totalFailed = resultsFailed + defsFailed + checklistFailed + templateFailed;
+      const totalSynced = resultsSynced + defsSynced + checklistSynced + templateSynced + fireAlarmSynced;
+      const totalFailed = resultsFailed + defsFailed + checklistFailed + templateFailed + fireAlarmFailed;
 
       if (photosFailed > 0) {
         toast.warning(`${photosFailed} photo${photosFailed !== 1 ? "s" : ""} failed to upload — they'll retry on the next sync`);
@@ -238,6 +264,7 @@ export default function SyncScreen() {
 
   const handleClearAll = () => {
     clearAllOfflineData();
+    offlineStorage.clearAllResults().catch(() => {});
     toast.success("Offline data cleared");
   };
 
@@ -254,7 +281,7 @@ export default function SyncScreen() {
   const pendingTemplate = offlineTemplateResponses.filter((r) => !r.synced);
   const syncedTemplate = offlineTemplateResponses.filter((r) => r.synced);
 
-  const totalPending = pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length + pendingPhotoCount;
+  const totalPending = pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length + pendingFireAlarmResults.length + pendingPhotoCount;
   const totalSynced = syncedResults.length + syncedDefs.length + syncedChecklist.length + syncedTemplate.length;
 
   return (
@@ -317,13 +344,14 @@ export default function SyncScreen() {
               <Clock className="h-8 w-8 mx-auto text-amber-500 mb-2" />
               <p className="text-2xl font-bold">{totalPending}</p>
               <p className="text-sm text-muted-foreground">Pending Upload</p>
-              {(pendingResults.length > 0 ? 1 : 0) + (pendingDefs.length > 0 ? 1 : 0) + (pendingChecklist.length > 0 ? 1 : 0) + (pendingTemplate.length > 0 ? 1 : 0) + (pendingPhotoCount > 0 ? 1 : 0) > 1 && (
+              {(pendingResults.length > 0 ? 1 : 0) + (pendingDefs.length > 0 ? 1 : 0) + (pendingChecklist.length > 0 ? 1 : 0) + (pendingTemplate.length > 0 ? 1 : 0) + (pendingFireAlarmResults.length > 0 ? 1 : 0) + (pendingPhotoCount > 0 ? 1 : 0) > 1 && (
                 <p className="text-xs text-muted-foreground mt-1">
                   {[
                     pendingResults.length > 0 ? `${pendingResults.length} test${pendingResults.length !== 1 ? "s" : ""}` : null,
                     pendingDefs.length > 0 ? `${pendingDefs.length} def.` : null,
                     pendingChecklist.length > 0 ? `${pendingChecklist.length} checklist` : null,
                     pendingTemplate.length > 0 ? `${pendingTemplate.length} template` : null,
+                    pendingFireAlarmResults.length > 0 ? `${pendingFireAlarmResults.length} fire alarm` : null,
                     pendingPhotoCount > 0 ? `${pendingPhotoCount} photo${pendingPhotoCount !== 1 ? "s" : ""}` : null,
                   ].filter(Boolean).join(" · ")}
                 </p>
@@ -437,6 +465,19 @@ export default function SyncScreen() {
                   </div>
                 );
               })}
+              {Array.from(new Set(pendingFireAlarmResults.map((r) => r.jobId))).slice(0, 8).map((jId) => {
+                const count = pendingFireAlarmResults.filter((r) => r.jobId === jId).length;
+                return (
+                  <div key={`firealarm-${jId}`} className="flex items-center justify-between p-2 bg-muted rounded">
+                    <p className="text-sm font-medium">
+                      Fire Alarm Checklist · Job #{jId}
+                    </p>
+                    <span className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                      {count} item{count !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                );
+              })}
               {pendingPhotoCount > 0 && (
                 <div className="flex items-center justify-between p-2 bg-muted rounded">
                   <p className="text-sm font-medium">
@@ -447,9 +488,9 @@ export default function SyncScreen() {
                   </span>
                 </div>
               )}
-              {pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length > 16 && (
+              {pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length + pendingFireAlarmResults.length > 16 && (
                 <p className="text-sm text-muted-foreground text-center">
-                  +{pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length - 16} more items
+                  +{pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length + pendingFireAlarmResults.length - 16} more items
                 </p>
               )}
             </CardContent>
@@ -540,7 +581,7 @@ export default function SyncScreen() {
             </Button>
           )}
 
-          {(offlineResults.length > 0 || offlineDeficiencies.length > 0 || offlineChecklistResponses.length > 0 || offlineTemplateResponses.length > 0) && (
+          {(offlineResults.length > 0 || offlineDeficiencies.length > 0 || offlineChecklistResponses.length > 0 || offlineTemplateResponses.length > 0 || pendingFireAlarmResults.length > 0) && (
             <Button variant="outline" className="w-full" onClick={() => setIsClearAllOpen(true)}>
               <Trash2 className="h-4 w-4 mr-2" />
               Clear All Offline Data

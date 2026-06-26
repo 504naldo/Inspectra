@@ -8,7 +8,8 @@
 | Deficiency create/edit | ✅ Yes | `localStorage` via `useOfflineStorage` | SyncScreen → `deficiency.create` (one by one) |
 | CAN/ULC-S536 checklist (`ChecklistCompletion.tsx`) | ✅ Yes | `localStorage` via `useOfflineStorage` | SyncScreen → `checklist.bulkSaveResponses` |
 | Template form responses (`TemplateFormRenderer.tsx`) | ✅ Yes | `localStorage` via `useOfflineStorage` | SyncScreen → `inspectionTemplate.saveResponse` (one by one, no bulk endpoint) |
-| Fire Alarm checklist items (`FireAlarmInspection.tsx`) | Partial | IndexedDB via `offlineStorage.ts` | Not yet wired to SyncScreen |
+| Fire Alarm checklist items (`FireAlarmInspection.tsx`) | ✅ Yes | IndexedDB via `offlineStorage.ts` | SyncScreen → `fireAlarm.saveInspectionResult` (one by one, no bulk endpoint), plus a redundant per-page auto-sync-on-reconnect effect |
+| Smoke Alarm tests (`SmokeAlarmInspection.tsx`) | ❌ No | None — `recordTest.mutate()` called directly, no `isOnline` check or queue | N/A — not yet implemented |
 | Raw mutation queue (legacy) | ✅ Yes | `localStorage` via `mutationQueue` | OfflineBanner auto-flush |
 
 ## Storage Systems
@@ -18,8 +19,9 @@
    - Used by: DeviceTest, DeficiencyEditor, ChecklistCompletion, TemplateFormRenderer, SyncScreen, OfflineBanner
 
 2. **`offlineStorage.ts` (IndexedDB)** — `FireInspectOffline` DB, `pendingInspectionResults` store plus pending deficiency-photo blobs
-   - Used by: FireAlarmInspection, SmokeAlarmInspection (fire alarm checklist items), DeficiencyEditor/SyncScreen (queued photos)
-   - The fire-alarm checklist-item store is not connected to SyncScreen; the deficiency-photo queue is
+   - Used by: FireAlarmInspection (fire alarm checklist items), DeficiencyEditor/SyncScreen (queued photos)
+   - Both stores are now connected to SyncScreen/OfflineBanner via pub/sub hooks (`subscribePendingResults`/`usePendingFireAlarmResults`, `subscribePendingPhotos`/`usePendingPhotoCount`)
+   - SmokeAlarmInspection does NOT use this store — it has no offline handling at all (see gaps below)
 
 3. **`mutationQueue.ts` (localStorage)** — raw HTTP POST queue
    - Key: `inspectra_mutation_queue`
@@ -48,13 +50,13 @@
 
 ## IndexedDB vs localStorage Split
 
-The app has two offline stores that don't know about each other:
-- `offlineStorage.ts` (IndexedDB) handles fire alarm *checklist* items (used by FireAlarmInspection)
-- `useOfflineStorage.ts` (localStorage) handles device test *results* (used by DeviceTest)
+The app has two offline stores with different storage engines, but as of v3 both are wired into SyncScreen/OfflineBanner:
+- `offlineStorage.ts` (IndexedDB) handles fire alarm *checklist* items (used by FireAlarmInspection) and queued deficiency photos
+- `useOfflineStorage.ts` (localStorage) handles device test *results*, deficiencies, CAN/ULC checklist, and template responses
 
-These are different concepts (checklist item vs device pass/fail) and different sync paths. The IndexedDB store is not connected to SyncScreen. This is a known limitation for v1.
+These remain different concepts (checklist item vs device pass/fail) and different sync paths (one is React state + localStorage reads, the other is async IndexedDB reads via a pub/sub hook), but SyncScreen now surfaces and syncs pending items from both, and OfflineBanner's badge counts both.
 
-## v1 Supported Offline Entities
+## v3 Supported Offline Entities
 
 | Entity | Status |
 |---|---|
@@ -62,7 +64,8 @@ These are different concepts (checklist item vs device pass/fail) and different 
 | Offline deficiency queue | Fully supported — save, sync, display (photos queued separately in IndexedDB) |
 | CAN/ULC-S536 checklist responses | Fully supported — save, sync, display |
 | Template responses | Fully supported — save, sync, display |
-| Fire alarm checklist items (`FireAlarmInspection.tsx`) | IndexedDB (separate system, not in SyncScreen v1) |
+| Fire alarm checklist items (`FireAlarmInspection.tsx`) | Fully supported — IndexedDB save, SyncScreen sync, display |
+| Smoke alarm tests (`SmokeAlarmInspection.tsx`) | Not supported — no offline handling exists; new gap, not yet scoped |
 | Time tracking | Online-only |
 | Signatures / photos | Online-only (deficiency photos queue offline; see IndexedDB store) |
 | Job packet prefetch | Partial (job data cached on load; devices/templates not pre-fetched) |
