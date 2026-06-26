@@ -73,8 +73,17 @@ can't replay a stale local copy over a fresher server value. See
 ### Part 8 — Job Packet Prefetch
 Not implemented. The current approach (job data cached on load via `cacheJobData` in JobDetails) is sufficient for v1. Proactive prefetch of devices, template data, and site info would require a "Make Available Offline" button and significant storage management — out of scope for this hardening pass.
 
-### IndexedDB (offlineStorage.ts) → SyncScreen gap
-The `offlineStorage.ts` (IndexedDB) store — used by FireAlarmInspection and SmokeAlarmInspection for checklist items — is NOT connected to SyncScreen. These are fire alarm checklist items (different from device test results in localStorage). Connecting them requires a separate `inspectionResult.syncBatch` call scoped to fire alarm items. This is a known gap, tracked for v2.
+### IndexedDB (offlineStorage.ts) → SyncScreen gap — CLOSED (v3)
+Previously, the `offlineStorage.ts` (IndexedDB) store used by `FireAlarmInspection.tsx` for checklist items was invisible to `SyncScreen.tsx` and `OfflineBanner`. Fixed:
+
+- `offlineStorage.ts` gained a `subscribePendingResults()` pub/sub (mirroring the existing photo-queue pub/sub), firing on `savePendingResult`/`markAsSynced`/`deleteSyncedResult`/`clearAllResults`.
+- New `usePendingFireAlarmResults()` hook reads the live pending list reactively (no polling).
+- `SyncScreen.tsx` now shows a "Fire Alarm Checklist · Job #X" pending section, includes the count in the total/stat-card breakdown, and syncs each item one-by-one via `trpc.fireAlarm.saveInspectionResult` (no bulk endpoint exists for fire-alarm results, same situation as templates) as part of the main "Sync N Items" action. "Clear All Offline Data" now also clears this IndexedDB store.
+- `OfflineBanner.tsx`'s pending badge/count now includes this queue.
+- Fixed an adjacent bug in `FireAlarmInspection.tsx`: `handleResultChange` (the YES/NO/N/A checkbox buttons) had no offline fallback at all — unlike `handleSaveValue` (numeric/text/notes fields), a checkbox tap while offline would just throw an unhandled rejection and silently lose the answer. It now mirrors `handleSaveValue`'s offline-save/fallback logic.
+- The existing per-page auto-sync-on-reconnect effect in `FireAlarmInspection.tsx` is unchanged and still works; it's now safely redundant with SyncScreen's manual sync (both paths are idempotent — `markAsSynced`/`deleteSyncedResult` no-op gracefully on an already-removed id).
+
+**Still not implemented**: `SmokeAlarmInspection.tsx` does not use this IndexedDB store at all (or any offline mechanism) — `recordTest.mutate()` is called directly with no `isOnline` check, no IndexedDB queue, no fallback. The original framing of this gap (assuming both fire alarm and smoke alarm pages shared the same offline queue) was inaccurate. Adding offline support to smoke alarm testing is a distinct, larger feature (different data shape — per-alarm test result, not per-checklist-item — would need its own queue or an extension of `useOfflineStorage`), tracked as a new, separate v3+ gap.
 
 ### Deficiency Offline Queue
 The `OfflineDeficiency` type and store exist in `useOfflineStorage`, but DeficiencyEditor still doesn't write to it (it requires a server round-trip). The SyncScreen now handles offline deficiencies IF they somehow end up in the queue, but in practice the queue will be empty until a future feature adds offline deficiency creation.

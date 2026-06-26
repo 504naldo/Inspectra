@@ -107,8 +107,7 @@ export default function FireAlarmInspection() {
     const newResults = { ...results, [itemId]: { ...currentResult, result } };
     setResults(newResults);
 
-    // Save immediately
-    await saveResult.mutateAsync({
+    const data = {
       jobId: parseInt(jobId!),
       fireAlarmSystemId: fireAlarmSystem?.id!,
       checklistItemId: itemId,
@@ -116,7 +115,44 @@ export default function FireAlarmInspection() {
       notes: newResults[itemId].notes,
       numericValue: newResults[itemId].numericValue,
       textValue: newResults[itemId].textValue,
-    });
+    };
+
+    // If offline, save to IndexedDB (mirrors handleSaveValue's offline branch)
+    if (!isOnline) {
+      try {
+        await offlineStorage.savePendingResult(data);
+        setAutoSaveStatus('saved');
+        toast.info("Saved offline. Will sync when online.");
+        const count = await offlineStorage.getPendingCount();
+        setPendingCount(count);
+        setTimeout(() => setAutoSaveStatus('idle'), 2000);
+      } catch (error) {
+        console.error("Failed to save offline:", error);
+        setAutoSaveStatus('error');
+        toast.error("Failed to save offline");
+        setTimeout(() => setAutoSaveStatus('idle'), 3000);
+      }
+      return;
+    }
+
+    try {
+      await saveResult.mutateAsync(data);
+    } catch (error) {
+      // If server save fails, fall back to offline storage
+      console.error("Server save failed, falling back to offline:", error);
+      try {
+        await offlineStorage.savePendingResult(data);
+        setAutoSaveStatus('saved');
+        toast.info("Saved offline. Will sync when connection improves.");
+        const count = await offlineStorage.getPendingCount();
+        setPendingCount(count);
+        setTimeout(() => setAutoSaveStatus('idle'), 2000);
+      } catch (offlineError) {
+        console.error("Offline save also failed:", offlineError);
+        setAutoSaveStatus('error');
+        setTimeout(() => setAutoSaveStatus('idle'), 3000);
+      }
+    }
   };
 
   const handleNumericChange = (itemId: number, value: string) => {
@@ -221,8 +257,7 @@ export default function FireAlarmInspection() {
       try {
         const pending = await offlineStorage.getPendingResults();
         if (pending.length === 0) return;
-        
-        console.log(`Syncing ${pending.length} pending results...`);
+
         toast.info(`Syncing ${pending.length} offline changes...`);
         
         let successCount = 0;

@@ -3,6 +3,7 @@ import { WifiOff, RefreshCw, CheckCircle } from "lucide-react";
 import { mutationQueue } from "@/lib/mutationQueue";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { usePendingFireAlarmResults } from "@/hooks/usePendingFireAlarmResults";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -11,12 +12,13 @@ type SyncState = "idle" | "syncing" | "done" | "error";
 export function OfflineBanner() {
   const isOnline = useOnlineStatus();
   const { syncStatus } = useOfflineStorage();
+  const pendingFireAlarmResults = usePendingFireAlarmResults();
   const [mqPending, setMqPending] = useState(() => mutationQueue.count());
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const syncingRef = useRef(false);
 
   const offlineStorePending =
-    syncStatus.pendingResults + syncStatus.pendingDeficiencies + syncStatus.pendingChecklistResponses + syncStatus.pendingTemplateResponses + syncStatus.pendingAttachments;
+    syncStatus.pendingResults + syncStatus.pendingDeficiencies + syncStatus.pendingChecklistResponses + syncStatus.pendingTemplateResponses + syncStatus.pendingAttachments + pendingFireAlarmResults.length;
   const totalPending = mqPending + offlineStorePending;
 
   // Refresh mutationQueue count every 2 seconds
