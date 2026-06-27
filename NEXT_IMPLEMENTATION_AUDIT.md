@@ -80,7 +80,7 @@ finding in the audit and has been fully remediated.
 ## 5. Runtime / build risks
 
 - ~~**No CI**~~ — ✅ RESOLVED (verified 2026-06-27): `.github/workflows/ci.yml` now exists and provisions a fresh `mysql:8` service container + runs `drizzle-kit migrate` and the test suite (see CLAUDE.md "Database Migrations").
-- **No healthcheck endpoint** — Still open. Railway infers health from the listening port only; no explicit `/health` route (confirmed 2026-06-27: zero `/health` matches in `server/`).
+- ~~**No healthcheck endpoint**~~ — ✅ RESOLVED (2026-06-27): added a liveness `/health` route in `server/_core/index.ts` (registered first, before all middleware; returns `{ status, uptime, timestamp }` via the pure `buildHealthPayload` in `server/_core/health.ts`, unit-tested in `server/health.test.ts`) and a `railway.json` wiring `healthcheckPath: "/health"`. Liveness only — deliberately no DB round-trip, so a DB blip can't trigger a Railway restart loop.
 - **Migration drift** (see §2) — risk is to future schema changes, not current runtime.
 - **Test suite has ~13 files that fail without `DATABASE_URL`** set in the shell (pre-existing, confirmed environmental via `git stash` isolation, not caused by recent changes). If CI is added without setting `DATABASE_URL`/a test DB, it will inherit this and look broken on day one.
 
@@ -94,13 +94,19 @@ finding in the audit and has been fully remediated.
 > pass (`server/crossTenantSecurity.test.ts`, 21/21 green as of 2026-06-27).
 > See §3 and §4 above for the per-file verification.
 >
-> **Update (2026-06-27): the §2 smoke-alarm offline gap is also now closed** —
-> `SmokeAlarmInspection.tsx` has a full offline queue (`pendingSmokeAlarmTests`
-> IndexedDB store, page overlay, SyncScreen wiring, reconnect auto-sync). With
-> all offline write paths now covered, **the next best tasks are the
-> runtime/build items in §5**: add a `/health` endpoint for Railway, and
-> resolve the migration-history drift in §2 (`npm run db:push` only sees the
-> journal-tracked half). CI already exists (`.github/workflows/ci.yml`).
+> **Update (2026-06-27): the §2 smoke-alarm offline gap and the §5 `/health`
+> endpoint are also now closed.** `SmokeAlarmInspection.tsx` has a full offline
+> queue (`pendingSmokeAlarmTests` store, page overlay, SyncScreen wiring,
+> reconnect auto-sync), and a liveness `/health` route + `railway.json` are in
+> place. CI already exists (`.github/workflows/ci.yml`).
+>
+> **Remaining audit items are now mostly maintainability, not gaps:** missing
+> secondary indexes (§2), no company-level wage-rate table (§2), two `as any`
+> casts and `.env.example` omissions (§4). Note the "migration drift" item in §2
+> is **intentional per CLAUDE.md** ("two parallel migration histories — this is
+> intentional, not drift to 'fix'") and should NOT be reconciled. The
+> defense-in-depth `companyId`-column additions (§4) are the most substantive
+> remaining hardening follow-up.
 
 _Original recommendation (now completed):_ Close the cross-tenant job-access gap
 by adding the established `companyId`-ownership check (and, where missing, the
