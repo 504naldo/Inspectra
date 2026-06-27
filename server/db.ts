@@ -231,7 +231,24 @@ export async function updateUser(userId: number, data: Partial<InsertUser>) {
 export async function incrementUserSessionVersion(userId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.update(users).set({ sessionVersion: sql`sessionVersion + 1` } as any).where(eq(users.id, userId));
+  // `sessionVersion` is added by manual migration 0044 and is deliberately NOT
+  // declared in the Drizzle schema (see the comment near the `users` table in
+  // drizzle/schema.ts). That means Drizzle's `.set({ sessionVersion })` silently
+  // strips the unknown key, producing an invalid empty `UPDATE users SET WHERE …`
+  // — broken in production and a hard parse error in CI. Use raw SQL so the bump
+  // actually applies, and tolerate the column being absent on fresh CI/test DBs
+  // (the journal doesn't include 0044), where session invalidation is irrelevant.
+  try {
+    await db.execute(
+      sql`UPDATE \`users\` SET \`sessionVersion\` = COALESCE(\`sessionVersion\`, 1) + 1 WHERE \`id\` = ${userId}`
+    );
+  } catch (err) {
+    const e = err as { code?: string; message?: string };
+    if (e.code === "ER_BAD_FIELD_ERROR" || e.message?.includes("Unknown column")) {
+      return;
+    }
+    throw err;
+  }
 }
 
 // ============================================
