@@ -4,9 +4,10 @@
  */
 
 const DB_NAME = "FireInspectOffline";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = "pendingInspectionResults";
 const PHOTO_STORE_NAME = "pendingDeficiencyPhotos";
+const SMOKE_TEST_STORE_NAME = "pendingSmokeAlarmTests";
 
 export interface PendingInspectionResult {
   id: string; // Unique ID for this pending item (timestamp-based)
@@ -17,6 +18,16 @@ export interface PendingInspectionResult {
   notes?: string;
   numericValue?: string;
   textValue?: string;
+  timestamp: number; // When this was saved offline
+  synced: boolean; // Whether this has been synced to server
+}
+
+export interface PendingSmokeAlarmTest {
+  id: string; // Unique ID for this pending item (timestamp-based)
+  jobId: number; // For grouping/display in SyncScreen (not sent to the server)
+  alarmId: number; // The smoke-alarm device id the test result applies to
+  testResult: "pass" | "fail" | "no_access" | "na";
+  notes?: string;
   timestamp: number; // When this was saved offline
   synced: boolean; // Whether this has been synced to server
 }
@@ -60,6 +71,19 @@ export function subscribePendingResults(listener: () => void): () => void {
   return () => pendingResultListeners.delete(listener);
 }
 
+// Same pattern for pending smoke-alarm test results (a separate store/shape from the
+// fire-alarm checklist queue above — keyed by alarm device id, not checklist item)
+const pendingSmokeTestListeners = new Set<() => void>();
+
+function notifyPendingSmokeTestListeners() {
+  pendingSmokeTestListeners.forEach((l) => l());
+}
+
+export function subscribePendingSmokeTests(listener: () => void): () => void {
+  pendingSmokeTestListeners.add(listener);
+  return () => pendingSmokeTestListeners.delete(listener);
+}
+
 class OfflineStorage {
   private db: IDBDatabase | null = null;
 
@@ -89,6 +113,15 @@ class OfflineStorage {
           store.createIndex("jobId", "jobId", { unique: false });
           store.createIndex("synced", "synced", { unique: false });
           store.createIndex("timestamp", "timestamp", { unique: false });
+        }
+
+        // Create object store for pending smoke-alarm test results (queued offline).
+        // Added in DB_VERSION 3; the contains() guard keeps the v2 upgrade idempotent.
+        if (!db.objectStoreNames.contains(SMOKE_TEST_STORE_NAME)) {
+          const smokeStore = db.createObjectStore(SMOKE_TEST_STORE_NAME, { keyPath: "id" });
+          smokeStore.createIndex("jobId", "jobId", { unique: false });
+          smokeStore.createIndex("alarmId", "alarmId", { unique: false });
+          smokeStore.createIndex("synced", "synced", { unique: false });
         }
 
         // Create object store for pending deficiency photos (queued offline)
@@ -268,6 +301,105 @@ class OfflineStorage {
       request.onerror = () => reject(request.error);
     });
     notifyPendingResultListeners();
+  }
+
+  /**
+   * Queue a smoke-alarm test result captured while offline. Upserts by alarmId so
+   * re-recording the same alarm replaces the prior queued result rather than
+   * stacking duplicates (the server's recordTest is an update-by-id, so only the
+   * latest result matters). Runs the delete-then-add in a single transaction.
+   */
+  async savePendingSmokeTest(data: Omit<PendingSmokeAlarmTest, "id" | "timestamp" | "synced">): Promise<string> {
+    if (!this.db) await this.init();
+
+    const id = `smoke-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const item: PendingSmokeAlarmTest = {
+      ...data,
+      id,
+      timestamp: Date.now(),
+      synced: false,
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = this.db!.transaction([SMOKE_TEST_STORE_NAME], "readwrite");
+      const store = transaction.objectStore(SMOKE_TEST_STORE_NAME);
+
+      // Remove any still-unsynced result already queued for this alarm
+      const existingKeysReq = store.index("alarmId").getAllKeys(data.alarmId);
+      existingKeysReq.onsuccess = () => {
+        for (const key of existingKeysReq.result) store.delete(key);
+        store.add(item);
+      };
+      existingKeysReq.onerror = () => reject(existingKeysReq.error);
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    notifyPendingSmokeTestListeners();
+    return id;
+  }
+
+  /**
+   * Get all pending (unsynced) smoke-alarm test results
+   */
+  async getPendingSmokeTests(): Promise<PendingSmokeAlarmTest[]> {
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([SMOKE_TEST_STORE_NAME], "readonly");
+      const store = transaction.objectStore(SMOKE_TEST_STORE_NAME);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const results = request.result.filter((item: PendingSmokeAlarmTest) => !item.synced);
+        resolve(results);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Delete a queued smoke-alarm test once it has synced to the server.
+   * Safe no-op if the record is already gone (so SyncScreen and a per-page
+   * auto-sync can operate on the same queue without conflict).
+   */
+  async deleteSmokeTest(id: string): Promise<void> {
+    if (!this.db) await this.init();
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = this.db!.transaction([SMOKE_TEST_STORE_NAME], "readwrite");
+      const store = transaction.objectStore(SMOKE_TEST_STORE_NAME);
+      const request = store.delete(id);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+    notifyPendingSmokeTestListeners();
+  }
+
+  /**
+   * Get count of pending smoke-alarm test results
+   */
+  async getPendingSmokeTestCount(): Promise<number> {
+    const pending = await this.getPendingSmokeTests();
+    return pending.length;
+  }
+
+  /**
+   * Delete all pending (unsynced) smoke-alarm tests — used by "Clear All Offline Data"
+   */
+  async clearAllSmokeTests(): Promise<void> {
+    if (!this.db) await this.init();
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = this.db!.transaction([SMOKE_TEST_STORE_NAME], "readwrite");
+      const store = transaction.objectStore(SMOKE_TEST_STORE_NAME);
+      const request = store.clear();
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+    notifyPendingSmokeTestListeners();
   }
 
   /**

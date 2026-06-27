@@ -9,7 +9,7 @@
 | CAN/ULC-S536 checklist (`ChecklistCompletion.tsx`) | ✅ Yes | `localStorage` via `useOfflineStorage` | SyncScreen → `checklist.bulkSaveResponses` |
 | Template form responses (`TemplateFormRenderer.tsx`) | ✅ Yes | `localStorage` via `useOfflineStorage` | SyncScreen → `inspectionTemplate.saveResponse` (one by one, no bulk endpoint) |
 | Fire Alarm checklist items (`FireAlarmInspection.tsx`) | ✅ Yes | IndexedDB via `offlineStorage.ts` | SyncScreen → `fireAlarm.saveInspectionResult` (one by one, no bulk endpoint), plus a redundant per-page auto-sync-on-reconnect effect |
-| Smoke Alarm tests (`SmokeAlarmInspection.tsx`) | ❌ No | None — `recordTest.mutate()` called directly, no `isOnline` check or queue | N/A — not yet implemented |
+| Smoke Alarm tests (`SmokeAlarmInspection.tsx`) | ✅ Yes | IndexedDB via `offlineStorage.ts` (`pendingSmokeAlarmTests` store, keyed by alarm device id) | SyncScreen → `smokeAlarm.recordTest` (one by one), plus a redundant per-page auto-sync-on-reconnect effect |
 | Raw mutation queue (legacy) | ✅ Yes | `localStorage` via `mutationQueue` | OfflineBanner auto-flush |
 
 ## Storage Systems
@@ -18,10 +18,9 @@
    - Keys: `fire_inspect_offline_results`, `fire_inspect_offline_deficiencies`, `fire_inspect_offline_checklist_responses`, `fire_inspect_offline_template_responses`, `fire_inspect_cached_jobs`, `fire_inspect_last_sync`
    - Used by: DeviceTest, DeficiencyEditor, ChecklistCompletion, TemplateFormRenderer, SyncScreen, OfflineBanner
 
-2. **`offlineStorage.ts` (IndexedDB)** — `FireInspectOffline` DB, `pendingInspectionResults` store plus pending deficiency-photo blobs
-   - Used by: FireAlarmInspection (fire alarm checklist items), DeficiencyEditor/SyncScreen (queued photos)
-   - Both stores are now connected to SyncScreen/OfflineBanner via pub/sub hooks (`subscribePendingResults`/`usePendingFireAlarmResults`, `subscribePendingPhotos`/`usePendingPhotoCount`)
-   - SmokeAlarmInspection does NOT use this store — it has no offline handling at all (see gaps below)
+2. **`offlineStorage.ts` (IndexedDB)** — `FireInspectOffline` DB (v3), `pendingInspectionResults` store, `pendingSmokeAlarmTests` store, plus pending deficiency-photo blobs
+   - Used by: FireAlarmInspection (fire alarm checklist items), SmokeAlarmInspection (smoke alarm test results), DeficiencyEditor/SyncScreen (queued photos)
+   - All three stores are now connected to SyncScreen/OfflineBanner via pub/sub hooks (`subscribePendingResults`/`usePendingFireAlarmResults`, `subscribePendingSmokeTests`/`usePendingSmokeAlarmTests`, `subscribePendingPhotos`/`usePendingPhotoCount`)
 
 3. **`mutationQueue.ts` (localStorage)** — raw HTTP POST queue
    - Key: `inspectra_mutation_queue`
@@ -65,7 +64,7 @@ These remain different concepts (checklist item vs device pass/fail) and differe
 | CAN/ULC-S536 checklist responses | Fully supported — save, sync, display |
 | Template responses | Fully supported — save, sync, display |
 | Fire alarm checklist items (`FireAlarmInspection.tsx`) | Fully supported — IndexedDB save, SyncScreen sync, display |
-| Smoke alarm tests (`SmokeAlarmInspection.tsx`) | Not supported — no offline handling exists; new gap, not yet scoped |
+| Smoke alarm tests (`SmokeAlarmInspection.tsx`) | Fully supported — IndexedDB save (`pendingSmokeAlarmTests`), offline-result overlay on the page, SyncScreen sync + reconnect auto-sync |
 | Time tracking | Online-only |
 | Signatures / photos | Online-only (deficiency photos queue offline; see IndexedDB store) |
 | Job packet prefetch | Partial (job data cached on load; devices/templates not pre-fetched) |

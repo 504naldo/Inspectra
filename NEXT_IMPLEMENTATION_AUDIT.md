@@ -20,7 +20,7 @@ No code was changed during this pass. All findings below are based on direct rea
 
 ## 2. Incomplete or duplicated implementations
 
-- **Offline sync — now wired for the technician's core write paths.** Device test results, deficiency create/edit, CAN/ULC-S536 checklist responses (`ChecklistCompletion.tsx`), generic inspection-template responses (`TemplateFormRenderer.tsx`), and fire-alarm checklist items (`FireAlarmInspection.tsx`, IndexedDB via `offlineStorage.ts`) all now save offline and sync through SyncScreen/OfflineBanner (tracked in `OFFLINE_SYNC_AUDIT.md`). The new remaining gap: `SmokeAlarmInspection.tsx` has no offline handling at all — `recordTest.mutate()` is called directly with no `isOnline` check or queue, so a connectivity drop mid-test just errors out with no fallback. Unlike fire alarm, there's no existing queue to wire up here — it would need a new one (different data shape: per-alarm test result, not per-checklist-item). Not yet scoped. The service worker provides static-asset caching/installability, not data sync.
+- **Offline sync — now wired for all technician write paths.** Device test results, deficiency create/edit, CAN/ULC-S536 checklist responses (`ChecklistCompletion.tsx`), generic inspection-template responses (`TemplateFormRenderer.tsx`), fire-alarm checklist items (`FireAlarmInspection.tsx`), and — as of 2026-06-27 — smoke-alarm test results (`SmokeAlarmInspection.tsx`) all save offline and sync through SyncScreen/OfflineBanner (tracked in `OFFLINE_SYNC_AUDIT.md`). Smoke alarm got its own `pendingSmokeAlarmTests` IndexedDB store (DB v3), an offline-result overlay on the page, SyncScreen wiring via `smokeAlarm.recordTest`, and a reconnect auto-sync. The service worker provides static-asset caching/installability, not data sync. No known offline write-path gaps remain; offline *creation* of new entities (new smoke-alarm devices, new deficiencies from scratch) is still online-only by design.
 - **Duplicate/superseded todo.md sections** — Cleaned up this session: marked "Fix CompanyId Fallbacks + Technician Dedup..." (old), "XLSM Import Refactoring (Critical)", "Asset Import Pipeline (Excel → ...)", and parts of "Definitive Reporting Pipeline Refactor" as superseded by their newer, completed counterparts.
 - **Dual-location migration history** — `drizzle/*.sql` (0000–0028, tracked by `drizzle/meta/_journal.json`) vs. `drizzle/migrations/*.sql` (0029–0075+, untracked by the journal, applied manually per CLAUDE.md). `npm run db:push` (`drizzle-kit generate && drizzle-kit migrate`) only knows about the journal-tracked half — running it would not apply or account for the newer 47 migrations. This is a real maintainability hazard, not just untidiness: a teammate following the literal `package.json` script would silently diverge from production schema.
 - **No global technician wage-rate table** — Payroll computation appears to rely on per-quote `techLabourRate` (`drizzle/schema.ts:1064`); there's no company-level rate config. Likely fine for current scale, worth flagging before payroll math is trusted at scale.
@@ -94,12 +94,13 @@ finding in the audit and has been fully remediated.
 > pass (`server/crossTenantSecurity.test.ts`, 21/21 green as of 2026-06-27).
 > See §3 and §4 above for the per-file verification.
 >
-> **The next best task is now the offline-sync gap in §2: `SmokeAlarmInspection.tsx`
-> has no offline handling at all.** A connectivity drop mid-test calls
-> `recordTest.mutate()` directly and errors out with no fallback. Unlike fire
-> alarm (now fully wired), there is no existing queue to reuse — it needs a new
-> one with a per-alarm-test-result shape. After that, the remaining items are
-> the runtime/build risks in §5 (no CI, no `/health` route, migration drift).
+> **Update (2026-06-27): the §2 smoke-alarm offline gap is also now closed** —
+> `SmokeAlarmInspection.tsx` has a full offline queue (`pendingSmokeAlarmTests`
+> IndexedDB store, page overlay, SyncScreen wiring, reconnect auto-sync). With
+> all offline write paths now covered, **the next best tasks are the
+> runtime/build items in §5**: add a `/health` endpoint for Railway, and
+> resolve the migration-history drift in §2 (`npm run db:push` only sees the
+> journal-tracked half). CI already exists (`.github/workflows/ci.yml`).
 
 _Original recommendation (now completed):_ Close the cross-tenant job-access gap
 by adding the established `companyId`-ownership check (and, where missing, the
