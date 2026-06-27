@@ -236,18 +236,21 @@ export async function incrementUserSessionVersion(userId: number): Promise<void>
   // drizzle/schema.ts). That means Drizzle's `.set({ sessionVersion })` silently
   // strips the unknown key, producing an invalid empty `UPDATE users SET WHERE …`
   // — broken in production and a hard parse error in CI. Use raw SQL so the bump
-  // actually applies, and tolerate the column being absent on fresh CI/test DBs
-  // (the journal doesn't include 0044), where session invalidation is irrelevant.
+  // actually applies in production where the column exists.
+  //
+  // This is best-effort defense-in-depth: the caller has already cleared the
+  // session cookie, so a failed bump must not turn logout into a 500. We swallow
+  // and log any error — most importantly the "Unknown column" raised on fresh
+  // CI/test databases, whose journal omits manual migration 0044 (and where
+  // server-side session invalidation is irrelevant anyway). Note the underlying
+  // mysql2 error is wrapped by Drizzle, so its code/message live on `err.cause`;
+  // swallowing here avoids brittle cause-chain sniffing.
   try {
     await db.execute(
       sql`UPDATE \`users\` SET \`sessionVersion\` = COALESCE(\`sessionVersion\`, 1) + 1 WHERE \`id\` = ${userId}`
     );
   } catch (err) {
-    const e = err as { code?: string; message?: string };
-    if (e.code === "ER_BAD_FIELD_ERROR" || e.message?.includes("Unknown column")) {
-      return;
-    }
-    throw err;
+    console.warn("[incrementUserSessionVersion] best-effort session bump failed:", err);
   }
 }
 
