@@ -75,7 +75,7 @@ finding in the audit and has been fully remediated.
 **Lower-severity findings** (style/maintainability, not exploitable):
 - Two unnecessary `as any` casts (`customerRecordsRouter.ts:122`, `server/routers/technicianRouter.ts:39`) that mask type info but sit behind already-correct scoping.
 - `VITE_GOOGLE_CLIENT_ID` and `VITE_GOOGLE_MAPS_API_KEY` are used (`client/src/const.ts:5`, `client/src/components/Map.tsx:27`) but missing from `.env.example` — public keys, not a leak, but an onboarding trap.
-- `inspectionChecklistResponses`, `jobAssignments`, `inspectionResults`, `attachments` tables have no `companyId` column at all (defense-in-depth gap — the fix in §6 closes the actual vulnerability at the router layer without needing a schema migration, but adding `companyId` to these tables would be a good follow-up hardening step).
+- ~~`inspectionChecklistResponses`, `jobAssignments`, `inspectionResults`, `attachments` tables have no `companyId` column~~ — ✅ RESOLVED (2026-06-27). The denormalized `companyId` columns + indexes exist in `drizzle/schema.ts`, the CI journal (`drizzle/0029_*.sql`), and production (`drizzle/migrations/0076_companyid_hardening.sql`). As of this pass they are now actually populated: BEFORE INSERT triggers (`drizzle/manual/triggers/companyid_population_triggers.sql`) derive `companyId` from the parent job — or the uploader's company for attachments without a job — on every new row, matching the existing audit-trigger architecture; `drizzle/migrations/0078_companyid_backfill.sql` backfills pre-existing rows. This is latent belt-and-suspenders (the router layer is still the enforcing check); a future scoped query/index/audit can now trust the column.
 
 ## 5. Runtime / build risks
 
@@ -100,13 +100,13 @@ finding in the audit and has been fully remediated.
 > reconnect auto-sync), and a liveness `/health` route + `railway.json` are in
 > place. CI already exists (`.github/workflows/ci.yml`).
 >
-> **Remaining audit items are now mostly maintainability, not gaps:** missing
+> **Remaining audit items are now maintainability, not gaps:** missing
 > secondary indexes (§2), no company-level wage-rate table (§2), two `as any`
-> casts and `.env.example` omissions (§4). Note the "migration drift" item in §2
-> is **intentional per CLAUDE.md** ("two parallel migration histories — this is
-> intentional, not drift to 'fix'") and should NOT be reconciled. The
-> defense-in-depth `companyId`-column additions (§4) are the most substantive
-> remaining hardening follow-up.
+> casts and `.env.example` omissions (§4). The defense-in-depth `companyId`
+> column population (§4) was completed via BEFORE INSERT triggers + a backfill
+> migration on 2026-06-27. Note the "migration drift" item in §2 is
+> **intentional per CLAUDE.md** ("two parallel migration histories — this is
+> intentional, not drift to 'fix'") and should NOT be reconciled.
 
 _Original recommendation (now completed):_ Close the cross-tenant job-access gap
 by adding the established `companyId`-ownership check (and, where missing, the

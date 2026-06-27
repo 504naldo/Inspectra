@@ -208,6 +208,45 @@ SHOW TRIGGERS WHERE `Table` IN (
 -- Expected: 12 triggers total (3 per table: AI, AU, AD).
 ```
 
+### companyId Population Triggers (defense-in-depth)
+
+Two pieces keep the denormalized `companyId` columns (added in `0076`) populated:
+
+- **`drizzle/migrations/0078_companyid_backfill.sql`** backfills pre-existing rows
+  from the parent job (or the uploader's company for attachments without a job).
+  This is a normal numbered migration, so the **startup runner (`runMigrations`)
+  auto-applies it on the next deploy** — no manual step required. It's idempotent
+  (`WHERE companyId IS NULL`) and re-runnable.
+- **`drizzle/manual/triggers/companyid_population_triggers.sql`** installs the
+  BEFORE INSERT triggers that keep *new* rows populated. Like the audit triggers,
+  this is **manual-only** — it uses `DELIMITER`, which the startup runner's
+  `mysql2.execute` path can't parse, so it must be applied with the `mysql` CLI:
+
+```bash
+mysql -u <user> -p <database> < drizzle/manual/triggers/companyid_population_triggers.sql
+```
+
+Install the triggers **promptly** around the deploy that ships `0078`. Rows
+inserted in the gap between `0078` running and the triggers being installed stay
+NULL; re-running `0078_companyid_backfill.sql` by hand mops those up (idempotent).
+Order otherwise doesn't matter — `0076` must precede both, but the backfill and
+trigger install are independent.
+
+**companyId Trigger Verification:**
+
+```sql
+SHOW TRIGGERS WHERE `Table` IN (
+  'inspection_results', 'inspection_checklist_responses', 'job_assignments', 'attachments'
+) AND `Timing` = 'BEFORE' AND `Event` = 'INSERT';
+-- Expected: 4 triggers (set_companyid_*_bi).
+
+-- Backfill check — all should be 0 (or only true orphans):
+SELECT 'inspection_results' AS tbl, COUNT(*) AS unresolved FROM `inspection_results` WHERE `companyId` IS NULL
+UNION ALL SELECT 'inspection_checklist_responses', COUNT(*) FROM `inspection_checklist_responses` WHERE `companyId` IS NULL
+UNION ALL SELECT 'job_assignments', COUNT(*) FROM `job_assignments` WHERE `companyId` IS NULL
+UNION ALL SELECT 'attachments', COUNT(*) FROM `attachments` WHERE `companyId` IS NULL;
+```
+
 ---
 
 ## Post-Migration Validation Checklist
