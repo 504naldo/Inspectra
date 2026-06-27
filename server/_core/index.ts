@@ -14,6 +14,7 @@ import { serveStatic, setupVite } from "./vite";
 import { runMigrations } from "../runMigrations";
 import { runAutoScheduler } from "../scheduler";
 import { validateJwtSecret } from "./env";
+import { buildHealthPayload } from "./health";
 
 /**
  * Builds CSP directives for production. script-src/connect-src additions
@@ -86,6 +87,14 @@ async function startServer() {
   const app = express();
   app.set("trust proxy", 1);
   const server = createServer(app);
+
+  // ── Health check ──
+  // Registered first, before any other middleware, so it's the lightest possible
+  // path and always answers even if something downstream misbehaves. Used by
+  // Railway's healthcheck (see railway.json). Liveness only — no DB round-trip.
+  app.get("/health", (_req, res) => {
+    res.status(200).json(buildHealthPayload());
+  });
 
   // ── Security headers ──
   // CSP is enforced only in production: Vite's dev server relies on inline/eval'd
