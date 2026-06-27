@@ -4,6 +4,7 @@ import { mutationQueue } from "@/lib/mutationQueue";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { usePendingFireAlarmResults } from "@/hooks/usePendingFireAlarmResults";
+import { usePendingSmokeAlarmTests } from "@/hooks/usePendingSmokeAlarmTests";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -13,12 +14,13 @@ export function OfflineBanner() {
   const isOnline = useOnlineStatus();
   const { syncStatus } = useOfflineStorage();
   const pendingFireAlarmResults = usePendingFireAlarmResults();
+  const pendingSmokeAlarmTests = usePendingSmokeAlarmTests();
   const [mqPending, setMqPending] = useState(() => mutationQueue.count());
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const syncingRef = useRef(false);
 
   const offlineStorePending =
-    syncStatus.pendingResults + syncStatus.pendingDeficiencies + syncStatus.pendingChecklistResponses + syncStatus.pendingTemplateResponses + syncStatus.pendingAttachments + pendingFireAlarmResults.length;
+    syncStatus.pendingResults + syncStatus.pendingDeficiencies + syncStatus.pendingChecklistResponses + syncStatus.pendingTemplateResponses + syncStatus.pendingAttachments + pendingFireAlarmResults.length + pendingSmokeAlarmTests.length;
   const totalPending = mqPending + offlineStorePending;
 
   // Refresh mutationQueue count every 2 seconds

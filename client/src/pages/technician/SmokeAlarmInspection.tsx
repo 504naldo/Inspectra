@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,9 +7,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Plus, CheckCircle2, XCircle, Ban, Minus, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, CheckCircle2, XCircle, Ban, Minus, AlertTriangle, WifiOff } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { usePendingSmokeAlarmTests } from "@/hooks/usePendingSmokeAlarmTests";
+import { offlineStorage } from "@/lib/offlineStorage";
 
 interface SmokeAlarmInspectionProps {
   jobId: number;
@@ -27,8 +30,20 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
     notes: "",
   });
 
+  const isOnline = useOnlineStatus();
+  const pendingSmokeTests = usePendingSmokeAlarmTests();
+
   const { data: job } = trpc.job.getWithDetails.useQuery({ id: jobId });
   const { data: smokeAlarms = [], refetch } = trpc.smokeAlarm.listByJob.useQuery({ jobId });
+
+  // Overlay test results recorded offline (queued in IndexedDB) on top of the
+  // server data, so the UI reflects them immediately even before they sync.
+  const offlineResultByAlarm = new Map(
+    pendingSmokeTests.filter((t) => t.jobId === jobId).map((t) => [t.alarmId, t.testResult] as const)
+  );
+  const getEffectiveResult = (alarm: { id: number; testResult: string | null }) =>
+    alarm.testResult ?? offlineResultByAlarm.get(alarm.id) ?? null;
+  const pendingThisJob = offlineResultByAlarm.size;
 
   const createAlarm = trpc.smokeAlarm.create.useMutation({
     onSuccess: () => {
@@ -55,8 +70,50 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
       }
       refetch();
     },
-    onError: (error) => toast.error(error.message || "Failed to record test"),
+    // Errors are handled in handleRecordTest, which falls back to offline storage
   });
+
+  // Separate, callback-free mutation used by the reconnect auto-sync loop so it
+  // doesn't fire a per-item success toast/refetch for every queued result.
+  const syncSmokeTest = trpc.smokeAlarm.recordTest.useMutation();
+
+  // Flush any queued offline smoke-alarm tests when the connection returns.
+  // Redundant with SyncScreen, but lets a tech who stays on this page recover
+  // without navigating away. deleteSmokeTest is a safe no-op if SyncScreen got
+  // there first, so the two paths can't double-error.
+  useEffect(() => {
+    if (!isOnline) return;
+    let cancelled = false;
+
+    const syncPending = async () => {
+      try {
+        const pending = await offlineStorage.getPendingSmokeTests();
+        if (pending.length === 0 || cancelled) return;
+
+        let success = 0;
+        for (const test of pending) {
+          try {
+            await syncSmokeTest.mutateAsync({ id: test.alarmId, testResult: test.testResult, notes: test.notes });
+            await offlineStorage.deleteSmokeTest(test.id);
+            success++;
+          } catch (error) {
+            console.error(`Failed to sync smoke-alarm test ${test.id}:`, error);
+          }
+        }
+
+        if (success > 0 && !cancelled) {
+          toast.success(`Synced ${success} offline smoke-alarm test${success !== 1 ? "s" : ""}`);
+          refetch();
+        }
+      } catch (error) {
+        console.error("Smoke-alarm sync failed:", error);
+      }
+    };
+
+    syncPending();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
 
   const handleAddAlarm = () => {
     if (!newAlarm.suiteNumber.trim()) {
@@ -80,8 +137,33 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
     });
   };
 
-  const handleRecordTest = (alarmId: number, testResult: "pass" | "fail" | "no_access" | "na") => {
-    recordTest.mutate({ id: alarmId, testResult });
+  const handleRecordTest = async (alarmId: number, testResult: "pass" | "fail" | "no_access" | "na") => {
+    // If offline, queue to IndexedDB; the pub/sub overlay reflects it instantly
+    // and SyncScreen / the reconnect effect will push it to the server later.
+    if (!isOnline) {
+      try {
+        await offlineStorage.savePendingSmokeTest({ jobId, alarmId, testResult });
+        toast.info("Saved offline. Will sync when online.");
+      } catch (error) {
+        console.error("Failed to save smoke-alarm test offline:", error);
+        toast.error("Failed to save offline");
+      }
+      return;
+    }
+
+    try {
+      await recordTest.mutateAsync({ id: alarmId, testResult });
+    } catch (error) {
+      // Server save failed — fall back to the offline queue instead of losing it
+      console.error("Server save failed, falling back to offline:", error);
+      try {
+        await offlineStorage.savePendingSmokeTest({ jobId, alarmId, testResult });
+        toast.info("Saved offline. Will sync when connection improves.");
+      } catch (offlineError) {
+        console.error("Offline save also failed:", offlineError);
+        toast.error("Failed to record test");
+      }
+    }
   };
 
   const getTestResultBadge = (testResult: string | null) => {
@@ -152,9 +234,9 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
       return aDays - bDays;
     });
 
-  const testedCount = smokeAlarms.filter(a => a.testResult).length;
-  const passedCount = smokeAlarms.filter(a => a.testResult === "pass").length;
-  const failedCount = smokeAlarms.filter(a => a.testResult === "fail" || a.testResult === "no_access").length;
+  const testedCount = smokeAlarms.filter(a => getEffectiveResult(a)).length;
+  const passedCount = smokeAlarms.filter(a => getEffectiveResult(a) === "pass").length;
+  const failedCount = smokeAlarms.filter(a => getEffectiveResult(a) === "fail" || getEffectiveResult(a) === "no_access").length;
   const expiredCount = smokeAlarms.filter(a => a.expiryInfo?.status === 'expired').length;
   const expiringSoonCount = smokeAlarms.filter(a => a.expiryInfo?.status === 'expiring_soon').length;
 
@@ -172,7 +254,17 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
           </Button>
           <div className="flex-1">
             <h1 className="text-lg font-semibold">Smoke Alarms</h1>
-            <p className="text-xs text-muted-foreground">{job?.site?.name}</p>
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              {job?.site?.name}
+              {!isOnline && (
+                <span className="inline-flex items-center gap-1 text-amber-600">
+                  <WifiOff className="h-3 w-3" /> Offline
+                </span>
+              )}
+              {pendingThisJob > 0 && (
+                <span className="text-amber-600">· {pendingThisJob} unsynced</span>
+              )}
+            </p>
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
@@ -342,7 +434,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    {getTestResultBadge(alarm.testResult)}
+                    {getTestResultBadge(getEffectiveResult(alarm))}
                     {getExpiryBadge(alarm.expiryInfo)}
                   </div>
                 </div>
@@ -363,7 +455,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
                     {alarm.notes}
                   </p>
                 )}
-                {!alarm.testResult && (
+                {!getEffectiveResult(alarm) && (
                   <div className="grid grid-cols-4 gap-2 pt-2">
                     <Button
                       size="sm"
