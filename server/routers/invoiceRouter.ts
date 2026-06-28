@@ -62,6 +62,18 @@ function csvCell(v: string | number | null | undefined): string {
   return s;
 }
 
+// Format a date for Sage 50 Canada import. Defaults to MM/DD/YYYY (the common
+// Sage 50 CA short-date format). If your company file is set to ISO, change the
+// return to `${dt.getFullYear()}-${mm}-${dd}`.
+function fmtSageDate(d: Date | string | null | undefined): string {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return "";
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${mm}/${dd}/${dt.getFullYear()}`;
+}
+
 export const invoiceRouter = router({
   listByCustomerOrg: customerProcedure.query(async ({ ctx }) => {
     const orgId = ctx.user.customerOrgId;
@@ -345,6 +357,8 @@ export const invoiceRouter = router({
     .mutation(async ({ input, ctx }) => {
       // Validate all invoices first, then generate CSV, then mark exported.
       // This prevents partial exports where some rows are marked and CSV is incomplete.
+      const settings = await db.getCompanySettings(ctx.user.companyId!);
+      const sageTaxCode = settings.sageTaxCodeDefault ?? "";
       const validated: any[] = [];
       for (const id of input.ids) {
         const inv = await db.getInvoiceById(id);
@@ -360,26 +374,49 @@ export const invoiceRouter = router({
         validated.push({ inv, lineItems });
       }
 
-      // Build CSV rows with full escaping on every string field
+      // Sage 50 Canada–oriented, line-item (transaction-detail) layout: one row
+      // per invoice line, all sharing the invoice number so a Sage 50 import
+      // (or an add-on importer such as Zed Axis / XLGL) groups them into a
+      // single sales invoice. Dates are MM/DD/YYYY (Sage 50 CA default — see
+      // fmtSageDate). "Tax Code" is the company's Sage tax code applied to
+      // taxable lines (blank on non-taxable; invoices sourced from approved
+      // work carry tax-inclusive lines flagged non-taxable). "G/L Account" and
+      // "Department" come from the invoice's Sage fields. Every string field is
+      // escaped + formula-injection-safe via csvCell().
       const rows: string[] = [
-        "Invoice Number,Customer Code,Invoice Date,Due Date,Total,Tax,GL Code,Department,Bill To Name,Bill To Email,Bill To Address,Site ID,Status",
+        "Invoice Number,Invoice Date,Due Date,Customer Code,Customer Name,Item Description,Quantity,Unit Price,Amount,G/L Account,Tax Code,Department,Status",
       ];
-      for (const { inv } of validated) {
-        rows.push([
-          csvCell(inv.invoiceNumber),
-          csvCell(inv.sageCustomerCode),
-          inv.invoiceDate ? new Date(inv.invoiceDate).toISOString().split("T")[0] : "",
-          inv.dueDate ? new Date(inv.dueDate).toISOString().split("T")[0] : "",
-          csvCell(inv.total ?? "0.00"),
-          csvCell(inv.taxAmount ?? "0.00"),
-          csvCell(inv.sageGlCode),
-          csvCell(inv.sageDepartment),
-          csvCell(inv.billToName),
-          csvCell(inv.billToEmail),
-          csvCell(inv.billToAddress),
-          csvCell(inv.siteId?.toString()),
-          csvCell(inv.status),
-        ].join(","));
+      for (const { inv, lineItems } of validated) {
+        const invDate = fmtSageDate(inv.invoiceDate);
+        const dueDate = fmtSageDate(inv.dueDate);
+        // Fall back to a single summary line if an invoice has no line items.
+        const summaryAmount = inv.subtotal ?? inv.total ?? "0";
+        const lines = lineItems.length > 0
+          ? lineItems
+          : [{
+              description: `Invoice ${inv.invoiceNumber}`,
+              quantity: "1",
+              unitPrice: summaryAmount,
+              total: summaryAmount,
+              taxable: parseFloat(String(inv.taxAmount ?? "0")) > 0,
+            }];
+        for (const li of lines) {
+          rows.push([
+            csvCell(inv.invoiceNumber),
+            invDate,
+            dueDate,
+            csvCell(inv.sageCustomerCode),
+            csvCell(inv.billToName),
+            csvCell(li.description),
+            csvCell(String(li.quantity ?? "1")),
+            csvCell(String(li.unitPrice ?? "0")),
+            csvCell(String(li.total ?? "0")),
+            csvCell(inv.sageGlCode),
+            csvCell(li.taxable ? sageTaxCode : ""),
+            csvCell(inv.sageDepartment),
+            csvCell(inv.status),
+          ].join(","));
+        }
       }
 
       // Mark exported only after all rows are built
