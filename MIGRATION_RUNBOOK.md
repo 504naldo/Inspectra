@@ -299,3 +299,75 @@ mysql -u <user> -p <database> < backup_pre_compliance_hardening_YYYYMMDD.sql
 The `withAudit()` wrapper in `server/db.ts` sets MySQL session variables (`@audit_actor`, `@audit_procedure`, `@audit_request_id`, `@audit_ip`, `@audit_user_agent`) before each DML operation. These variables are consumed by the audit triggers to populate the `changedById`, `procedureName`, `requestId`, `ipAddress`, and `userAgent` columns in `audit_log`. If triggers are installed before the application is updated to use `withAudit()`, audit rows will have `NULL` for these fields — this is acceptable for the transition period.
 
 The `migration_log` table records all backfill decisions made during migrations 0010–0013, including rows where fallback values were used (such as `effectiveDate = '2026-02-28'` for templates with NULL `createdAt`). This log is permanent and should not be truncated.
+
+---
+
+## Manual Migration Reconciliation (2026-06-28)
+
+**Symptom.** The startup migration runner (`server/runMigrations.ts`) re-attempts
+five legacy manual migrations on **every boot** and they fail each time (logged as
+`[Migrations] Failed to apply ... will retry on next boot`):
+
+| File | Failing statement | Reason |
+|---|---|---|
+| `0038_repair_quotes.sql` | `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS ...` | `ADD COLUMN IF NOT EXISTS` is MariaDB-only; invalid on MySQL |
+| `0039_parts_catalog_seed_columns.sql` | `ALTER TABLE parts_catalog ADD COLUMN IF NOT EXISTS ...` | same |
+| `0075_inspection_templates_if_not_exists.sql` | `ALTER TABLE ... ADD INDEX IF NOT EXISTS ...` | same |
+| `0041_approved_work_invoice.sql` | `... ADD COLUMN invoiceNumber ... AFTER partsStatus` | `partsStatus` not yet present at original apply order |
+| `0052_quote_approval.sql` | `... ADD COLUMN viewedAt ... AFTER declinedAt` | `declinedAt` not yet present at original apply order |
+
+**Why it's safe.** The columns/tables these migrations add already exist in
+production (the app actively uses `quoteNumber`, `declinedAt`, `partsStatus`,
+`invoiceNumber`, `approvalStatus`, etc.). Because the runner aborts a file at its
+first failing statement, the **index** statements that come *after* the failing
+line in `0039`/`0075` may never have run — including two UNIQUE (data-integrity)
+indexes: `parts_catalog_unique_cat_product` and `itr_job_item_unique`.
+
+**Remediation (run once on the live DB; DB-only, no redeploy).**
+
+① *(read-only)* See which target indexes already exist:
+```sql
+SELECT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME IN (
+  'parts_catalog_unique_cat_product','itr_job_item_unique',
+  'it_companyId_idx','it_company_system_idx','its_templateId_idx','its_companyId_idx',
+  'iti_templateId_idx','iti_sectionId_idx','iti_companyId_idx','ita_templateId_idx',
+  'ita_companyId_idx','itr_jobId_idx','itr_templateId_idx','itr_companyId_idx')
+GROUP BY TABLE_NAME, INDEX_NAME;
+```
+
+② Create any index ① shows missing. `Duplicate key name (1061)` → already exists,
+ignore. For the two UNIQUE indexes, `Duplicate entry` → real duplicate rows exist
+and must be cleaned before the index can be added:
+```sql
+CREATE UNIQUE INDEX `parts_catalog_unique_cat_product` ON `parts_catalog` (`companyId`,`category`(100),`productName`(191));
+ALTER TABLE `inspection_templates` ADD INDEX `it_companyId_idx` (`companyId`);
+ALTER TABLE `inspection_templates` ADD INDEX `it_company_system_idx` (`companyId`,`systemType`);
+ALTER TABLE `inspection_template_sections` ADD INDEX `its_templateId_idx` (`templateId`);
+ALTER TABLE `inspection_template_sections` ADD INDEX `its_companyId_idx` (`companyId`);
+ALTER TABLE `inspection_template_items` ADD INDEX `iti_templateId_idx` (`templateId`);
+ALTER TABLE `inspection_template_items` ADD INDEX `iti_sectionId_idx` (`sectionId`);
+ALTER TABLE `inspection_template_items` ADD INDEX `iti_companyId_idx` (`companyId`);
+ALTER TABLE `inspection_template_assignments` ADD INDEX `ita_templateId_idx` (`templateId`);
+ALTER TABLE `inspection_template_assignments` ADD INDEX `ita_companyId_idx` (`companyId`);
+ALTER TABLE `inspection_template_responses` ADD UNIQUE KEY `itr_job_item_unique` (`jobId`,`itemId`);
+ALTER TABLE `inspection_template_responses` ADD INDEX `itr_jobId_idx` (`jobId`);
+ALTER TABLE `inspection_template_responses` ADD INDEX `itr_templateId_idx` (`templateId`);
+ALTER TABLE `inspection_template_responses` ADD INDEX `itr_companyId_idx` (`companyId`);
+```
+
+③ Mark the five files as applied so the runner stops retrying them on every boot:
+```sql
+INSERT IGNORE INTO `__schema_migrations` (`migration_name`) VALUES
+  ('0038_repair_quotes.sql'),
+  ('0039_parts_catalog_seed_columns.sql'),
+  ('0041_approved_work_invoice.sql'),
+  ('0052_quote_approval.sql'),
+  ('0075_inspection_templates_if_not_exists.sql');
+```
+
+**Note.** This reconciles the *existing* production database only. The migration
+files are left unchanged, so a hypothetical brand-new DB built from the manual
+history would re-hit these failures — rewrite the five files to plain MySQL DDL if
+that scenario ever matters (CI is unaffected; it uses the journal via
+`drizzle-kit migrate`, not these files).
