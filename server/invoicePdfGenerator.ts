@@ -187,7 +187,11 @@ export async function generateInvoicePDF(data: InvoicePdfData): Promise<Buffer> 
     };
 
     drawTotRow("Subtotal", fmt(data.subtotal));
-    if (data.taxRate > 0) {
+    // Only render a tax line when tax was actually charged. Invoices sourced from
+    // approved-work/repair quotes carry tax-inclusive line totals (taxable=false),
+    // so they have a taxRate stamped but a $0 taxAmount — drawing the row there
+    // would show a misleading "Tax (5%) $0.00" on the customer-facing PDF.
+    if (data.taxAmount > 0) {
       drawTotRow(`Tax (${(data.taxRate * 100).toFixed(0)}%)`, fmt(data.taxAmount));
     }
     drawTotRow("TOTAL DUE", fmt(data.total), true, true);
