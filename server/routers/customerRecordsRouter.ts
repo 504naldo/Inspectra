@@ -148,7 +148,7 @@ export const customerRecordsRouter = router({
           address: s.address ?? null,
           city: s.city ?? null,
         })),
-        jobs: (jobs as any[]).slice(0, 20).map((j: any) => ({
+        jobs: jobs.slice(0, 20).map((j) => ({
           id: j.id,
           jobNumber: j.jobNumber,
           title: j.title,

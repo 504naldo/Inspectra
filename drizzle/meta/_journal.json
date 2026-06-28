@@ -211,6 +211,13 @@
       "when": 1782143234039,
       "tag": "0029_true_leper_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1782662168186,
+      "tag": "0030_lumpy_stranger",
+      "breakpoints": true
     }
   ]
 }
