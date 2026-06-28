@@ -10,9 +10,15 @@
 > `InvoiceDetail.tsx`), and Approved Work → Invoice auto-creation with line-item
 > snapshotting (`approvedWorkRouter.createInvoice`). Tax handling there is
 > correct: repair-quote item totals are tax-inclusive, so snapshotted lines are
-> stored `taxable=false`. The remaining genuine invoice gap is the **live Sage
-> API** export (CSV export exists; no API call). Inline ✅ markers below reflect
-> this.
+> stored `taxable=false`.
+>
+> **Sage — product decision (2026-06-28):** the customer wants Sage kept as a
+> **separate system**. Sage stays the accounting system of record and is fed by
+> the existing **CSV/file export** (`invoiceRouter.exportSage`) imported manually
+> — there will be **no live Sage API integration**. The CSV export is therefore
+> the *intended* boundary, not a stopgap. The earlier "live Sage API" item is
+> **out of scope / won't-do**, and with that the invoice revenue loop is
+> considered **complete**. Inline ✅ / ⛔ markers below reflect this.
 
 ---
 
@@ -39,7 +45,7 @@
 ### Partial / Working but Incomplete
 | Module | What works | What's missing |
 |--------|-----------|---------------|
-| **Invoices** | Schema, status machine, Sage fields, line items, links to approved work/work order; ✅ PDF + email delivery; ✅ auto-creation from approved work (2026-06-28) | Live Sage **API** call (CSV export exists) |
+| **Invoices** | Schema, status machine, Sage fields, line items, links to approved work/work order; ✅ PDF + email delivery; ✅ auto-creation from approved work; ✅ Sage CSV export (2026-06-28) | None — revenue loop complete. Live Sage API is ⛔ out of scope (Sage kept separate) |
 | **Reports** | Generation framework, S3 storage, Drive stub | Email delivery, compliance report template, PDF completeness unclear |
 | **Monthly Schedule** | Month-view UI, status tracking, tech assignment | Auto-job creation from schedule, calendar sync |
 | **Repair Letters** | Status machine per site (not_started → completed) | Template system, connection to deficiency resolution |
@@ -48,7 +54,7 @@
 ### Stubbed / Not Yet Functional
 | Module | Status |
 |--------|--------|
-| **Sage Export** | Schema fields only (`sageCustomerCode`, `sageGlCode`, `sageExportedAt`) — no API call |
+| **Sage Export** | ✅ CSV/file export shipped (`invoiceRouter.exportSage`) with export-status state machine + locking. ⛔ Live API intentionally out of scope — Sage kept separate, fed by manual CSV import (2026-06-28) |
 | **Gmail** | Token stored, `sendEmail` router exists — no API call implemented |
 | **Google Calendar** | `linkedCalendarEventId` on jobs/schedule — no sync logic |
 | **Customer Portal** | Explicitly disabled (`/customer/*` → `/forbidden`), schema ready |
@@ -68,8 +74,9 @@ bill-to + Sage codes, recalculates totals, and flips the approved-work status to
 `invoiced` in one mutation (`ApprovedWorkDetail.tsx` "Create Invoice" button).
 _Original finding (historical):_ When approved work is marked `completed` or `invoiced`, there is no mutation that auto-creates an invoice with the line items from the linked quote or work order. Office staff must create the invoice manually and then separately update the approved work status. This is the single largest gap in the revenue collection workflow.
 
-**B. Sage Export**  
-Invoice records have all the right fields (`sageCustomerCode`, `sageGlCode`, `sageDepartment`, `sageExportedAt`, `sageExportStatus`) but there is no export logic. Accounting data must be re-keyed manually into Sage, which is error-prone and time-consuming.
+**B. Sage Export** — ✅ RESOLVED via CSV (verified 2026-06-28); live API ⛔ out of scope  
+`invoiceRouter.exportSage` builds an escaped, injection-safe CSV (validate-all-then-mark, so no partial exports) and drives the `pending → exported` state machine with post-export locking. Per the 2026-06-28 product decision, Sage is kept **separate** — fed by importing this CSV — so no live API call will be built.
+_Original finding (historical):_ Invoice records have all the right fields (`sageCustomerCode`, `sageGlCode`, `sageDepartment`, `sageExportedAt`, `sageExportStatus`) but there is no export logic. Accounting data must be re-keyed manually into Sage, which is error-prone and time-consuming.
 
 **C. Report Email Delivery**  
 Reports are generated and stored in S3, but the Gmail router is not implemented. Office staff must download PDFs and email them manually. Every completed job requires this manual step.
@@ -160,8 +167,8 @@ The operational system is functional but the money doesn't move without manual w
 **1.1 — Auto-create invoice from completed approved work**  
 Add `approvedWork.createInvoice` mutation. When approved work transitions to `completed` or `invoiced`, populate invoice line items from the linked quote's line items (or work order line items if no quote). Set bill-to from customer org. This is the highest-value single feature.
 
-**1.2 — Sage export endpoint**  
-Add `invoice.exportToSage` mutation. Produce a structured output (CSV or API call depending on Sage version) from invoices with `sageExportStatus = 'pending'`. Mark as exported. Even a CSV export beats manual re-keying.
+**1.2 — Sage export endpoint** — ✅ DONE as CSV (2026-06-28); API ⛔ out of scope  
+~~Add `invoice.exportToSage` mutation. Produce a structured output (CSV or API call depending on Sage version)...~~ Shipped as `invoiceRouter.exportSage` (CSV). Per the 2026-06-28 decision Sage stays a separate system fed by manual CSV import, so the API variant will **not** be built.
 
 **1.3 — Invoice PDF generation** — ✅ DONE (verified 2026-06-28)  
 ~~Add PDFKit-based invoice PDF generation (same pattern as existing report PDFs). Store in S3, add download link to invoice detail page. Required for emailing invoices to customers.~~ Shipped: `invoicePdfGenerator.ts` + `invoiceRouter.generatePdf` (S3-stored, downloadable) and a send-email endpoint that attaches the PDF.
@@ -240,7 +247,7 @@ Ranked by operational value × revenue impact ÷ implementation effort.
 | Rank | Feature | Op. Value | Revenue Impact | Effort | Risk |
 |------|---------|-----------|---------------|--------|------|
 | **1** | Auto-create invoice from approved work completion | High | **Direct** — invoices get created on time | Low — mutation + existing schema | Low — additive only |
-| **2** | Sage export CSV/API | High | **Direct** — eliminates re-keying to accounting | Medium — need Sage format spec | Low — isolated module |
+| ~~**2**~~ | ~~Sage export CSV/API~~ ✅ CSV DONE; API ⛔ out of scope (Sage kept separate, 2026-06-28) | — | — | — | — |
 | ~~**3**~~ | ~~Invoice PDF generation~~ ✅ DONE (2026-06-28) | — | — | — | — |
 | **4** | Gmail report delivery | High | Medium — speeds cash collection | Medium — Gmail OAuth scope | Medium — external API |
 | **5** | Quote acceptance → Approved Work auto-creation | Medium-High | Medium — faster repair-to-invoice cycle | Low — extend existing accept handler | Low — additive only |
@@ -288,7 +295,7 @@ These features are tempting but should wait until Phase 1-2 are stable.
 
 Inspectra has a solid operational foundation. Inspection, deficiency, and repair quote workflows are production-ready. The gaps are concentrated in three areas:
 
-1. **The revenue loop is now mostly closed (updated 2026-06-28).** Approved-work completion auto-creates an invoice (with snapshotted line items) and invoices generate/email a PDF. The one remaining open link is **live Sage API export** — CSV export exists, but there is still no direct API call.
+1. **The revenue loop is closed (updated 2026-06-28).** Approved-work completion auto-creates an invoice (with snapshotted line items), invoices generate/email a PDF, and invoices export to Sage as CSV. Sage is intentionally kept as a **separate** system fed by that CSV import, so there is no further integration work here — the loop is complete by design.
 
 2. **Report delivery is manual at every step.** Reports are generated but must be downloaded and emailed by hand. Gmail integration is stubbed and needs to be completed.
 
