@@ -36,7 +36,7 @@ export const technicianRouter = router({
       const job = await db.getJobById(input.jobId);
       if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
       if (job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
-      if ((job as any).finalizedAt) {
+      if (job.finalizedAt) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Job is finalized and cannot be modified" });
       }
       if (job.status !== "in_progress") {

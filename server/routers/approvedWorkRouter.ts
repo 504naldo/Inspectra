@@ -513,7 +513,18 @@ export const approvedWorkRouter = router({
         internalNotes: record.officeNotes ?? undefined,
       });
 
-      // Snapshot line items — prefer repair quote items, then WO line items, then AW summary
+      // Snapshot line items — prefer repair quote items, then WO line items, then AW summary.
+      //
+      // Tax treatment: snapshotted lines are stored `taxable: false` because the
+      // source amounts here are already tax-INCLUSIVE — repair-quote item totals
+      // are `lineSubtotal + GST + PST` (see repairQuoteRouter), and the AW summary
+      // fallback derives from those quote totals too. Re-flagging them taxable would
+      // double-charge against the invoice's `taxRate`.
+      //   ⚠️ The WO branch below relies on the SAME tax-inclusive assumption, but
+      //   work-order `lineItems` carry no tax flag of their own and today no code
+      //   path populates `wo.lineItems` (createWorkOrder only sets `total`), so this
+      //   branch is effectively unreachable. If WO line items ever start carrying
+      //   PRE-tax amounts, revisit the `taxable` flag here before trusting it.
       let linesSaved = 0;
       if (record.quoteId) {
         const quoteItems = await db.getRepairQuoteItemsByQuote(record.quoteId);

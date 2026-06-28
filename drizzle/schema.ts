@@ -57,6 +57,7 @@ export const inspectionChecklistResponses = mysqlTable("inspection_checklist_res
   companyId: int("companyId"),
 }, (table) => ({
   companyIdIdx: index("inspection_checklist_responses_companyId_idx").on(table.companyId),
+  jobIdIdx: index("inspection_checklist_responses_jobId_idx").on(table.jobId),
 }));
 
 export type InspectionChecklistResponse = typeof inspectionChecklistResponses.$inferSelect;
@@ -340,6 +341,7 @@ export const jobAssignments = mysqlTable("job_assignments", {
   // Prevent duplicate assignments
   uniqueJobUser: unique().on(table.jobId, table.userId),
   companyIdIdx: index("job_assignments_companyId_idx").on(table.companyId),
+  userIdIdx: index("job_assignments_userId_idx").on(table.userId),
 }));
 
 export type JobAssignment = typeof jobAssignments.$inferSelect;
@@ -478,6 +480,7 @@ export const attachments = mysqlTable("attachments", {
   companyId: int("companyId"),
 }, (table) => ({
   companyIdIdx: index("attachments_companyId_idx").on(table.companyId),
+  entityIdx: index("attachments_entity_idx").on(table.entityType, table.entityId),
 }));
 
 export type Attachment = typeof attachments.$inferSelect;
