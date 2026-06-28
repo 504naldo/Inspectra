@@ -63,12 +63,16 @@ Railway backups do **not** cover this data.
 
 ## 3. Recommended before go-live (non-blocking)
 
-- **UAT pass** — work through the manual test checklist at the bottom of
-  `INVOICE_HARDENING_REPORT.md` (create invoice, payments, void, Sage export, etc.).
-  Boxes there are currently unchecked.
-- **Uptime monitoring/alerting** — `railway.json` restarts the container on a failed
-  `/health`, but nothing pages a human on sustained downtime. Point an external
-  uptime monitor (e.g. UptimeRobot/BetterStack) at `/health`.
+- **UAT pass** — ✅ Automated workflow-level UAT done (2026-06-28): the full suite
+  (957 tests) passes against a real MySQL 8, including a new end-to-end revenue-loop
+  test (`server/invoiceWorkflow.test.ts`: Approved Work → invoice → Sage 50 CSV → PDF).
+  *Still recommended:* a human UI click-through of the manual checklist at the bottom
+  of `INVOICE_HARDENING_REPORT.md`, since the automated UAT covers the API/data layer,
+  not the browser UI.
+- **Uptime monitoring/alerting** — ✅ Added (2026-06-28): `.github/workflows/uptime.yml`
+  pings `/health` every 5 min from GitHub (external to Railway) and opens/auto-closes a
+  tracking issue on outage. *Optional:* add a phone/SMS-grade monitor (UptimeRobot/
+  BetterStack) pointed at `/health` if you need paging rather than a GitHub issue.
 
 ---
 
