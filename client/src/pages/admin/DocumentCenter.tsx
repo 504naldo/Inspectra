@@ -16,9 +16,11 @@ import {
   Receipt,
   FolderOpen,
   Download,
+  Trash2,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useState, useDeferredValue } from "react";
+import { toast } from "sonner";
 
 const DOC_TYPES = [
   { value: "all",             label: "All Documents" },
@@ -87,6 +89,24 @@ export default function DocumentCenter() {
     { search: deferredSearch, docType, limit: 300 },
     {},
   );
+
+  const utils = trpc.useUtils();
+  const removeMut = trpc.documentCenter.remove.useMutation({
+    onSuccess: () => {
+      utils.documentCenter.list.invalidate();
+      toast.success("Document removed");
+    },
+    onError: (e) => toast.error(e.message ?? "Could not remove document"),
+  });
+
+  function handleRemove(item: { id: string; docType: string; title: string }) {
+    const confirmed = window.confirm(
+      item.docType === "attachment"
+        ? `Remove "${item.title}"? This permanently deletes the file.`
+        : `Remove "${item.title}" from the Document Center? You can restore it later from the Knowledge Base page.`,
+    );
+    if (confirmed) removeMut.mutate({ id: item.id });
+  }
 
   const items = data?.items ?? [];
   const counts = data?.counts ?? { all: 0, report: 0, attachment: 0, quote: 0, knowledge_base: 0 };
@@ -211,6 +231,18 @@ export default function DocumentCenter() {
                             <Download className="h-4 w-4" />
                           </Button>
                         </a>
+                      )}
+                      {(item.docType === "attachment" || item.docType === "knowledge_base") && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          title="Remove document"
+                          disabled={removeMut.isPending}
+                          onClick={() => handleRemove(item)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       )}
                     </div>
                   </div>
