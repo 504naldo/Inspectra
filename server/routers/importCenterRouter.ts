@@ -126,8 +126,9 @@ export const importCenterRouter = router({
       let workbook: WorkBook;
       try {
         workbook = await safeXlsxRead(new Uint8Array(buffer), { type: "array" });
-      } catch {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Could not parse file. Ensure it is a valid .xlsx workbook." });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Could not parse file. Ensure it is a valid .xlsx workbook. (${detail})` });
       }
 
       const sheetName = workbook.SheetNames.includes(PARTS_SHEET)
@@ -213,8 +214,9 @@ export const importCenterRouter = router({
       let workbook: WorkBook;
       try {
         workbook = await safeXlsxRead(new Uint8Array(buffer), { type: "array" });
-      } catch {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Could not parse file. Ensure it is a valid .xlsx workbook." });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Could not parse file. Ensure it is a valid .xlsx workbook. (${detail})` });
       }
       const sheetName = workbook.SheetNames.includes(INVENTORY_SHEET)
         ? INVENTORY_SHEET

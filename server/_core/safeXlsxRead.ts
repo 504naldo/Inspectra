@@ -14,10 +14,17 @@ import type { ParsingOptions, WorkBook } from "xlsx";
 // worker.terminate() without affecting the main server process.
 const PARSE_TIMEOUT_MS = 15_000;
 
+// IMPORTANT: this source runs via `new Worker(code, { eval: true })`, whose
+// default module type is CommonJS. It MUST stay CJS (`require`; no static
+// `import`, no top-level `await`). An earlier ESM version happened to work on
+// Node 22 (which auto-detects ESM in eval workers) but threw a SyntaxError on
+// startup under Node 20 — the version production runs (nixpacks `nodejs_20`) —
+// so the worker never started and every upload failed with "could not parse
+// file. Ensure it is a valid .xlsx workbook."
 const WORKER_SOURCE = `
-  import { parentPort, workerData } from "node:worker_threads";
+  const { parentPort, workerData } = require("node:worker_threads");
   try {
-    const XLSX = await import("xlsx");
+    const XLSX = require("xlsx");
     const { buffer, options } = workerData;
     const workbook = XLSX.read(buffer, options);
     parentPort.postMessage({ ok: true, workbook });
