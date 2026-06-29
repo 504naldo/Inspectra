@@ -55,9 +55,101 @@ async function recordTransaction(
   });
 }
 
+// ─── Bulk import ─────────────────────────────────────────────────────────────
+
+const inventoryRowSchema = z.object({
+  category: z.string().min(1).max(100),
+  name: z.string().min(1).max(255),
+  sku: z.string().max(100).optional().nullable(),
+  supplierName: z.string().max(255).optional().nullable(),
+  unitCost: z.number().nonnegative().default(0),
+  unitPrice: z.number().nonnegative().default(0),
+  quantityOnHand: z.number().int().min(0).default(0),
+  reorderPoint: z.number().int().min(0).default(0),
+  description: z.string().optional().nullable(),
+});
+type InventoryRow = z.infer<typeof inventoryRowSchema>;
+
+function invNorm(s: string) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+// Identity for dedup/update: category + (sku || name).
+function invKey(category: string, sku: string | null | undefined, name: string) {
+  return `${invNorm(category)}|${invNorm(sku || name)}`;
+}
+
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 export const inventoryRouter = router({
+
+  // ── Bulk import (mirrors partsCatalog import; pairs with
+  //    importCenter.parseInventoryFile) ──────────────────────────────────────
+  importPreview: officeProcedure
+    .input(z.object({ rows: z.array(inventoryRowSchema), updateExisting: z.boolean().default(false) }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = await db.getInventoryItemsByCompany(ctx.user.companyId!, true);
+      const keys = new Map(existing.map((i) => [invKey(i.category, i.sku, i.name), i]));
+      let toCreate = 0, toUpdate = 0, skipped = 0;
+      for (const row of input.rows) {
+        if (keys.has(invKey(row.category, row.sku, row.name))) {
+          input.updateExisting ? toUpdate++ : skipped++;
+        } else {
+          toCreate++;
+        }
+      }
+      return { toCreate, toUpdate, skipped };
+    }),
+
+  importExecute: officeProcedure
+    .input(z.object({ rows: z.array(inventoryRowSchema), updateExisting: z.boolean().default(false) }))
+    .mutation(async ({ ctx, input }) => {
+      const companyId = ctx.user.companyId!;
+      const existing = await db.getInventoryItemsByCompany(companyId, true);
+      const keys = new Map(existing.map((i) => [invKey(i.category, i.sku, i.name), i]));
+
+      let created = 0, updated = 0, skipped = 0;
+      const apply = (row: InventoryRow) => ({
+        category: row.category,
+        name: row.name,
+        sku: row.sku ?? null,
+        supplierName: row.supplierName ?? null,
+        unitCost: String(row.unitCost) as any,
+        unitPrice: String(row.unitPrice) as any,
+        reorderPoint: row.reorderPoint,
+        description: row.description ?? null,
+      });
+
+      for (const row of input.rows) {
+        const match = keys.get(invKey(row.category, row.sku, row.name));
+        if (match) {
+          if (input.updateExisting) {
+            await db.updateInventoryItem(match.id, apply(row));
+            updated++;
+          } else {
+            skipped++;
+          }
+          continue;
+        }
+        const id = await db.createInventoryItem({
+          companyId,
+          ...apply(row),
+          quantityOnHand: row.quantityOnHand,
+          quantityReserved: 0,
+          reorderQuantity: 0,
+          isActive: true,
+        } as any);
+        if (row.quantityOnHand > 0) {
+          await recordTransaction(companyId, id, "initial_count", row.quantityOnHand, ctx.user.id, "Bulk import initial count");
+        }
+        created++;
+      }
+
+      void logActivity({
+        ctx, entityType: "inventory_item", entityId: 0, eventType: "imported",
+        title: `Inventory import: ${created} created, ${updated} updated, ${skipped} skipped`,
+      });
+      return { created, updated, skipped };
+    }),
 
   // ── Overview ──────────────────────────────────────────────────────────────
 
