@@ -35,6 +35,7 @@ import {
   History,
   Link2,
   ShoppingCart,
+  Upload,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -608,6 +609,9 @@ export default function Inventory() {
         </Button>
         <Button variant="outline" onClick={() => setShowFromCatalog(true)}>
           <Link2 className="h-4 w-4 mr-1" /> From Parts Catalog
+        </Button>
+        <Button variant="outline" onClick={() => navigate("/admin/imports")}>
+          <Upload className="h-4 w-4 mr-1" /> Import
         </Button>
       </div>
 
