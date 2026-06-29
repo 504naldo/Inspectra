@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertAttachmentCompany } from "../tenantGuards";
+import { logActivity } from "../activityLogger";
 import { eq, and, inArray, desc, isNotNull, like, or } from "drizzle-orm";
 import {
   reports, jobs, sites, customerOrgs, attachments, quotes, knowledgeBase,
@@ -231,7 +234,11 @@ export const documentCenterRouter = router({
 
       // ── 4. Knowledge base ──────────────────────────────────────────────────
       if (docType === "all" || docType === "knowledge_base") {
-        const baseWhere = and(eq(knowledgeBase.companyId, companyId), isNotNull(knowledgeBase.fileUrl));
+        const baseWhere = and(
+          eq(knowledgeBase.companyId, companyId),
+          isNotNull(knowledgeBase.fileUrl),
+          eq(knowledgeBase.isActive, true), // deactivated (removed) docs drop out of the center
+        );
         const where = sp
           ? and(baseWhere, like(knowledgeBase.title, sp))
           : baseWhere;
@@ -283,5 +290,59 @@ export const documentCenterRouter = router({
       };
 
       return { items: limited, counts };
+    }),
+
+  /**
+   * Remove a document from the Document Center.
+   *
+   * Only attachments and knowledge-base documents are removable here (reports and
+   * quotes are business records managed from their own pages and are rejected).
+   *   - attachment     → hard-deleted (blocked if it belongs to a finalized job)
+   *   - knowledge_base → deactivated (reversible; manage from the Knowledge Base page)
+   *
+   * `id` is the composite Document Center id, e.g. "attachment_45" or "kb_89".
+   */
+  remove: officeProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const companyId = ctx.user.companyId!;
+      const match = /^(attachment|kb)_(\d+)$/.exec(input.id);
+      if (!match) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only attachments and knowledge base documents can be removed here. Manage reports and quotes from their own pages.",
+        });
+      }
+      const kind = match[1];
+      const id = Number(match[2]);
+
+      if (kind === "attachment") {
+        const attachment = await assertAttachmentCompany(id, companyId);
+        if (attachment.jobId) {
+          const job = await db.getJobById(attachment.jobId);
+          if (job?.finalizedAt) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "This file belongs to a finalized job and cannot be removed.",
+            });
+          }
+        }
+        await db.deleteAttachment(id);
+        void logActivity({
+          ctx, entityType: "attachment", entityId: id, eventType: "attachment.deleted",
+          title: `Document removed: ${attachment.fileName ?? `attachment ${id}`}`, metadata: {},
+        });
+        return { success: true as const, removed: "attachment" as const };
+      }
+
+      // knowledge_base: soft-delete (deactivate) — reversible from the Knowledge Base page.
+      const kb = await db.getKnowledgeBaseById(id);
+      if (!kb || kb.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
+      await db.updateKnowledgeBaseEntry(id, { isActive: false });
+      void logActivity({
+        ctx, entityType: "knowledge_base", entityId: id, eventType: "knowledge_base.deactivated",
+        title: `Document removed from center: ${kb.title}`, metadata: {},
+      });
+      return { success: true as const, removed: "knowledge_base" as const };
     }),
 });
