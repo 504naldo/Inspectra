@@ -162,7 +162,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Settings",           href: "/admin/settings",               icon: Settings                  },
       { label: "Setup Wizard",       href: "/admin/setup",                  icon: CheckSquare               },
       { label: "Access Control",     href: "/admin/access-control",         icon: ShieldAlert               },
-      { label: "Imports",         href: "/admin/imports",         icon: Upload                    },
+      { label: "Import Center",   href: "/admin/imports",         icon: Upload                    },
       { label: "Notifications",   href: "/admin/notifications",   icon: Bell                      },
       { label: "AI Assistant",    href: "/admin/ai-assistant",    icon: Bot                       },
       { label: "Knowledge Base",  href: "/admin/knowledge-base",  icon: BookOpen                  },

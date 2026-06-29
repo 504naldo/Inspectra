@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
-  Plus, Package, Pencil, X, Check, ChevronDown, ChevronRight, Search, Filter, PackagePlus,
+  Plus, Package, Pencil, X, Check, ChevronDown, ChevronRight, Search, Filter, PackagePlus, Upload,
 } from "lucide-react";
 import {
   Select,
@@ -183,6 +184,9 @@ export default function PartsCatalog() {
               <Switch checked={showInactive} onCheckedChange={setShowInactive} />
               Show inactive
             </label>
+            <Button asChild variant="outline" className="gap-1.5">
+              <Link href="/admin/imports"><Upload className="h-4 w-4" /> Import</Link>
+            </Button>
             <Button onClick={() => setShowAdd(true)} className="gap-1.5">
               <Plus className="h-4 w-4" /> Add Part
             </Button>
