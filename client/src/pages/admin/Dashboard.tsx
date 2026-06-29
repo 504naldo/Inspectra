@@ -29,6 +29,8 @@ import {
   BrainCircuit,
   Loader2,
   Activity,
+  Package,
+  Upload,
 } from "lucide-react";
 import { Link } from "wouter";
 import { getApprovedWorkStatusLabel, getApprovedWorkStatusBadgeClass } from "@/lib/statusLabels";
@@ -293,6 +295,18 @@ export default function AdminDashboard() {
               <Button size="sm" variant="outline">
                 <Wrench className="h-3.5 w-3.5 mr-1.5" />
                 Repair Quote
+              </Button>
+            </Link>
+            <Link href="/admin/inventory">
+              <Button size="sm" variant="outline">
+                <Package className="h-3.5 w-3.5 mr-1.5" />
+                Inventory
+              </Button>
+            </Link>
+            <Link href="/admin/imports">
+              <Button size="sm" variant="outline">
+                <Upload className="h-3.5 w-3.5 mr-1.5" />
+                Import Center
               </Button>
             </Link>
           </div>
