@@ -1,6 +1,11 @@
 -- Safe re-run of inspection_templates schema.
--- Uses IF NOT EXISTS so it is safe whether or not migration 0061 was applied.
--- Run each statement individually on Railway (PlanetScale single-statement mode).
+--
+-- REWRITTEN for MySQL (2026-06-29): the index statements used MariaDB-only
+-- "ADD INDEX IF NOT EXISTS", a syntax error on MySQL, so this file failed every
+-- boot. CREATE TABLE IF NOT EXISTS is valid MySQL and kept. Index adds are now
+-- plain DDL (the startup runner ignores ER_DUP_KEYNAME, so existing indexes are
+-- skipped). The former UNIQUE key is a plain index here to avoid ER_DUP_ENTRY on
+-- any existing rows — uniqueness of (jobId,itemId) is enforced by app upserts.
 
 CREATE TABLE IF NOT EXISTS `inspection_templates` (
   `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -78,16 +83,16 @@ CREATE TABLE IF NOT EXISTS `inspection_template_responses` (
   `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-ALTER TABLE `inspection_templates` ADD INDEX IF NOT EXISTS `it_companyId_idx` (`companyId`);
-ALTER TABLE `inspection_templates` ADD INDEX IF NOT EXISTS `it_company_system_idx` (`companyId`, `systemType`);
-ALTER TABLE `inspection_template_sections` ADD INDEX IF NOT EXISTS `its_templateId_idx` (`templateId`);
-ALTER TABLE `inspection_template_sections` ADD INDEX IF NOT EXISTS `its_companyId_idx` (`companyId`);
-ALTER TABLE `inspection_template_items` ADD INDEX IF NOT EXISTS `iti_templateId_idx` (`templateId`);
-ALTER TABLE `inspection_template_items` ADD INDEX IF NOT EXISTS `iti_sectionId_idx` (`sectionId`);
-ALTER TABLE `inspection_template_items` ADD INDEX IF NOT EXISTS `iti_companyId_idx` (`companyId`);
-ALTER TABLE `inspection_template_assignments` ADD INDEX IF NOT EXISTS `ita_templateId_idx` (`templateId`);
-ALTER TABLE `inspection_template_assignments` ADD INDEX IF NOT EXISTS `ita_companyId_idx` (`companyId`);
-ALTER TABLE `inspection_template_responses` ADD UNIQUE KEY IF NOT EXISTS `itr_job_item_unique` (`jobId`, `itemId`);
-ALTER TABLE `inspection_template_responses` ADD INDEX IF NOT EXISTS `itr_jobId_idx` (`jobId`);
-ALTER TABLE `inspection_template_responses` ADD INDEX IF NOT EXISTS `itr_templateId_idx` (`templateId`);
-ALTER TABLE `inspection_template_responses` ADD INDEX IF NOT EXISTS `itr_companyId_idx` (`companyId`);
+ALTER TABLE `inspection_templates` ADD INDEX `it_companyId_idx` (`companyId`);
+ALTER TABLE `inspection_templates` ADD INDEX `it_company_system_idx` (`companyId`, `systemType`);
+ALTER TABLE `inspection_template_sections` ADD INDEX `its_templateId_idx` (`templateId`);
+ALTER TABLE `inspection_template_sections` ADD INDEX `its_companyId_idx` (`companyId`);
+ALTER TABLE `inspection_template_items` ADD INDEX `iti_templateId_idx` (`templateId`);
+ALTER TABLE `inspection_template_items` ADD INDEX `iti_sectionId_idx` (`sectionId`);
+ALTER TABLE `inspection_template_items` ADD INDEX `iti_companyId_idx` (`companyId`);
+ALTER TABLE `inspection_template_assignments` ADD INDEX `ita_templateId_idx` (`templateId`);
+ALTER TABLE `inspection_template_assignments` ADD INDEX `ita_companyId_idx` (`companyId`);
+ALTER TABLE `inspection_template_responses` ADD INDEX `itr_job_item_idx` (`jobId`, `itemId`);
+ALTER TABLE `inspection_template_responses` ADD INDEX `itr_jobId_idx` (`jobId`);
+ALTER TABLE `inspection_template_responses` ADD INDEX `itr_templateId_idx` (`templateId`);
+ALTER TABLE `inspection_template_responses` ADD INDEX `itr_companyId_idx` (`companyId`);

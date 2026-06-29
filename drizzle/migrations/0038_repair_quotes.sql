@@ -1,5 +1,11 @@
 -- Migration: 0038_repair_quotes
 -- Creates repair_quote_items table and extends quotes with repair-specific columns.
+--
+-- REWRITTEN for MySQL (2026-06-29): the original `ALTER TABLE quotes ADD COLUMN
+-- IF NOT EXISTS ...` is MariaDB-only syntax and threw on MySQL, so this file
+-- failed every boot and the quotes columns below were never added in production.
+-- Each ADD COLUMN is now its own statement; the startup runner ignores
+-- ER_DUP_FIELDNAME, so existing columns are skipped and the file is marked applied.
 
 CREATE TABLE IF NOT EXISTS `repair_quote_items` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -30,18 +36,16 @@ CREATE TABLE IF NOT EXISTS `repair_quote_items` (
   INDEX `repair_quote_items_quoteId_idx` (`quoteId`)
 );
 
--- Extend quotes table with repair-specific columns
-ALTER TABLE `quotes`
-  ADD COLUMN IF NOT EXISTS `quoteNumber` VARCHAR(50),
-  ADD COLUMN IF NOT EXISTS `techLabourRate` DECIMAL(8,2),
-  ADD COLUMN IF NOT EXISTS `fitterLabourRate` DECIMAL(8,2),
-  ADD COLUMN IF NOT EXISTS `fuelCharge` DECIMAL(8,2),
-  ADD COLUMN IF NOT EXISTS `backflowReportFee` DECIMAL(8,2),
-  ADD COLUMN IF NOT EXISTS `subtotal` DECIMAL(10,2),
-  ADD COLUMN IF NOT EXISTS `gst` DECIMAL(10,2),
-  ADD COLUMN IF NOT EXISTS `pst` DECIMAL(10,2),
-  ADD COLUMN IF NOT EXISTS `validUntil` DATE,
-  ADD COLUMN IF NOT EXISTS `approvedAt` TIMESTAMP NULL,
-  ADD COLUMN IF NOT EXISTS `declinedAt` TIMESTAMP NULL,
-  ADD COLUMN IF NOT EXISTS `createdById` INT,
-  ADD COLUMN IF NOT EXISTS `finalizedAt` TIMESTAMP NULL;
+ALTER TABLE `quotes` ADD COLUMN `quoteNumber` VARCHAR(50);
+ALTER TABLE `quotes` ADD COLUMN `techLabourRate` DECIMAL(8,2);
+ALTER TABLE `quotes` ADD COLUMN `fitterLabourRate` DECIMAL(8,2);
+ALTER TABLE `quotes` ADD COLUMN `fuelCharge` DECIMAL(8,2);
+ALTER TABLE `quotes` ADD COLUMN `backflowReportFee` DECIMAL(8,2);
+ALTER TABLE `quotes` ADD COLUMN `subtotal` DECIMAL(10,2);
+ALTER TABLE `quotes` ADD COLUMN `gst` DECIMAL(10,2);
+ALTER TABLE `quotes` ADD COLUMN `pst` DECIMAL(10,2);
+ALTER TABLE `quotes` ADD COLUMN `validUntil` DATE;
+ALTER TABLE `quotes` ADD COLUMN `approvedAt` TIMESTAMP NULL;
+ALTER TABLE `quotes` ADD COLUMN `declinedAt` TIMESTAMP NULL;
+ALTER TABLE `quotes` ADD COLUMN `createdById` INT;
+ALTER TABLE `quotes` ADD COLUMN `finalizedAt` TIMESTAMP NULL;
