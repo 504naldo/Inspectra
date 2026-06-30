@@ -5,6 +5,18 @@ records, scheduling, technician mobile workflows, device inspections, deficiency
 tracking, branded PDF reports, repair quotes, work orders, invoicing, payroll,
 and analytics for fire protection companies.
 
+The public marketing website lives in a separate repository
+(`504naldo/inspectra-website`); this repo is the secure application only.
+
+## Documentation
+
+See **[`docs/README.md`](./docs/README.md)**. Key entry points:
+[Production Readiness register](./docs/PRODUCTION_READINESS.md) ·
+[Deployment runbook](./docs/runbooks/DEPLOYMENT.md) ·
+[Core workflow validation](./docs/CORE_WORKFLOW_VALIDATION.md) ·
+[Customer report privacy](./docs/CUSTOMER_REPORT_PRIVACY.md) ·
+[Trust claims policy](./docs/TRUST_CLAIMS.md).
+
 ## Stack
 
 - **Frontend**: React 19 + Vite, TypeScript, Tailwind CSS v4, shadcn/ui, tRPC client
