@@ -8,6 +8,39 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 
+// ── Named scoped getters ──────────────────────────────────────────────────────
+// Prefer these over `getById(id)` + manual `companyId` comparison: they load the
+// record and enforce company ownership in one place (throwing NOT_FOUND/FORBIDDEN),
+// so a caller can't forget the check. `companyId` must always come from
+// authenticated context (ctx.user.companyId), never from client input.
+
+/** Load a job and assert it belongs to the company. Throws otherwise. */
+export async function getJobForCompany(jobId: number, companyId: number) {
+  return db.assertJobCompany(jobId, companyId);
+}
+
+/** Load a site and assert it belongs to the company. */
+export async function getSiteForCompany(siteId: number, companyId: number) {
+  return assertSiteCompany(siteId, companyId);
+}
+
+/** Load an invoice and assert it belongs to the company. */
+export async function getInvoiceForCompany(invoiceId: number, companyId: number) {
+  const invoice = await db.getInvoiceById(invoiceId);
+  if (!invoice) throw new TRPCError({ code: "NOT_FOUND", message: "Invoice not found" });
+  if (invoice.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  return invoice;
+}
+
+/** Load a deficiency and assert (via its parent job) it belongs to the company. */
+export async function getDeficiencyForCompany(deficiencyId: number, companyId: number) {
+  const deficiency = await db.getDeficiencyById(deficiencyId);
+  if (!deficiency) throw new TRPCError({ code: "NOT_FOUND", message: "Deficiency not found" });
+  const job = await db.getJobById(deficiency.jobId);
+  if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  return deficiency;
+}
+
 export async function assertSiteCompany(siteId: number, companyId: number) {
   const site = await db.getSiteById(siteId);
   if (!site) throw new TRPCError({ code: "NOT_FOUND", message: "Site not found" });
