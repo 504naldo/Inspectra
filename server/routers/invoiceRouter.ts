@@ -321,20 +321,37 @@ export const invoiceRouter = router({
       if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot record payment on a voided invoice" });
       if (inv.status === "paid") throw new TRPCError({ code: "BAD_REQUEST", message: "Invoice is already fully paid" });
       if (inv.sageExportStatus === "exported") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot modify a Sage-exported invoice" });
-      const total = parseFloat(String(inv.total ?? "0"));
-      const status = input.amountPaid >= total ? "paid" : "partial";
+
+      // Recompute totals from the authoritative line items so a payment is never
+      // accepted against a stale stored total, then read the fresh total back.
+      await db.recalculateInvoiceTotals(input.id);
+      const fresh = await db.getInvoiceById(input.id);
+      if (!fresh) throw new TRPCError({ code: "NOT_FOUND" });
+      const total = parseFloat(String(fresh.total ?? "0"));
+      const fullyPaid = input.amountPaid >= total;
+      const status = fullyPaid ? "paid" : "partial";
       const balanceDue = Math.max(0, total - input.amountPaid);
-      await db.updateInvoice(input.id, {
-        amountPaid: String(input.amountPaid) as any,
-        balanceDue: String(balanceDue) as any,
+
+      // Atomic, eligibility-guarded write: prevents a double-apply race (two
+      // concurrent mark-paid requests) and re-checks paid/void/exported in the
+      // WHERE clause. A false result means another action already transitioned it.
+      const applied = await db.markInvoicePaidIfEligible(input.id, ctx.user.companyId!, {
+        amountPaid: String(input.amountPaid),
+        balanceDue: String(balanceDue),
         status,
-        paidAt: input.amountPaid >= total
-          ? (input.paidAt ? new Date(input.paidAt) : new Date())
-          : undefined,
+        paidAt: fullyPaid ? (input.paidAt ? new Date(input.paidAt) : new Date()) : null,
       });
+      if (!applied) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "This invoice was already updated (paid, voided, exported, or changed by another action). Reload and try again.",
+        });
+      }
+
       void logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "paid",
-        title: status === "paid" ? `Invoice paid in full: $${input.amountPaid.toFixed(2)}` : `Partial payment recorded: $${input.amountPaid.toFixed(2)}` });
-      return { success: true };
+        title: fullyPaid ? `Invoice paid in full: $${input.amountPaid.toFixed(2)}` : `Partial payment recorded: $${input.amountPaid.toFixed(2)}`,
+        newValue: `total $${total.toFixed(2)}, paid $${input.amountPaid.toFixed(2)}, balance $${balanceDue.toFixed(2)}` });
+      return { success: true, status, total, amountPaid: input.amountPaid, balanceDue };
     }),
 
   void: officeProcedure

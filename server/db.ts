@@ -2475,6 +2475,37 @@ export async function updateInvoice(id: number, data: Partial<InsertInvoice>): P
   await db.update(invoices).set(data).where(eq(invoices.id, id));
 }
 
+/**
+ * Atomically transition an invoice to paid/partial ONLY if it is still eligible
+ * (belongs to the company, not already paid/void, not Sage-exported). Eligibility
+ * is enforced in the WHERE clause so two concurrent "mark paid" requests cannot
+ * both succeed — the second matches zero rows. Returns true when the row was
+ * updated, false when another action already transitioned it (caller treats false
+ * as a conflict). `companyId` is always supplied from authenticated context.
+ */
+export async function markInvoicePaidIfEligible(
+  id: number,
+  companyId: number,
+  fields: { amountPaid: string; balanceDue: string; status: string; paidAt: Date | null },
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const result = await db.update(invoices).set({
+    amountPaid: fields.amountPaid as any,
+    balanceDue: fields.balanceDue as any,
+    status: fields.status as any,
+    ...(fields.paidAt ? { paidAt: fields.paidAt } : {}),
+  }).where(and(
+    eq(invoices.id, id),
+    eq(invoices.companyId, companyId),
+    ne(invoices.status, "paid"),
+    ne(invoices.status, "void"),
+    or(isNull(invoices.sageExportStatus), ne(invoices.sageExportStatus, "exported")),
+  ));
+  const affected = Number((result as any)?.[0]?.affectedRows ?? 0);
+  return affected > 0;
+}
+
 export async function getLineItemsByInvoice(invoiceId: number): Promise<InvoiceLineItem[]> {
   const db = await getDb();
   if (!db) return [];
