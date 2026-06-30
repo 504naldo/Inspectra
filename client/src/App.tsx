@@ -13,6 +13,7 @@ import {
 import { useAuth } from "./_core/hooks/useAuth";
 import { lazy, Suspense, useEffect } from "react";
 import { getRoleBasedPath } from "./lib/roleRedirect";
+import { parseRequiredRouteId } from "./lib/routeParams";
 import { useNativeInit } from "./hooks/useNativeInit";
 
 // Pages on the public/critical path stay eager so first paint doesn't wait on an extra chunk fetch.
@@ -191,25 +192,46 @@ function ProtectedRoute({
   return <>{children}</>;
 }
 
+/**
+ * Validate numeric route params before mounting the destination component.
+ * If any required id is not a positive integer, render NotFound instead of
+ * mounting the component with NaN / firing tRPC queries with an invalid id.
+ */
+function withNumericParams(
+  params: Record<string, string | undefined>,
+  keys: string[],
+  render: (ids: Record<string, number>) => React.ReactNode,
+): React.ReactNode {
+  const ids: Record<string, number> = {};
+  for (const key of keys) {
+    const id = parseRequiredRouteId(params[key]);
+    if (id === null) return <NotFound />;
+    ids[key] = id;
+  }
+  return render(ids);
+}
+
 function Router() {
   const { user, loading, isAuthenticated } = useAuth();
   const [location] = useLocation();
 
-  // Global auth guard: redirect authenticated users from home to dashboard
+  // Global auth guard: send authenticated users landing on "/" to their role
+  // dashboard. This is the single authoritative authenticated-root redirect.
+  //
+  // We intentionally use a hard navigation (window.location.href) rather than
+  // client-side routing: on mobile Chrome (and the Capacitor webview) a
+  // client-side replace from "/" was unreliable and left users stuck on the
+  // entry screen. The loop guard (targetPath !== "/" and !== current location)
+  // prevents repeated navigation if the role has no dedicated path.
   useEffect(() => {
     if (loading) return;
-    if (isAuthenticated && user && location === "/") {
-      const targetPath = getRoleBasedPath(user.role);
-      // Logged unconditionally (not just IS_DEV) so a remote-debugging session on a
-      // real device can confirm this guard actually ran and where it sent the user —
-      // needed to diagnose the "stuck on homepage" report on mobile Chrome.
-      console.log("[AuthGuard] Redirecting from / to role-based dashboard", {
-        role: user.role,
-        targetPath,
-      });
-      // Use window.location.href for hard redirect (more reliable on mobile Chrome)
-      window.location.href = targetPath;
+    if (!(isAuthenticated && user && location === "/")) return;
+    const targetPath = getRoleBasedPath(user.role);
+    if (targetPath === "/" || targetPath === location) return; // loop guard / safe fallback
+    if (import.meta.env.DEV) {
+      console.log("[AuthGuard] Redirecting / →", targetPath, "(role:", user.role + ")");
     }
+    window.location.href = targetPath;
   }, [loading, isAuthenticated, user, location]);
 
   return (
@@ -232,42 +254,42 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/tech/jobs/:id">
-          {params => (
+          {params => withNumericParams(params, ["id"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
-              <JobDetails jobId={parseInt(params.id)} />
+              <JobDetails jobId={ids.id} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/tech/jobs/:jobId/device/:deviceId">
-          {params => (
+          {params => withNumericParams(params, ["jobId", "deviceId"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
               <DeviceTest
-                jobId={parseInt(params.jobId)}
-                deviceId={parseInt(params.deviceId)}
+                jobId={ids.jobId}
+                deviceId={ids.deviceId}
               />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/tech/jobs/:jobId/deficiencies">
-          {params => (
+          {params => withNumericParams(params, ["jobId"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
-              <DeficiencyList jobId={parseInt(params.jobId)} />
+              <DeficiencyList jobId={ids.jobId} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/tech/deficiency/:id">
-          {params => (
+          {params => withNumericParams(params, ["id"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
-              <DeficiencyEditor deficiencyId={parseInt(params.id)} />
+              <DeficiencyEditor deficiencyId={ids.id} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/tech/deficiency/new/:jobId">
-          {params => (
+          {params => withNumericParams(params, ["jobId"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
-              <DeficiencyEditor jobId={parseInt(params.jobId)} />
+              <DeficiencyEditor jobId={ids.jobId} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/tech/jobs/:jobId/fire-alarm">
           {params => (
@@ -277,18 +299,18 @@ function Router() {
           )}
         </Route>
         <Route path="/tech/jobs/:jobId/smoke-alarms">
-          {params => (
+          {params => withNumericParams(params, ["jobId"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
-              <SmokeAlarmInspection jobId={parseInt(params.jobId)} />
+              <SmokeAlarmInspection jobId={ids.jobId} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/tech/jobs/:jobId/sprinkler-itm">
-          {params => (
+          {params => withNumericParams(params, ["jobId"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
-              <SprinklerITM jobId={parseInt(params.jobId)} />
+              <SprinklerITM jobId={ids.jobId} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/tech/jobs/:id/checklist">
           {params => (
@@ -367,11 +389,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/qa/:jobId">
-          {params => (
+          {params => withNumericParams(params, ["jobId"], ids => (
             <ProtectedRoute allowedRoles={["admin"]}>
-              <AdminQACheck jobId={parseInt(params.jobId)} />
+              <AdminQACheck jobId={ids.jobId} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/admin/sites/:siteId/files">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -404,11 +426,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/sites/:siteId/work-site-info">
-          {params => (
+          {params => withNumericParams(params, ["siteId"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office"]}>
-              <WorkSiteInfo siteId={parseInt(params.siteId)} />
+              <WorkSiteInfo siteId={ids.siteId} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/admin/schedule">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -461,11 +483,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/approved-work/:id">
-          {params => (
+          {params => withNumericParams(params, ["id"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office"]}>
-              <ApprovedWorkDetail id={parseInt(params.id)} />
+              <ApprovedWorkDetail id={ids.id} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/admin/financial-reports">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -478,11 +500,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/invoices/:id">
-          {params => (
+          {params => withNumericParams(params, ["id"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office"]}>
-              <InvoiceDetail id={parseInt(params.id)} />
+              <InvoiceDetail id={ids.id} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/admin/settings">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -540,11 +562,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/service-agreements/:id">
-          {params => (
+          {params => withNumericParams(params, ["id"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office"]}>
-              <ServiceAgreementDetail id={parseInt(params.id)} />
+              <ServiceAgreementDetail id={ids.id} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/admin/service-agreements">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -562,11 +584,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/parts-requests/:id">
-          {params => (
+          {params => withNumericParams(params, ["id"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office"]}>
-              <PartsRequestDetail id={parseInt(params.id)} />
+              <PartsRequestDetail id={ids.id} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/admin/parts-requests">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -579,11 +601,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/purchase-orders/:id">
-          {params => (
+          {params => withNumericParams(params, ["id"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office"]}>
-              <PurchaseOrderDetail id={parseInt(params.id)} />
+              <PurchaseOrderDetail id={ids.id} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/admin/purchase-orders">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -686,10 +708,9 @@ function Router() {
         {/* 404 - Explicit route for intentional 404 pages */}
         <Route path="/404" component={NotFound} />
 
-        {/* Catch-all: redirect unknown routes to home instead of showing 404 */}
-        <Route>
-          <Redirect to="/" />
-        </Route>
+        {/* Catch-all: unknown URLs render Not Found (do not silently bounce to "/",
+            which masked typos and re-redirected authenticated users). */}
+        <Route component={NotFound} />
       </Switch>
     </Suspense>
   );
