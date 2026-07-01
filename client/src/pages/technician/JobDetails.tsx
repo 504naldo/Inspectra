@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { pendingSyncItemCount, isQaSubmitBlocked } from "@/lib/qaPreflight";
 import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { SiteDetails } from "@/components/SiteDetails";
@@ -374,6 +375,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   // Submit for QA
   const [qaDialogOpen, setQaDialogOpen] = useState(false);
+  const [qaOverride, setQaOverride] = useState(false);
+  // Total unsynced field data across all critical offline stores. QA submission is
+  // blocked while this is > 0 unless the technician explicitly overrides, so a
+  // submit can't silently omit device tests / deficiencies / checklist / template
+  // responses that are still only stored locally. (Rule in lib/qaPreflight.)
+  const pendingSyncCount = pendingSyncItemCount(syncStatus);
   const { data: templateCompleteness } = trpc.inspectionTemplate.getCompletenessForJob.useQuery(
     { jobId },
     { enabled: qaDialogOpen && !!jobId, staleTime: 30_000 }
@@ -1633,7 +1640,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       </div>
 
       {/* Submit for QA dialog */}
-      <Dialog open={qaDialogOpen} onOpenChange={(open) => { if (!submitForQA.isPending) setQaDialogOpen(open); }}>
+      <Dialog open={qaDialogOpen} onOpenChange={(open) => { if (!submitForQA.isPending) { setQaDialogOpen(open); if (!open) setQaOverride(false); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1672,20 +1679,27 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 </p>
               )}
             </div>
-            {(syncStatus.pendingResults > 0 || syncStatus.pendingDeficiencies > 0) && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-1">
+            {pendingSyncCount > 0 && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
                 <p className="text-amber-800 dark:text-amber-300 font-medium text-xs">
-                  ⚠ You have unsynced field data
+                  ⚠ {pendingSyncCount} item{pendingSyncCount !== 1 ? "s" : ""} not yet synced
                 </p>
+                <ul className="text-amber-700 dark:text-amber-400 text-xs list-disc pl-4 space-y-0.5">
+                  {syncStatus.pendingResults > 0 && <li>{syncStatus.pendingResults} device test result{syncStatus.pendingResults !== 1 ? "s" : ""}</li>}
+                  {syncStatus.pendingDeficiencies > 0 && <li>{syncStatus.pendingDeficiencies} deficienc{syncStatus.pendingDeficiencies !== 1 ? "ies" : "y"}</li>}
+                  {(syncStatus.pendingChecklistResponses ?? 0) > 0 && <li>{syncStatus.pendingChecklistResponses} checklist response{syncStatus.pendingChecklistResponses !== 1 ? "s" : ""}</li>}
+                  {(syncStatus.pendingTemplateResponses ?? 0) > 0 && <li>{syncStatus.pendingTemplateResponses} template response{syncStatus.pendingTemplateResponses !== 1 ? "s" : ""}</li>}
+                </ul>
                 <p className="text-amber-700 dark:text-amber-400 text-xs">
-                  {syncStatus.pendingResults > 0 && `${syncStatus.pendingResults} device test result${syncStatus.pendingResults !== 1 ? "s" : ""}`}
-                  {syncStatus.pendingResults > 0 && syncStatus.pendingDeficiencies > 0 && " and "}
-                  {syncStatus.pendingDeficiencies > 0 && `${syncStatus.pendingDeficiencies} deficienc${syncStatus.pendingDeficiencies !== 1 ? "ies" : "y"}`}
-                  {" are saved locally and not yet uploaded. Sync first so the report is accurate."}
+                  These are stored on this device only. Sync first so the report includes them.
                 </p>
                 <Link href="/tech/sync" className="text-xs underline text-amber-800 dark:text-amber-300 font-medium">
                   Go to Sync →
                 </Link>
+                <label className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300 cursor-pointer pt-1">
+                  <input type="checkbox" checked={qaOverride} onChange={(e) => setQaOverride(e.target.checked)} className="mt-0.5 rounded" />
+                  <span>Submit anyway — I understand these unsynced items may be missing from the report.</span>
+                </label>
               </div>
             )}
             <p className="text-muted-foreground text-xs">The job will remain in progress. You can still make changes after submitting.</p>
@@ -1694,7 +1708,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <Button variant="outline" onClick={() => setQaDialogOpen(false)}>Cancel</Button>
             <Button
               onClick={() => submitForQA.mutate({ jobId })}
-              disabled={submitForQA.isPending}
+              disabled={submitForQA.isPending || isQaSubmitBlocked(syncStatus, qaOverride)}
+              title={isQaSubmitBlocked(syncStatus, qaOverride) ? "Sync your field data first, or check the box to submit anyway" : undefined}
             >
               {submitForQA.isPending ? "Submitting…" : "Submit for QA"}
             </Button>
