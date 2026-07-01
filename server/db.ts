@@ -993,6 +993,22 @@ export async function getDeficiencyById(id: number) {
   return result[0];
 }
 
+/**
+ * Look up a deficiency previously created with a client-supplied offline-sync
+ * idempotency key. Used for find-or-create so a replayed offline create does not
+ * duplicate the record.
+ */
+export async function getDeficiencyByIdempotencyKey(idempotencyKey: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(deficiencies)
+    .where(eq(deficiencies.idempotencyKey, idempotencyKey))
+    .limit(1);
+  return result[0];
+}
+
 export async function updateDeficiency(id: number, data: Partial<InsertDeficiency>) {
   const db = await getDb();
   if (!db) return;

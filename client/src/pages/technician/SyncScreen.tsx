@@ -134,6 +134,9 @@ export default function SyncScreen() {
             codeReference: def.codeReference,
             systemCategory: def.systemCategory,
             estimatedCost: def.estimatedCost,
+            // Stable offline id → server find-or-create, so a replayed sync (e.g.
+            // a lost response on reconnect) never duplicates this deficiency.
+            idempotencyKey: def.localId,
           });
           syncedLocalIds.push(def.localId);
           defsSynced++;

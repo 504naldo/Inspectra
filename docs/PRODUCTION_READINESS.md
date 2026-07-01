@@ -19,7 +19,7 @@ Status: open · in-progress · fixed · accepted-risk · wont-do.
 | PR-08 | Unsupported trust/compliance claims | P1 | Compliance | fixed | landing copy (removed) + meta tag | `docs: remove unsupported trust claims` | grep clean; `TRUST_CLAIMS.md` | eng | — |
 | PR-09 | 5 manual migrations failed every boot (MariaDB syntax) | P0 | Migrations | fixed (prior) | startup logs | `Repair 5 manual migrations…` (main) | applied in prod | eng | — |
 | PR-10 | Capability enforcement: sensitive actions open to admin+office by role only | P1 | Security | open (documented) | `officeProcedure` on payroll/Sage/users | — | — | product+eng | Decide capability matrix (see TRUST_CLAIMS / this register) then enforce server-side |
-| PR-11 | Offline/sync duplicate-protection + QA preflight hardening | P1 | Technician | open (partial) | sync router/queue | — | — | eng | Add idempotency-key dedup + QA preflight; tests |
+| PR-11 | Offline/sync duplicate-protection + QA preflight hardening | P1 | Technician | in-progress | sync replays `deficiency.create` (was non-idempotent) | `fix: strengthen offline sync safeguards` | `offlineSyncIdempotency.test.ts` (5) | eng | Extend idempotency to other offline creates; add QA-submit preflight surfacing failed-critical items |
 | PR-12 | Customer report privacy not enforced by a central sanitizer/test | P1 | Privacy | open (guardrail) | PDF generators use typed projections (no raw rows) | — | `CUSTOMER_REPORT_PRIVACY.md` | eng | Add `buildCustomerSafeReportData` + seeded-field test |
 | PR-13 | Root audit docs sprawl; no single active register | P2 | Docs | fixed | many root `*_AUDIT.md` | this pass | this file + `docs/README.md` | eng | Migrate findings here over time |
 
