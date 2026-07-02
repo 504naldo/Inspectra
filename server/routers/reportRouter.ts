@@ -7,6 +7,7 @@ import { getDb } from "../db";
 import { assertJobNotFinalized } from "../db";
 import { storagePut, storageGetDownload } from "../storage";
 import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
+import { buildCustomerSafeReportData } from "../customerSafeReport";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
 import { fetchImageBuffer } from "../pdfSharedStyles";
 import * as checklists from "../complianceChecklists";
@@ -371,7 +372,7 @@ const reportRouter = router({
 
 
     // Generate PDF with Fire-Pro style
-    const pdfBuffer = await generateInspectionReportPDF({
+    const pdfBuffer = await generateInspectionReportPDF(buildCustomerSafeReportData({
       jobNumber: job.jobNumber,
       jobTitle: job.title,
       siteName: site.name,
@@ -479,7 +480,7 @@ const reportRouter = router({
       fireAlarmSystem: undefined,
       // Inspection template checklist — included when technician completed template forms
       templateChecklistSections: rawTemplateData.length > 0 ? rawTemplateData : undefined,
-    });
+    }));
 
     // Upload to S3
     const fileKey = `reports/${job.companyId}/Inspectra-${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pdf`;

@@ -1,6 +1,6 @@
 # Customer-Facing Report Privacy
 
-**Date:** 2026-06-30 · **Status:** active (guardrail documented; central sanitizer is a follow-up)
+**Date:** 2026-07-02 · **Status:** active — central allow-list sanitizer + regression test in place (PR-12 closed)
 
 Defines what may and may not appear in customer-facing PDFs/reports, the current
 sanitization boundary, the report types reviewed, and remaining limitations.
@@ -42,12 +42,18 @@ quote PDFs, invoice PDFs, customer-portal report access, Document Center, Send C
 
 ## Remaining limitations / follow-up (tracked as PR-12)
 
-1. **No centralized `buildCustomerSafeReportData()`** — the projection is currently
-   implicit in each generator's typed input. Recommended: a single allow-list
-   serializer that all customer-facing renderers consume, so new fields are excluded
-   by default rather than included by default.
-2. **No regression test** seeds sensitive internal fields and asserts their absence
-   in generated report data/text. Recommended: add such a test (assert on the
-   sanitized data object; use PDF text extraction if/where supported).
-3. Until (1)/(2) land, the guardrail is "generators take typed projections, not raw
-   rows" — enforced by code review, not by an automated check.
+1. ✅ **Centralized `buildCustomerSafeReportData()`** — `server/customerSafeReport.ts`
+   is a single allow-list serializer over the inspection/deficiency `ReportData`
+   shape. It copies only enumerated customer-safe fields into a fresh object, so any
+   field not on the allow-list (including new ones) is dropped by default rather than
+   included by default. `reportRouter.generateReport` runs the assembled data through
+   it before calling `generateInspectionReportPDF`.
+2. ✅ **Regression test** — `server/customerSafeReport.test.ts` seeds internal-only
+   fields (wages, monitoring passwords, internal/office notes, AI prompts, storage
+   keys, access tokens) at every nesting level and asserts, via the `findProhibitedFields`
+   deep scan, that none survive sanitization, while the customer-safe fields the PDF
+   renders (including photo buffers and the monitoring-centre *name*) are preserved.
+3. **Remaining scope**: the compliance-report path (`generateComplianceReportPDF`)
+   and the invoice/quote PDFs still rely on their own typed projections and are not
+   yet routed through a shared serializer — same pattern can be extended to them.
+   Until then those paths keep the "typed projection, not raw rows" guardrail.

@@ -24,7 +24,7 @@ const __dirname = dirname(__filename);
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface DeviceSummary {
+export interface DeviceSummary {
   deviceType: string;
   total: number;
   passed: number;
@@ -32,7 +32,7 @@ interface DeviceSummary {
   na: number;
 }
 
-interface Deficiency {
+export interface Deficiency {
   id: number;
   title: string;
   severity: string;
@@ -46,7 +46,7 @@ interface Deficiency {
   photos?: Array<{ buffer: Buffer; caption?: string | null; locationNote?: string | null }>;
 }
 
-interface InspectionResult {
+export interface InspectionResult {
   deviceId: number;
   deviceType: string;
   location?: string | null;
@@ -55,7 +55,7 @@ interface InspectionResult {
   notes?: string | null;
 }
 
-interface FireAlarmChecklistItem {
+export interface FireAlarmChecklistItem {
   id: number;
   sectionName: string;
   sectionOrder: number;
@@ -70,7 +70,7 @@ interface FireAlarmChecklistItem {
   notes?: string | null;
 }
 
-interface ReportData {
+export interface ReportData {
   jobNumber: string;
   jobTitle: string;
   siteName: string;
@@ -136,7 +136,7 @@ interface ReportData {
 
 // ─── Template checklist types ─────────────────────────────────────────────────
 
-interface TemplatePdfItem {
+export interface TemplatePdfItem {
   itemCode?: string | null;
   questionText: string;
   responseValue?: string | null;
@@ -147,7 +147,7 @@ interface TemplatePdfItem {
   deficiencyId?: number | null;
 }
 
-interface TemplatePdfSection {
+export interface TemplatePdfSection {
   templateName: string;
   systemType: string;
   completionPercent: number;
