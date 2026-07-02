@@ -28,3 +28,37 @@ export function pendingSyncItemCount(s: QaSyncCounts): number {
 export function isQaSubmitBlocked(s: QaSyncCounts, override: boolean): boolean {
   return pendingSyncItemCount(s) > 0 && !override;
 }
+
+/** An offline-store record that belongs to a job and may already be synced. */
+export interface JobScopedItem {
+  jobId: number;
+  synced?: boolean;
+}
+
+/** Count records for a specific job that are not yet synced. */
+export function countUnsyncedForJob(items: JobScopedItem[] | undefined, jobId: number): number {
+  return (items ?? []).filter((i) => i.jobId === jobId && !i.synced).length;
+}
+
+/**
+ * Pending unsynced counts scoped to a single job. The QA preflight for job A
+ * must not be blocked (or reassured) by unsynced field data belonging to some
+ * other job the technician also worked offline — only this job's data can be
+ * omitted from this job's report.
+ */
+export function pendingSyncCountsForJob(
+  stores: {
+    results?: JobScopedItem[];
+    deficiencies?: JobScopedItem[];
+    checklistResponses?: JobScopedItem[];
+    templateResponses?: JobScopedItem[];
+  },
+  jobId: number,
+): QaSyncCounts {
+  return {
+    pendingResults: countUnsyncedForJob(stores.results, jobId),
+    pendingDeficiencies: countUnsyncedForJob(stores.deficiencies, jobId),
+    pendingChecklistResponses: countUnsyncedForJob(stores.checklistResponses, jobId),
+    pendingTemplateResponses: countUnsyncedForJob(stores.templateResponses, jobId),
+  };
+}
