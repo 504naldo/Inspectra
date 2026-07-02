@@ -371,6 +371,7 @@ function EntryRow({
   onReject,
   onNotes,
   currentUserId,
+  canManage,
 }: {
   entry: any;
   userMap: Map<number, any>;
@@ -380,9 +381,12 @@ function EntryRow({
   onReject: (id: number) => void;
   onNotes: (entry: any) => void;
   currentUserId: number;
+  canManage: boolean;
 }) {
   const isSelf = entry.userId === currentUserId;
-  const canApprove = entry.status === "submitted" && !isSelf;
+  // Approval/rejection is admin-only (enforced server-side); office can still
+  // view entries and edit admin notes but never approve or reject.
+  const canApprove = canManage && entry.status === "submitted" && !isSelf;
   return (
     <div className={`flex items-start gap-2 px-3 py-2.5 border-b last:border-0 ${selected ? "bg-primary/5" : ""}`}>
       {canApprove && (
@@ -453,6 +457,7 @@ function EmployeeGroup({
   onReject,
   onNotes,
   currentUserId,
+  canManage,
 }: {
   userId: number;
   user: any;
@@ -464,6 +469,7 @@ function EmployeeGroup({
   onReject: (id: number) => void;
   onNotes: (entry: any) => void;
   currentUserId: number;
+  canManage: boolean;
 }) {
   const [open, setOpen] = useState(true);
   const totalMins = entries.reduce((s, e) => s + e.totalMinutes, 0);
@@ -503,6 +509,7 @@ function EmployeeGroup({
               onReject={onReject}
               onNotes={onNotes}
               currentUserId={currentUserId}
+              canManage={canManage}
             />
           ))}
         </div>
@@ -523,6 +530,10 @@ const PRESETS = [
 
 export default function PayrollReview() {
   const { user } = useAuth();
+  // Payroll approval and export are admin-only (enforced server-side in
+  // payrollHoursRouter). Office users can view entries and summaries and edit
+  // admin notes, but the approve/reject/bulk/export controls are hidden from them.
+  const isAdmin = user?.role === "admin";
 
   // Period state
   const [activePreset, setActivePreset] = useState("thisWeek");
@@ -575,7 +586,8 @@ export default function PayrollReview() {
     from,
     to,
   });
-  const { data: exportAllEntries = [] } = trpc.payrollHours.exportData.useQuery({ from, to });
+  // exportData is admin-only server-side; only fetch it for admins to avoid a 403.
+  const { data: exportAllEntries = [] } = trpc.payrollHours.exportData.useQuery({ from, to }, { enabled: isAdmin });
 
   // Mutations
   const approveMut = trpc.payrollHours.approve.useMutation({
@@ -819,8 +831,8 @@ export default function PayrollReview() {
         </CardContent>
       </Card>
 
-      {/* Bulk action bar */}
-      {submittedSelectableIds.length > 0 && (
+      {/* Bulk action bar — approval/export are admin-only */}
+      {isAdmin && submittedSelectableIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3 p-3 rounded-lg border bg-muted/20">
           <label className="flex items-center gap-2 text-sm cursor-pointer mr-2">
             <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />
@@ -882,6 +894,7 @@ export default function PayrollReview() {
           onReject={setRejectSingleId}
           onNotes={setNotesEntry}
           currentUserId={user!.id}
+          canManage={isAdmin}
         />
       ))}
 
@@ -891,6 +904,8 @@ export default function PayrollReview() {
           <span className="text-xs text-muted-foreground">
             {filteredEntries.length} entries · Total: <strong>{fmtH(totalFilteredMins)}</strong>
           </span>
+          {/* Export + mark-exported are the admin-only payroll run */}
+          {isAdmin && (
           <div className="flex flex-wrap gap-2">
             {approvedIds.length > 0 && (
               <Button
@@ -918,6 +933,7 @@ export default function PayrollReview() {
               </Button>
             )}
           </div>
+          )}
         </div>
       )}
 
