@@ -21,6 +21,7 @@ import * as db from "../db.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateQuotePDF, generateBuildingQuotePDF } from "../quotePdfGenerator.js";
+import { buildCustomerSafeQuoteData, buildCustomerSafeBuildingQuoteData } from "../customerSafeReport.js";
 import type { QuoteLineItem } from "../../drizzle/schema.js";
 import { _createWorkOrderFromQuote } from "./repairQuoteRouter.js";
 
@@ -215,7 +216,7 @@ export const quoteRouter = router({
       const defDetails = await Promise.all(defIds.map((id) => db.getDeficiencyById(id)));
 
       // Generate PDF
-      const pdfBuffer = await generateQuotePDF({
+      const pdfBuffer = await generateQuotePDF(buildCustomerSafeQuoteData({
         quoteId: quote.id,
         jobNumber: job?.jobNumber ?? `JOB-${quote.jobId}`,
         siteName: site?.name ?? "Unknown Site",
@@ -236,7 +237,7 @@ export const quoteRouter = router({
             description: d.observedIssue ?? d.description,
             location: null,
           })),
-      });
+      }));
 
       // Upload to S3
       const pdfKey = `quotes/${quote.companyId}/${quote.id}/quote-${quote.id}.pdf`;
@@ -482,7 +483,7 @@ export const quoteRouter = router({
       const discountAmount   = subtotal * (discountPct / 100);
       const total            = parseFloat(String(quote.total));
 
-      const pdfBuffer = await generateBuildingQuotePDF({
+      const pdfBuffer = await generateBuildingQuotePDF(buildCustomerSafeBuildingQuoteData({
         quoteId: quote.id,
         companyName: company?.name ?? "EWF",
         createdAt: quote.createdAt,
@@ -511,7 +512,7 @@ export const quoteRouter = router({
         discountReason: (quote as any).discountReason ?? undefined,
         total,
         comments: quote.notes ?? undefined,
-      });
+      }));
 
       const pdfKey = `quotes/${quote.companyId}/${quote.id}/building-quote-${quote.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");

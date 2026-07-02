@@ -9,8 +9,20 @@
  * default, so a leak can only happen by deliberately extending the allow-list.
  */
 import { describe, it, expect } from "vitest";
-import { buildCustomerSafeReportData, findProhibitedFields, PROHIBITED_KEY_PATTERNS } from "./customerSafeReport";
+import {
+  buildCustomerSafeReportData,
+  buildCustomerSafeComplianceData,
+  buildCustomerSafeInvoiceData,
+  buildCustomerSafeQuoteData,
+  buildCustomerSafeRepairQuoteData,
+  buildCustomerSafeBuildingQuoteData,
+  findProhibitedFields,
+  PROHIBITED_KEY_PATTERNS,
+} from "./customerSafeReport";
 import type { ReportData } from "./pdfGeneratorFirePro";
+import type { ComplianceReportData } from "./pdfGeneratorCompliance";
+import type { InvoicePdfData } from "./invoicePdfGenerator";
+import type { QuoteReportData, RepairQuoteReportData, BuildingQuoteReportData } from "./quotePdfGenerator";
 
 // A minimal, valid customer-safe report plus a pile of prohibited internal fields
 // injected at every nesting level. Cast through `any` because these extra keys are
@@ -120,5 +132,152 @@ describe("buildCustomerSafeReportData", () => {
     // `notes` and `monitoringCentreName` are allowed — ensure no pattern over-matches.
     expect(findProhibitedFields({ notes: "x", monitoringCentreName: "y" })).toEqual([]);
     expect(PROHIBITED_KEY_PATTERNS).not.toContain("notes");
+  });
+});
+
+describe("buildCustomerSafeComplianceData", () => {
+  it("strips internal fields and keeps customer-safe ones", () => {
+    const input = {
+      workOrderNumber: "WO-1",
+      dateOfService: new Date("2026-01-10"),
+      inspectionFrequency: "Annual",
+      contactPerson: "Jane",
+      contactPhone: "555",
+      buildingName: "Tower",
+      buildingAddress: "1 Main",
+      city: "Vancouver",
+      systemsInspected: { fireAlarmSystem: true, commonAreaDevices: false, inSuiteDevices: false, sprinklerSystem: false, fireExtinguishers: false, emergencyLighting: false, hydrant: false, winterization: false, generator: false, backflow: false, monitoring: false, smokeControl: false, suppressionSystems: false, standpipe: false, kitchen: false },
+      systemModel: "Notifier",
+      systemOperation: "Single Stage",
+      connectedToFireSignalReceivingCentre: true,
+      systemFullyFunctional: true,
+      deficienciesIdentified: false,
+      recommendationsIdentified: false,
+      technicianName: "Bob",
+      technicianCertificateNumber: "C-9",
+      companyName: "Inspectra",
+      companyPhone: "555",
+      checklists: [
+        { sectionNumber: "1", sectionTitle: "Panel", items: [{ id: "a", description: "power", result: "YES", officeNote: "leak" } as any], overallResult: "PASS", comments: "fine", monitoringPassword: "x" } as any,
+      ],
+      fireAlarmDevices: [{ deviceType: "Smoke", location: "hall", result: "PASS", notes: "ok", techWage: 40 } as any],
+      fireExtinguishers: [],
+      emergencyLights: [],
+      deficiencies: [{ system: "FA", location: "hall", description: "d", jobCostingMargin: 0.3 } as any],
+      // top-level pollutant
+      panelPasscode: "1234",
+    } as unknown as ComplianceReportData;
+    const safe = buildCustomerSafeComplianceData(input);
+    expect(findProhibitedFields(safe)).toEqual([]);
+    expect(safe.workOrderNumber).toBe("WO-1");
+    expect(safe.checklists[0].items[0].description).toBe("power");
+    expect(safe.fireAlarmDevices[0].notes).toBe("ok");
+    expect((safe as Record<string, unknown>).panelPasscode).toBeUndefined();
+  });
+});
+
+describe("buildCustomerSafeInvoiceData", () => {
+  it("strips internal fields and keeps the customer-safe invoice", () => {
+    const input = {
+      invoiceId: 1,
+      invoiceNumber: "INV-1",
+      companyName: "Inspectra",
+      lineItems: [{ description: "Service", quantity: 1, unitPrice: 100, total: 100, taxable: true, internalCost: 40 } as any],
+      subtotal: 100,
+      taxRate: 0.05,
+      taxAmount: 5,
+      total: 105,
+      amountPaid: 0,
+      balanceDue: 105,
+      clientNotes: "thanks",
+      internalMargin: 0.6,
+      payrollBatchId: "P-1",
+    } as unknown as InvoicePdfData;
+    const safe = buildCustomerSafeInvoiceData(input);
+    expect(findProhibitedFields(safe)).toEqual([]);
+    expect(safe.total).toBe(105);
+    expect(safe.lineItems[0].total).toBe(100);
+    expect((safe.lineItems[0] as Record<string, unknown>).internalCost).toBeUndefined();
+    expect((safe as Record<string, unknown>).internalMargin).toBeUndefined();
+  });
+});
+
+describe("buildCustomerSafeQuoteData", () => {
+  it("strips internal fields on the deficiency quote", () => {
+    const input = {
+      quoteId: 1,
+      jobNumber: "J-1",
+      siteName: "Site",
+      siteAddress: "1 Main",
+      customerName: "Acme",
+      companyName: "Inspectra",
+      createdAt: new Date(),
+      lineItems: [{ deficiencyId: 1, description: "Fix", unitPrice: 50, qty: 2, costingMargin: 0.4 } as any],
+      total: 100,
+      acceptUrl: "https://x/accept",
+      deficiencySummaries: [{ title: "t", severity: "high", description: "d", location: "hall", internalNotes: "chase AR" } as any],
+      hourlyRate: 30,
+    } as unknown as QuoteReportData;
+    const safe = buildCustomerSafeQuoteData(input);
+    expect(findProhibitedFields(safe)).toEqual([]);
+    expect(safe.lineItems[0].unitPrice).toBe(50);
+    expect(safe.deficiencySummaries?.[0].title).toBe("t");
+    expect((safe as Record<string, unknown>).hourlyRate).toBeUndefined();
+  });
+});
+
+describe("buildCustomerSafeRepairQuoteData", () => {
+  it("keeps billed labour rates but strips internal-only fields", () => {
+    const input = {
+      quoteId: 1,
+      quoteNumber: "RQ-1",
+      companyName: "Inspectra",
+      customerName: "Acme",
+      siteName: "Site",
+      jobNumber: "J-1",
+      createdAt: new Date(),
+      items: [{
+        description: "Repair", quantity: 1, partUnitPrice: 20, partTotal: 20,
+        techHours: 2, fitterHours: 1, techLabourRate: 95, fitterLabourRate: 85,
+        labourTotal: 275, fuelCharge: 10, backflowReportFee: 0, gst: 5, pst: 0, total: 315,
+        internalCost: 120, // prohibited
+      } as any],
+      subtotal: 300,
+      gst: 15,
+      pst: 0,
+      total: 315,
+      marginPct: 0.5, // prohibited
+    } as unknown as RepairQuoteReportData;
+    const safe = buildCustomerSafeRepairQuoteData(input);
+    expect(findProhibitedFields(safe)).toEqual([]);
+    // Billed (customer-facing) labour rates ARE preserved — they're on the quote.
+    expect(safe.items[0].techLabourRate).toBe(95);
+    expect(safe.items[0].labourTotal).toBe(275);
+    expect((safe.items[0] as Record<string, unknown>).internalCost).toBeUndefined();
+    expect((safe as Record<string, unknown>).marginPct).toBeUndefined();
+  });
+});
+
+describe("buildCustomerSafeBuildingQuoteData", () => {
+  it("strips internal fields on the building quote", () => {
+    const input = {
+      quoteId: 1,
+      companyName: "Inspectra",
+      createdAt: new Date(),
+      serviceLines: [{ description: "Service", qty: 1, unitPrice: 100, lineNotes: "n", costBasis: 40 } as any],
+      labourLines: [{ labourType: "Tech", hours: 2, rate: 95, lineNotes: "n", payrollCode: "PR-9" } as any],
+      servicesSubtotal: 100,
+      labourSubtotal: 190,
+      subtotal: 290,
+      discount: 0,
+      discountAmount: 0,
+      total: 290,
+      comments: "thanks",
+    } as unknown as BuildingQuoteReportData;
+    const safe = buildCustomerSafeBuildingQuoteData(input);
+    expect(findProhibitedFields(safe)).toEqual([]);
+    expect(safe.labourLines[0].rate).toBe(95);
+    expect((safe.labourLines[0] as Record<string, unknown>).payrollCode).toBeUndefined();
+    expect((safe.serviceLines[0] as Record<string, unknown>).costBasis).toBeUndefined();
   });
 });

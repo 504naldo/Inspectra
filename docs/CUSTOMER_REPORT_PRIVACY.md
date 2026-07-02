@@ -42,18 +42,24 @@ quote PDFs, invoice PDFs, customer-portal report access, Document Center, Send C
 
 ## Remaining limitations / follow-up (tracked as PR-12)
 
-1. ✅ **Centralized `buildCustomerSafeReportData()`** — `server/customerSafeReport.ts`
-   is a single allow-list serializer over the inspection/deficiency `ReportData`
-   shape. It copies only enumerated customer-safe fields into a fresh object, so any
-   field not on the allow-list (including new ones) is dropped by default rather than
-   included by default. `reportRouter.generateReport` runs the assembled data through
-   it before calling `generateInspectionReportPDF`.
+1. ✅ **Centralized allow-list serializers** — `server/customerSafeReport.ts` holds
+   one exclude-by-default serializer per customer-facing report shape. Each copies
+   only enumerated customer-safe fields into a fresh object, so any field not on the
+   allow-list (including new ones) is dropped by default rather than included by
+   default. All customer-facing PDF paths now route their assembled data through one
+   before rendering:
+   - `buildCustomerSafeReportData` → `generateInspectionReportPDF` (inspection/deficiency report) — `reportRouter`
+   - `buildCustomerSafeComplianceData` → `generateComplianceReportPDF` (CAN/ULC-S536) — `reportRouter`
+   - `buildCustomerSafeInvoiceData` → `generateInvoicePDF` (both call sites) — `invoiceRouter`
+   - `buildCustomerSafeQuoteData` → `generateQuotePDF` and `buildCustomerSafeBuildingQuoteData` → `generateBuildingQuotePDF` — `quoteRouter`
+   - `buildCustomerSafeRepairQuoteData` → `generateRepairQuotePDF` (both call sites) — `repairQuoteRouter`
 2. ✅ **Regression test** — `server/customerSafeReport.test.ts` seeds internal-only
-   fields (wages, monitoring passwords, internal/office notes, AI prompts, storage
-   keys, access tokens) at every nesting level and asserts, via the `findProhibitedFields`
-   deep scan, that none survive sanitization, while the customer-safe fields the PDF
-   renders (including photo buffers and the monitoring-centre *name*) are preserved.
-3. **Remaining scope**: the compliance-report path (`generateComplianceReportPDF`)
-   and the invoice/quote PDFs still rely on their own typed projections and are not
-   yet routed through a shared serializer — same pattern can be extended to them.
-   Until then those paths keep the "typed projection, not raw rows" guardrail.
+   fields (wages, monitoring passwords, panel passcodes, internal/office notes, AI
+   prompts, storage keys, access tokens, job-costing margins, payroll codes) at every
+   nesting level of each shape and asserts, via the `findProhibitedFields` deep scan,
+   that none survive sanitization — while the customer-safe fields the PDFs render
+   (photo buffers, monitoring-centre *name*, billed labour rates on repair quotes,
+   totals, line items) are preserved.
+3. **Note on billed rates**: repair/building quotes intentionally show *billed*
+   labour rates and hours to the customer (that's the quote). Those are customer-safe
+   and preserved; only internal cost/margin/wage/payroll fields are prohibited.

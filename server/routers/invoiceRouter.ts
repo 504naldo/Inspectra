@@ -7,6 +7,7 @@ import { logActivity } from "../activityLogger";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateInvoicePDF } from "../invoicePdfGenerator.js";
+import { buildCustomerSafeInvoiceData } from "../customerSafeReport.js";
 
 function generateInvoiceNumber(prefix = "INV"): string {
   const now = new Date();
@@ -505,7 +506,7 @@ export const invoiceRouter = router({
 
       const toNum = (v: unknown) => parseFloat(String(v ?? "0")) || 0;
 
-      const pdfBuffer = await generateInvoicePDF({
+      const pdfBuffer = await generateInvoicePDF(buildCustomerSafeInvoiceData({
         invoiceId: inv.id,
         invoiceNumber: inv.invoiceNumber,
         companyName: company?.name ?? "EWF",
@@ -535,7 +536,7 @@ export const invoiceRouter = router({
         amountPaid: toNum(inv.amountPaid),
         balanceDue: toNum(inv.balanceDue),
         clientNotes: inv.clientNotes,
-      });
+      }));
 
       const pdfKey = `invoices/${inv.companyId}/${inv.id}/invoice-${inv.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
@@ -566,7 +567,7 @@ export const invoiceRouter = router({
 
       const toNum = (v: unknown) => parseFloat(String(v ?? "0")) || 0;
 
-      const pdfBuffer = await generateInvoicePDF({
+      const pdfBuffer = await generateInvoicePDF(buildCustomerSafeInvoiceData({
         invoiceId: inv.id,
         invoiceNumber: inv.invoiceNumber,
         companyName: company?.name ?? "EWF",
@@ -596,7 +597,7 @@ export const invoiceRouter = router({
         amountPaid: toNum(inv.amountPaid),
         balanceDue: toNum(inv.balanceDue),
         clientNotes: inv.clientNotes,
-      });
+      }));
 
       const pdfKey = `invoices/${inv.companyId}/${inv.id}/invoice-${inv.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");

@@ -25,6 +25,25 @@ import type {
   TemplatePdfSection,
   TemplatePdfItem,
 } from "./pdfGeneratorFirePro.js";
+import type {
+  ComplianceReportData,
+  ChecklistSection,
+  ChecklistItem,
+  DeviceRecord,
+  ExtinguisherRecord,
+  EmergencyLightRecord,
+  DeficiencySummary,
+} from "./pdfGeneratorCompliance.js";
+import type { InvoicePdfData, InvoiceLineItemDisplay } from "./invoicePdfGenerator.js";
+import type {
+  QuoteReportData,
+  QuoteLineItemDisplay,
+  RepairQuoteReportData,
+  RepairQuoteItemDisplay,
+  BuildingQuoteReportData,
+  BuildingServiceLine,
+  BuildingLabourLine,
+} from "./quotePdfGenerator.js";
 
 // ── Allow-list projections (exclude-by-default) ─────────────────────────────
 
@@ -164,6 +183,221 @@ export function buildCustomerSafeReportData(input: ReportData): ReportData {
     reportFooterText: input.reportFooterText,
     gstRate: input.gstRate,
     pstRate: input.pstRate,
+  };
+}
+
+// ── Compliance report (CAN/ULC-S536) ────────────────────────────────────────
+
+function safeChecklistSection(s: ChecklistSection): ChecklistSection {
+  return {
+    sectionNumber: s.sectionNumber,
+    sectionTitle: s.sectionTitle,
+    location: s.location,
+    identification: s.identification,
+    items: s.items.map((i: ChecklistItem) => ({ id: i.id, description: i.description, result: i.result })),
+    overallResult: s.overallResult,
+    comments: s.comments,
+  };
+}
+
+function safeDeviceRecord(d: DeviceRecord): DeviceRecord {
+  return { deviceType: d.deviceType, location: d.location, result: d.result, notes: d.notes };
+}
+
+function safeExtinguisherRecord(e: ExtinguisherRecord): ExtinguisherRecord {
+  return { location: e.location, type: e.type, serialNumber: e.serialNumber, result: e.result };
+}
+
+function safeEmergencyLight(e: EmergencyLightRecord): EmergencyLightRecord {
+  return { location: e.location, functionalTest: e.functionalTest, durationTest: e.durationTest, comments: e.comments };
+}
+
+function safeDeficiencySummary(d: DeficiencySummary): DeficiencySummary {
+  return { system: d.system, location: d.location, description: d.description, severity: d.severity };
+}
+
+/** Project the assembled compliance-report input onto the customer-safe allow-list. */
+export function buildCustomerSafeComplianceData(input: ComplianceReportData): ComplianceReportData {
+  return {
+    workOrderNumber: input.workOrderNumber,
+    dateOfService: input.dateOfService,
+    inspectionFrequency: input.inspectionFrequency,
+    contactPerson: input.contactPerson,
+    contactPhone: input.contactPhone,
+    buildingName: input.buildingName,
+    buildingAddress: input.buildingAddress,
+    city: input.city,
+    postalCode: input.postalCode,
+    pmOrOwner: input.pmOrOwner,
+    ownerPhone: input.ownerPhone,
+    systemsInspected: { ...input.systemsInspected },
+    systemModel: input.systemModel,
+    systemOperation: input.systemOperation,
+    fireSignalReceivingCentre: input.fireSignalReceivingCentre,
+    connectedToFireSignalReceivingCentre: input.connectedToFireSignalReceivingCentre,
+    systemFullyFunctional: input.systemFullyFunctional,
+    deficienciesIdentified: input.deficienciesIdentified,
+    deficienciesCorrectedDate: input.deficienciesCorrectedDate,
+    recommendationsIdentified: input.recommendationsIdentified,
+    technicianName: input.technicianName,
+    technicianCertificateNumber: input.technicianCertificateNumber,
+    secondaryTechnicianName: input.secondaryTechnicianName,
+    secondaryTechnicianCertificateNumber: input.secondaryTechnicianCertificateNumber,
+    companyName: input.companyName,
+    companyPhone: input.companyPhone,
+    techSignatureUrl: input.techSignatureUrl,
+    checklists: input.checklists.map(safeChecklistSection),
+    fireAlarmDevices: input.fireAlarmDevices.map(safeDeviceRecord),
+    fireExtinguishers: input.fireExtinguishers.map(safeExtinguisherRecord),
+    emergencyLights: input.emergencyLights.map(safeEmergencyLight),
+    deficiencies: input.deficiencies.map(safeDeficiencySummary),
+  };
+}
+
+// ── Invoice ──────────────────────────────────────────────────────────────────
+
+function safeInvoiceLine(l: InvoiceLineItemDisplay): InvoiceLineItemDisplay {
+  return { description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, total: l.total, taxable: l.taxable };
+}
+
+/** Project the assembled invoice input onto the customer-safe allow-list. */
+export function buildCustomerSafeInvoiceData(input: InvoicePdfData): InvoicePdfData {
+  return {
+    invoiceId: input.invoiceId,
+    invoiceNumber: input.invoiceNumber,
+    companyName: input.companyName,
+    companyPhone: input.companyPhone,
+    companyEmail: input.companyEmail,
+    companyAddress: input.companyAddress,
+    billToName: input.billToName,
+    billToAddress: input.billToAddress,
+    billToCity: input.billToCity,
+    billToState: input.billToState,
+    billToPostalCode: input.billToPostalCode,
+    siteName: input.siteName,
+    siteAddress: input.siteAddress,
+    invoiceDate: input.invoiceDate,
+    dueDate: input.dueDate,
+    lineItems: input.lineItems.map(safeInvoiceLine),
+    subtotal: input.subtotal,
+    taxRate: input.taxRate,
+    taxAmount: input.taxAmount,
+    total: input.total,
+    amountPaid: input.amountPaid,
+    balanceDue: input.balanceDue,
+    clientNotes: input.clientNotes,
+  };
+}
+
+// ── Repair quote ───────────────────────────────────────────────────────────
+
+function safeQuoteLine(l: QuoteLineItemDisplay): QuoteLineItemDisplay {
+  return { deficiencyId: l.deficiencyId, description: l.description, unitPrice: l.unitPrice, qty: l.qty };
+}
+
+/** Project the assembled deficiency-quote input onto the customer-safe allow-list. */
+export function buildCustomerSafeQuoteData(input: QuoteReportData): QuoteReportData {
+  return {
+    quoteId: input.quoteId,
+    jobNumber: input.jobNumber,
+    siteName: input.siteName,
+    siteAddress: input.siteAddress,
+    customerName: input.customerName,
+    customerEmail: input.customerEmail,
+    companyName: input.companyName,
+    createdAt: input.createdAt,
+    lineItems: input.lineItems.map(safeQuoteLine),
+    total: input.total,
+    notes: input.notes,
+    acceptUrl: input.acceptUrl,
+    deficiencySummaries: input.deficiencySummaries?.map((d) => ({
+      title: d.title,
+      severity: d.severity,
+      description: d.description,
+      location: d.location,
+    })),
+  };
+}
+
+function safeRepairQuoteItem(i: RepairQuoteItemDisplay): RepairQuoteItemDisplay {
+  return {
+    description: i.description,
+    repairNotes: i.repairNotes,
+    systemType: i.systemType,
+    location: i.location,
+    quantity: i.quantity,
+    partDescription: i.partDescription,
+    partUnitPrice: i.partUnitPrice,
+    partTotal: i.partTotal,
+    techHours: i.techHours,
+    fitterHours: i.fitterHours,
+    techLabourRate: i.techLabourRate,
+    fitterLabourRate: i.fitterLabourRate,
+    labourTotal: i.labourTotal,
+    fuelCharge: i.fuelCharge,
+    backflowReportFee: i.backflowReportFee,
+    gst: i.gst,
+    pst: i.pst,
+    total: i.total,
+  };
+}
+
+/** Project the assembled repair-quote input onto the customer-safe allow-list. */
+export function buildCustomerSafeRepairQuoteData(input: RepairQuoteReportData): RepairQuoteReportData {
+  return {
+    quoteId: input.quoteId,
+    quoteNumber: input.quoteNumber,
+    companyName: input.companyName,
+    companyPhone: input.companyPhone,
+    companyEmail: input.companyEmail,
+    companyAddress: input.companyAddress,
+    customerName: input.customerName,
+    customerContactName: input.customerContactName,
+    siteName: input.siteName,
+    siteAddress: input.siteAddress,
+    jobNumber: input.jobNumber,
+    createdAt: input.createdAt,
+    validUntil: input.validUntil,
+    items: input.items.map(safeRepairQuoteItem),
+    subtotal: input.subtotal,
+    gst: input.gst,
+    pst: input.pst,
+    total: input.total,
+    notes: input.notes,
+  };
+}
+
+// ── Building quote ───────────────────────────────────────────────────────────
+
+function safeBuildingService(l: BuildingServiceLine): BuildingServiceLine {
+  return { description: l.description, qty: l.qty, unitPrice: l.unitPrice, lineNotes: l.lineNotes };
+}
+
+function safeBuildingLabour(l: BuildingLabourLine): BuildingLabourLine {
+  return { labourType: l.labourType, hours: l.hours, rate: l.rate, lineNotes: l.lineNotes };
+}
+
+/** Project the assembled building-quote input onto the customer-safe allow-list. */
+export function buildCustomerSafeBuildingQuoteData(input: BuildingQuoteReportData): BuildingQuoteReportData {
+  return {
+    quoteId: input.quoteId,
+    companyName: input.companyName,
+    createdAt: input.createdAt,
+    buildingName: input.buildingName,
+    buildingId: input.buildingId,
+    address: input.address,
+    city: input.city,
+    backflowFeeCity: input.backflowFeeCity,
+    serviceLines: input.serviceLines.map(safeBuildingService),
+    labourLines: input.labourLines.map(safeBuildingLabour),
+    servicesSubtotal: input.servicesSubtotal,
+    labourSubtotal: input.labourSubtotal,
+    subtotal: input.subtotal,
+    discount: input.discount,
+    discountAmount: input.discountAmount,
+    discountReason: input.discountReason,
+    total: input.total,
+    comments: input.comments,
   };
 }
 

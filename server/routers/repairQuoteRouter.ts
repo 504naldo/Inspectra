@@ -28,6 +28,7 @@ import * as db from "../db.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateRepairQuotePDF } from "../quotePdfGenerator.js";
+import { buildCustomerSafeRepairQuoteData } from "../customerSafeReport.js";
 import { logActivity } from "../activityLogger.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -499,7 +500,7 @@ export const repairQuoteRouter = router({
 
       const q = quote as any;
 
-      const pdfBuffer = await generateRepairQuotePDF({
+      const pdfBuffer = await generateRepairQuotePDF(buildCustomerSafeRepairQuoteData({
         quoteId: quote.id,
         quoteNumber: q.quoteNumber ?? `RQ-${quote.id}`,
         companyName: company?.name ?? "EWF",
@@ -538,7 +539,7 @@ export const repairQuoteRouter = router({
         pst: toNum(q.pst),
         total: toNum(quote.total),
         notes: quote.notes ?? null,
-      });
+      }));
 
       const pdfKey = `quotes/${quote.companyId}/${quote.id}/repair-quote-${quote.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
@@ -567,7 +568,7 @@ export const repairQuoteRouter = router({
         db.getCompanyById(quote.companyId),
       ]);
 
-      const pdfBuffer = await generateRepairQuotePDF({
+      const pdfBuffer = await generateRepairQuotePDF(buildCustomerSafeRepairQuoteData({
         quoteId: quote.id,
         quoteNumber: q.quoteNumber ?? `RQ-${quote.id}`,
         companyName: company?.name ?? "EWF",
@@ -606,7 +607,7 @@ export const repairQuoteRouter = router({
         pst: toNum(q.pst),
         total: toNum(quote.total),
         notes: quote.notes ?? null,
-      });
+      }));
 
       const pdfKey = `quotes/${quote.companyId}/${quote.id}/repair-quote-${quote.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
