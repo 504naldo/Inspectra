@@ -68,12 +68,23 @@ export const mediaRouter = router({
         fileData: z.string(),
         caption: z.string().max(500).optional(),
         locationNote: z.string().max(255).optional(),
+        // Offline-sync idempotency: the client's stable local id for this queued
+        // photo. On reconnect the same upload may be replayed; find-or-create on
+        // this key so a retry never duplicates the attachment or storage object.
+        idempotencyKey: z.string().min(1).max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId;
       if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const { deficiency, job } = await assertDeficiencyAccess(input.deficiencyId, companyId);
+
+      // Idempotent replay: if this offline upload was already applied, return the
+      // existing attachment without re-uploading to storage or re-inserting.
+      if (input.idempotencyKey) {
+        const existing = await db.getAttachmentByIdempotencyKey(input.idempotencyKey, "deficiency", input.deficiencyId);
+        if (existing) return existing;
+      }
 
       // Sanitise filename to prevent path traversal
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
@@ -104,6 +115,7 @@ export const mediaRouter = router({
         sortOrder: 0,
         uploadStatus: "completed",
         importStatus: "none",
+        idempotencyKey: input.idempotencyKey ?? null,
       });
 
       logActivity({

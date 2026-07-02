@@ -1388,6 +1388,30 @@ export async function getAttachmentById(id: number) {
   return result[0];
 }
 
+/**
+ * Look up an attachment previously uploaded with a client-supplied offline-sync
+ * idempotency key, scoped to a parent entity. Used for find-or-create so a
+ * replayed offline photo upload does not duplicate the attachment.
+ */
+export async function getAttachmentByIdempotencyKey(
+  idempotencyKey: string,
+  entityType: string,
+  entityId: number,
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(attachments)
+    .where(and(
+      eq(attachments.idempotencyKey, idempotencyKey),
+      eq(attachments.entityType, entityType as any),
+      eq(attachments.entityId, entityId),
+    ))
+    .limit(1);
+  return result[0];
+}
+
 export async function createBulkAttachments(dataList: InsertAttachment[]) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

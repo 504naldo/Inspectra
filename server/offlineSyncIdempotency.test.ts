@@ -61,4 +61,29 @@ describe("Offline sync — deficiency create idempotency & authorization", () =>
     const onA2 = await A.caller.deficiency.create({ jobId: job2.id, title: "onA2", idempotencyKey: key });
     expect(onA2.id).not.toBe(onA.id);
   });
+
+  it("replaying a photo upload with the same key returns the existing attachment (no duplicate)", async () => {
+    const def = await A.caller.deficiency.create({ jobId: A.job.id, title: "with photo" });
+    const key = "photo-local-1";
+    // Simulate the first upload having already applied (server created it, client
+    // never got the response). The router must early-return this on replay —
+    // before any storage write — instead of inserting a duplicate.
+    const created = await db.createAttachment({
+      entityType: "deficiency", entityId: def.id, jobId: A.job.id, uploadedById: 1,
+      fileName: "p.jpg", fileKey: `k/${key}.jpg`, fileUrl: "https://x/p.jpg",
+      mimeType: "image/jpeg", fileSize: 100, isCustomerFacing: 1, sortOrder: 0,
+      uploadStatus: "completed", importStatus: "none", idempotencyKey: key,
+    } as any);
+
+    const result: any = await A.caller.media.uploadDeficiencyMedia({
+      deficiencyId: def.id, fileName: "p.jpg", mimeType: "image/jpeg",
+      fileSize: 100, fileData: "AAAA", idempotencyKey: key,
+    });
+    expect(result.id).toBe(created.id);
+
+    // The lookup is scoped to the parent entity: the same key on a different
+    // deficiency does not resolve to this attachment.
+    const other = await A.caller.deficiency.create({ jobId: A.job.id, title: "other" });
+    expect(await db.getAttachmentByIdempotencyKey(key, "deficiency", other.id)).toBeFalsy();
+  });
 });

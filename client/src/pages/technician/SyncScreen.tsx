@@ -252,6 +252,9 @@ export default function SyncScreen() {
             fileData: photo.fileData,
             caption: photo.caption,
             locationNote: photo.locationNote,
+            // Stable offline id → server find-or-create, so a replayed upload
+            // never duplicates the attachment or its storage object.
+            idempotencyKey: photo.id,
           });
           await offlineStorage.deletePendingPhoto(photo.id);
         } catch {
