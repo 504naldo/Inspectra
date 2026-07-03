@@ -83,4 +83,21 @@ describe("Cross-tenant authorization", () => {
       expect(bList.some((i: any) => i.id === A.inv.id)).toBe(false);
     });
   });
+
+  // Routers migrated to the scoped tenant getters (PR-06). These assert the guard
+  // fires through the router so a later refactor can't silently drop the check.
+  describe("scoped-getter adoption (router paths)", () => {
+    it("job.listBySite: cross-company site is FORBIDDEN (assertSiteCompany)", async () => {
+      expect((await A.caller.job.listBySite({ siteId: A.site.id }))).toBeDefined();
+      await expectCode(B.caller.job.listBySite({ siteId: A.site.id }), "FORBIDDEN");
+    });
+    it("quote.listByJob: cross-company job is FORBIDDEN (getJobForCompany)", async () => {
+      expect((await A.caller.quote.listByJob({ jobId: A.job.id }))).toBeDefined();
+      await expectCode(B.caller.quote.listByJob({ jobId: A.job.id }), "FORBIDDEN");
+    });
+    it("invoice.get: cross-company invoice is FORBIDDEN (getInvoiceForCompany)", async () => {
+      expect((await A.caller.invoice.get({ id: A.inv.id })).id).toBe(A.inv.id);
+      await expectCode(B.caller.invoice.get({ id: A.inv.id }), "FORBIDDEN");
+    });
+  });
 });

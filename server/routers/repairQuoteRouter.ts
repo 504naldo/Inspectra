@@ -25,6 +25,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
+import { getJobForCompany } from "../tenantGuards.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateRepairQuotePDF } from "../quotePdfGenerator.js";
@@ -276,8 +277,7 @@ export const repairQuoteRouter = router({
   listByJob: officeProcedure
     .input(z.object({ jobId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      const job = await db.getJobById(input.jobId);
-      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await getJobForCompany(input.jobId, ctx.user.companyId!); // authorize job access
       const quotes = await db.getQuotesByJob(input.jobId);
       return quotes.filter((q: any) => q.quoteType === "repair");
     }),

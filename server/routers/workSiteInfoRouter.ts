@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertSiteCompany } from "../tenantGuards";
 
 const workSiteInfoInput = z.object({
   siteId: z.number(),
@@ -70,14 +71,10 @@ export const workSiteInfoRouter = router({
     .input(workSiteInfoInput)
     .mutation(async ({ input, ctx }) => {
       const { siteId, ...data } = input;
-      const site = await db.getSiteById(siteId);
-      if (!site) throw new TRPCError({ code: "NOT_FOUND", message: "Site not found" });
-      if (site.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const site = await assertSiteCompany(siteId, ctx.user.companyId!);
       return db.upsertWorkSiteInfo({
         siteId,
-        companyId: ctx.user.companyId,
+        companyId: site.companyId,
         customerOrgId: data.customerOrgId ?? site.customerOrgId,
         ...data,
       });

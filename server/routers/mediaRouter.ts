@@ -3,6 +3,7 @@ import { router, technicianProcedure, adminOrOfficeProcedure } from "../_core/tr
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import * as db from "../db";
+import { getJobForCompany } from "../tenantGuards";
 import { attachments } from "../../drizzle/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { storagePut } from "../storage";
@@ -41,8 +42,7 @@ export const mediaRouter = router({
     .query(async ({ input, ctx }) => {
       const deficiency = await db.getDeficiencyById(input.deficiencyId);
       if (!deficiency) return [];
-      const job = await db.getJobById(deficiency.jobId);
-      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await getJobForCompany(deficiency.jobId, ctx.user.companyId!); // authorize via parent job
       const drizzle = await getDb();
       if (!drizzle) return [];
       return drizzle

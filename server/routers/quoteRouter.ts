@@ -18,6 +18,7 @@ import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, publicProcedure, customerProcedure } from "../_core/trpc.js";
 import { sendQuoteApprovedNotification } from "../emailService.js";
 import * as db from "../db.js";
+import { getJobForCompany } from "../tenantGuards.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateQuotePDF, generateBuildingQuotePDF } from "../quotePdfGenerator.js";
@@ -142,10 +143,7 @@ export const quoteRouter = router({
   listByJob: officeProcedure
     .input(z.object({ jobId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const job = await db.getJobById(input.jobId);
-      if (!job || job.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      await getJobForCompany(input.jobId, ctx.user.companyId!); // authorize job access
       return db.getQuotesByJob(input.jobId);
     }),
 
