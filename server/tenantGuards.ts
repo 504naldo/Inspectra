@@ -77,6 +77,20 @@ export async function assertCustomerOrgCompany(customerOrgId: number, companyId:
   return org;
 }
 
+export async function assertWorkOrderCompany(workOrderId: number, companyId: number) {
+  const wo = await db.getWorkOrderById(workOrderId);
+  if (!wo) throw new TRPCError({ code: "NOT_FOUND", message: "Work order not found" });
+  if (wo.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  return wo;
+}
+
+export async function assertPartsCatalogItemCompany(itemId: number, companyId: number) {
+  const item = await db.getPartsCatalogItemById(itemId);
+  if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Parts catalog item not found" });
+  if (item.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  return item;
+}
+
 /**
  * Attachments don't have their own companyId column — ownership is resolved
  * via whichever parent ref (jobId/siteId/deviceId) is populated.

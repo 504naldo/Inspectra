@@ -7,6 +7,7 @@ import {
   technicianProcedure,
 } from "../_core/trpc";
 import * as db from "../db";
+import { assertWorkOrderCompany } from "../tenantGuards";
 import { logActivity } from "../activityLogger";
 
 const materialSchema = z.object({
@@ -22,11 +23,7 @@ export const workOrderRouter = router({
   get: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const wo = await db.getWorkOrderById(input.id);
-      if (!wo) throw new TRPCError({ code: "NOT_FOUND" });
-      if (wo.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const wo = await assertWorkOrderCompany(input.id, ctx.user.companyId!);
       return wo;
     }),
 
@@ -80,11 +77,7 @@ export const workOrderRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const wo = await db.getWorkOrderById(input.id);
-      if (!wo) throw new TRPCError({ code: "NOT_FOUND" });
-      if (wo.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const wo = await assertWorkOrderCompany(input.id, ctx.user.companyId!);
       if (wo.finalizedAt) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -121,11 +114,7 @@ export const workOrderRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const wo = await db.getWorkOrderById(input.id);
-      if (!wo) throw new TRPCError({ code: "NOT_FOUND" });
-      if (wo.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const wo = await assertWorkOrderCompany(input.id, ctx.user.companyId!);
       if (wo.finalizedAt) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -154,11 +143,7 @@ export const workOrderRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const wo = await db.getWorkOrderById(input.id);
-      if (!wo) throw new TRPCError({ code: "NOT_FOUND" });
-      if (wo.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const wo = await assertWorkOrderCompany(input.id, ctx.user.companyId!);
       if (wo.finalizedAt) {
         throw new TRPCError({
           code: "CONFLICT",

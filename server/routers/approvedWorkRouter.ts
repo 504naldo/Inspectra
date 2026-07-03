@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
-import { getQuoteForCompany } from "../tenantGuards";
+import { getQuoteForCompany, assertWorkOrderCompany } from "../tenantGuards";
 import { APPROVED_WORK_STATUSES } from "../../drizzle/schema";
 import { logActivity } from "../activityLogger";
 
@@ -364,11 +364,7 @@ export const approvedWorkRouter = router({
         });
       }
 
-      const wo = await db.getWorkOrderById(input.workOrderId);
-      if (!wo) throw new TRPCError({ code: "NOT_FOUND", message: "Work order not found." });
-      if (wo.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      await assertWorkOrderCompany(input.workOrderId, ctx.user.companyId!); // authorize the linked work order
 
       await db.updateApprovedWork(input.id, { workOrderId: input.workOrderId });
       return { success: true };

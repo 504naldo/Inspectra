@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertPartsCatalogItemCompany } from "../tenantGuards";
 
 const partRowSchema = z.object({
   category: z.string().min(1).max(100),
@@ -28,9 +29,7 @@ export const partsCatalogRouter = router({
   getById: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      const part = await db.getPartsCatalogItemById(input.id);
-      if (!part) throw new TRPCError({ code: "NOT_FOUND" });
-      if (part.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const part = await assertPartsCatalogItemCompany(input.id, ctx.user.companyId!);
       return part;
     }),
 
@@ -65,9 +64,7 @@ export const partsCatalogRouter = router({
       description: z.string().optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const part = await db.getPartsCatalogItemById(input.id);
-      if (!part) throw new TRPCError({ code: "NOT_FOUND" });
-      if (part.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await assertPartsCatalogItemCompany(input.id, ctx.user.companyId!); // authorize
 
       const { id, unitPrice, defaultLabourHours, taxableGst, taxablePst, ...rest } = input;
       await db.updatePartsCatalogItem(id, {
@@ -83,9 +80,7 @@ export const partsCatalogRouter = router({
   deactivate: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const part = await db.getPartsCatalogItemById(input.id);
-      if (!part) throw new TRPCError({ code: "NOT_FOUND" });
-      if (part.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const part = await assertPartsCatalogItemCompany(input.id, ctx.user.companyId!);
       await db.updatePartsCatalogItem(input.id, { isActive: false });
       return { success: true };
     }),
@@ -93,9 +88,7 @@ export const partsCatalogRouter = router({
   reactivate: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const part = await db.getPartsCatalogItemById(input.id);
-      if (!part) throw new TRPCError({ code: "NOT_FOUND" });
-      if (part.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await assertPartsCatalogItemCompany(input.id, ctx.user.companyId!); // authorize
       await db.updatePartsCatalogItem(input.id, { isActive: true });
       return { success: true };
     }),

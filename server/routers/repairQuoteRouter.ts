@@ -25,7 +25,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
-import { getJobForCompany, getQuoteForCompany } from "../tenantGuards.js";
+import { getJobForCompany, getQuoteForCompany, assertPartsCatalogItemCompany } from "../tenantGuards.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateRepairQuotePDF } from "../quotePdfGenerator.js";
@@ -153,9 +153,7 @@ export const repairQuoteRouter = router({
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const part = await db.getPartsCatalogItemById(input.id);
-      if (!part) throw new TRPCError({ code: "NOT_FOUND" });
-      if (part.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const part = await assertPartsCatalogItemCompany(input.id, ctx.user.companyId!);
 
       const { id, unitPrice, defaultLabourHours, taxableGst, taxablePst, ...rest } = input;
       await db.updatePartsCatalogItem(id, {
