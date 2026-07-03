@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertServiceAgreementCompany } from "../tenantGuards";
 import { logActivity } from "../activityLogger";
 
 function generateAgreementNumber(): string {
@@ -163,10 +164,8 @@ export const serviceAgreementRouter = router({
   get: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const agreement = await db.getServiceAgreementById(input.id);
-      if (!agreement) throw new TRPCError({ code: "NOT_FOUND" });
-      if (agreement.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const agreement = await assertServiceAgreementCompany(input.id, companyId);
 
       const [customers, rawSites] = await Promise.all([
         db.getCustomerOrgsByCompany(companyId),
@@ -283,11 +282,9 @@ export const serviceAgreementRouter = router({
       documentUrl: z.string().max(500).nullable().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
+      const companyId = ctx.user.companyId!;
       const { id, ...fields } = input;
-      const existing = await db.getServiceAgreementById(id);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
-      if (existing.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const existing = await assertServiceAgreementCompany(id, companyId);
       if (existing.status === "cancelled") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot update a cancelled agreement" });
 
       await db.updateServiceAgreement(id, fields as any);
@@ -307,10 +304,8 @@ export const serviceAgreementRouter = router({
   cancel: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const existing = await db.getServiceAgreementById(input.id);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
-      if (existing.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const existing = await assertServiceAgreementCompany(input.id, companyId);
       if (existing.status === "cancelled") throw new TRPCError({ code: "BAD_REQUEST", message: "Already cancelled" });
 
       await db.updateServiceAgreement(input.id, { status: "cancelled" });
@@ -334,10 +329,8 @@ export const serviceAgreementRouter = router({
       siteSpecificNotes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const agreement = await db.getServiceAgreementById(input.agreementId);
-      if (!agreement) throw new TRPCError({ code: "NOT_FOUND" });
-      if (agreement.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const agreement = await assertServiceAgreementCompany(input.agreementId, companyId);
       if (agreement.status === "cancelled") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot add sites to a cancelled agreement" });
 
       const site = await db.getSiteById(input.siteId);
@@ -369,10 +362,8 @@ export const serviceAgreementRouter = router({
       agreementId: z.number().int().positive(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const agreement = await db.getServiceAgreementById(input.agreementId);
-      if (!agreement) throw new TRPCError({ code: "NOT_FOUND" });
-      if (agreement.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const agreement = await assertServiceAgreementCompany(input.agreementId, companyId);
 
       const agreementSite = await db.getAgreementSiteById(input.agreementSiteId);
       if (!agreementSite || agreementSite.companyId !== companyId) {
@@ -401,10 +392,8 @@ export const serviceAgreementRouter = router({
       siteSpecificNotes: z.string().max(2000).nullable().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const agreement = await db.getServiceAgreementById(input.agreementId);
-      if (!agreement) throw new TRPCError({ code: "NOT_FOUND" });
-      if (agreement.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const agreement = await assertServiceAgreementCompany(input.agreementId, companyId);
 
       const agreementSite = await db.getAgreementSiteById(input.agreementSiteId);
       if (!agreementSite || agreementSite.companyId !== companyId) {

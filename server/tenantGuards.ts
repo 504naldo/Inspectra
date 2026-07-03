@@ -84,6 +84,20 @@ export async function assertWorkOrderCompany(workOrderId: number, companyId: num
   return wo;
 }
 
+export async function assertServiceAgreementCompany(agreementId: number, companyId: number) {
+  const agreement = await db.getServiceAgreementById(agreementId);
+  if (!agreement) throw new TRPCError({ code: "NOT_FOUND", message: "Service agreement not found" });
+  if (agreement.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  return agreement;
+}
+
+export async function assertInventoryItemCompany(itemId: number, companyId: number) {
+  const item = await db.getInventoryItemById(itemId);
+  if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Inventory item not found" });
+  if (item.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  return item;
+}
+
 export async function assertPartsCatalogItemCompany(itemId: number, companyId: number) {
   const item = await db.getPartsCatalogItemById(itemId);
   if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Parts catalog item not found" });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertInventoryItemCompany } from "../tenantGuards";
 import { logActivity } from "../activityLogger";
 import {
   PARTS_REQUEST_STATUSES,
@@ -13,10 +14,9 @@ import {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function requireInventoryItem(id: number, companyId: number) {
-  const item = await db.getInventoryItemById(id);
-  if (!item) throw new TRPCError({ code: "NOT_FOUND" });
-  if (item.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
-  return item;
+  // Delegate to the shared scoped getter so item-ownership enforcement lives in
+  // one place (tenantGuards); the local name is kept for the existing callers.
+  return assertInventoryItemCompany(id, companyId);
 }
 
 async function requirePartsRequest(id: number, companyId: number) {
