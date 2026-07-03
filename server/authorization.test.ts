@@ -108,4 +108,31 @@ describe("Cross-tenant authorization", () => {
       expect(await techB.sync.getJobDataForOffline({ jobId: A.job.id })).toBeNull();
     });
   });
+
+  // Import center IDORs — import logs carry company data (uploaded rows); reads
+  // must be company-scoped and execute/validate must not touch a foreign site.
+  describe("import center (IDOR sweep)", () => {
+    it("import.get / getResults / getErrors reject another company's log", async () => {
+      const log = await db.createImportLog({
+        companyId: A.company.id, siteId: A.site.id, importedById: 1,
+        importType: "devices", fileName: "a.xlsx", status: "completed",
+      } as any);
+      expect((await A.caller.import.get({ id: log.id }))?.id).toBe(log.id);
+      await expectCode(B.caller.import.get({ id: log.id }), "FORBIDDEN");
+      await expectCode(B.caller.import.getResults({ importLogId: log.id }), "FORBIDDEN");
+      await expectCode(B.caller.import.getErrors({ importLogId: log.id }), "FORBIDDEN");
+    });
+    it("import.list ignores a client-supplied companyId (scoped to ctx)", async () => {
+      await db.createImportLog({ companyId: A.company.id, siteId: A.site.id, importedById: 1, importType: "devices", fileName: "a2.xlsx", status: "completed" } as any);
+      // B asks for A's logs by passing A's companyId — must get only its own (none of A's).
+      const asB = await B.caller.import.list({ companyId: A.company.id });
+      expect(asB.some((l: any) => l.companyId === A.company.id)).toBe(false);
+    });
+    it("import.listBySite / validate / execute reject a foreign site", async () => {
+      await expectCode(B.caller.import.listBySite({ siteId: A.site.id }), "FORBIDDEN");
+      const args = { companyId: B.company.id, siteId: A.site.id, importType: "site" as const, fileName: "x", fileData: "", sheetName: "s", columnMapping: {} };
+      await expectCode(B.caller.import.validate({ ...args }), "FORBIDDEN");
+      await expectCode(B.caller.import.execute({ ...args, duplicateHandling: "skip" as const }), "FORBIDDEN");
+    });
+  });
 });
