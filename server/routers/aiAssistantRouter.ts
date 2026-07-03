@@ -13,6 +13,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { callerIsPlatformOperator } from "../_core/actorContext";
 import { getJobForCompany } from "../tenantGuards";
 import { invokeLLM } from "../_core/llm";
 import { logActivity } from "../activityLogger";
@@ -63,7 +64,7 @@ Rules you must always follow:
 
 async function buildJobContext(jobId: number, companyId: number): Promise<string> {
   const job = await db.getJobById(jobId);
-  if (!job || job.companyId !== companyId) return "(job not found or access denied)";
+  if (!job || job.companyId !== companyId && !callerIsPlatformOperator()) return "(job not found or access denied)";
 
   const [site, stats, deficiencies, reports] = await Promise.all([
     db.getSiteById(job.siteId),
@@ -91,7 +92,7 @@ async function buildJobContext(jobId: number, companyId: number): Promise<string
 
 async function buildSiteContext(siteId: number, companyId: number): Promise<string> {
   const site = await db.getSiteById(siteId);
-  if (!site || site.companyId !== companyId) return "(site not found or access denied)";
+  if (!site || site.companyId !== companyId && !callerIsPlatformOperator()) return "(site not found or access denied)";
 
   const [org, wsi] = await Promise.all([
     site.customerOrgId ? db.getCustomerOrgById(site.customerOrgId) : Promise.resolve(null),
@@ -114,7 +115,7 @@ async function buildDeficiencyContext(defId: number, companyId: number): Promise
   if (!result) return "(deficiency not found)";
   const def = (result as any).deficiency ?? result;
   const job = await db.getJobById(def.jobId);
-  if (!job || job.companyId !== companyId) return "(access denied)";
+  if (!job || job.companyId !== companyId && !callerIsPlatformOperator()) return "(access denied)";
 
   const device = def.deviceId ? await db.getDeviceById(def.deviceId) : null;
 
@@ -132,7 +133,7 @@ async function buildDeficiencyContext(defId: number, companyId: number): Promise
 
 async function buildInvoiceContext(invoiceId: number, companyId: number): Promise<string> {
   const invoice = await db.getInvoiceById(invoiceId);
-  if (!invoice || invoice.companyId !== companyId) return "(invoice not found or access denied)";
+  if (!invoice || invoice.companyId !== companyId && !callerIsPlatformOperator()) return "(invoice not found or access denied)";
 
   const lineItems = ((invoice as any).lineItems as any[] | null) ?? [];
   const itemSummary = lineItems.slice(0, 8).map((li: any) => `  - ${li.description ?? "item"}: $${li.total ?? li.amount ?? "?"}`).join("\n");
@@ -150,7 +151,7 @@ async function buildInvoiceContext(invoiceId: number, companyId: number): Promis
 
 async function buildRepairQuoteContext(quoteId: number, companyId: number): Promise<string> {
   const quote = await db.getQuoteById(quoteId);
-  if (!quote || quote.companyId !== companyId) return "(quote not found or access denied)";
+  if (!quote || quote.companyId !== companyId && !callerIsPlatformOperator()) return "(quote not found or access denied)";
 
   const [items, site, customer] = await Promise.all([
     db.getRepairQuoteItemsByQuote(quoteId),
@@ -176,7 +177,7 @@ async function buildRepairQuoteContext(quoteId: number, companyId: number): Prom
 
 async function buildApprovedWorkContext(awId: number, companyId: number): Promise<string> {
   const aw = await db.getApprovedWorkById(awId);
-  if (!aw || aw.companyId !== companyId) return "(approved work not found or access denied)";
+  if (!aw || aw.companyId !== companyId && !callerIsPlatformOperator()) return "(approved work not found or access denied)";
 
   const site = aw.siteId ? await db.getSiteById(aw.siteId) : null;
   const customer = aw.customerOrgId ? await db.getCustomerOrgById(aw.customerOrgId) : null;
@@ -263,7 +264,7 @@ async function fetchContext(type: ContextType, id: number, companyId: number): P
 
 async function buildTechnicianJobContext(jobId: number, companyId: number): Promise<string> {
   const job = await db.getJobById(jobId);
-  if (!job || job.companyId !== companyId) return "(job not found or access denied)";
+  if (!job || job.companyId !== companyId && !callerIsPlatformOperator()) return "(job not found or access denied)";
 
   const [site, wsi, stats, deficiencies, technicians] = await Promise.all([
     db.getSiteById(job.siteId),
@@ -585,7 +586,7 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
 
       // 1. Verify job ownership
       const job = await db.getJobById(input.jobId);
-      if (!job || job.companyId !== companyId) {
+      if (!job || job.companyId !== companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
       }
 
@@ -803,7 +804,7 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
     .query(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId!;
       const job = await db.getJobById(input.jobId);
-      if (!job || job.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!job || job.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "NOT_FOUND" });
       return db.getAiReviewsByJobScoped(input.jobId, companyId, "report_qa");
     }),
 
@@ -876,7 +877,7 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
       if (input.jobId) {
         fetches.push(
           db.getJobById(input.jobId).then(job => {
-            if (!job || job.companyId !== companyId) return;
+            if (!job || job.companyId !== companyId && !callerIsPlatformOperator()) return;
             contextLines.push(`JOB: ${job.jobNumber} (${job.jobType ?? "inspection"})`);
           })
         );
@@ -885,7 +886,7 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
       if (input.siteId) {
         fetches.push(
           db.getSiteById(input.siteId).then(site => {
-            if (!site || site.companyId !== companyId) return;
+            if (!site || site.companyId !== companyId && !callerIsPlatformOperator()) return;
             contextLines.push(`SITE: ${site.name}, ${site.city ?? ""}`);
           })
         );

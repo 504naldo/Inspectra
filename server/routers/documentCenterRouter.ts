@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { callerIsPlatformOperator } from "../_core/actorContext";
 import { assertAttachmentCompany } from "../tenantGuards";
 import { logActivity } from "../activityLogger";
 import { eq, and, inArray, desc, isNotNull, like, or } from "drizzle-orm";
@@ -337,7 +338,7 @@ export const documentCenterRouter = router({
 
       // knowledge_base: soft-delete (deactivate) — reversible from the Knowledge Base page.
       const kb = await db.getKnowledgeBaseById(id);
-      if (!kb || kb.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!kb || kb.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "NOT_FOUND" });
       await db.updateKnowledgeBaseEntry(id, { isActive: false });
       void logActivity({
         ctx, entityType: "knowledge_base", entityId: id, eventType: "knowledge_base.deactivated",

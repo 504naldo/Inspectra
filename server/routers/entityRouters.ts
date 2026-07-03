@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure, officeProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { callerIsPlatformOperator } from "../_core/actorContext";
 import { assertCustomerOrgCompany } from "../tenantGuards";
 
 // Company router
@@ -59,7 +60,7 @@ const customerOrgRouter = router({
       if (ctx.user.customerOrgId !== input.id) {
         throw new TRPCError({ code: 'FORBIDDEN' });
       }
-    } else if (org.companyId !== ctx.user.companyId) {
+    } else if (org.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     return org;

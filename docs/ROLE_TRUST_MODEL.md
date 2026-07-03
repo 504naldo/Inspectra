@@ -41,16 +41,24 @@ bypass is off.
 - The pre-existing `role !== 'admin'` bypasses in `attachmentRouters` (attachment
   reads) and `entityRouters` (`company.get` / `company.list`).
 
-**Not yet covered (still scope admin to its own company) — residual inline checks
-that don't use a guard:**
-`aiAssistantRouter` (context helpers that `return "(access denied)"`),
-`dashboardRouter.getJobDataForOffline` / user lookups, `approvedWorkRouter`,
-`inspectionTemplateRouter`, `complianceRouter`, `filesRouter`,
-`deficiencyRouter`, `deviceRouters` bulk-reorder, `documentCenterRouter`,
-`entityRouters` customer-org branch. These raise `FORBIDDEN`/return a placeholder
-for a cross-company admin. Leaving them is a **functionality gap, not a security
-hole** (they're stricter, never looser). Convert opportunistically by routing them
-through a guard or adding `&& !callerIsPlatformOperator()`.
+**Also covered — bespoke inline record-ownership checks** that don't call a guard
+now consult `callerIsPlatformOperator()` too: `aiAssistantRouter` context helpers
+(fall through to real data instead of returning `"(access denied)"`),
+`dashboardRouter` (offline job packet + user get/updateRole), `approvedWorkRouter`,
+`inspectionTemplateRouter` (template/section/item owners + job checks),
+`complianceRouter`, `filesRouter`, `deficiencyRouter`, `documentCenterRouter`,
+`entityRouters` customer-org branch.
+
+**Remaining residual (still scopes admin):**
+- `deviceRouters` bulk-reorder — a set-membership check
+  (`ownedDevices.some(d => d.companyId !== ctx.user.companyId)`); left as-is, low
+  value and not a clean one-liner.
+- `input.companyId !== ctx.user.companyId` **input-validation** checks (e.g.
+  `jobRouter`/`dashboardRouter`/`approvedWorkRouter` `list`/`create`) are
+  intentionally NOT bypassed — they validate a client-supplied companyId equals the
+  caller's. Cross-company admin *writes* that pass a foreign `companyId` are the
+  write-attribution concern below and need a deliberate per-write pass, not a blanket
+  bypass. These are a **functionality gap, not a security hole** (stricter, never looser).
 
 ### ⚠ Write-attribution caveat
 

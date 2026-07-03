@@ -163,5 +163,13 @@ describe("Cross-tenant authorization", () => {
       await expectCode(officeB.invoice.get({ id: A.inv.id }), "FORBIDDEN");
       expect((await adminB.invoice.get({ id: A.inv.id })).id).toBe(A.inv.id);
     });
+    it("inline-check reads (deficiency.get): office is FORBIDDEN cross-company, admin now passes", async () => {
+      // deficiency.get uses a bespoke parent-job company check (not a guard); it now
+      // honors the admin bypass too.
+      const officeB = appRouter.createCaller(ctxFor("office", B.company.id));
+      const adminB = appRouter.createCaller(ctxFor("admin", B.company.id));
+      await expectCode(officeB.deficiency.get({ id: A.def.id }), "FORBIDDEN");
+      expect((await adminB.deficiency.get({ id: A.def.id }))?.deficiency?.id).toBe(A.def.id);
+    });
   });
 });

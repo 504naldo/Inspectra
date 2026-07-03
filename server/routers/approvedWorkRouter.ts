@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { callerIsPlatformOperator } from "../_core/actorContext";
 import { getQuoteForCompany, assertWorkOrderCompany } from "../tenantGuards";
 import { APPROVED_WORK_STATUSES } from "../../drizzle/schema";
 import { logActivity } from "../activityLogger";
@@ -83,7 +84,7 @@ export const approvedWorkRouter = router({
     .query(async ({ input, ctx }) => {
       const record = await db.getApprovedWorkById(input.id);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId) {
+      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
@@ -252,7 +253,7 @@ export const approvedWorkRouter = router({
     .mutation(async ({ input, ctx }) => {
       const record = await db.getApprovedWorkById(input.id);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId) {
+      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       if (record.status === "closed" || record.status === "cancelled") {
@@ -285,7 +286,7 @@ export const approvedWorkRouter = router({
     .mutation(async ({ input, ctx }) => {
       const record = await db.getApprovedWorkById(input.id);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId) {
+      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
@@ -322,7 +323,7 @@ export const approvedWorkRouter = router({
     .mutation(async ({ input, ctx }) => {
       const record = await db.getApprovedWorkById(input.id);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId) {
+      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       if (record.status === "closed" || record.status === "cancelled") {
@@ -354,7 +355,7 @@ export const approvedWorkRouter = router({
     .mutation(async ({ input, ctx }) => {
       const record = await db.getApprovedWorkById(input.id);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId) {
+      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       if (record.workOrderId) {
@@ -386,7 +387,7 @@ export const approvedWorkRouter = router({
     .mutation(async ({ input, ctx }) => {
       const record = await db.getApprovedWorkById(input.id);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId) {
+      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
@@ -450,7 +451,7 @@ export const approvedWorkRouter = router({
     .mutation(async ({ input, ctx }) => {
       const record = await db.getApprovedWorkById(input.id);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
       if (record.status === "cancelled") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot invoice a cancelled record." });
       }
@@ -593,7 +594,7 @@ export const approvedWorkRouter = router({
     .mutation(async ({ input, ctx }) => {
       const record = await db.getApprovedWorkById(input.id);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId) {
+      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       if (record.status === "closed") {
