@@ -154,5 +154,14 @@ describe("Cross-tenant authorization", () => {
       // admin (platform operator) is allowed through — returns a list, not a throw.
       expect(Array.isArray(await adminB.attachment.listByJob({ jobId: A.job.id }))).toBe(true);
     });
+    it("guard-protected reads (invoice.get): office is FORBIDDEN cross-company, admin now passes", async () => {
+      // Confirms the tenantGuards bypass: getInvoiceForCompany skips the company
+      // check for admin (via the async-local actor context set by the middleware),
+      // so an admin platform operator reads another company's invoice.
+      const officeB = appRouter.createCaller(ctxFor("office", B.company.id));
+      const adminB = appRouter.createCaller(ctxFor("admin", B.company.id));
+      await expectCode(officeB.invoice.get({ id: A.inv.id }), "FORBIDDEN");
+      expect((await adminB.invoice.get({ id: A.inv.id })).id).toBe(A.inv.id);
+    });
   });
 });

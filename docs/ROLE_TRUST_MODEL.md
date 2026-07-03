@@ -1,6 +1,6 @@
 # Role Trust Model
 
-**Date:** 2026-07-03 · **Status:** active — describes intended behavior + the current (partial) implementation
+**Date:** 2026-07-03 · **Status:** active — admin cross-company bypass wired into the tenant guards
 
 Inspectra roles are `admin`, `office`, `technician`, `customer` (per-user, in `users.role`).
 Every user is bound to one `companyId` at login (`server/_core/oauth.ts`); customers
@@ -22,26 +22,44 @@ impersonation, or separate superadmin account.
 sites (jobs, sites, invoices, deficiencies, quotes, import center, offline job
 packet, attachments, company records).
 
-## Current implementation — important caveat
+## How the admin cross-company bypass works
 
-The cross-company **admin** capability is **only partially wired**, and that is the
-main thing to know when reasoning about this model:
+The caller's role + companyId are bound to an **async-local actor context**
+(`server/_core/actorContext.ts`) by the `actorScope` tRPC middleware, which wraps
+every authenticated procedure (`server/_core/trpc.ts`). The tenant guards read it
+via `callerIsPlatformOperator()` and **skip the company-ownership check when the
+caller is `admin`** — without every one of the ~140 guard call sites having to pass
+the role. It fails **closed**: with no bound actor (e.g. a background job), the
+bypass is off.
 
-- **Where admin crosses companies today** (intentional `role !== 'admin'` bypass):
-  - `attachmentRouters` — `listByJob`, `listByDevice`, `get` (attachment reads).
-  - `entityRouters` — `company.get` (read any company) and `company.list`
-    (`adminProcedure` → `getAllCompanies()`).
-- **Where admin does NOT cross companies** (the majority): every procedure that
-  goes through `server/tenantGuards.ts` (`getJobForCompany`, `getInvoiceForCompany`,
-  `getQuoteForCompany`, `assertSite/Device/CustomerOrg/WorkOrder/PartsCatalogItem/
-  ServiceAgreement/InventoryItem/ImportLogCompany`, …). These take a `companyId`
-  and throw `FORBIDDEN` on mismatch **regardless of role** — so an admin gets
-  `FORBIDDEN` for another company's job/invoice/quote/etc.
+**Covered (admin crosses companies):**
+- Every procedure that goes through `server/tenantGuards.ts` and
+  `db.assertJobCompany` — jobs, invoices, quotes, sites, devices, customer orgs,
+  work orders, parts-catalog items, service agreements, inventory items, import
+  logs, attachments (`assertAttachmentCompany`), and the polymorphic
+  `assertEntityCompany`.
+- The pre-existing `role !== 'admin'` bypasses in `attachmentRouters` (attachment
+  reads) and `entityRouters` (`company.get` / `company.list`).
 
-So today an admin is effectively a per-company user for most data, plus cross-company
-read access to attachments and company records. If the product wants admin to be a
-**full** platform operator, the guards would need a role-aware bypass — a deliberate,
-security-sensitive expansion that is **not** done here.
+**Not yet covered (still scope admin to its own company) — residual inline checks
+that don't use a guard:**
+`aiAssistantRouter` (context helpers that `return "(access denied)"`),
+`dashboardRouter.getJobDataForOffline` / user lookups, `approvedWorkRouter`,
+`inspectionTemplateRouter`, `complianceRouter`, `filesRouter`,
+`deficiencyRouter`, `deviceRouters` bulk-reorder, `documentCenterRouter`,
+`entityRouters` customer-org branch. These raise `FORBIDDEN`/return a placeholder
+for a cross-company admin. Leaving them is a **functionality gap, not a security
+hole** (they're stricter, never looser). Convert opportunistically by routing them
+through a guard or adding `&& !callerIsPlatformOperator()`.
+
+### ⚠ Write-attribution caveat
+
+The bypass lets an admin *reach* another company's records. Procedures that then
+**create child records stamped with `ctx.user.companyId`** would attach them to the
+admin's OWN company, not the target's. Most guarded mutations are updates/deletes on
+the already-loaded record (safe), but any create-under-parent flow an admin runs
+cross-company must derive the companyId from the loaded parent, not the actor. Audit
+per-write before relying on cross-company admin **writes**.
 
 ## Interaction with the capability matrix (PR-10)
 
@@ -52,11 +70,17 @@ operations would route only to the platform operator, which is likely **not**
 intended. If admin is truly platform-only, revisit whether those actions should
 instead belong to office (or a new per-company manager role). Flagged, not changed.
 
-## If the model changes
+## Reverting the model
 
-- To make admin a **consistent** cross-company operator: add a role-aware bypass to
-  the `tenantGuards` (e.g. skip the `companyId` check when `role === 'admin'`), and
-  re-confirm every lower-role authorization test still fails closed.
-- To make admin **per-company** (the alternative the code's dominant pattern already
-  follows): remove the `role !== 'admin'` bypasses in `attachmentRouters` /
-  `entityRouters`, and scope `company.list` to the caller's company.
+To make admin **per-company** again: remove the `callerIsPlatformOperator()` clause
+from `db.assertJobCompany` and the `server/tenantGuards.ts` checks, drop the
+`role !== 'admin'` bypasses in `attachmentRouters` / `entityRouters`, and scope
+`company.list` to the caller's company. The `actorScope` middleware + `actorContext`
+module can stay (harmless when nothing reads the actor).
+
+## Tests
+
+`server/authorization.test.ts` locks in both directions: office/technician get
+`FORBIDDEN` cross-company (incl. at guard-protected `invoice.get` and the
+`attachment`/`company` bypass sites), while `admin` is allowed through the same
+paths — proving the async-local bypass reaches the guards via `createCaller`.
