@@ -135,4 +135,24 @@ describe("Cross-tenant authorization", () => {
       await expectCode(B.caller.import.execute({ ...args, duplicateHandling: "skip" as const }), "FORBIDDEN");
     });
   });
+
+  // Role trust model (docs/ROLE_TRUST_MODEL.md): `admin` is an intended
+  // cross-company platform operator; office/technician/customer are strictly
+  // company/org-scoped. These lock in that lower roles CANNOT cross tenants at
+  // the exact sites where admin deliberately can.
+  describe("role trust model: admin crosses companies, lower roles do not", () => {
+    it("company.get: office cannot read another company; admin can", async () => {
+      const officeB = appRouter.createCaller(ctxFor("office", B.company.id));
+      const adminB = appRouter.createCaller(ctxFor("admin", B.company.id));
+      await expectCode(officeB.company.get({ id: A.company.id }), "FORBIDDEN");
+      expect((await adminB.company.get({ id: A.company.id }))?.id).toBe(A.company.id);
+    });
+    it("attachment.listByJob: office cannot read another company's job attachments; admin can", async () => {
+      const officeB = appRouter.createCaller(ctxFor("office", B.company.id));
+      const adminB = appRouter.createCaller(ctxFor("admin", B.company.id));
+      await expectCode(officeB.attachment.listByJob({ jobId: A.job.id }), "FORBIDDEN");
+      // admin (platform operator) is allowed through — returns a list, not a throw.
+      expect(Array.isArray(await adminB.attachment.listByJob({ jobId: A.job.id }))).toBe(true);
+    });
+  });
 });
