@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { callerIsPlatformOperator } from "../_core/actorContext";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb, assertJobCompany } from "../db";
@@ -64,7 +65,7 @@ export const filesRouter = router({
         .from(jobs)
         .where(eq(jobs.id, input.jobId));
 
-      if (!job || job.companyId !== ctx.user.companyId) {
+      if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Access denied." });
       }
 

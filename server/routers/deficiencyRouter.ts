@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, technicianProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { callerIsPlatformOperator } from "../_core/actorContext";
 import { withAudit, assertJobNotFinalized } from "../db";
 import { assertCustomerOrgCompany } from "../tenantGuards";
 import { toCustomerSafeDeficiency, toCustomerSafeRepair } from "../customerDto";
@@ -35,7 +36,7 @@ const deficiencyRouter = router({
         if (ctx.user.customerOrgId !== job.customerOrgId) {
           throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
         }
-      } else if (ctx.user.companyId !== job.companyId) {
+      } else if (ctx.user.companyId !== job.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
       }
     }

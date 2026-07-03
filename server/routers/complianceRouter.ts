@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, adminOrOfficeProcedure, officeProcedure, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { callerIsPlatformOperator } from "../_core/actorContext";
 import { withAudit } from "../db";
 import { finalizeJob } from "../compliance/finalizeJob";
 import { buildFinalizationPayload, computeFinalizationHash } from "../compliance/hash";
@@ -85,7 +86,7 @@ const complianceRouter = router({
 
       const job = jobRows[0];
 
-      if (job.companyId !== ctx.user.companyId) {
+      if (job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
       }
 

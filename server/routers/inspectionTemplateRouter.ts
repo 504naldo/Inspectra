@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { callerIsPlatformOperator } from "../_core/actorContext";
 import { TRPCError } from "@trpc/server";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { router, officeProcedure, adminProcedure, technicianProcedure } from "../_core/trpc";
@@ -26,7 +27,7 @@ async function assertTemplateOwner(templateId: number, companyId: number) {
     .where(eq(inspectionTemplates.id, templateId))
     .limit(1);
   if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Template not found" });
-  if (template.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (template.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return template;
 }
 
@@ -38,7 +39,7 @@ async function assertSectionOwner(sectionId: number, companyId: number) {
     .where(eq(inspectionTemplateSections.id, sectionId))
     .limit(1);
   if (!section) throw new TRPCError({ code: "NOT_FOUND", message: "Section not found" });
-  if (section.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (section.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return section;
 }
 
@@ -50,7 +51,7 @@ async function assertItemOwner(itemId: number, companyId: number) {
     .where(eq(inspectionTemplateItems.id, itemId))
     .limit(1);
   if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Item not found" });
-  if (item.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (item.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return item;
 }
 
@@ -454,7 +455,7 @@ export const inspectionTemplateRouter = router({
         .where(eq(jobs.id, input.jobId))
         .limit(1);
 
-      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
 
       // Find active templates with matching assignments
       const assignments = await db
@@ -507,7 +508,7 @@ export const inspectionTemplateRouter = router({
       ]);
 
       if (!template) throw new TRPCError({ code: "NOT_FOUND" });
-      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
 
       const [sections, items, responses] = await Promise.all([
         db.select().from(inspectionTemplateSections)
@@ -542,7 +543,7 @@ export const inspectionTemplateRouter = router({
 
       const [job] = await db.select({ companyId: jobs.companyId, finalizedAt: jobs.finalizedAt })
         .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
-      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
       if (job.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Job is finalized" });
 
       await db.insert(inspectionTemplateResponses).values({
@@ -584,7 +585,7 @@ export const inspectionTemplateRouter = router({
         .where(eq(jobs.id, input.jobId))
         .limit(1);
 
-      if (!job || job.companyId !== ctx.user.companyId) return { templateCount: 0, totalRequired: 0, answered: 0 };
+      if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) return { templateCount: 0, totalRequired: 0, answered: 0 };
 
       const assignments = await db
         .select({ templateId: inspectionTemplateAssignments.templateId, jobType: inspectionTemplateAssignments.jobType, siteId: inspectionTemplateAssignments.siteId, customerOrgId: inspectionTemplateAssignments.customerOrgId })
@@ -634,7 +635,7 @@ export const inspectionTemplateRouter = router({
 
       const [job] = await db.select({ companyId: jobs.companyId })
         .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
-      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
 
       const responses = await db
         .select()
@@ -664,7 +665,7 @@ export const inspectionTemplateRouter = router({
 
       const [job] = await db.select({ companyId: jobs.companyId })
         .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
-      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
 
       const responses = await db
         .select()
