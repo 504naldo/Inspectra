@@ -792,9 +792,7 @@ const jobRouter = router({
       const rawDb = await db.getDb();
       if (!rawDb) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
-      const job = await db.getJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND" });
-      if (job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
 
       // Technicians must be assigned to the job
       if (ctx.user.role === "technician") {

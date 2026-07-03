@@ -77,11 +77,7 @@ export const quoteRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const job = await db.getJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
-      if (job.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
 
       // Build line items
       let items: QuoteLineItem[] = input.lineItems

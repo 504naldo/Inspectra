@@ -849,9 +849,7 @@ export const repairQuoteRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const companyId = ctx.user.companyId!;
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const q = quote as any;
       const approvedStatuses = ["approved", "accepted", "partially_approved", "converted_to_approved_work"];

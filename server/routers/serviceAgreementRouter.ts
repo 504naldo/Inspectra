@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
-import { assertServiceAgreementCompany } from "../tenantGuards";
+import { assertServiceAgreementCompany, assertSiteCompany } from "../tenantGuards";
 import { logActivity } from "../activityLogger";
 
 function generateAgreementNumber(): string {
@@ -333,8 +333,7 @@ export const serviceAgreementRouter = router({
       const agreement = await assertServiceAgreementCompany(input.agreementId, companyId);
       if (agreement.status === "cancelled") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot add sites to a cancelled agreement" });
 
-      const site = await db.getSiteById(input.siteId);
-      if (!site || site.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN", message: "Site not found" });
+      const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
 
       const id = await db.createAgreementSite({
         companyId,
