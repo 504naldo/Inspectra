@@ -19,6 +19,7 @@ import crypto from "crypto";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertSiteCompany } from "../tenantGuards";
 import { storagePut } from "../storage";
 import { extractPdfText } from "../_core/pdfImport";
 import { classifyDocumentText } from "../_core/knowledgeExtraction";
@@ -70,13 +71,7 @@ function sanitizeFilename(name: string): string {
   return name.replace(/\s+/g, "_").replace(/[^\w.\-]/g, "").replace(/_{2,}/g, "_").slice(0, 120) || "document";
 }
 
-/** Load a site and assert it belongs to the caller's company. */
-async function assertSiteCompany(siteId: number, companyId: number) {
-  const site = await db.getSiteById(siteId);
-  if (!site) throw new TRPCError({ code: "NOT_FOUND", message: "Site not found" });
-  if (site.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
-  return site;
-}
+// Site ownership uses the shared scoped getter (imported above).
 
 /** Load a knowledge page and assert it belongs to the caller's company. */
 async function assertPageCompany(pageId: number, companyId: number) {

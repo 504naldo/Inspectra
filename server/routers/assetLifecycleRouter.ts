@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertSiteCompany, assertDeviceCompany } from "../tenantGuards";
 import { logActivity } from "../activityLogger";
 import { LIFECYCLE_EVENT_TYPES, LIFECYCLE_SOURCE_TYPES } from "../../drizzle/schema";
 
@@ -75,8 +76,7 @@ export const assetLifecycleRouter = router({
       // Determine target site IDs
       let targetSiteIds: number[] | null = null;
       if (input.siteId) {
-        const site = await db.getSiteById(input.siteId);
-        if (!site || site.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+        const site = await assertSiteCompany(input.siteId, companyId);
         targetSiteIds = [input.siteId];
       } else if (input.customerOrgId) {
         const orgSites = await db.getSitesByCustomerOrg(input.customerOrgId);
@@ -129,10 +129,8 @@ export const assetLifecycleRouter = router({
   getAssetLifecycle: officeProcedure
     .input(z.object({ deviceId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const device = await db.getDeviceById(input.deviceId);
-      if (!device) throw new TRPCError({ code: "NOT_FOUND" });
-      if (device.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const device = await assertDeviceCompany(input.deviceId, companyId);
 
       const [inspectionHistory, deficiencyHistory, lifecycleEvents, site] = await Promise.all([
         db.getInspectionResultsByDevice(input.deviceId),
@@ -163,10 +161,8 @@ export const assetLifecycleRouter = router({
       notes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const device = await db.getDeviceById(input.deviceId);
-      if (!device) throw new TRPCError({ code: "NOT_FOUND" });
-      if (device.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const device = await assertDeviceCompany(input.deviceId, companyId);
 
       const id = await db.createLifecycleEvent({
         companyId,
@@ -203,11 +199,9 @@ export const assetLifecycleRouter = router({
       serviceNotes: z.string().max(2000).nullable().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
+      const companyId = ctx.user.companyId!;
       const { deviceId, ...fields } = input;
-      const device = await db.getDeviceById(deviceId);
-      if (!device) throw new TRPCError({ code: "NOT_FOUND" });
-      if (device.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const device = await assertDeviceCompany(deviceId, companyId);
 
       const oldStatus = (device as any).lifecycleStatus;
       const oldCondition = (device as any).assetCondition;
@@ -246,10 +240,8 @@ export const assetLifecycleRouter = router({
       notes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const device = await db.getDeviceById(input.deviceId);
-      if (!device) throw new TRPCError({ code: "NOT_FOUND" });
-      if (device.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const device = await assertDeviceCompany(input.deviceId, companyId);
 
       await db.updateDevice(input.deviceId, {
         replacementRecommended: true,
@@ -291,10 +283,8 @@ export const assetLifecycleRouter = router({
   clearReplacementRecommendation: officeProcedure
     .input(z.object({ deviceId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const device = await db.getDeviceById(input.deviceId);
-      if (!device) throw new TRPCError({ code: "NOT_FOUND" });
-      if (device.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const device = await assertDeviceCompany(input.deviceId, companyId);
 
       await db.updateDevice(input.deviceId, {
         replacementRecommended: false,
@@ -316,9 +306,8 @@ export const assetLifecycleRouter = router({
   getSiteAssetSummary: officeProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      const site = await db.getSiteById(input.siteId);
-      if (!site || site.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const companyId = ctx.user.companyId!;
+      const site = await assertSiteCompany(input.siteId, companyId);
 
       const siteDevices = await db.getDevicesBySite(input.siteId);
       const deviceIds = siteDevices.map((d) => d.id);

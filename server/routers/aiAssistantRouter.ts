@@ -13,6 +13,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { getJobForCompany } from "../tenantGuards";
 import { invokeLLM } from "../_core/llm";
 import { logActivity } from "../activityLogger";
 
@@ -317,9 +318,7 @@ async function buildTechnicianJobContext(jobId: number, companyId: number): Prom
 // ── Job access verification for field copilot ─────────────────────────────────
 
 async function verifyJobAccessForCopilot(jobId: number, userId: number, role: string, companyId: number) {
-  const job = await db.getJobById(jobId);
-  if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
-  if (job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  const job = await getJobForCompany(jobId, companyId);
   if (role === "admin" || role === "office") return job;
   const assigned = await db.isUserAssignedToJob(jobId, userId);
   if (!assigned) throw new TRPCError({ code: "FORBIDDEN", message: "You are not assigned to this job" });
@@ -1047,8 +1046,7 @@ Respond as JSON: {description, customerExplanation, correctiveAction, severitySu
       const defResult = await db.getDeficiencyById(input.deficiencyId);
       if (!defResult) throw new TRPCError({ code: "NOT_FOUND" });
       const def = (defResult as any).deficiency ?? defResult;
-      const job = await db.getJobById(def.jobId);
-      if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const job = await getJobForCompany(def.jobId, companyId);
 
       const device = def.deviceId ? await db.getDeviceById(def.deviceId) : null;
 

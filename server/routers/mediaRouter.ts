@@ -15,8 +15,7 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024; // 15 MB
 async function assertDeficiencyAccess(deficiencyId: number, companyId: number) {
   const deficiency = await db.getDeficiencyById(deficiencyId);
   if (!deficiency) throw new TRPCError({ code: "NOT_FOUND", message: "Deficiency not found" });
-  const job = await db.getJobById(deficiency.jobId);
-  if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  const job = await getJobForCompany(deficiency.jobId, companyId);
   if ((job as any).finalizedAt) throw new TRPCError({ code: "FORBIDDEN", message: "Job is finalized" });
   return { deficiency, job };
 }
@@ -29,8 +28,7 @@ async function assertAttachmentAccess(attachmentId: number, companyId: number) {
   if (att.entityType === "deficiency") {
     const deficiency = await db.getDeficiencyById(att.entityId);
     if (deficiency) {
-      const job = await db.getJobById(deficiency.jobId);
-      if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await getJobForCompany(deficiency.jobId, companyId); // authorize via parent job
     }
   }
   return { att, drizzle };
