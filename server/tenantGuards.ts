@@ -32,6 +32,14 @@ export async function getInvoiceForCompany(invoiceId: number, companyId: number)
   return invoice;
 }
 
+/** Load a quote and assert it belongs to the company. */
+export async function getQuoteForCompany(quoteId: number, companyId: number) {
+  const quote = await db.getQuoteById(quoteId);
+  if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Quote not found" });
+  if (quote.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  return quote;
+}
+
 /** Load a deficiency and assert (via its parent job) it belongs to the company. */
 export async function getDeficiencyForCompany(deficiencyId: number, companyId: number) {
   const deficiency = await db.getDeficiencyById(deficiencyId);
