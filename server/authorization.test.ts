@@ -99,5 +99,13 @@ describe("Cross-tenant authorization", () => {
       expect((await A.caller.invoice.get({ id: A.inv.id })).id).toBe(A.inv.id);
       await expectCode(B.caller.invoice.get({ id: A.inv.id }), "FORBIDDEN");
     });
+    it("sync.getJobDataForOffline: a technician cannot pull another company's job packet (IDOR)", async () => {
+      // Was a latent cross-tenant read: any technician could fetch any job's full
+      // packet by id. Now scoped to the caller's company (returns null otherwise).
+      const techB = appRouter.createCaller(ctxFor("technician", B.company.id, { userId: 2 }));
+      const own = await appRouter.createCaller(ctxFor("technician", A.company.id, { userId: 3 })).sync.getJobDataForOffline({ jobId: A.job.id });
+      expect(own?.job.id).toBe(A.job.id);
+      expect(await techB.sync.getJobDataForOffline({ jobId: A.job.id })).toBeNull();
+    });
   });
 });

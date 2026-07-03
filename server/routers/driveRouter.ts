@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, adminOrOfficeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { getJobForCompany } from "../tenantGuards";
 import { getValidGoogleToken } from "../_core/googleAuth";
 import { uploadReportToDrive } from "../_core/driveUpload";
 import { escapeDriveQueryValue } from "../_core/driveQuery";
@@ -36,6 +37,11 @@ export const driveRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Report not found" });
       }
 
+      // Enforce company ownership via the report's own parent job (not the
+      // client-supplied jobId) so an office user can't export another company's
+      // report PDF into their Drive.
+      const job = await getJobForCompany(report.jobId, ctx.user.companyId!);
+
       if (report.googleDriveUrl) {
         return {
           success: true,
@@ -51,10 +57,9 @@ export const driveRouter = router({
         });
       }
 
-      // Get job and site info for folder naming
-      const job = await db.getJobById(input.jobId);
-      const site = job ? await db.getSiteById(job.siteId) : null;
-      const customerOrg = job ? await db.getCustomerOrgById(job.customerOrgId) : null;
+      // Job (ownership already enforced above); site + customer for folder naming.
+      const site = await db.getSiteById(job.siteId);
+      const customerOrg = await db.getCustomerOrgById(job.customerOrgId);
 
       // Download PDF from S3
       let pdfBuffer: Buffer;

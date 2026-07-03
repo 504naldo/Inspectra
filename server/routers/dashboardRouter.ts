@@ -79,10 +79,12 @@ const syncRouter = router({
     return db.getSyncLogsByUser(ctx.user.id, input.limit);
   }),
   
-  getJobDataForOffline: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input }) => {
+  getJobDataForOffline: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
     const job = await db.getJobById(input.jobId);
-    if (!job) return null;
-    
+    // Enforce company ownership: a technician must not pull another company's job
+    // packet by guessing an id. Return null (same as not-found) so existence isn't revealed.
+    if (!job || job.companyId !== ctx.user.companyId) return null;
+
     const site = await db.getSiteById(job.siteId);
     const areas = site ? await db.getAreasBySite(site.id) : [];
     const devices = await db.getDevicesBySite(job.siteId);
