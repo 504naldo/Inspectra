@@ -3,6 +3,7 @@ import { router, technicianProcedure, adminOrOfficeProcedure } from "../_core/tr
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import * as db from "../db";
+import { getJobForCompany } from "../tenantGuards";
 import { attachments } from "../../drizzle/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { storagePut } from "../storage";
@@ -14,8 +15,7 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024; // 15 MB
 async function assertDeficiencyAccess(deficiencyId: number, companyId: number) {
   const deficiency = await db.getDeficiencyById(deficiencyId);
   if (!deficiency) throw new TRPCError({ code: "NOT_FOUND", message: "Deficiency not found" });
-  const job = await db.getJobById(deficiency.jobId);
-  if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  const job = await getJobForCompany(deficiency.jobId, companyId);
   if ((job as any).finalizedAt) throw new TRPCError({ code: "FORBIDDEN", message: "Job is finalized" });
   return { deficiency, job };
 }
@@ -28,8 +28,7 @@ async function assertAttachmentAccess(attachmentId: number, companyId: number) {
   if (att.entityType === "deficiency") {
     const deficiency = await db.getDeficiencyById(att.entityId);
     if (deficiency) {
-      const job = await db.getJobById(deficiency.jobId);
-      if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await getJobForCompany(deficiency.jobId, companyId); // authorize via parent job
     }
   }
   return { att, drizzle };
@@ -41,8 +40,7 @@ export const mediaRouter = router({
     .query(async ({ input, ctx }) => {
       const deficiency = await db.getDeficiencyById(input.deficiencyId);
       if (!deficiency) return [];
-      const job = await db.getJobById(deficiency.jobId);
-      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await getJobForCompany(deficiency.jobId, ctx.user.companyId!); // authorize via parent job
       const drizzle = await getDb();
       if (!drizzle) return [];
       return drizzle
@@ -68,12 +66,23 @@ export const mediaRouter = router({
         fileData: z.string(),
         caption: z.string().max(500).optional(),
         locationNote: z.string().max(255).optional(),
+        // Offline-sync idempotency: the client's stable local id for this queued
+        // photo. On reconnect the same upload may be replayed; find-or-create on
+        // this key so a retry never duplicates the attachment or storage object.
+        idempotencyKey: z.string().min(1).max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId;
       if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const { deficiency, job } = await assertDeficiencyAccess(input.deficiencyId, companyId);
+
+      // Idempotent replay: if this offline upload was already applied, return the
+      // existing attachment without re-uploading to storage or re-inserting.
+      if (input.idempotencyKey) {
+        const existing = await db.getAttachmentByIdempotencyKey(input.idempotencyKey, "deficiency", input.deficiencyId);
+        if (existing) return existing;
+      }
 
       // Sanitise filename to prevent path traversal
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
@@ -104,6 +113,7 @@ export const mediaRouter = router({
         sortOrder: 0,
         uploadStatus: "completed",
         importStatus: "none",
+        idempotencyKey: input.idempotencyKey ?? null,
       });
 
       logActivity({

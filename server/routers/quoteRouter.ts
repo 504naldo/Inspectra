@@ -18,9 +18,11 @@ import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, publicProcedure, customerProcedure } from "../_core/trpc.js";
 import { sendQuoteApprovedNotification } from "../emailService.js";
 import * as db from "../db.js";
+import { getJobForCompany, getQuoteForCompany } from "../tenantGuards.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateQuotePDF, generateBuildingQuotePDF } from "../quotePdfGenerator.js";
+import { buildCustomerSafeQuoteData, buildCustomerSafeBuildingQuoteData } from "../customerSafeReport.js";
 import type { QuoteLineItem } from "../../drizzle/schema.js";
 import { _createWorkOrderFromQuote } from "./repairQuoteRouter.js";
 
@@ -75,11 +77,7 @@ export const quoteRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const job = await db.getJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
-      if (job.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
 
       // Build line items
       let items: QuoteLineItem[] = input.lineItems
@@ -122,11 +120,7 @@ export const quoteRouter = router({
   get: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const [job, site, customer] = await Promise.all([
         db.getJobById(quote.jobId),
         db.getSiteById(quote.siteId),
@@ -141,10 +135,7 @@ export const quoteRouter = router({
   listByJob: officeProcedure
     .input(z.object({ jobId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const job = await db.getJobById(input.jobId);
-      if (!job || job.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      await getJobForCompany(input.jobId, ctx.user.companyId!); // authorize job access
       return db.getQuotesByJob(input.jobId);
     }),
 
@@ -160,9 +151,7 @@ export const quoteRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       if (quote.status !== "draft") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Only draft quotes can be edited." });
       }
@@ -191,9 +180,7 @@ export const quoteRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       if (quote.status !== "draft" && quote.status !== "sent") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Quote is already accepted or declined." });
       }
@@ -215,7 +202,7 @@ export const quoteRouter = router({
       const defDetails = await Promise.all(defIds.map((id) => db.getDeficiencyById(id)));
 
       // Generate PDF
-      const pdfBuffer = await generateQuotePDF({
+      const pdfBuffer = await generateQuotePDF(buildCustomerSafeQuoteData({
         quoteId: quote.id,
         jobNumber: job?.jobNumber ?? `JOB-${quote.jobId}`,
         siteName: site?.name ?? "Unknown Site",
@@ -236,7 +223,7 @@ export const quoteRouter = router({
             description: d.observedIssue ?? d.description,
             location: null,
           })),
-      });
+      }));
 
       // Upload to S3
       const pdfKey = `quotes/${quote.companyId}/${quote.id}/quote-${quote.id}.pdf`;
@@ -385,9 +372,7 @@ export const quoteRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       if (quote.status !== "draft") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Only draft quotes can be edited." });
       }
@@ -452,9 +437,7 @@ export const quoteRouter = router({
   getBuilding: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const company = await db.getCompanyById(quote.companyId);
       return { quote, company };
     }),
@@ -465,9 +448,7 @@ export const quoteRouter = router({
   downloadBuildingPDF: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const company = await db.getCompanyById(quote.companyId);
       const info = (quote as any).buildingInfo as { city?: string; backflowFeeCity?: string; buildingId?: string; buildingName?: string; address?: string } | null ?? {};
@@ -482,7 +463,7 @@ export const quoteRouter = router({
       const discountAmount   = subtotal * (discountPct / 100);
       const total            = parseFloat(String(quote.total));
 
-      const pdfBuffer = await generateBuildingQuotePDF({
+      const pdfBuffer = await generateBuildingQuotePDF(buildCustomerSafeBuildingQuoteData({
         quoteId: quote.id,
         companyName: company?.name ?? "EWF",
         createdAt: quote.createdAt,
@@ -511,7 +492,7 @@ export const quoteRouter = router({
         discountReason: (quote as any).discountReason ?? undefined,
         total,
         comments: quote.notes ?? undefined,
-      });
+      }));
 
       const pdfKey = `quotes/${quote.companyId}/${quote.id}/building-quote-${quote.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
@@ -531,9 +512,7 @@ export const quoteRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const extra: Record<string, unknown> = {};
       if (input.status === "sent" && !quote.sentAt) extra.sentAt = new Date();

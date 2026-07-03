@@ -22,10 +22,7 @@ const areaRouter = router({
     building: z.string().optional(),
     description: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
-    const site = await db.getSiteById(input.siteId);
-    if (!site || site.companyId !== ctx.user.companyId) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
-    }
+    const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
     return db.createArea(input);
   }),
 
@@ -74,10 +71,7 @@ const deviceRouter = router({
     if (input.companyId !== ctx.user.companyId) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
-    const site = await db.getSiteById(input.siteId);
-    if (!site || site.companyId !== ctx.user.companyId) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
-    }
+    const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
     if (input.areaId !== undefined) {
       const area = await db.getAreaById(input.areaId);
       if (!area || area.siteId !== input.siteId) {
@@ -192,10 +186,7 @@ const deviceRouter = router({
     const { jobId, ...deviceData } = input;
     const job = await db.assertJobCompany(jobId, ctx.user.companyId!);
     if ((job as any).finalizedAt) throw new TRPCError({ code: 'FORBIDDEN', message: 'Job is finalized' });
-    const site = await db.getSiteById(deviceData.siteId);
-    if (!site || site.companyId !== ctx.user.companyId) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
-    }
+    const site = await assertSiteCompany(deviceData.siteId, ctx.user.companyId!);
     // Always attribute the device to the job's own company, never a client-supplied value.
     const device = await db.createDevice({ ...deviceData, companyId: job.companyId } as any);
     return { success: true, deviceId: device.id };
@@ -272,10 +263,7 @@ const smokeAlarmRouter = router({
     if (input.companyId !== ctx.user.companyId) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
-    const site = await db.getSiteById(input.siteId);
-    if (!site || site.companyId !== ctx.user.companyId) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
-    }
+    const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
     const { installDate, ...rest } = input;
     return db.createDevice({
       ...rest,

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { getJobForCompany } from "../tenantGuards";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import {
   reports, jobs, sites, customerOrgs, deficiencies,
@@ -305,10 +306,9 @@ export const reportQaRouter = router({
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function assertCompanyOwns(jobId: number, companyId: number) {
-  const job = await db.getJobById(jobId);
-  if (!job || job.companyId !== companyId) {
-    throw new TRPCError({ code: "FORBIDDEN" });
-  }
+  // Delegate to the shared scoped getter so job-ownership enforcement lives in
+  // one place (tenantGuards); the local name is kept for the existing callers.
+  await getJobForCompany(jobId, companyId);
 }
 
 function makeReportItem(

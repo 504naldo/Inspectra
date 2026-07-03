@@ -244,6 +244,7 @@ function EntryRow({
   onReject,
   onNotes,
   currentUserId,
+  canManage,
 }: {
   entry: any;
   userMap: Map<number, any>;
@@ -253,13 +254,16 @@ function EntryRow({
   onReject: (id: number) => void;
   onNotes: (entry: any) => void;
   currentUserId: number;
+  canManage: boolean;
 }) {
   const user = userMap.get(entry.userId);
   const isSelf = entry.userId === currentUserId;
+  // Approval/rejection is admin-only (enforced server-side).
+  const canApprove = canManage && entry.status === "submitted" && !isSelf;
   return (
     <div className={`border rounded-lg bg-card px-4 py-3 ${selected ? "ring-2 ring-primary" : ""}`}>
       <div className="flex items-start gap-3">
-        {entry.status === "submitted" && !isSelf && (
+        {canApprove && (
           <Checkbox
             checked={selected}
             onCheckedChange={onSelect}
@@ -301,7 +305,7 @@ function EntryRow({
           {entry.adminNotes && <p className="text-xs text-blue-600 mt-0.5 truncate">Admin: {entry.adminNotes}</p>}
         </div>
         <div className="flex flex-col gap-1 shrink-0">
-          {entry.status === "submitted" && !isSelf && (
+          {canApprove && (
             <>
               <Button
                 size="sm"
@@ -342,6 +346,9 @@ function EntryRow({
 
 export default function AdminPayrollHours() {
   const { user } = useAuth();
+  // Payroll approval and export are admin-only (enforced server-side). Hide the
+  // approve/reject/bulk/export controls from office users.
+  const isAdmin = user?.role === "admin";
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [notesEntry, setNotesEntry] = useState<any | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -367,12 +374,13 @@ export default function AdminPayrollHours() {
     from: from || undefined,
     to: to || undefined,
   });
+  // exportData is admin-only server-side; only fetch it for admins to avoid a 403.
   const { data: exportEntries = [] } = trpc.payrollHours.exportData.useQuery({
     from: from || undefined,
     to: to || undefined,
     userId: filterUserId ? parseInt(filterUserId) : undefined,
     status: (filterStatus as any) || undefined,
-  });
+  }, { enabled: isAdmin });
 
   const approveMut = trpc.payrollHours.approve.useMutation({
     onSuccess: () => {
@@ -502,8 +510,8 @@ export default function AdminPayrollHours() {
         </CardContent>
       </Card>
 
-      {/* Bulk actions */}
-      {submittedSelectableIds.length > 0 && (
+      {/* Bulk actions — approval is admin-only */}
+      {isAdmin && submittedSelectableIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 mb-3">
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />
@@ -547,6 +555,7 @@ export default function AdminPayrollHours() {
             onReject={setRejectId}
             onNotes={setNotesEntry}
             currentUserId={user!.id}
+            canManage={isAdmin}
           />
         ))}
       </div>
@@ -558,6 +567,7 @@ export default function AdminPayrollHours() {
             {(entries as any[]).length} entr{(entries as any[]).length !== 1 ? "ies" : "y"} ·{" "}
             Total: <strong>{fmtHours((entries as any[]).reduce((s: number, e: any) => s + e.totalMinutes, 0))}</strong>
           </span>
+          {isAdmin && (
           <div className="flex gap-2">
             {approvedIds.length > 0 && (
               <Button
@@ -574,6 +584,7 @@ export default function AdminPayrollHours() {
               <Download className="h-3.5 w-3.5 mr-1" /> Export CSV
             </Button>
           </div>
+          )}
         </div>
       )}
 

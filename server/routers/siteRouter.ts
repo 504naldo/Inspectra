@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
 import { geocodeAddress } from "../_core/map";
 import * as db from "../db";
+import { assertSiteCompany, assertCustomerOrgCompany } from "../tenantGuards";
 import type { SiteSummary } from "../../drizzle/schema";
 
 // Joins the address fields into a single string for geocoding; skips empty parts
@@ -60,10 +61,7 @@ const siteRouter = router({
     if (input.companyId !== ctx.user.companyId) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
-    const customerOrg = await db.getCustomerOrgById(input.customerOrgId);
-    if (!customerOrg || customerOrg.companyId !== ctx.user.companyId) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid customer organization' });
-    }
+    const customerOrg = await assertCustomerOrgCompany(input.customerOrgId, ctx.user.companyId!);
     // Build summary object from form data - always initialize with complete structure
     const summary = {
       client: {
@@ -127,18 +125,9 @@ const siteRouter = router({
     const { id, ...data } = input;
 
     // Get existing site to merge with updates
-    const existingSite = await db.getSiteById(id);
-    if (!existingSite) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });
-    }
-    if (existingSite.companyId !== ctx.user.companyId) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
-    }
+    const existingSite = await assertSiteCompany(id, ctx.user.companyId!);
     if (data.customerOrgId !== undefined) {
-      const customerOrg = await db.getCustomerOrgById(data.customerOrgId);
-      if (!customerOrg || customerOrg.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid customer organization' });
-      }
+      const customerOrg = await assertCustomerOrgCompany(data.customerOrgId, ctx.user.companyId!);
     }
 
     // Update summary to keep it in sync with flat columns
@@ -245,9 +234,7 @@ const siteRouter = router({
       }).optional(),
     }),
   })).mutation(async ({ input, ctx }) => {
-    const existingSite = await db.getSiteById(input.id);
-    if (!existingSite) throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });
-    if (existingSite.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN' });
+    const existingSite = await assertSiteCompany(input.id, ctx.user.companyId!);
 
     const merged: SiteSummary = {
       ...existingSite.summary,
@@ -268,9 +255,7 @@ const siteRouter = router({
     id: z.number(),
     servicingHours: z.string(),
   })).mutation(async ({ input, ctx }) => {
-    const existingSite = await db.getSiteById(input.id);
-    if (!existingSite) throw new TRPCError({ code: 'NOT_FOUND', message: 'Site not found' });
-    if (existingSite.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN' });
+    const existingSite = await assertSiteCompany(input.id, ctx.user.companyId!);
 
     const merged: SiteSummary = {
       ...existingSite.summary,
@@ -285,9 +270,7 @@ const siteRouter = router({
   // Geocodes sequentially (Google's API has per-second rate limits) and is safe to
   // re-run — it only targets sites that still lack coordinates.
   delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
-    const site = await db.getSiteById(input.id);
-    if (!site) throw new TRPCError({ code: 'NOT_FOUND' });
-    if (site.companyId !== ctx.user.companyId) throw new TRPCError({ code: 'FORBIDDEN' });
+    const site = await assertSiteCompany(input.id, ctx.user.companyId!);
     const result = await db.deleteSite(input.id);
     if (result.blocked) throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
     return { success: true };

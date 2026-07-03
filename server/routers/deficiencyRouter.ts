@@ -63,8 +63,21 @@ const deficiencyRouter = router({
     aiGeneratedAt: z.date().optional(),
     systemCategory: z.enum(['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING', 'SPRINKLER', 'SMOKE_ALARM']).optional(),
     estimatedCost: z.number().nonnegative().optional(),
+    // Offline-sync idempotency: the client's stable local id for this deficiency.
+    // On reconnect the same create may be replayed (e.g. a lost response); we
+    // find-or-create on this key so a retry never duplicates the record.
+    idempotencyKey: z.string().min(1).max(64).optional(),
   })).mutation(async ({ input, ctx }) => {
     await db.assertJobCompany(input.jobId, ctx.user.companyId!);
+
+    // Idempotent replay: if this offline create was already applied, return the
+    // existing deficiency instead of creating a duplicate. Confirm it belongs to
+    // the same job (defense against an improbable key collision across tenants).
+    if (input.idempotencyKey) {
+      const existing = await db.getDeficiencyByIdempotencyKey(input.idempotencyKey);
+      if (existing && existing.jobId === input.jobId) return existing;
+    }
+
     return withAudit(ctx, 'deficiency.create', async (_tx) => {
       await assertJobNotFinalized(input.jobId, _tx);
       const { estimatedCost, ...rest } = input;

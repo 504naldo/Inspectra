@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure, customerProcedure } from "../_core/trpc";
+import { router, officeProcedure, adminProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { getInvoiceForCompany } from "../tenantGuards";
 import { INVOICE_STATUSES } from "../../drizzle/schema";
 import { logActivity } from "../activityLogger";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateInvoicePDF } from "../invoicePdfGenerator.js";
+import { buildCustomerSafeInvoiceData } from "../customerSafeReport.js";
 
 function generateInvoiceNumber(prefix = "INV"): string {
   const now = new Date();
@@ -104,9 +106,7 @@ export const invoiceRouter = router({
   get: officeProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input, ctx }) => {
-      const inv = await db.getInvoiceById(input.id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
       const lineItems = await db.getLineItemsByInvoice(inv.id);
       const [customerOrg, site] = await Promise.all([
         inv.customerOrgId ? db.getCustomerOrgById(inv.customerOrgId) : null,
@@ -188,9 +188,7 @@ export const invoiceRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
-      const inv = await db.getInvoiceById(id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(id, ctx.user.companyId!);
       if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv) });
       await db.updateInvoice(id, {
         ...data,
@@ -214,9 +212,7 @@ export const invoiceRouter = router({
       sageDepartment: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const inv = await db.getInvoiceById(input.invoiceId);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.invoiceId, ctx.user.companyId!);
       if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv) });
       const lineTotal = input.quantity * input.unitPrice;
       const item = await db.createInvoiceLineItem({
@@ -251,9 +247,7 @@ export const invoiceRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { id, invoiceId, quantity, unitPrice, ...rest } = input;
-      const inv = await db.getInvoiceById(invoiceId);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(invoiceId, ctx.user.companyId!);
       if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv) });
       const lineTotal =
         quantity !== undefined && unitPrice !== undefined ? quantity * unitPrice : undefined;
@@ -272,9 +266,7 @@ export const invoiceRouter = router({
   removeLineItem: officeProcedure
     .input(z.object({ id: z.number(), invoiceId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const inv = await db.getInvoiceById(input.invoiceId);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.invoiceId, ctx.user.companyId!);
       if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv) });
       await db.deleteInvoiceLineItem(input.id);
       await db.recalculateInvoiceTotals(input.invoiceId);
@@ -289,9 +281,13 @@ export const invoiceRouter = router({
       status: z.enum(INVOICE_STATUSES),
     }))
     .mutation(async ({ input, ctx }) => {
-      const inv = await db.getInvoiceById(input.id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
+      // Voiding is an admin-only capability (see the dedicated `void` procedure).
+      // Guard the generic status transition so office users can't reach "void"
+      // through this path and bypass that restriction.
+      if (input.status === "void" && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only an admin can void an invoice" });
+      }
       const allowed = ALLOWED_TRANSITIONS[inv.status] ?? [];
       if (!allowed.includes(input.status)) {
         throw new TRPCError({
@@ -315,34 +311,47 @@ export const invoiceRouter = router({
       paidAt: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const inv = await db.getInvoiceById(input.id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
       if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot record payment on a voided invoice" });
       if (inv.status === "paid") throw new TRPCError({ code: "BAD_REQUEST", message: "Invoice is already fully paid" });
       if (inv.sageExportStatus === "exported") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot modify a Sage-exported invoice" });
-      const total = parseFloat(String(inv.total ?? "0"));
-      const status = input.amountPaid >= total ? "paid" : "partial";
+
+      // Recompute totals from the authoritative line items so a payment is never
+      // accepted against a stale stored total, then read the fresh total back.
+      await db.recalculateInvoiceTotals(input.id);
+      const fresh = await db.getInvoiceById(input.id);
+      if (!fresh) throw new TRPCError({ code: "NOT_FOUND" });
+      const total = parseFloat(String(fresh.total ?? "0"));
+      const fullyPaid = input.amountPaid >= total;
+      const status = fullyPaid ? "paid" : "partial";
       const balanceDue = Math.max(0, total - input.amountPaid);
-      await db.updateInvoice(input.id, {
-        amountPaid: String(input.amountPaid) as any,
-        balanceDue: String(balanceDue) as any,
+
+      // Atomic, eligibility-guarded write: prevents a double-apply race (two
+      // concurrent mark-paid requests) and re-checks paid/void/exported in the
+      // WHERE clause. A false result means another action already transitioned it.
+      const applied = await db.markInvoicePaidIfEligible(input.id, ctx.user.companyId!, {
+        amountPaid: String(input.amountPaid),
+        balanceDue: String(balanceDue),
         status,
-        paidAt: input.amountPaid >= total
-          ? (input.paidAt ? new Date(input.paidAt) : new Date())
-          : undefined,
+        paidAt: fullyPaid ? (input.paidAt ? new Date(input.paidAt) : new Date()) : null,
       });
+      if (!applied) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "This invoice was already updated (paid, voided, exported, or changed by another action). Reload and try again.",
+        });
+      }
+
       void logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "paid",
-        title: status === "paid" ? `Invoice paid in full: $${input.amountPaid.toFixed(2)}` : `Partial payment recorded: $${input.amountPaid.toFixed(2)}` });
-      return { success: true };
+        title: fullyPaid ? `Invoice paid in full: $${input.amountPaid.toFixed(2)}` : `Partial payment recorded: $${input.amountPaid.toFixed(2)}`,
+        newValue: `total $${total.toFixed(2)}, paid $${input.amountPaid.toFixed(2)}, balance $${balanceDue.toFixed(2)}` });
+      return { success: true, status, total, amountPaid: input.amountPaid, balanceDue };
     }),
 
-  void: officeProcedure
+  void: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const inv = await db.getInvoiceById(input.id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
       if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Invoice is already voided" });
       if (inv.status === "paid") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot void a paid invoice. Use a credit note workflow instead." });
       if (inv.sageExportStatus === "exported") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot void an invoice that has been exported to Sage. Contact your accountant to reverse it there first." });
@@ -352,7 +361,7 @@ export const invoiceRouter = router({
       return { success: true };
     }),
 
-  exportSage: officeProcedure
+  exportSage: adminProcedure
     .input(z.object({ ids: z.array(z.number()) }))
     .mutation(async ({ input, ctx }) => {
       // Validate all invoices first, then generate CSV, then mark exported.
@@ -435,9 +444,7 @@ export const invoiceRouter = router({
   markReadyForReview: officeProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const inv = await db.getInvoiceById(input.id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
       if (!["sent", "viewed"].includes(inv.status)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Invoice must be sent or viewed to mark as approved" });
       }
@@ -445,24 +452,20 @@ export const invoiceRouter = router({
       return { success: true };
     }),
 
-  markReadyForSageExport: officeProcedure
+  markReadyForSageExport: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const inv = await db.getInvoiceById(input.id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
       if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot reset Sage export status on a voided invoice" });
       if (inv.sageExportStatus === "exported") throw new TRPCError({ code: "BAD_REQUEST", message: "This invoice has already been exported to Sage. Reverse the export in Sage before re-opening it here." });
       await db.updateInvoice(input.id, { sageExportStatus: "pending" });
       return { success: true };
     }),
 
-  markExportedToSage: officeProcedure
+  markExportedToSage: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const inv = await db.getInvoiceById(input.id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
       if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot mark a voided invoice as exported" });
       await db.updateInvoice(input.id, { sageExportStatus: "exported", sageExportedAt: new Date() });
       void logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "exported",
@@ -475,9 +478,7 @@ export const invoiceRouter = router({
   generatePdf: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const inv = await db.getInvoiceById(input.id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
 
       const [lineItems, site, customer, company] = await Promise.all([
         db.getLineItemsByInvoice(input.id),
@@ -488,7 +489,7 @@ export const invoiceRouter = router({
 
       const toNum = (v: unknown) => parseFloat(String(v ?? "0")) || 0;
 
-      const pdfBuffer = await generateInvoicePDF({
+      const pdfBuffer = await generateInvoicePDF(buildCustomerSafeInvoiceData({
         invoiceId: inv.id,
         invoiceNumber: inv.invoiceNumber,
         companyName: company?.name ?? "EWF",
@@ -518,7 +519,7 @@ export const invoiceRouter = router({
         amountPaid: toNum(inv.amountPaid),
         balanceDue: toNum(inv.balanceDue),
         clientNotes: inv.clientNotes,
-      });
+      }));
 
       const pdfKey = `invoices/${inv.companyId}/${inv.id}/invoice-${inv.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
@@ -533,9 +534,7 @@ export const invoiceRouter = router({
       to: z.array(z.string().email()).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const inv = await db.getInvoiceById(input.id);
-      if (!inv) throw new TRPCError({ code: "NOT_FOUND" });
-      if (inv.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
       if (inv.status === "void" || inv.status === "paid") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot send a voided or paid invoice." });
       }
@@ -549,7 +548,7 @@ export const invoiceRouter = router({
 
       const toNum = (v: unknown) => parseFloat(String(v ?? "0")) || 0;
 
-      const pdfBuffer = await generateInvoicePDF({
+      const pdfBuffer = await generateInvoicePDF(buildCustomerSafeInvoiceData({
         invoiceId: inv.id,
         invoiceNumber: inv.invoiceNumber,
         companyName: company?.name ?? "EWF",
@@ -579,7 +578,7 @@ export const invoiceRouter = router({
         amountPaid: toNum(inv.amountPaid),
         balanceDue: toNum(inv.balanceDue),
         clientNotes: inv.clientNotes,
-      });
+      }));
 
       const pdfKey = `invoices/${inv.companyId}/${inv.id}/invoice-${inv.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { getQuoteForCompany, assertWorkOrderCompany } from "../tenantGuards";
 import { APPROVED_WORK_STATUSES } from "../../drizzle/schema";
 import { logActivity } from "../activityLogger";
 
@@ -186,11 +187,7 @@ export const approvedWorkRouter = router({
       const item = await db.getRepairQuoteItemById(input.quoteItemId);
       if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Quote item not found." });
 
-      const quote = await db.getQuoteById(input.quoteId);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Quote not found." });
-      if (quote.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const quote = await getQuoteForCompany(input.quoteId, ctx.user.companyId!);
 
       // Must be an approved quote; declined items must not create approved work
       if (quote.status === "declined") {
@@ -367,11 +364,7 @@ export const approvedWorkRouter = router({
         });
       }
 
-      const wo = await db.getWorkOrderById(input.workOrderId);
-      if (!wo) throw new TRPCError({ code: "NOT_FOUND", message: "Work order not found." });
-      if (wo.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      await assertWorkOrderCompany(input.workOrderId, ctx.user.companyId!); // authorize the linked work order
 
       await db.updateApprovedWork(input.id, { workOrderId: input.workOrderId });
       return { success: true };

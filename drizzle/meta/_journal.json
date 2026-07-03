@@ -218,6 +218,20 @@
       "when": 1782662168186,
       "tag": "0030_lumpy_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1782863878044,
+      "tag": "0031_flimsy_killmonger",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1782973791712,
+      "tag": "0032_round_paper_doll",
+      "breakpoints": true
     }
   ]
 }

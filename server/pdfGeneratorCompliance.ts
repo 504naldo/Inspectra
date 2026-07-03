@@ -24,13 +24,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Interfaces for compliance report data
-interface ChecklistItem {
+export interface ChecklistItem {
   id: string;
   description: string;
   result: 'YES' | 'NO' | 'N/A';
 }
 
-interface ChecklistSection {
+export interface ChecklistSection {
   sectionNumber: string;
   sectionTitle: string;
   location?: string;
@@ -40,35 +40,35 @@ interface ChecklistSection {
   comments?: string;
 }
 
-interface DeviceRecord {
+export interface DeviceRecord {
   deviceType: string;
   location: string;
   result: 'PASS' | 'DEFICIENT' | 'NO ACCESS';
   notes?: string;
 }
 
-interface ExtinguisherRecord {
+export interface ExtinguisherRecord {
   location: string;
   type: string;
   serialNumber?: string;
   result: 'PASS' | 'DEFICIENT';
 }
 
-interface EmergencyLightRecord {
+export interface EmergencyLightRecord {
   location: string;
   functionalTest: 'PASS' | 'FAIL';
   durationTest?: 'PASS' | 'FAIL' | 'N/A';
   comments?: string;
 }
 
-interface DeficiencySummary {
+export interface DeficiencySummary {
   system: string;
   location: string;
   description: string;
   severity?: 'critical' | 'major' | 'minor' | 'observation';
 }
 
-interface ComplianceReportData {
+export interface ComplianceReportData {
   // Header information
   workOrderNumber: string;
   dateOfService: Date;

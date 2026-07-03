@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import AdminLayout from "@/components/AdminLayout";
 import { WorkflowHint } from "@/components/help/WorkflowHint";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -469,6 +470,11 @@ interface Props { id: number }
 export default function InvoiceDetail({ id }: Props) {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
+  const { user } = useAuth();
+  // Void and Sage-export are admin-only capabilities (enforced server-side in
+  // invoiceRouter). Hide their controls from office users so they don't click a
+  // button that 403s.
+  const isAdmin = user?.role === "admin";
 
   const [showAddItem, setShowAddItem] = useState(false);
   const [showMarkPaid, setShowMarkPaid] = useState(false);
@@ -672,7 +678,7 @@ export default function InvoiceDetail({ id }: Props) {
                   <DollarSign className="h-3.5 w-3.5 mr-1" /> Record Payment
                 </Button>
               )}
-              {!isVoid && (
+              {isAdmin && !isVoid && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -684,7 +690,7 @@ export default function InvoiceDetail({ id }: Props) {
                   {exportSage.isPending ? "Exporting…" : "Export Sage CSV"}
                 </Button>
               )}
-              {!isVoid && !isSageExported && (
+              {isAdmin && !isVoid && !isSageExported && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -696,7 +702,7 @@ export default function InvoiceDetail({ id }: Props) {
                   Mark Exported
                 </Button>
               )}
-              {!isVoid && !isPaid && !isSageExported && (
+              {isAdmin && !isVoid && !isPaid && !isSageExported && (
                 <Button
                   size="sm"
                   variant="destructive"

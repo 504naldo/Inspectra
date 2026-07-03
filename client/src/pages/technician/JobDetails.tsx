@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { pendingSyncItemCount, isQaSubmitBlocked, pendingSyncCountsForJob } from "@/lib/qaPreflight";
 import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { SiteDetails } from "@/components/SiteDetails";
@@ -123,7 +124,7 @@ interface JobDetailsProps {
 
 export default function JobDetails({ jobId }: JobDetailsProps) {
   const [location, setLocation] = useLocation();
-  const { isOnline, getCachedJobData, syncStatus } = useOfflineStorage();
+  const { isOnline, getCachedJobData, syncStatus, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses } = useOfflineStorage();
   const { status: packetStatus, cachedAt: packetCachedAt, packet, isCaching, preload, refresh: refreshPacket, remove: removePacket, checkStale } = useOfflineJobPacket(jobId);
   const [openGridSection, setOpenGridSection] = useState<string | null>(null);
   const [showFullSummary, setShowFullSummary] = useState(false);
@@ -374,6 +375,30 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   // Submit for QA
   const [qaDialogOpen, setQaDialogOpen] = useState(false);
+  const [qaOverride, setQaOverride] = useState(false);
+  // Unsynced field data for THIS job across all critical offline stores. QA
+  // submission is blocked while this is > 0 unless the technician explicitly
+  // overrides, so a submit can't silently omit device tests / deficiencies /
+  // checklist / template responses still stored locally for this job. Scoped
+  // per-job so unsynced data from another job doesn't block (or reassure) this
+  // one. (Rules in lib/qaPreflight.) Recomputed whenever the global sync status
+  // changes, since that fires on every offline save/sync.
+  const jobSyncCounts = useMemo(
+    () =>
+      pendingSyncCountsForJob(
+        {
+          results: getOfflineResults(),
+          deficiencies: getOfflineDeficiencies(),
+          checklistResponses: getOfflineChecklistResponses(),
+          templateResponses: getOfflineTemplateResponses(),
+        },
+        jobId,
+      ),
+    // syncStatus is the reactive signal that offline stores changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [jobId, syncStatus, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses],
+  );
+  const pendingSyncCount = pendingSyncItemCount(jobSyncCounts);
   const { data: templateCompleteness } = trpc.inspectionTemplate.getCompletenessForJob.useQuery(
     { jobId },
     { enabled: qaDialogOpen && !!jobId, staleTime: 30_000 }
@@ -1633,7 +1658,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       </div>
 
       {/* Submit for QA dialog */}
-      <Dialog open={qaDialogOpen} onOpenChange={(open) => { if (!submitForQA.isPending) setQaDialogOpen(open); }}>
+      <Dialog open={qaDialogOpen} onOpenChange={(open) => { if (!submitForQA.isPending) { setQaDialogOpen(open); if (!open) setQaOverride(false); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1672,20 +1697,27 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 </p>
               )}
             </div>
-            {(syncStatus.pendingResults > 0 || syncStatus.pendingDeficiencies > 0) && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-1">
+            {pendingSyncCount > 0 && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
                 <p className="text-amber-800 dark:text-amber-300 font-medium text-xs">
-                  ⚠ You have unsynced field data
+                  ⚠ {pendingSyncCount} item{pendingSyncCount !== 1 ? "s" : ""} not yet synced
                 </p>
+                <ul className="text-amber-700 dark:text-amber-400 text-xs list-disc pl-4 space-y-0.5">
+                  {jobSyncCounts.pendingResults > 0 && <li>{jobSyncCounts.pendingResults} device test result{jobSyncCounts.pendingResults !== 1 ? "s" : ""}</li>}
+                  {jobSyncCounts.pendingDeficiencies > 0 && <li>{jobSyncCounts.pendingDeficiencies} deficienc{jobSyncCounts.pendingDeficiencies !== 1 ? "ies" : "y"}</li>}
+                  {(jobSyncCounts.pendingChecklistResponses ?? 0) > 0 && <li>{jobSyncCounts.pendingChecklistResponses} checklist response{jobSyncCounts.pendingChecklistResponses !== 1 ? "s" : ""}</li>}
+                  {(jobSyncCounts.pendingTemplateResponses ?? 0) > 0 && <li>{jobSyncCounts.pendingTemplateResponses} template response{jobSyncCounts.pendingTemplateResponses !== 1 ? "s" : ""}</li>}
+                </ul>
                 <p className="text-amber-700 dark:text-amber-400 text-xs">
-                  {syncStatus.pendingResults > 0 && `${syncStatus.pendingResults} device test result${syncStatus.pendingResults !== 1 ? "s" : ""}`}
-                  {syncStatus.pendingResults > 0 && syncStatus.pendingDeficiencies > 0 && " and "}
-                  {syncStatus.pendingDeficiencies > 0 && `${syncStatus.pendingDeficiencies} deficienc${syncStatus.pendingDeficiencies !== 1 ? "ies" : "y"}`}
-                  {" are saved locally and not yet uploaded. Sync first so the report is accurate."}
+                  These are stored on this device only. Sync first so the report includes them.
                 </p>
                 <Link href="/tech/sync" className="text-xs underline text-amber-800 dark:text-amber-300 font-medium">
                   Go to Sync →
                 </Link>
+                <label className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300 cursor-pointer pt-1">
+                  <input type="checkbox" checked={qaOverride} onChange={(e) => setQaOverride(e.target.checked)} className="mt-0.5 rounded" />
+                  <span>Submit anyway — I understand these unsynced items may be missing from the report.</span>
+                </label>
               </div>
             )}
             <p className="text-muted-foreground text-xs">The job will remain in progress. You can still make changes after submitting.</p>
@@ -1694,7 +1726,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <Button variant="outline" onClick={() => setQaDialogOpen(false)}>Cancel</Button>
             <Button
               onClick={() => submitForQA.mutate({ jobId })}
-              disabled={submitForQA.isPending}
+              disabled={submitForQA.isPending || isQaSubmitBlocked(jobSyncCounts, qaOverride)}
+              title={isQaSubmitBlocked(jobSyncCounts, qaOverride) ? "Sync your field data first, or check the box to submit anyway" : undefined}
             >
               {submitForQA.isPending ? "Submitting…" : "Submit for QA"}
             </Button>

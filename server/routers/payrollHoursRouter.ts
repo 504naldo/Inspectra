@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
+import { router, protectedProcedure, officeProcedure, adminProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { logActivity } from "../activityLogger";
 import { PAYROLL_WORK_TYPES, PAYROLL_ENTRY_STATUSES } from "../../drizzle/schema";
@@ -167,7 +167,7 @@ export const payrollHoursRouter = router({
       return { success: true };
     }),
 
-  approve: officeProcedure
+  approve: adminProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       if (!ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
@@ -193,7 +193,7 @@ export const payrollHoursRouter = router({
       return { success: true };
     }),
 
-  reject: officeProcedure
+  reject: adminProcedure
     .input(z.object({ id: z.number().int().positive(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       if (!ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
@@ -217,7 +217,7 @@ export const payrollHoursRouter = router({
       return { success: true };
     }),
 
-  bulkApprove: officeProcedure
+  bulkApprove: adminProcedure
     .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }))
     .mutation(async ({ input, ctx }) => {
       if (!ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
@@ -246,7 +246,7 @@ export const payrollHoursRouter = router({
       return { count: input.ids.length };
     }),
 
-  markExported: officeProcedure
+  markExported: adminProcedure
     .input(z.object({ ids: z.array(z.number().int().positive()).min(1) }))
     .mutation(async ({ input, ctx }) => {
       if (!ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
@@ -273,7 +273,7 @@ export const payrollHoursRouter = router({
       return db.getPayrollSummary(ctx.user.companyId, input.from, input.to);
     }),
 
-  exportData: officeProcedure
+  exportData: adminProcedure
     .input(z.object({
       from: z.string().optional(),
       to: z.string().optional(),
@@ -314,7 +314,7 @@ export const payrollHoursRouter = router({
       return { success: true };
     }),
 
-  bulkReject: officeProcedure
+  bulkReject: adminProcedure
     .input(z.object({
       ids: z.array(z.number().int().positive()).min(1).max(100),
       reason: z.string().max(1000).optional(),

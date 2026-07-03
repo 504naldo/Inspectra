@@ -12,6 +12,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
+import { assertSiteCompany } from "../tenantGuards.js";
 import { logActivity } from "../activityLogger.js";
 import { sendJobScheduledEmail } from "../emailService.js";
 import { ENV } from "../_core/env.js";
@@ -105,8 +106,7 @@ export const serviceScheduleRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const site = await db.getSiteById(input.siteId);
-      if (!site || site.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
       const firstDueAt = input.firstDueAt
         ? new Date(input.firstDueAt)
         : addFrequency(new Date(), input.frequency);

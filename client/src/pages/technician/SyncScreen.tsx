@@ -134,6 +134,9 @@ export default function SyncScreen() {
             codeReference: def.codeReference,
             systemCategory: def.systemCategory,
             estimatedCost: def.estimatedCost,
+            // Stable offline id → server find-or-create, so a replayed sync (e.g.
+            // a lost response on reconnect) never duplicates this deficiency.
+            idempotencyKey: def.localId,
           });
           syncedLocalIds.push(def.localId);
           defsSynced++;
@@ -249,6 +252,9 @@ export default function SyncScreen() {
             fileData: photo.fileData,
             caption: photo.caption,
             locationNote: photo.locationNote,
+            // Stable offline id → server find-or-create, so a replayed upload
+            // never duplicates the attachment or its storage object.
+            idempotencyKey: photo.id,
           });
           await offlineStorage.deletePendingPhoto(photo.id);
         } catch {

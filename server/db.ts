@@ -993,6 +993,22 @@ export async function getDeficiencyById(id: number) {
   return result[0];
 }
 
+/**
+ * Look up a deficiency previously created with a client-supplied offline-sync
+ * idempotency key. Used for find-or-create so a replayed offline create does not
+ * duplicate the record.
+ */
+export async function getDeficiencyByIdempotencyKey(idempotencyKey: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(deficiencies)
+    .where(eq(deficiencies.idempotencyKey, idempotencyKey))
+    .limit(1);
+  return result[0];
+}
+
 export async function updateDeficiency(id: number, data: Partial<InsertDeficiency>) {
   const db = await getDb();
   if (!db) return;
@@ -1369,6 +1385,30 @@ export async function getAttachmentById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(attachments).where(eq(attachments.id, id)).limit(1);
+  return result[0];
+}
+
+/**
+ * Look up an attachment previously uploaded with a client-supplied offline-sync
+ * idempotency key, scoped to a parent entity. Used for find-or-create so a
+ * replayed offline photo upload does not duplicate the attachment.
+ */
+export async function getAttachmentByIdempotencyKey(
+  idempotencyKey: string,
+  entityType: string,
+  entityId: number,
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(attachments)
+    .where(and(
+      eq(attachments.idempotencyKey, idempotencyKey),
+      eq(attachments.entityType, entityType as any),
+      eq(attachments.entityId, entityId),
+    ))
+    .limit(1);
   return result[0];
 }
 
@@ -2473,6 +2513,37 @@ export async function updateInvoice(id: number, data: Partial<InsertInvoice>): P
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(invoices).set(data).where(eq(invoices.id, id));
+}
+
+/**
+ * Atomically transition an invoice to paid/partial ONLY if it is still eligible
+ * (belongs to the company, not already paid/void, not Sage-exported). Eligibility
+ * is enforced in the WHERE clause so two concurrent "mark paid" requests cannot
+ * both succeed — the second matches zero rows. Returns true when the row was
+ * updated, false when another action already transitioned it (caller treats false
+ * as a conflict). `companyId` is always supplied from authenticated context.
+ */
+export async function markInvoicePaidIfEligible(
+  id: number,
+  companyId: number,
+  fields: { amountPaid: string; balanceDue: string; status: string; paidAt: Date | null },
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const result = await db.update(invoices).set({
+    amountPaid: fields.amountPaid as any,
+    balanceDue: fields.balanceDue as any,
+    status: fields.status as any,
+    ...(fields.paidAt ? { paidAt: fields.paidAt } : {}),
+  }).where(and(
+    eq(invoices.id, id),
+    eq(invoices.companyId, companyId),
+    ne(invoices.status, "paid"),
+    ne(invoices.status, "void"),
+    or(isNull(invoices.sageExportStatus), ne(invoices.sageExportStatus, "exported")),
+  ));
+  const affected = Number((result as any)?.[0]?.affectedRows ?? 0);
+  return affected > 0;
 }
 
 export async function getLineItemsByInvoice(invoiceId: number): Promise<InvoiceLineItem[]> {

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, technicianProcedure, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { getJobForCompany } from "../tenantGuards";
 import { logActivity } from "../activityLogger";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -33,9 +34,7 @@ export const technicianRouter = router({
       const companyId = ctx.user.companyId;
       if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "No company context" });
 
-      const job = await db.getJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
-      if (job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
       if (job.finalizedAt) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Job is finalized and cannot be modified" });
       }

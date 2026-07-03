@@ -25,9 +25,11 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
+import { getJobForCompany, getQuoteForCompany, assertPartsCatalogItemCompany } from "../tenantGuards.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateRepairQuotePDF } from "../quotePdfGenerator.js";
+import { buildCustomerSafeRepairQuoteData } from "../customerSafeReport.js";
 import { logActivity } from "../activityLogger.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -67,9 +69,10 @@ function toNum(v: unknown): number {
   return parseFloat(String(v ?? "0")) || 0;
 }
 
-async function assertNotFinalized(quoteId: number) {
-  const q = await db.getQuoteById(quoteId);
-  if (!q) throw new TRPCError({ code: "NOT_FOUND" });
+async function assertNotFinalized(quoteId: number, companyId: number) {
+  // Enforce company ownership (NOT_FOUND/FORBIDDEN) before the finalized check,
+  // so callers get a single guard instead of a separate companyId compare.
+  const q = await getQuoteForCompany(quoteId, companyId);
   if ((q as any).finalizedAt) {
     throw new TRPCError({ code: "CONFLICT", message: "This quote is finalized and cannot be edited. Create a revision to make changes." });
   }
@@ -150,9 +153,7 @@ export const repairQuoteRouter = router({
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const part = await db.getPartsCatalogItemById(input.id);
-      if (!part) throw new TRPCError({ code: "NOT_FOUND" });
-      if (part.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const part = await assertPartsCatalogItemCompany(input.id, ctx.user.companyId!);
 
       const { id, unitPrice, defaultLabourHours, taxableGst, taxablePst, ...rest } = input;
       await db.updatePartsCatalogItem(id, {
@@ -257,9 +258,7 @@ export const repairQuoteRouter = router({
   getRepairQuote: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const [items, job, site, customer, company] = await Promise.all([
         db.getRepairQuoteItemsByQuote(input.id),
@@ -275,8 +274,7 @@ export const repairQuoteRouter = router({
   listByJob: officeProcedure
     .input(z.object({ jobId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      const job = await db.getJobById(input.jobId);
-      if (!job || job.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      await getJobForCompany(input.jobId, ctx.user.companyId!); // authorize job access
       const quotes = await db.getQuotesByJob(input.jobId);
       return quotes.filter((q: any) => q.quoteType === "repair");
     }),
@@ -296,8 +294,7 @@ export const repairQuoteRouter = router({
       validDays: z.number().int().min(1).max(365).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await assertNotFinalized(input.id);
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await assertNotFinalized(input.id, ctx.user.companyId!);
 
       const validUntil = input.validDays
         ? (() => { const d = new Date(); d.setDate(d.getDate() + input.validDays!); return d.toISOString().split("T")[0]; })()
@@ -318,8 +315,7 @@ export const repairQuoteRouter = router({
   addItem: officeProcedure
     .input(z.object({ quoteId: z.number().int().positive() }).merge(repairItemInputSchema))
     .mutation(async ({ ctx, input }) => {
-      const quote = await assertNotFinalized(input.quoteId);
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await assertNotFinalized(input.quoteId, ctx.user.companyId!);
 
       // Snapshot part price if partId given
       let partDescription = input.partDescription ?? null;
@@ -369,8 +365,7 @@ export const repairQuoteRouter = router({
   updateItem: officeProcedure
     .input(z.object({ id: z.number().int().positive(), quoteId: z.number().int().positive() }).merge(repairItemInputSchema.partial()))
     .mutation(async ({ ctx, input }) => {
-      const quote = await assertNotFinalized(input.quoteId);
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await assertNotFinalized(input.quoteId, ctx.user.companyId!);
       const existing = await db.getRepairQuoteItemById(input.id);
       if (!existing || existing.quoteId !== input.quoteId) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -425,8 +420,7 @@ export const repairQuoteRouter = router({
   removeItem: officeProcedure
     .input(z.object({ id: z.number().int().positive(), quoteId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await assertNotFinalized(input.quoteId);
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await assertNotFinalized(input.quoteId, ctx.user.companyId!);
       await db.deleteRepairQuoteItem(input.id);
       await _recalcQuoteTotals(input.quoteId);
       return { success: true };
@@ -437,9 +431,7 @@ export const repairQuoteRouter = router({
   finalizeQuote: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       if ((quote as any).finalizedAt) throw new TRPCError({ code: "CONFLICT", message: "Already finalized." });
       if (quote.status !== "draft") throw new TRPCError({ code: "BAD_REQUEST", message: "Only draft quotes can be finalized." });
       const items = await db.getRepairQuoteItemsByQuote(input.id);
@@ -457,9 +449,7 @@ export const repairQuoteRouter = router({
       status: z.enum(["sent", "accepted", "declined"]),
     }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const extra: Record<string, unknown> = {};
       if (input.status === "sent" && !quote.sentAt) extra.sentAt = new Date();
@@ -485,9 +475,7 @@ export const repairQuoteRouter = router({
   generatePDF: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const [items, job, site, customer, company] = await Promise.all([
         db.getRepairQuoteItemsByQuote(input.id),
@@ -499,7 +487,7 @@ export const repairQuoteRouter = router({
 
       const q = quote as any;
 
-      const pdfBuffer = await generateRepairQuotePDF({
+      const pdfBuffer = await generateRepairQuotePDF(buildCustomerSafeRepairQuoteData({
         quoteId: quote.id,
         quoteNumber: q.quoteNumber ?? `RQ-${quote.id}`,
         companyName: company?.name ?? "EWF",
@@ -538,7 +526,7 @@ export const repairQuoteRouter = router({
         pst: toNum(q.pst),
         total: toNum(quote.total),
         notes: quote.notes ?? null,
-      });
+      }));
 
       const pdfKey = `quotes/${quote.companyId}/${quote.id}/repair-quote-${quote.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
@@ -553,9 +541,7 @@ export const repairQuoteRouter = router({
       to: z.array(z.string().email()).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const q = quote as any;
       if (!q.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Finalize the quote before sending." });
 
@@ -567,7 +553,7 @@ export const repairQuoteRouter = router({
         db.getCompanyById(quote.companyId),
       ]);
 
-      const pdfBuffer = await generateRepairQuotePDF({
+      const pdfBuffer = await generateRepairQuotePDF(buildCustomerSafeRepairQuoteData({
         quoteId: quote.id,
         quoteNumber: q.quoteNumber ?? `RQ-${quote.id}`,
         companyName: company?.name ?? "EWF",
@@ -606,7 +592,7 @@ export const repairQuoteRouter = router({
         pst: toNum(q.pst),
         total: toNum(quote.total),
         notes: quote.notes ?? null,
-      });
+      }));
 
       const pdfKey = `quotes/${quote.companyId}/${quote.id}/repair-quote-${quote.id}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
@@ -653,9 +639,7 @@ export const repairQuoteRouter = router({
   convertToWorkOrder: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const q = quote as any;
       const approvedStatuses = ["accepted", "approved", "partially_approved", "converted_to_approved_work"];
       if (!approvedStatuses.includes(q.status)) {
@@ -669,9 +653,7 @@ export const repairQuoteRouter = router({
   markReadyToSend: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const q = quote as any;
       if (!q.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Finalize the quote before marking it ready to send." });
       const items = await db.getRepairQuoteItemsByQuote(input.id);
@@ -686,9 +668,7 @@ export const repairQuoteRouter = router({
   markSent: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const q = quote as any;
 
       const update: Record<string, unknown> = { status: "sent" };
@@ -703,9 +683,7 @@ export const repairQuoteRouter = router({
   markViewed: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const q = quote as any;
 
       const update: Record<string, unknown> = { status: "viewed" };
@@ -726,9 +704,7 @@ export const repairQuoteRouter = router({
       approvedAt: z.string().optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const resolvedAt = input.approvedAt ? new Date(input.approvedAt) : new Date();
 
@@ -748,9 +724,7 @@ export const repairQuoteRouter = router({
   approveAllItems: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const items = await db.getRepairQuoteItemsByQuote(input.id);
       await Promise.all(items.map((item) =>
@@ -766,9 +740,7 @@ export const repairQuoteRouter = router({
   declineAllItems: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const items = await db.getRepairQuoteItemsByQuote(input.id);
       await Promise.all(items.map((item) =>
@@ -805,9 +777,7 @@ export const repairQuoteRouter = router({
       itemIds: z.array(z.number().int().positive()).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const items = await db.getRepairQuoteItemsByQuote(input.id);
       const validIds = new Set(items.map((i) => i.id));
@@ -830,9 +800,7 @@ export const repairQuoteRouter = router({
       itemIds: z.array(z.number().int().positive()).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const items = await db.getRepairQuoteItemsByQuote(input.id);
       const validIds = new Set(items.map((i) => i.id));
@@ -857,9 +825,7 @@ export const repairQuoteRouter = router({
       customerNotes: z.string().max(1000).optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.quoteId);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.quoteId, ctx.user.companyId!);
 
       const item = await db.getRepairQuoteItemById(input.itemId);
       if (!item || item.quoteId !== input.quoteId) throw new TRPCError({ code: "NOT_FOUND" });
@@ -883,9 +849,7 @@ export const repairQuoteRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const companyId = ctx.user.companyId!;
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const q = quote as any;
       const approvedStatuses = ["approved", "accepted", "partially_approved", "converted_to_approved_work"];
@@ -967,9 +931,7 @@ export const repairQuoteRouter = router({
   expireQuote: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       await db.updateQuote(input.id, { status: "expired" } as any);
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.expired",
@@ -980,9 +942,7 @@ export const repairQuoteRouter = router({
   cancelQuote: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       await db.updateQuote(input.id, { status: "cancelled" } as any);
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.cancelled",

@@ -37,3 +37,8 @@ export const getLoginUrl = (returnTo?: string) => {
 
   return url.toString();
 };
+
+// Public marketing site (separate repo: 504naldo/inspectra-website). Optional link
+// shown on the app entry screen. Configurable; defaults to the production site.
+export const INSPECTRA_WEBSITE_URL =
+  import.meta.env.VITE_INSPECTRA_WEBSITE_URL || "https://inspectrafire.ca";

@@ -409,10 +409,15 @@ export const deficiencies = mysqlTable("deficiencies", {
   customerSignedOffByName: varchar("customerSignedOffByName", { length: 255 }),
   // Linked work order — set when a repair work order is created for this deficiency
   workOrderId: int("workOrderId"),
+  // Offline-sync idempotency: the client's stable local id for a deficiency created
+  // offline. On reconnect the same create may be replayed (e.g. a lost response);
+  // the server does find-or-create on this key so a retry never duplicates.
+  idempotencyKey: varchar("idempotencyKey", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
   jobIdIdx: index("deficiencies_jobId_idx").on(table.jobId),
+  idempotencyKeyIdx: index("deficiencies_idempotencyKey_idx").on(table.idempotencyKey),
 }));
 
 export type Deficiency = typeof deficiencies.$inferSelect;
@@ -478,9 +483,15 @@ export const attachments = mysqlTable("attachments", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   // Defense-in-depth: denormalized company ownership (nullable, not backfilled for existing rows)
   companyId: int("companyId"),
+  // Offline-sync idempotency: the client's stable local id for a photo queued
+  // offline. On reconnect the same upload may be replayed (e.g. a lost response
+  // after the server stored it); the server does find-or-create on this key so a
+  // retry never duplicates the attachment or its storage object.
+  idempotencyKey: varchar("idempotencyKey", { length: 64 }),
 }, (table) => ({
   companyIdIdx: index("attachments_companyId_idx").on(table.companyId),
   entityIdx: index("attachments_entity_idx").on(table.entityType, table.entityId),
+  idempotencyKeyIdx: index("attachments_idempotencyKey_idx").on(table.idempotencyKey),
 }));
 
 export type Attachment = typeof attachments.$inferSelect;
