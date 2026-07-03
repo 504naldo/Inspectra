@@ -9,21 +9,24 @@ import * as db from "./db";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
-function octx(companyId: number): TrpcContext {
-  return { user: { id: 1, openId: "o", email: "o@e.com", name: "O", role: "office", companyId, createdAt: new Date(), updatedAt: new Date() },
+function ctxFor(role: string, companyId: number): TrpcContext {
+  return { user: { id: 1, openId: "o", email: "o@e.com", name: "O", role, companyId, createdAt: new Date(), updatedAt: new Date() },
     req: { headers: {}, ip: "127.0.0.1" }, res: { setHeader(){}, clearCookie(){} }, requestId: "t", ip: "127.0.0.1", userAgent: "v" } as unknown as TrpcContext;
 }
 
 describe("Invoice integrity — markPaid + terminal states", () => {
   let companyId: number, otherCompanyId: number;
   let caller: ReturnType<typeof appRouter.createCaller>;
+  let adminCaller: ReturnType<typeof appRouter.createCaller>;
   let otherCaller: ReturnType<typeof appRouter.createCaller>;
 
   beforeAll(async () => {
     companyId = (await db.createCompany({ name: "Inv Co", email: "i@e.com" })).id;
     otherCompanyId = (await db.createCompany({ name: "Other Co", email: "o2@e.com" })).id;
-    caller = appRouter.createCaller(octx(companyId));
-    otherCaller = appRouter.createCaller(octx(otherCompanyId));
+    caller = appRouter.createCaller(ctxFor("office", companyId));
+    // void + Sage export are admin-only (PR-10); use an admin caller to set those states.
+    adminCaller = appRouter.createCaller(ctxFor("admin", companyId));
+    otherCaller = appRouter.createCaller(ctxFor("office", otherCompanyId));
   });
 
   // Create a draft invoice with one non-taxable line item of `lineTotal`.
@@ -75,13 +78,13 @@ describe("Invoice integrity — markPaid + terminal states", () => {
 
   it("rejects paying a voided invoice", async () => {
     const id = await makeInvoice(100);
-    await caller.invoice.void({ id });
+    await adminCaller.invoice.void({ id });
     await expect(caller.invoice.markPaid({ id, amountPaid: 100 })).rejects.toThrow(/voided/i);
   });
 
   it("rejects paying a Sage-exported invoice", async () => {
     const id = await makeInvoice(100);
-    await caller.invoice.exportSage({ ids: [id] });
+    await adminCaller.invoice.exportSage({ ids: [id] });
     await expect(caller.invoice.markPaid({ id, amountPaid: 100 })).rejects.toThrow(/exported/i);
   });
 
