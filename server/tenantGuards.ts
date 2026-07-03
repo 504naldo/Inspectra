@@ -105,6 +105,13 @@ export async function assertPartsCatalogItemCompany(itemId: number, companyId: n
   return item;
 }
 
+export async function assertImportLogCompany(importLogId: number, companyId: number) {
+  const log = await db.getImportLogById(importLogId);
+  if (!log) throw new TRPCError({ code: "NOT_FOUND", message: "Import log not found" });
+  if (log.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  return log;
+}
+
 /**
  * Attachments don't have their own companyId column — ownership is resolved
  * via whichever parent ref (jobId/siteId/deviceId) is populated.

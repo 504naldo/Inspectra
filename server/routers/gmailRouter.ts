@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, adminOrOfficeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { getJobForCompany } from "../tenantGuards";
 import { getValidGoogleToken } from "../_core/googleAuth";
 import { assertPublicHttpUrl } from "../_core/ssrfGuard";
 import { storageGet } from "../storage";
@@ -99,6 +100,10 @@ export const gmailRouter = router({
       if (!report) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Report not found" });
       }
+      // Enforce company ownership via the report's own parent job before we
+      // download or email the PDF, so an office user can't email another
+      // company's report to an arbitrary recipient.
+      const job = await getJobForCompany(report.jobId, ctx.user.companyId!);
       if (!report.fileUrl && !report.fileKey) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -124,9 +129,8 @@ export const gmailRouter = router({
         });
       }
 
-      // 4. Get job and site info for the email
-      const job = await db.getJobById(input.jobId);
-      const site = job ? await db.getSiteById(job.siteId) : null;
+      // 4. Site info for the email (job already ownership-checked above).
+      const site = await db.getSiteById(job.siteId);
 
       const fileName = `${site?.name || "Inspection"} - ${report.reportNumber || "Report"}.pdf`;
 

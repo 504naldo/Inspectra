@@ -2,29 +2,33 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { assertSiteCompany, assertImportLogCompany } from "../tenantGuards";
 import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
 import { safeXlsxRead } from "../_core/safeXlsxRead";
 
 // Import router for CSV/XLSX imports
 const importRouter = router({
-  // Get import history
-  list: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
-    return db.getImportLogsByCompany(input.companyId);
+  // Get import history — always scoped to the caller's company, never a client id.
+  list: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx }) => {
+    return db.getImportLogsByCompany(ctx.user.companyId!);
   }),
-  
-  listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input }) => {
+
+  listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input, ctx }) => {
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     return db.getImportLogsBySite(input.siteId);
   }),
-  
-  get: officeProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    return db.getImportLogById(input.id);
+
+  get: officeProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
+    return assertImportLogCompany(input.id, ctx.user.companyId!);
   }),
-  
-  getResults: officeProcedure.input(z.object({ importLogId: z.number() })).query(async ({ input }) => {
+
+  getResults: officeProcedure.input(z.object({ importLogId: z.number() })).query(async ({ input, ctx }) => {
+    await assertImportLogCompany(input.importLogId, ctx.user.companyId!);
     return db.getImportRowResultsByLog(input.importLogId);
   }),
-  
-  getErrors: officeProcedure.input(z.object({ importLogId: z.number() })).query(async ({ input }) => {
+
+  getErrors: officeProcedure.input(z.object({ importLogId: z.number() })).query(async ({ input, ctx }) => {
+    await assertImportLogCompany(input.importLogId, ctx.user.companyId!);
     return db.getImportErrorsByLog(input.importLogId);
   }),
   
@@ -249,16 +253,18 @@ const importRouter = router({
     sheetName: z.string(), // Required: which sheet to validate
     columnMapping: z.record(z.string(), z.string()), // targetField -> sourceColumn
     duplicateHandling: z.enum(['skip', 'update', 'create_new']).optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
+    // The target site must belong to the caller's company (duplicate checks probe it).
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     const XLSX = await import('xlsx');
     const buffer = Buffer.from(input.fileData, 'base64');
     const workbook = await safeXlsxRead(buffer, { type: 'buffer' });
-    
+
     // Validate sheet exists
     if (!workbook.Sheets[input.sheetName]) {
-      throw new TRPCError({ 
-        code: 'BAD_REQUEST', 
-        message: `Sheet "${input.sheetName}" not found` 
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Sheet "${input.sheetName}" not found`
       });
     }
     
@@ -361,15 +367,19 @@ const importRouter = router({
     columnMapping: z.record(z.string(), z.string()),
     duplicateHandling: z.enum(['skip', 'update', 'create_new']),
   })).mutation(async ({ input, ctx }) => {
+    // The target site must belong to the caller's company — this writes devices to
+    // and overwrites the site record for input.siteId, so a foreign id would let a
+    // user import into / clobber another company's site.
+    await assertSiteCompany(input.siteId, ctx.user.companyId!);
     const XLSX = await import('xlsx');
     const buffer = Buffer.from(input.fileData, 'base64');
     const workbook = await safeXlsxRead(buffer, { type: 'buffer' });
-    
+
     // Validate sheet exists
     if (!workbook.Sheets[input.sheetName]) {
-      throw new TRPCError({ 
-        code: 'BAD_REQUEST', 
-        message: `Sheet "${input.sheetName}" not found` 
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Sheet "${input.sheetName}" not found`
       });
     }
     
@@ -391,7 +401,7 @@ const importRouter = router({
     
     // Create import log
     const importLog = await db.createImportLog({
-      companyId: input.companyId,
+      companyId: ctx.user.companyId!,
       siteId: input.siteId,
       importedById: ctx.user.id,
       importType: legacyImportType,

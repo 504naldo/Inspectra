@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, adminOrOfficeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { getJobForCompany } from "../tenantGuards";
 import { getValidGoogleToken } from "../_core/googleAuth";
 
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
@@ -126,8 +127,7 @@ export const calendarRouter = router({
       }
 
       // Check if event already exists
-      const job = await db.getJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+      const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
       if (job.googleCalendarEventId) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -196,8 +196,7 @@ export const calendarRouter = router({
         });
       }
 
-      const job = await db.getJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+      const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
       if (!job.googleCalendarEventId) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -253,8 +252,7 @@ export const calendarRouter = router({
         });
       }
 
-      const job = await db.getJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+      const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
       if (!job.googleCalendarEventId) {
         return { success: true, message: "No calendar event to delete" };
       }
