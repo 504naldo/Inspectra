@@ -3,6 +3,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
 import { ENV } from "./env";
+import { runWithActor } from "./actorContext";
 
 const GENERIC_SERVER_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
@@ -56,6 +57,23 @@ const t = initTRPC.context<TrpcContext>().create({
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
+/**
+ * Binds the caller's role + companyId to the async-local actor context for the
+ * duration of the request, so the tenant guards can grant the `admin`
+ * cross-company bypass without every call site passing the role. No-op when
+ * there is no authenticated user (guards then fail closed). Prepended to every
+ * authenticated procedure below.
+ */
+const actorScope = t.middleware(async ({ ctx, next }) => {
+  if (!ctx.user) return next();
+  return runWithActor(
+    { role: ctx.user.role, companyId: ctx.user.companyId ?? null },
+    () => next(),
+  );
+});
+
+const authed = t.procedure.use(actorScope);
+
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
 
@@ -71,9 +89,9 @@ const requireUser = t.middleware(async opts => {
   });
 });
 
-export const protectedProcedure = t.procedure.use(requireUser);
+export const protectedProcedure = authed.use(requireUser);
 
-export const adminProcedure = t.procedure.use(
+export const adminProcedure = authed.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
 
@@ -90,7 +108,7 @@ export const adminProcedure = t.procedure.use(
   }),
 );
 
-export const adminOrOfficeProcedure = t.procedure.use(
+export const adminOrOfficeProcedure = authed.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
 
@@ -110,7 +128,7 @@ export const adminOrOfficeProcedure = t.procedure.use(
   }),
 );
 
-export const officeProcedure = t.procedure.use(
+export const officeProcedure = authed.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
     if (!ctx.user || !['admin', 'office'].includes(ctx.user.role)) {
@@ -120,7 +138,7 @@ export const officeProcedure = t.procedure.use(
   }),
 );
 
-export const technicianProcedure = t.procedure.use(
+export const technicianProcedure = authed.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
     if (!ctx.user || !['admin', 'office', 'technician'].includes(ctx.user.role)) {
@@ -130,7 +148,7 @@ export const technicianProcedure = t.procedure.use(
   }),
 );
 
-export const customerProcedure = t.procedure.use(
+export const customerProcedure = authed.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
     if (!ctx.user || ctx.user.role !== 'customer') {

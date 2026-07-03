@@ -7,6 +7,7 @@
  */
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
+import { callerIsPlatformOperator } from "./_core/actorContext";
 
 // ── Named scoped getters ──────────────────────────────────────────────────────
 // Prefer these over `getById(id)` + manual `companyId` comparison: they load the
@@ -28,7 +29,7 @@ export async function getSiteForCompany(siteId: number, companyId: number) {
 export async function getInvoiceForCompany(invoiceId: number, companyId: number) {
   const invoice = await db.getInvoiceById(invoiceId);
   if (!invoice) throw new TRPCError({ code: "NOT_FOUND", message: "Invoice not found" });
-  if (invoice.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (invoice.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return invoice;
 }
 
@@ -36,7 +37,7 @@ export async function getInvoiceForCompany(invoiceId: number, companyId: number)
 export async function getQuoteForCompany(quoteId: number, companyId: number) {
   const quote = await db.getQuoteById(quoteId);
   if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Quote not found" });
-  if (quote.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (quote.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return quote;
 }
 
@@ -45,14 +46,14 @@ export async function getDeficiencyForCompany(deficiencyId: number, companyId: n
   const deficiency = await db.getDeficiencyById(deficiencyId);
   if (!deficiency) throw new TRPCError({ code: "NOT_FOUND", message: "Deficiency not found" });
   const job = await db.getJobById(deficiency.jobId);
-  if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (!job || job.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return deficiency;
 }
 
 export async function assertSiteCompany(siteId: number, companyId: number) {
   const site = await db.getSiteById(siteId);
   if (!site) throw new TRPCError({ code: "NOT_FOUND", message: "Site not found" });
-  if (site.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (site.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return site;
 }
 
@@ -66,49 +67,49 @@ export async function assertAreaCompany(areaId: number, companyId: number) {
 export async function assertDeviceCompany(deviceId: number, companyId: number) {
   const device = await db.getDeviceById(deviceId);
   if (!device) throw new TRPCError({ code: "NOT_FOUND", message: "Device not found" });
-  if (device.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (device.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return device;
 }
 
 export async function assertCustomerOrgCompany(customerOrgId: number, companyId: number) {
   const org = await db.getCustomerOrgById(customerOrgId);
   if (!org) throw new TRPCError({ code: "NOT_FOUND", message: "Customer organization not found" });
-  if (org.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (org.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return org;
 }
 
 export async function assertWorkOrderCompany(workOrderId: number, companyId: number) {
   const wo = await db.getWorkOrderById(workOrderId);
   if (!wo) throw new TRPCError({ code: "NOT_FOUND", message: "Work order not found" });
-  if (wo.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (wo.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return wo;
 }
 
 export async function assertServiceAgreementCompany(agreementId: number, companyId: number) {
   const agreement = await db.getServiceAgreementById(agreementId);
   if (!agreement) throw new TRPCError({ code: "NOT_FOUND", message: "Service agreement not found" });
-  if (agreement.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (agreement.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return agreement;
 }
 
 export async function assertInventoryItemCompany(itemId: number, companyId: number) {
   const item = await db.getInventoryItemById(itemId);
   if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Inventory item not found" });
-  if (item.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (item.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return item;
 }
 
 export async function assertPartsCatalogItemCompany(itemId: number, companyId: number) {
   const item = await db.getPartsCatalogItemById(itemId);
   if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Parts catalog item not found" });
-  if (item.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (item.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return item;
 }
 
 export async function assertImportLogCompany(importLogId: number, companyId: number) {
   const log = await db.getImportLogById(importLogId);
   if (!log) throw new TRPCError({ code: "NOT_FOUND", message: "Import log not found" });
-  if (log.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  if (log.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
   return log;
 }
 
@@ -140,7 +141,7 @@ export async function assertAttachmentCompany(attachmentId: number, companyId: n
   const attachment = await db.getAttachmentById(attachmentId);
   if (!attachment) throw new TRPCError({ code: "NOT_FOUND", message: "Attachment not found" });
   const ownerCompanyId = await getAttachmentOwnerCompanyId(attachment);
-  if (ownerCompanyId !== null && ownerCompanyId !== companyId) {
+  if (ownerCompanyId !== null && ownerCompanyId !== companyId && !callerIsPlatformOperator()) {
     throw new TRPCError({ code: "FORBIDDEN" });
   }
   return attachment;
@@ -214,7 +215,7 @@ export async function assertEntityCompany(
   if (ownerCompanyId === null) {
     throw new TRPCError({ code: "NOT_FOUND", message: `${entityType} ${entityId} not found` });
   }
-  if (ownerCompanyId !== companyId) {
+  if (ownerCompanyId !== companyId && !callerIsPlatformOperator()) {
     throw new TRPCError({ code: "FORBIDDEN" });
   }
 }

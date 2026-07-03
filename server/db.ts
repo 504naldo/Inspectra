@@ -5,6 +5,7 @@ import * as schema from "../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import { JOB_FINALIZED_IMMUTABLE } from "../shared/_core/errors";
 import type { TrpcContext } from "./_core/context";
+import { callerIsPlatformOperator } from "./_core/actorContext";
 import {
   vendors, InsertVendor, Vendor,
   purchaseOrders, InsertPurchaseOrder, PurchaseOrder,
@@ -1799,7 +1800,8 @@ export async function assertJobNotFinalized(
 export async function assertJobCompany(jobId: number, companyId: number) {
   const job = await getJobById(jobId);
   if (!job) throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found` });
-  if (job.companyId !== companyId) {
+  // `admin` is a cross-company platform operator (docs/ROLE_TRUST_MODEL.md).
+  if (job.companyId !== companyId && !callerIsPlatformOperator()) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   }
   return job;
