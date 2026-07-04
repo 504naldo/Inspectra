@@ -117,6 +117,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Inspections",
     icon: ClipboardList,
     items: [
+      { label: "Templates",  href: "/admin/inspection-templates", icon: ClipboardPen   },
       { label: "Report QA",  href: "/admin/report-qa",            icon: ClipboardCheck },
       { label: "Compliance", href: "/admin/compliance",           icon: ShieldAlert    },
       { label: "Documents",  href: "/admin/documents",            icon: FolderOpen     },

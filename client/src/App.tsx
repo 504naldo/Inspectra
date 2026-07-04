@@ -52,6 +52,12 @@ const AdminDevices = lazy(() => import("./pages/admin/Devices"));
 const AdminReports = lazy(() => import("./pages/admin/Reports"));
 const JobAssignments = lazy(() => import("./pages/admin/JobAssignments"));
 const AdminQACheck = lazy(() => import("./pages/admin/QACheck"));
+const AdminInspectionTemplates = lazy(
+  () => import("./pages/admin/InspectionTemplates")
+);
+const AdminInspectionTemplateDetail = lazy(
+  () => import("./pages/admin/InspectionTemplateDetail")
+);
 const SiteFiles = lazy(() => import("./pages/admin/SiteFiles"));
 const SiteKnowledge = lazy(() => import("./pages/admin/SiteKnowledge"));
 const EquipmentKnowledgeList = lazy(
@@ -392,6 +398,18 @@ function Router() {
           {params => withNumericParams(params, ["jobId"], ids => (
             <ProtectedRoute allowedRoles={["admin"]}>
               <AdminQACheck jobId={ids.jobId} />
+            </ProtectedRoute>
+          ))}
+        </Route>
+        <Route path="/admin/inspection-templates">
+          <ProtectedRoute allowedRoles={["admin", "office"]}>
+            <AdminInspectionTemplates />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/inspection-templates/:id">
+          {params => withNumericParams(params, ["id"], () => (
+            <ProtectedRoute allowedRoles={["admin", "office"]}>
+              <AdminInspectionTemplateDetail />
             </ProtectedRoute>
           ))}
         </Route>
