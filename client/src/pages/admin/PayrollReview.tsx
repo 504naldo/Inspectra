@@ -533,7 +533,7 @@ export default function PayrollReview() {
   // Payroll approval and export are admin-only (enforced server-side in
   // payrollHoursRouter). Office users can view entries and summaries and edit
   // admin notes, but the approve/reject/bulk/export controls are hidden from them.
-  const isAdmin = user?.role === "admin";
+  const canManage = user?.role === "admin" || user?.role === "office";
 
   // Period state
   const [activePreset, setActivePreset] = useState("thisWeek");
@@ -587,7 +587,7 @@ export default function PayrollReview() {
     to,
   });
   // exportData is admin-only server-side; only fetch it for admins to avoid a 403.
-  const { data: exportAllEntries = [] } = trpc.payrollHours.exportData.useQuery({ from, to }, { enabled: isAdmin });
+  const { data: exportAllEntries = [] } = trpc.payrollHours.exportData.useQuery({ from, to }, { enabled: canManage });
 
   // Mutations
   const approveMut = trpc.payrollHours.approve.useMutation({
@@ -832,7 +832,7 @@ export default function PayrollReview() {
       </Card>
 
       {/* Bulk action bar — approval/export are admin-only */}
-      {isAdmin && submittedSelectableIds.length > 0 && (
+      {canManage && submittedSelectableIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3 p-3 rounded-lg border bg-muted/20">
           <label className="flex items-center gap-2 text-sm cursor-pointer mr-2">
             <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />
@@ -894,7 +894,7 @@ export default function PayrollReview() {
           onReject={setRejectSingleId}
           onNotes={setNotesEntry}
           currentUserId={user!.id}
-          canManage={isAdmin}
+          canManage={canManage}
         />
       ))}
 
@@ -905,7 +905,7 @@ export default function PayrollReview() {
             {filteredEntries.length} entries · Total: <strong>{fmtH(totalFilteredMins)}</strong>
           </span>
           {/* Export + mark-exported are the admin-only payroll run */}
-          {isAdmin && (
+          {canManage && (
           <div className="flex flex-wrap gap-2">
             {approvedIds.length > 0 && (
               <Button

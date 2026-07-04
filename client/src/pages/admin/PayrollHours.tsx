@@ -348,7 +348,7 @@ export default function AdminPayrollHours() {
   const { user } = useAuth();
   // Payroll approval and export are admin-only (enforced server-side). Hide the
   // approve/reject/bulk/export controls from office users.
-  const isAdmin = user?.role === "admin";
+  const canManage = user?.role === "admin" || user?.role === "office";
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [notesEntry, setNotesEntry] = useState<any | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -380,7 +380,7 @@ export default function AdminPayrollHours() {
     to: to || undefined,
     userId: filterUserId ? parseInt(filterUserId) : undefined,
     status: (filterStatus as any) || undefined,
-  }, { enabled: isAdmin });
+  }, { enabled: canManage });
 
   const approveMut = trpc.payrollHours.approve.useMutation({
     onSuccess: () => {
@@ -511,7 +511,7 @@ export default function AdminPayrollHours() {
       </Card>
 
       {/* Bulk actions — approval is admin-only */}
-      {isAdmin && submittedSelectableIds.length > 0 && (
+      {canManage && submittedSelectableIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 mb-3">
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />
@@ -555,7 +555,7 @@ export default function AdminPayrollHours() {
             onReject={setRejectId}
             onNotes={setNotesEntry}
             currentUserId={user!.id}
-            canManage={isAdmin}
+            canManage={canManage}
           />
         ))}
       </div>
@@ -567,7 +567,7 @@ export default function AdminPayrollHours() {
             {(entries as any[]).length} entr{(entries as any[]).length !== 1 ? "ies" : "y"} ·{" "}
             Total: <strong>{fmtHours((entries as any[]).reduce((s: number, e: any) => s + e.totalMinutes, 0))}</strong>
           </span>
-          {isAdmin && (
+          {canManage && (
           <div className="flex gap-2">
             {approvedIds.length > 0 && (
               <Button

@@ -86,14 +86,14 @@ asserts an admin adding a section to another company's template attributes it to
 Updates/deletes on an already-loaded record remain safe (they don't re-stamp
 companyId).
 
-## Interaction with the capability matrix (PR-10)
+## Interaction with the capability matrix (PR-10) — resolved
 
-`docs/CAPABILITY_MATRIX.md` makes payroll approval/export and invoice void/Sage
-export **admin-only**. That was designed treating admin as the company's senior
-role. Under a strict "admin = platform operator" reading, those per-company
-operations would route only to the platform operator, which is likely **not**
-intended. If admin is truly platform-only, revisit whether those actions should
-instead belong to office (or a new per-company manager role). Flagged, not changed.
+PR-10 briefly made payroll approval/export and invoice void/Sage-export
+**admin-only**. Under the platform-operator model that routed every company's
+payroll/void to the central operator, so those actions were returned to **office**
+(the senior per-company role) — see `docs/CAPABILITY_MATRIX.md`. A per-company
+"manager" tier between office and admin remains a future option if finer
+segregation is wanted.
 
 ## Reverting the model
 
