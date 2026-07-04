@@ -231,7 +231,7 @@ export const inspectionTemplateRouter = router({
       isRequired: z.boolean().default(true),
     }))
     .mutation(async ({ ctx, input }) => {
-      await assertTemplateOwner(input.templateId, ctx.user.companyId!);
+      const ownerTemplate = await assertTemplateOwner(input.templateId, ctx.user.companyId!);
       const db = (await getDb())!;
 
       const existingSections = await db
@@ -244,7 +244,7 @@ export const inspectionTemplateRouter = router({
       const nextOrder = existingSections.length > 0 ? existingSections[0].sortOrder + 1 : 0;
 
       const [result] = await db.insert(inspectionTemplateSections).values({
-        companyId: ctx.user.companyId!,
+        companyId: ownerTemplate.companyId,
         templateId: input.templateId,
         title: input.title,
         description: input.description,
@@ -288,7 +288,7 @@ export const inspectionTemplateRouter = router({
       orderedIds: z.array(z.number()),
     }))
     .mutation(async ({ ctx, input }) => {
-      await assertTemplateOwner(input.templateId, ctx.user.companyId!);
+      const ownerTemplate = await assertTemplateOwner(input.templateId, ctx.user.companyId!);
       const db = (await getDb())!;
       await Promise.all(
         input.orderedIds.map((id, idx) =>
@@ -320,7 +320,7 @@ export const inspectionTemplateRouter = router({
       codeReference: z.string().max(200).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await assertTemplateOwner(input.templateId, ctx.user.companyId!);
+      const ownerTemplate = await assertTemplateOwner(input.templateId, ctx.user.companyId!);
       const db = (await getDb())!;
 
       const existing = await db
@@ -333,7 +333,7 @@ export const inspectionTemplateRouter = router({
       const nextOrder = existing.length > 0 ? existing[0].sortOrder + 1 : 0;
 
       const [result] = await db.insert(inspectionTemplateItems).values({
-        companyId: ctx.user.companyId!,
+        companyId: ownerTemplate.companyId,
         templateId: input.templateId,
         sectionId: input.sectionId,
         itemCode: input.itemCode,
@@ -414,10 +414,10 @@ export const inspectionTemplateRouter = router({
       customerOrgId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await assertTemplateOwner(input.templateId, ctx.user.companyId!);
+      const ownerTemplate = await assertTemplateOwner(input.templateId, ctx.user.companyId!);
       const db = (await getDb())!;
       const [result] = await db.insert(inspectionTemplateAssignments).values({
-        companyId: ctx.user.companyId!,
+        companyId: ownerTemplate.companyId,
         templateId: input.templateId,
         jobType: input.jobType,
         systemType: input.systemType,
@@ -547,7 +547,7 @@ export const inspectionTemplateRouter = router({
       if (job.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Job is finalized" });
 
       await db.insert(inspectionTemplateResponses).values({
-        companyId: ctx.user.companyId!,
+        companyId: job.companyId,
         jobId: input.jobId,
         templateId: input.templateId,
         sectionId: input.sectionId,

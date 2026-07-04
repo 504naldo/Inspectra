@@ -60,14 +60,31 @@ now consult `callerIsPlatformOperator()` too: `aiAssistantRouter` context helper
   write-attribution concern below and need a deliberate per-write pass, not a blanket
   bypass. These are a **functionality gap, not a security hole** (stricter, never looser).
 
-### ⚠ Write-attribution caveat
+### Write attribution (audited + fixed)
 
-The bypass lets an admin *reach* another company's records. Procedures that then
-**create child records stamped with `ctx.user.companyId`** would attach them to the
-admin's OWN company, not the target's. Most guarded mutations are updates/deletes on
-the already-loaded record (safe), but any create-under-parent flow an admin runs
-cross-company must derive the companyId from the loaded parent, not the actor. Audit
-per-write before relying on cross-company admin **writes**.
+The bypass lets an admin *reach* another company's records, so a create-under-parent
+flow that stamped the child with `ctx.user.companyId` would have attached it to the
+admin's OWN company. A write audit found and fixed every such site — each now derives
+the child's companyId from the **authorized parent** the guard returns, not the actor
+(a no-op for same-company callers):
+
+- `importRouter.execute` — imported devices + the import log use the target
+  **site**'s company.
+- `filesRouter` (Drive device import) — devices use the target **site**'s company.
+- `inspectionTemplateRouter.addSection` / `addItem` / `assignTemplate` — children use
+  the **template**'s company; `saveResponse` uses the **job**'s company.
+- `jobRouter.create` — re-asserts the site + customer org belong to the job's company
+  (a job can't link a foreign-company site/org even though the guards bypass for admin).
+
+Verified safe without change: `quoteRouter.create` (already used `job.companyId`);
+payroll / time / availability / top-level catalog creates (self-scoped, no foreign
+parent); `repairQuoteRouter.createRepairQuote` + `jobRouter` service-call create
+(inline checks not bypassed → admin blocked). Regression: `authorization.test.ts`
+asserts an admin adding a section to another company's template attributes it to the
+**target** company, not the operator.
+
+Updates/deletes on an already-loaded record remain safe (they don't re-stamp
+companyId).
 
 ## Interaction with the capability matrix (PR-10)
 

@@ -369,8 +369,11 @@ const importRouter = router({
   })).mutation(async ({ input, ctx }) => {
     // The target site must belong to the caller's company — this writes devices to
     // and overwrites the site record for input.siteId, so a foreign id would let a
-    // user import into / clobber another company's site.
-    await assertSiteCompany(input.siteId, ctx.user.companyId!);
+    // user import into / clobber another company's site. Created rows are stamped
+    // with the SITE's company (not ctx.user) so a cross-company admin import
+    // attributes devices/log to the target company, not the operator's.
+    const targetSite = await assertSiteCompany(input.siteId, ctx.user.companyId!);
+    const targetCompanyId = targetSite.companyId;
     const XLSX = await import('xlsx');
     const buffer = Buffer.from(input.fileData, 'base64');
     const workbook = await safeXlsxRead(buffer, { type: 'buffer' });
@@ -401,7 +404,7 @@ const importRouter = router({
     
     // Create import log
     const importLog = await db.createImportLog({
-      companyId: ctx.user.companyId!,
+      companyId: targetCompanyId,
       siteId: input.siteId,
       importedById: ctx.user.id,
       importType: legacyImportType,
@@ -513,7 +516,7 @@ const importRouter = router({
 
           // Create new device with category
           const deviceData: any = {
-            companyId: ctx.user.companyId!,
+            companyId: targetCompanyId,
             siteId: input.siteId,
             category: schema.category || 'FIRE_ALARM_DEVICE',
             deviceType: resolvedDeviceType,

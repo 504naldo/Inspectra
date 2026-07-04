@@ -10,9 +10,11 @@
  * cross-company-forbid without duplicating setup.
  */
 import { describe, it, expect, beforeAll } from "vitest";
+import { eq } from "drizzle-orm";
 import * as db from "./db";
 import * as guards from "./tenantGuards";
 import { appRouter } from "./routers";
+import { inspectionTemplateSections } from "../drizzle/schema";
 import type { TrpcContext } from "./_core/context";
 
 function ctxFor(role: string, companyId: number, opts: { userId?: number; customerOrgId?: number } = {}): TrpcContext {
@@ -170,6 +172,22 @@ describe("Cross-tenant authorization", () => {
       const adminB = appRouter.createCaller(ctxFor("admin", B.company.id));
       await expectCode(officeB.deficiency.get({ id: A.def.id }), "FORBIDDEN");
       expect((await adminB.deficiency.get({ id: A.def.id }))?.deficiency?.id).toBe(A.def.id);
+    });
+    it("cross-company admin WRITE attributes the child to the target company, not the operator", async () => {
+      // Write-attribution: adminB (company B) adds a section to company A's template.
+      // The section must be stamped with A's companyId (the template's), not B's.
+      const adminA = appRouter.createCaller(ctxFor("admin", A.company.id));
+      const adminB = appRouter.createCaller(ctxFor("admin", B.company.id));
+      const tpl = await adminA.inspectionTemplate.create({ name: "WA", systemType: "general" });
+      const sec = await adminB.inspectionTemplate.addSection({ templateId: tpl.id, title: "S" });
+      const drizzle = (await db.getDb())!;
+      const [row] = await drizzle
+        .select({ companyId: inspectionTemplateSections.companyId })
+        .from(inspectionTemplateSections)
+        .where(eq(inspectionTemplateSections.id, sec.id))
+        .limit(1);
+      expect(row.companyId).toBe(A.company.id);
+      expect(row.companyId).not.toBe(B.company.id);
     });
   });
 });
