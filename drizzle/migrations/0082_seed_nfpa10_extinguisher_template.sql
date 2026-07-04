@@ -10,11 +10,9 @@
 -- taken from the parent row (never hardcoded), and every INSERT is guarded by
 -- NOT EXISTS so the file is safe to re-run.
 --
--- NOTE (per-company architecture): companies created AFTER this migration runs do
--- not automatically receive the template. Distributing pre-built standards to new
--- tenants is a follow-up (a nullable-companyId "system/library template" concept,
--- or a new-company provisioning hook). This migration closes the gap for the
--- current tenant base only.
+-- NOTE (per-company architecture): this migration covers companies that exist
+-- when it runs. Companies created afterwards receive the same library from the
+-- `company.create` provisioning hook (server/seeds/provisionTemplates.ts).
 
 -- ── Step 1: one template per existing company ──────────────────────────────────
 INSERT INTO `inspection_templates`
