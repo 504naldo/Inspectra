@@ -340,7 +340,10 @@ export const filesRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "User must belong to a company" });
       }
 
-      await assertSiteCompany(input.siteId, ctx.user.companyId);
+      // Stamp created devices with the site's company (not ctx.user) so a
+      // cross-company admin import attributes them to the target company.
+      const targetSite = await assertSiteCompany(input.siteId, ctx.user.companyId);
+      const targetCompanyId = targetSite.companyId;
       await assertJobCompany(input.jobId, ctx.user.companyId);
 
       // Get file record
@@ -601,7 +604,7 @@ export const filesRouter = router({
           } else {
             // Insert new
             await dbInstance.insert(devices).values({
-              companyId: ctx.user.companyId!,
+              companyId: targetCompanyId,
               siteId: input.siteId,
               location,
               deviceType: description,

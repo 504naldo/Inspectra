@@ -123,6 +123,12 @@ const jobRouter = router({
     }
     const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
     const customerOrg = await assertCustomerOrgCompany(input.customerOrgId, ctx.user.companyId!);
+    // The site/org guards bypass the company check for an admin platform operator,
+    // so re-assert the job's refs are internally consistent: a job in companyId
+    // must not link a site or customer org from a different company.
+    if (site.companyId !== input.companyId || customerOrg.companyId !== input.companyId) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Site and customer org must belong to the job's company." });
+    }
 
     const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
 
