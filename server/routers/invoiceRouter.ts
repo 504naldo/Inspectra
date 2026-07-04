@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure, adminProcedure, customerProcedure } from "../_core/trpc";
+import { router, officeProcedure, customerProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { getInvoiceForCompany } from "../tenantGuards";
 import { INVOICE_STATUSES } from "../../drizzle/schema";
@@ -282,12 +282,6 @@ export const invoiceRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
-      // Voiding is an admin-only capability (see the dedicated `void` procedure).
-      // Guard the generic status transition so office users can't reach "void"
-      // through this path and bypass that restriction.
-      if (input.status === "void" && ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Only an admin can void an invoice" });
-      }
       const allowed = ALLOWED_TRANSITIONS[inv.status] ?? [];
       if (!allowed.includes(input.status)) {
         throw new TRPCError({
@@ -348,7 +342,7 @@ export const invoiceRouter = router({
       return { success: true, status, total, amountPaid: input.amountPaid, balanceDue };
     }),
 
-  void: adminProcedure
+  void: officeProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
@@ -361,7 +355,7 @@ export const invoiceRouter = router({
       return { success: true };
     }),
 
-  exportSage: adminProcedure
+  exportSage: officeProcedure
     .input(z.object({ ids: z.array(z.number()) }))
     .mutation(async ({ input, ctx }) => {
       // Validate all invoices first, then generate CSV, then mark exported.
@@ -452,7 +446,7 @@ export const invoiceRouter = router({
       return { success: true };
     }),
 
-  markReadyForSageExport: adminProcedure
+  markReadyForSageExport: officeProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
@@ -462,7 +456,7 @@ export const invoiceRouter = router({
       return { success: true };
     }),
 
-  markExportedToSage: adminProcedure
+  markExportedToSage: officeProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);

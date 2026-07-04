@@ -43,7 +43,6 @@ describe("Revenue loop UAT — Approved Work → Invoice → Sage CSV", () => {
   let customerOrgId: number;
   let siteId: number;
   let caller: ReturnType<typeof appRouter.createCaller>;
-  let adminCaller: ReturnType<typeof appRouter.createCaller>;
 
   beforeAll(async () => {
     const company = await db.createCompany({ name: "UAT Fire Co", email: "uat@example.com" });
@@ -65,8 +64,6 @@ describe("Revenue loop UAT — Approved Work → Invoice → Sage CSV", () => {
     siteId = site.id;
 
     caller = appRouter.createCaller(officeCtx(companyId, 1));
-    // Sage export is admin-only (PR-10); use an admin caller for that step.
-    adminCaller = appRouter.createCaller({ ...officeCtx(companyId, 2), user: { ...officeCtx(companyId, 2).user, role: "admin" } } as unknown as TrpcContext);
   });
 
   it("auto-creates an invoice from approved work with a snapshotted line item", async () => {
@@ -127,7 +124,7 @@ describe("Revenue loop UAT — Approved Work → Invoice → Sage CSV", () => {
       invoiceId, description: "Parts", quantity: 1, unitPrice: 80, taxable: true,
     });
 
-    const out = await adminCaller.invoice.exportSage({ ids: [invoiceId] });
+    const out = await caller.invoice.exportSage({ ids: [invoiceId] });
     const rows = out.csv.split("\n");
 
     expect(rows[0]).toBe(SAGE_HEADER);

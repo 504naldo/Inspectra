@@ -474,7 +474,7 @@ export default function InvoiceDetail({ id }: Props) {
   // Void and Sage-export are admin-only capabilities (enforced server-side in
   // invoiceRouter). Hide their controls from office users so they don't click a
   // button that 403s.
-  const isAdmin = user?.role === "admin";
+  const canManage = user?.role === "admin" || user?.role === "office";
 
   const [showAddItem, setShowAddItem] = useState(false);
   const [showMarkPaid, setShowMarkPaid] = useState(false);
@@ -678,7 +678,7 @@ export default function InvoiceDetail({ id }: Props) {
                   <DollarSign className="h-3.5 w-3.5 mr-1" /> Record Payment
                 </Button>
               )}
-              {isAdmin && !isVoid && (
+              {canManage && !isVoid && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -690,7 +690,7 @@ export default function InvoiceDetail({ id }: Props) {
                   {exportSage.isPending ? "Exporting…" : "Export Sage CSV"}
                 </Button>
               )}
-              {isAdmin && !isVoid && !isSageExported && (
+              {canManage && !isVoid && !isSageExported && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -702,7 +702,7 @@ export default function InvoiceDetail({ id }: Props) {
                   Mark Exported
                 </Button>
               )}
-              {isAdmin && !isVoid && !isPaid && !isSageExported && (
+              {canManage && !isVoid && !isPaid && !isSageExported && (
                 <Button
                   size="sm"
                   variant="destructive"

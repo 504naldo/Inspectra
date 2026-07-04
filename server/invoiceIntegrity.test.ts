@@ -17,15 +17,12 @@ function ctxFor(role: string, companyId: number): TrpcContext {
 describe("Invoice integrity — markPaid + terminal states", () => {
   let companyId: number, otherCompanyId: number;
   let caller: ReturnType<typeof appRouter.createCaller>;
-  let adminCaller: ReturnType<typeof appRouter.createCaller>;
   let otherCaller: ReturnType<typeof appRouter.createCaller>;
 
   beforeAll(async () => {
     companyId = (await db.createCompany({ name: "Inv Co", email: "i@e.com" })).id;
     otherCompanyId = (await db.createCompany({ name: "Other Co", email: "o2@e.com" })).id;
     caller = appRouter.createCaller(ctxFor("office", companyId));
-    // void + Sage export are admin-only (PR-10); use an admin caller to set those states.
-    adminCaller = appRouter.createCaller(ctxFor("admin", companyId));
     otherCaller = appRouter.createCaller(ctxFor("office", otherCompanyId));
   });
 
@@ -78,13 +75,13 @@ describe("Invoice integrity — markPaid + terminal states", () => {
 
   it("rejects paying a voided invoice", async () => {
     const id = await makeInvoice(100);
-    await adminCaller.invoice.void({ id });
+    await caller.invoice.void({ id });
     await expect(caller.invoice.markPaid({ id, amountPaid: 100 })).rejects.toThrow(/voided/i);
   });
 
   it("rejects paying a Sage-exported invoice", async () => {
     const id = await makeInvoice(100);
-    await adminCaller.invoice.exportSage({ ids: [id] });
+    await caller.invoice.exportSage({ ids: [id] });
     await expect(caller.invoice.markPaid({ id, amountPaid: 100 })).rejects.toThrow(/exported/i);
   });
 
