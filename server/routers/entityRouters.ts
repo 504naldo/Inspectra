@@ -4,6 +4,7 @@ import { router, protectedProcedure, adminProcedure, officeProcedure, customerPr
 import * as db from "../db";
 import { callerIsPlatformOperator } from "../_core/actorContext";
 import { assertCustomerOrgCompany } from "../tenantGuards";
+import { provisionPrebuiltTemplates } from "../seeds/provisionTemplates";
 
 // Company router
 const companyRouter = router({
@@ -26,7 +27,14 @@ const companyRouter = router({
     phone: z.string().optional(),
     email: z.string().email().optional(),
   })).mutation(async ({ input }) => {
-    return db.createCompany(input);
+    const company = await db.createCompany(input);
+    // Best-effort: a library failure must not roll back or fail tenant creation.
+    try {
+      await provisionPrebuiltTemplates(company.id);
+    } catch (err) {
+      console.error(`[company.create] failed to provision pre-built templates for company ${company.id}:`, err);
+    }
+    return company;
   }),
   
   update: adminProcedure.input(z.object({
