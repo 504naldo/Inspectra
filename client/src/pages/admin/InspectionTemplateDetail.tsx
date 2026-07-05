@@ -57,6 +57,11 @@ const RESPONSE_TYPE_LABELS: Record<string, string> = {
   time_duration: "Time / Duration",
 };
 
+const JOB_TYPE_LABELS: Record<string, string> = {
+  annual: "Annual", semi_annual: "Semi-Annual", quarterly: "Quarterly",
+  monthly: "Monthly", service_call: "Service Call", repair: "Repair",
+};
+
 const STATUS_COLORS: Record<TemplateStatus, string> = {
   draft: "secondary", active: "default", archived: "outline",
 };
@@ -318,6 +323,123 @@ function ItemDialog({
   );
 }
 
+// ─── Assignments Card ──────────────────────────────────────────────────────────
+
+function AssignmentsCard({
+  templateId,
+  assignments,
+  isAdmin,
+  onChanged,
+}: {
+  templateId: number;
+  assignments: Array<{ id: number; jobType: string | null; siteId: number | null; customerOrgId: number | null }>;
+  isAdmin: boolean;
+  onChanged: () => void;
+}) {
+  const { user } = useAuth();
+  const [jobType, setJobType] = useState<string>("all");
+  const [siteId, setSiteId] = useState<string>("all");
+
+  const { data: sites = [] } = trpc.site.listByCompany.useQuery(
+    { companyId: user?.companyId ?? 0 },
+    { enabled: !!user?.companyId },
+  );
+  const siteName = (id: number) => (sites as any[]).find((s: any) => s.id === id)?.name ?? `Site #${id}`;
+
+  const addMutation = trpc.inspectionTemplate.addAssignment.useMutation({
+    onSuccess: () => { toast.success("Assignment added"); onChanged(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const removeMutation = trpc.inspectionTemplate.removeAssignment.useMutation({
+    onSuccess: () => { toast.success("Assignment removed"); onChanged(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const describe = (a: (typeof assignments)[number]) => {
+    const parts: string[] = [
+      a.jobType ? `${JOB_TYPE_LABELS[a.jobType] ?? a.jobType} jobs` : "All job types",
+    ];
+    if (a.siteId) parts.push(siteName(a.siteId));
+    if (a.customerOrgId) parts.push(`Customer org #${a.customerOrgId}`);
+    return parts.join(" · ");
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Job Assignments</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Technicians see this template on jobs that match an assignment. Without one it never appears on a job.
+        </p>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-2">
+        {assignments.length === 0 && (
+          <p className="text-sm text-muted-foreground italic">Not assigned to any jobs yet.</p>
+        )}
+        {assignments.map((a) => (
+          <div key={a.id} className="flex items-center gap-2 text-sm py-1">
+            <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="flex-1 min-w-0 truncate">{describe(a)}</span>
+            {isAdmin && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 text-destructive hover:text-destructive"
+                onClick={() => removeMutation.mutate({ id: a.id })}
+                disabled={removeMutation.isPending}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
+        ))}
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
+            <Select value={jobType} onValueChange={setJobType}>
+              <SelectTrigger className="w-[160px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All job types</SelectItem>
+                {Object.entries(JOB_TYPE_LABELS).map(([v, label]) => (
+                  <SelectItem key={v} value={v}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={siteId} onValueChange={setSiteId}>
+              <SelectTrigger className="w-[180px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sites</SelectItem>
+                {(sites as any[]).map((s: any) => (
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              disabled={addMutation.isPending}
+              onClick={() =>
+                addMutation.mutate({
+                  templateId,
+                  jobType: jobType === "all" ? undefined : jobType,
+                  siteId: siteId === "all" ? undefined : Number(siteId),
+                })
+              }
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Assign
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function InspectionTemplateDetail() {
@@ -374,7 +496,7 @@ export default function InspectionTemplateDetail() {
     return <AdminLayout title="Not Found"><div className="py-16 text-center text-muted-foreground">Template not found.</div></AdminLayout>;
   }
 
-  const { template, sections, items } = data;
+  const { template, sections, items, assignments } = data;
 
   const itemsBySectionId = items.reduce<Record<number, typeof items>>((acc: any, item: any) => {
     if (!acc[item.sectionId]) acc[item.sectionId] = [];
@@ -482,6 +604,14 @@ export default function InspectionTemplateDetail() {
         {template.description && (
           <p className="text-sm text-muted-foreground">{template.description}</p>
         )}
+
+        {/* Assignments */}
+        <AssignmentsCard
+          templateId={templateId}
+          assignments={assignments as any}
+          isAdmin={isAdmin}
+          onChanged={refetch}
+        />
 
         {/* Sections */}
         {sortedSections.map((section, sIdx) => {
