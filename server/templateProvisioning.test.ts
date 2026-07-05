@@ -17,7 +17,7 @@ import {
   inspectionTemplateItems,
 } from "../drizzle/schema";
 import { NFPA10_TEMPLATE } from "./seeds/nfpa10Extinguisher";
-import { provisionPrebuiltTemplates } from "./seeds/provisionTemplates";
+import { PREBUILT_TEMPLATES, provisionPrebuiltTemplates } from "./seeds/provisionTemplates";
 
 function adminCtx(): TrpcContext {
   return { user: { id: 1, openId: "a", email: "a@e.com", name: "A", role: "admin", companyId: 1,
@@ -60,6 +60,18 @@ describe("Pre-built template provisioning", () => {
     const hydro = items.find((i) => i.questionText === "12-year hydrostatic test current.");
     expect(hydro?.deficiencyTrigger).toMatchObject({ onValues: ["fail"], severity: "critical" });
     expect(hydro?.codeReference).toBe("NFPA 10 §8.3.1");
+  });
+
+  it("company.create installs the entire pre-built library (one active template per seed)", async () => {
+    const db = (await getDb())!;
+    const rows = await db.select().from(inspectionTemplates)
+      .where(eq(inspectionTemplates.companyId, companyId));
+    const names = rows.map((t) => t.name).sort();
+    expect(names).toEqual(PREBUILT_TEMPLATES.map((t) => t.name).sort());
+    expect(rows.every((t) => t.status === "active")).toBe(true);
+    // The library's own NFPA 10 entry is superseded by the 0082 seed — only one
+    // fire-extinguisher template ships.
+    expect(rows.filter((t) => t.systemType === "fire_extinguisher")).toHaveLength(1);
   });
 
   it("provisioning is idempotent — a second run installs nothing", async () => {
