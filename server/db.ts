@@ -1440,6 +1440,13 @@ export async function getFileTagsByCompany(companyId: number) {
   return db.select().from(fileTags).where(eq(fileTags.companyId, companyId)).orderBy(fileTags.name);
 }
 
+export async function getFileTagById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(fileTags).where(eq(fileTags.id, id)).limit(1);
+  return result[0];
+}
+
 export async function deleteFileTag(id: number) {
   const db = await getDb();
   if (!db) return;
