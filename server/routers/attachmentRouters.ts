@@ -11,6 +11,18 @@ async function assertAttachmentJobNotFinalized(jobId: number | null | undefined)
   if (jobId != null) await db.assertJobNotFinalized(jobId);
 }
 
+/**
+ * Upload-queue items are owned by the technician who created them (the queue has
+ * no companyId; ownership is the isolation boundary). Loads the item and rejects
+ * any caller who is not its owner — used by every id-addressed queue mutation.
+ */
+async function requireOwnedQueueItem(id: number, userId: number) {
+  const item = await db.getUploadQueueItemById(id);
+  if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Upload queue item not found" });
+  if (item.userId !== userId) throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
+  return item;
+}
+
 // Attachment router - Enhanced with bulk upload, tagging, and linking
 const attachmentRouter = router({
   listByEntity: protectedProcedure.input(z.object({
@@ -203,20 +215,28 @@ const attachmentRouter = router({
 
 // File Tags router
 const fileTagRouter = router({
-  list: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input }) => {
+  list: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input, ctx }) => {
+    // Never trust a client-supplied companyId — scope to the caller's tenant.
+    if (input.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
     return db.getFileTagsByCompany(input.companyId);
   }),
-  
+
   create: officeProcedure.input(z.object({
     companyId: z.number(),
     name: z.string().min(1),
     color: z.string().optional(),
     description: z.string().optional(),
-  })).mutation(async ({ input }) => {
-    return db.createFileTag(input);
+  })).mutation(async ({ input, ctx }) => {
+    if (input.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+    // Stamp the caller's own company, ignoring any mismatched client value.
+    return db.createFileTag({ ...input, companyId: ctx.user.companyId! });
   }),
-  
-  delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+
+  delete: officeProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+    // Load the tag and confirm it belongs to the caller's company before deleting.
+    const tag = await db.getFileTagById(input.id);
+    if (!tag) throw new TRPCError({ code: "NOT_FOUND" });
+    if (tag.companyId !== ctx.user.companyId) throw new TRPCError({ code: "FORBIDDEN" });
     await db.deleteFileTag(input.id);
     return { success: true };
   }),
@@ -271,10 +291,16 @@ const uploadQueueRouter = router({
     lastError: z.string().optional(),
     fileKey: z.string().optional(),
     fileUrl: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const { id, ...data } = input;
+
+    // Ownership check: a queue item may only be mutated by the technician who
+    // owns it. Without this any caller could flip another user's queue item or
+    // point it at an arbitrary S3 object.
+    const item = await requireOwnedQueueItem(id, ctx.user.id);
+
     const updateData: any = { ...data };
-    
+
     if (data.status === 'uploading' && !data.progress) {
       updateData.startedAt = new Date();
     }
@@ -283,12 +309,9 @@ const uploadQueueRouter = router({
       updateData.progress = 100;
     }
     if (data.status === 'failed') {
-      const item = await db.getUploadQueueItemById(id);
-      if (item) {
-        updateData.retryCount = (item.retryCount || 0) + 1;
-      }
+      updateData.retryCount = (item.retryCount || 0) + 1;
     }
-    
+
     await db.updateUploadQueueItem(id, updateData);
     return { success: true };
   }),
@@ -299,13 +322,7 @@ const uploadQueueRouter = router({
     fileKey: z.string(),
     fileUrl: z.string(),
   })).mutation(async ({ input, ctx }) => {
-    const item = await db.getUploadQueueItemById(input.id);
-    if (!item) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Upload queue item not found' });
-    }
-    if (item.userId !== ctx.user.id) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
-    }
+    const item = await requireOwnedQueueItem(input.id, ctx.user.id);
 
     // Create the attachment
     const attachment = await db.createAttachment({
@@ -333,15 +350,17 @@ const uploadQueueRouter = router({
     return { success: true, attachment };
   }),
   
-  retry: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+  retry: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+    await requireOwnedQueueItem(input.id, ctx.user.id);
     await db.updateUploadQueueItem(input.id, {
       status: 'queued',
       lastError: null,
     });
     return { success: true };
   }),
-  
-  remove: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+
+  remove: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+    await requireOwnedQueueItem(input.id, ctx.user.id);
     await db.deleteUploadQueueItem(input.id);
     return { success: true };
   }),

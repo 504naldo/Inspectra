@@ -190,4 +190,44 @@ describe("Cross-tenant authorization", () => {
       expect(row.companyId).not.toBe(B.company.id);
     });
   });
+
+  // Secondary-surface IDORs (FAB-01 / FAB-02) — file tags and the mobile upload
+  // queue previously trusted client input with no ownership scope.
+  describe("secondary surfaces (file tags, upload queue)", () => {
+    it("fileTag.list/create ignore a client companyId; delete is company-scoped (FAB-01)", async () => {
+      // A creates a tag; the returned row is stamped with A's company.
+      const tag = await A.caller.fileTag.create({ companyId: A.company.id, name: `tag-${Date.now()}` });
+      expect((tag as any).companyId).toBe(A.company.id);
+
+      // B cannot read A's tags by passing A's companyId, nor create under A, nor delete A's tag.
+      await expectCode(B.caller.fileTag.list({ companyId: A.company.id }), "FORBIDDEN");
+      await expectCode(B.caller.fileTag.create({ companyId: A.company.id, name: "x" }), "FORBIDDEN");
+      await expectCode(B.caller.fileTag.delete({ id: (tag as any).id }), "FORBIDDEN");
+
+      // A can still manage its own tag.
+      expect(await A.caller.fileTag.delete({ id: (tag as any).id })).toEqual({ success: true });
+    });
+
+    it("uploadQueue.updateStatus rejects another user's queue item (FAB-02)", async () => {
+      // Queue item owned by user 3 (company A).
+      const item = await db.createUploadQueueItem({
+        userId: 3, localFileId: `lf-${Date.now()}`, fileName: "p.jpg",
+        entityType: "deficiency", entityId: A.def.id, status: "queued",
+      } as any);
+
+      const ownerCaller = appRouter.createCaller(ctxFor("technician", A.company.id, { userId: 3 }));
+      const attackerCaller = appRouter.createCaller(ctxFor("technician", B.company.id, { userId: 4 }));
+
+      // Non-owner is forbidden from flipping status, retrying, or removing — and
+      // from stamping a foreign fileKey.
+      await expectCode(
+        attackerCaller.uploadQueue.updateStatus({ id: item.id, status: "completed", fileKey: "evil/key", fileUrl: "https://evil/x" }),
+        "FORBIDDEN",
+      );
+      await expectCode(attackerCaller.uploadQueue.retry({ id: item.id }), "FORBIDDEN");
+      await expectCode(attackerCaller.uploadQueue.remove({ id: item.id }), "FORBIDDEN");
+      // Owner can update their own item.
+      expect(await ownerCaller.uploadQueue.updateStatus({ id: item.id, status: "uploading" })).toEqual({ success: true });
+    });
+  });
 });
