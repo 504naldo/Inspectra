@@ -9,13 +9,7 @@ import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateInvoicePDF } from "../invoicePdfGenerator.js";
 import { buildCustomerSafeInvoiceData } from "../customerSafeReport.js";
-
-function generateInvoiceNumber(prefix = "INV"): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const seq = Date.now().toString(36).toUpperCase().slice(-4);
-  return `${prefix}-${year}-${seq}`;
-}
+import { generateInvoiceNumber } from "../invoiceNumber.js";
 
 // ── Edit-lock rules ───────────────────────────────────────────────────────────
 // An invoice is locked (immutable for accounting) when:

@@ -70,6 +70,23 @@ describe("isSafeReturnRoute", () => {
   it("rejects absolute URLs (open redirect)", () => {
     expect(isSafeReturnRoute("https://evil.com")).toBe(false);
   });
+
+  it("rejects backslash protocol-relative URLs (FAB-05)", () => {
+    // Browsers normalize "/\" and "\/" to "//" → off-site redirect.
+    expect(isSafeReturnRoute("/\\evil.com")).toBe(false);
+    expect(isSafeReturnRoute("/\\/evil.com")).toBe(false);
+    expect(isSafeReturnRoute("\\\\evil.com")).toBe(false);
+  });
+
+  it("rejects routes containing control characters (CRLF/tab)", () => {
+    expect(isSafeReturnRoute("/ok\r\nSet-Cookie: x")).toBe(false);
+    expect(isSafeReturnRoute("/ok\tx")).toBe(false);
+  });
+
+  it("still allows normal paths with hyphens and query strings", () => {
+    expect(isSafeReturnRoute("/admin/work-orders?id=5")).toBe(true);
+    expect(isSafeReturnRoute("/tech/jobs/12-a")).toBe(true);
+  });
 });
 
 describe("isOAuthNonceValid — CSRF guard", () => {

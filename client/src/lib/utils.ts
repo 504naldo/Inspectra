@@ -38,3 +38,20 @@ export function friendlyErrorMessage(err: { message?: string }, fallback: string
   if (!err.message || err.message.includes("Failed query")) return fallback;
   return err.message;
 }
+
+/**
+ * Escape a value for a single CSV cell, safe against spreadsheet formula
+ * injection. Mirrors the server-side `csvCell` (server/routers/invoiceRouter.ts):
+ * a leading =, +, -, or @ is prefixed with a single quote so Excel/Sheets/Sage
+ * won't evaluate it as a formula; values containing quotes/commas/newlines are
+ * quote-wrapped. Use for every client-generated CSV export.
+ */
+export function csvCell(v: unknown): string {
+  if (v == null || v === "") return "";
+  let s = String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
