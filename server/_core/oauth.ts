@@ -25,9 +25,23 @@ export function decodeOAuthState(state: string): DecodedOAuthState | null {
   }
 }
 
-/** Prevents open redirects: only same-origin paths starting with a single "/" are honored. */
+/**
+ * Prevents open redirects: only same-origin absolute paths are honored. The
+ * route must start with a single "/" that is NOT followed by another "/" or a
+ * backslash — browsers normalize "/\evil.com" (and "//evil.com") to a
+ * protocol-relative off-site URL, so both must be rejected. Backslashes and
+ * control characters anywhere are also refused.
+ */
 export function isSafeReturnRoute(route: string): boolean {
-  return Boolean(route) && route.startsWith("/") && !route.startsWith("//");
+  if (!route || route[0] !== "/") return false;
+  // Reject backslashes and control characters (CR/LF, tab, etc.) anywhere. A
+  // backslash as the second char is normalized by browsers to a
+  // protocol-relative off-site URL, exactly like a leading "//".
+  for (let k = 0; k < route.length; k++) {
+    const c = route.charCodeAt(k);
+    if (c < 0x20 || c === 0x7f || c === 0x5c) return false;
+  }
+  return route[1] !== "/";
 }
 
 /**

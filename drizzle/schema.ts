@@ -1548,6 +1548,8 @@ export const invoices = mysqlTable("invoices", {
   companyIdIdx: index("invoices_companyId_idx").on(table.companyId),
   statusIdx: index("invoices_status_idx").on(table.status),
   customerOrgIdIdx: index("invoices_customerOrgId_idx").on(table.customerOrgId),
+  // Invoice numbers must be unique within a company (accounting/Sage integrity).
+  companyInvoiceNumberUnique: unique("invoices_company_invoiceNumber_unique").on(table.companyId, table.invoiceNumber),
 }));
 
 export type Invoice = typeof invoices.$inferSelect;

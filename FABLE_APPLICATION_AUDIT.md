@@ -74,24 +74,27 @@ That said, this audit found **new, previously-undocumented cross-tenant IDORs** 
 - **Recommendation:** Load the queue item and enforce `item.userId === ctx.user.id` (and company scope) before mutating, identical to `complete`. Reject client-supplied `fileKey`/`fileUrl` that don't match the item's own upload.
 - **Complexity:** Low. · **Runtime verification required:** No.
 
-### FAB-03 — Invoice/sequence numbers can collide; no uniqueness constraint
+### FAB-03 — Invoice/sequence numbers can collide; no uniqueness constraint — ✅ FIXED (CI/new DBs; prod ALTER pending dedup)
 - **Priority:** P2 · **Severity:** Medium · **Category:** Data integrity / finance
+- **Status:** Fixed in code. Both routers now call a shared `server/invoiceNumber.ts` `generateInvoiceNumber` (full base-36 millisecond timestamp + 3 random chars — far wider than the old 4-char slice). A `unique(companyId, invoiceNumber)` constraint was added to `drizzle/schema.ts` and journal migration `drizzle/0033_invoice_number_unique.sql` (verified applying cleanly to a fresh MySQL 8). **The production ALTER is intentionally not auto-applied**: the startup migration runner ignores duplicate-*key* errors but not duplicate-*data* (`ER_DUP_ENTRY`), so if the live DB already holds duplicate invoice numbers an auto-migration would crash-loop boot. Adding the constraint to prod needs a one-time dedup check first — tracked as a manual runbook step.
 - **Affected files:** `server/routers/invoiceRouter.ts:13-18` (`generateInvoiceNumber`), `server/routers/approvedWorkRouter.ts:484-485` (duplicated logic), `drizzle/schema.ts:1512` (`invoiceNumber varchar(50) notNull` — **no `.unique()`**)
 - **Evidence:** `seq = Date.now().toString(36).toUpperCase().slice(-4)` yields only the low 4 base-36 chars of the millisecond clock. Two invoices created within the same collision window (or across the two independent code paths that both mint `INV-YYYY-XXXX`) can produce identical numbers, and the schema has no unique index to reject the duplicate. The same generation is copy-pasted in `approvedWorkRouter`, so the two paths don't even share a counter.
 - **Impact:** Duplicate invoice numbers break Sage import reconciliation and make an invoice non-uniquely addressable in accounting. This is exactly the class of silent financial-integrity bug that surfaces only under load.
 - **Recommendation:** (1) Add a `unique(companyId, invoiceNumber)` constraint via a new numbered manual migration (do **not** run it here — schema/DB changes are out of scope for this audit). (2) Replace the timestamp slice with a per-company monotonic counter (or a transaction-guarded max+1) in a single shared helper used by both routers. (3) Until then, treat collisions as possible and add a retry-on-duplicate.
 - **Complexity:** Medium. · **Runtime verification required:** No (logic-confirmable); the fix needs a migration which is out of scope.
 
-### FAB-04 — Client-side payroll CSV export omits formula-injection neutralization
+### FAB-04 — Client-side payroll CSV export omits formula-injection neutralization — ✅ FIXED
 - **Priority:** P2 · **Severity:** Medium · **Category:** Security / finance export
+- **Status:** Fixed. A shared, injection-safe `csvCell` was added to `client/src/lib/utils.ts` (mirrors the server `csvCell`: prefixes a leading `=`/`+`/`-`/`@`/tab/CR with `'`, quote-wraps as needed). Both `PayrollReview.tsx` and `PayrollHours.tsx` now use it in place of the old quote-only `escape()`.
 - **Affected files:** `client/src/pages/admin/PayrollReview.tsx:130-134,161-163`; `client/src/pages/admin/PayrollHours.tsx:123-125`
 - **Evidence:** The server CSV path is safe — `csvCell` in `invoiceRouter.ts:58-67` prefixes `=+-@` with `'`. But the **client** payroll CSV `escape()` only quotes on `, " \n`; it does **not** neutralize leading `=+-@`. Payroll rows include free-text-ish fields (user name from `u?.name`, notes) that a malicious/renamed user could seed with `=HYPERLINK(...)` or `=cmd|...`, and the exported CSV would carry a live formula into Excel/Sheets.
 - **Impact:** Spreadsheet formula injection in the payroll export opened by finance staff. Lower likelihood than invoices (names are semi-controlled) but the mitigation already exists server-side and simply wasn't applied to this client path.
 - **Recommendation:** Move payroll CSV assembly to the server (there is already `payrollHoursRouter.exportData`) and route it through `csvCell`, or replicate the `=+-@` guard in the client `escape()`.
 - **Complexity:** Low. · **Runtime verification required:** No.
 
-### FAB-05 — `isSafeReturnRoute` allows backslash-prefixed protocol-relative open redirect
+### FAB-05 — `isSafeReturnRoute` allows backslash-prefixed protocol-relative open redirect — ✅ FIXED
 - **Priority:** P2 · **Severity:** Medium · **Category:** Security / open redirect
+- **Status:** Fixed. `isSafeReturnRoute` (`_core/oauth.ts`) now rejects any backslash or control character anywhere in the route and a `/`-or-`\` second character, closing the `/\evil.com` and CRLF-injection cases while still allowing normal paths (hyphens, query strings). Covered by new cases in `oauthHardening.test.ts`.
 - **Affected files:** `server/_core/oauth.ts:29-30`
 - **Evidence:** `return Boolean(route) && route.startsWith("/") && !route.startsWith("//")`. A value like `/\evil.com` passes (starts with `/`, not `//`), but browsers normalize `\` to `/`, so `res.redirect(302, "/\evil.com")` becomes `//evil.com` → off-site redirect. The `//` case is blocked; the `/\` case is not.
 - **Impact:** Open redirect reachable only by crafting the OAuth `state.route` value. Mitigated by (a) `state` being base64 of a JSON the client builds and (b) the customer-route block, but it is still a real bypass of the intended same-origin guard and a classic phishing pivot.
@@ -106,8 +109,9 @@ That said, this audit found **new, previously-undocumented cross-tenant IDORs** 
 - **Recommendation:** Hide the password field + Forgot-Password link until email/password auth exists, or point the link to a real "contact your admin / use Google" page. The Apple "Coming soon" disabled button is fine as-is.
 - **Complexity:** Low. · **Runtime verification required:** No.
 
-### FAB-07 — Documentation sprawl: 100 root-level audit `.md` files, no single authority
+### FAB-07 — Documentation sprawl — ✅ ADDRESSED (findings registered; files kept in place by prior decision)
 - **Priority:** P2 · **Severity:** Medium (governance) · **Category:** Maintainability
+- **Correction after deeper inspection:** the premise ("no single authority") was only half-right. `docs/audits/README.md` already establishes `docs/PRODUCTION_READINESS.md` as the single authoritative register and indexes the historical root files, and it records a **deliberate decision to leave those files in their root paths** ("moving them risks breaking links/tooling that reference those paths"). Bulk-moving the 82 files would contradict that decision, so I did not. The real remaining gap was that the newest (Fable) findings weren't in the register. **Fixed:** FAB-01…FAB-06 are now rows in `docs/PRODUCTION_READINESS.md`, with this file as the point-in-time snapshot they reference.
 - **Affected files:** repository root (`*.md` count = 100), vs. the intended authoritative `docs/PRODUCTION_READINESS.md` register and `docs/README.md`.
 - **Evidence:** The root holds `ACCESS_CONTROL_AUDIT.md`, `AI_*_AUDIT.md`/`_NOTES.md` pairs, `INSPECTRA_APPLICATION_AUDIT.md`, `BUSINESS_RULES_AUDIT.md`, etc. `docs/PRODUCTION_READINESS.md` explicitly declares itself "the single active register," but 90+ point-in-time snapshots sit beside it in the root, several likely contradicting current code.
 - **Impact:** No operator can tell which findings are live. New audits (including this one) risk re-deriving already-fixed issues. This is a real drag on the security process, not cosmetic.
@@ -201,21 +205,21 @@ These are **not** confirmed defects. Each lists the evidence, how to verify, and
 
 ## Recommended Roadmap
 
-### Immediate (next 1–2 sessions) — max 5
-1. **FAB-01** — scope `fileTagRouter.list/create/delete` to `ctx.user.companyId`.
-2. **FAB-02** — add owner/company check to `uploadQueueRouter.updateStatus`; stop trusting client `fileKey/fileUrl`.
-3. **Authorization tests** for FAB-01/02 + a customer-portal cross-org negative test.
-4. **FAB-05** — tighten `isSafeReturnRoute` to reject `/\` (one-line regex).
-5. **FAB-04** — route payroll CSV through the server `csvCell` guard.
+### Immediate — ✅ DONE (FAB-01…FAB-05)
+1. ~~**FAB-01** — scope `fileTagRouter`.~~ **Done.**
+2. ~~**FAB-02** — owner check on the upload queue (`updateStatus`/`retry`/`remove`/`complete`).~~ **Done.**
+3. ~~**Authorization tests** for FAB-01/02.~~ **Done** (`authorization.test.ts`, 22 tests). *Customer-portal cross-org negative test still recommended.*
+4. ~~**FAB-05** — tighten `isSafeReturnRoute`.~~ **Done** (`oauthHardening.test.ts`).
+5. ~~**FAB-04** — injection-safe payroll CSV via shared `csvCell`.~~ **Done.**
 
 ### Near term (2–4 weeks) — max 8
-1. **FAB-03** — unique `(companyId, invoiceNumber)` constraint (migration) + shared collision-safe number generator.
-2. **FAB-07** — archive the 90+ root audit `.md` files under `docs/audits/history/`; keep `PRODUCTION_READINESS.md` authoritative.
+1. **FAB-03 prod step** — code + CI/new-DB constraint are done; run a one-time invoice-number dedup check against the live DB, then apply the `unique(companyId, invoiceNumber)` ALTER (manual, not auto-boot).
+2. **FAB-06** — fix or hide the Forgot-Password / email-login surface.
 3. **RISK-A** — verify/repair presigned-URL staleness for report photos (re-presign from `fileKey` at generation).
 4. **RISK-B** — on-device offline E2E (duplicate taps, restart, reassignment-while-offline).
 5. Add server query-count assertions for the heaviest dashboard/schedule endpoints (RISK-C).
 6. Sweep all Radix `SelectItem` for empty-string values (RISK-D).
-7. **FAB-06** — fix or hide the Forgot-Password / email-login surface.
+7. Add a customer-portal cross-org negative authorization test.
 8. Begin `db.ts` extraction (FAB-08) starting with the finance and attachment data-access slices.
 
 ### Later

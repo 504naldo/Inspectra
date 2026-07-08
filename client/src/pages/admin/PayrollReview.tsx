@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { trpc } from "@/lib/trpc";
+import { csvCell } from "@/lib/utils";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -127,11 +128,7 @@ function buildCSV(entries: any[], userMap: Map<number, any>): string {
     "Work Type", "Status", "Job ID", "Work Order ID", "Description",
     "Employee Notes", "Admin Notes", "Approved By", "Approved At", "Exported At",
   ];
-  const escape = (v: any) => {
-    if (v == null || v === "") return "";
-    const s = String(v).replace(/"/g, '""');
-    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s}"` : s;
-  };
+  const escape = csvCell;
   const rows = entries.map((e) => {
     const u = userMap.get(e.userId);
     return [

@@ -6,6 +6,7 @@ import { callerIsPlatformOperator } from "../_core/actorContext";
 import { getQuoteForCompany, assertWorkOrderCompany } from "../tenantGuards";
 import { APPROVED_WORK_STATUSES } from "../../drizzle/schema";
 import { logActivity } from "../activityLogger";
+import { generateInvoiceNumber } from "../invoiceNumber.js";
 
 const STATUS_ENUM = z.enum(APPROVED_WORK_STATUSES);
 
@@ -481,8 +482,7 @@ export const approvedWorkRouter = router({
       dueDate.setDate(dueDate.getDate() + (settings.invoiceDueDays ?? 30));
 
       const invPrefix = settings.invoiceNumberPrefix ?? "INV";
-      const invSeq = Date.now().toString(36).toUpperCase().slice(-4);
-      const invoiceNumber = `${invPrefix}-${now.getFullYear()}-${invSeq}`;
+      const invoiceNumber = generateInvoiceNumber(invPrefix, now);
 
       const inv = await db.createInvoice({
         companyId: record.companyId,
