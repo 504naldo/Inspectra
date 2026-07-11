@@ -31,7 +31,8 @@ import {
   ScanEye,
 } from "lucide-react";
 import { PageHelpButton } from "@/components/help/PageHelpButton";
-import { Link, useLocation } from "wouter";
+import { UnsavedChangesDialog } from "@/components/UnsavedChangesDialog";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 // Two distinct offline stores by design: useOfflineStorage (localStorage) holds the
@@ -434,6 +435,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
   });
 
   const [isSavingOffline, setIsSavingOffline] = useState(false);
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
 
   // Queue a brand-new deficiency (and any attached photos) for sync once back online
   const saveDeficiencyOffline = async (andAnother: boolean) => {
@@ -530,16 +532,50 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
 
   const isSaving = createDeficiency.isPending || updateDeficiency.isPending || isSavingOffline;
 
+  // Guard against losing an in-progress narrative on a new deficiency. Scoped to
+  // the create flow (edit mode is already persisted server-side, and comparing
+  // to the loaded values would over-warn). Covers browser close/refresh via
+  // beforeunload, and the in-app back button via a confirm dialog.
+  const hasUnsavedContent =
+    !isEditing &&
+    (title.trim() !== "" ||
+      description.trim() !== "" ||
+      observedIssue.trim() !== "" ||
+      correctiveAction.trim() !== "" ||
+      customerExplanation.trim() !== "" ||
+      codeReference.trim() !== "" ||
+      estimatedCost !== "" ||
+      pendingPhotos.length > 0);
+
+  const backHref = jobId
+    ? `/tech/jobs/${jobId}`
+    : isEditing && existingDef?.deficiency?.jobId
+      ? `/tech/jobs/${existingDef.deficiency.jobId}`
+      : "/tech/jobs";
+
+  useEffect(() => {
+    if (!hasUnsavedContent) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedContent]);
+
+  const handleBack = () => {
+    if (hasUnsavedContent) setShowLeaveDialog(true);
+    else setLocation(backHref);
+  };
+
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom pb-24">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-card border-b">
         <div className="container flex h-16 items-center gap-4">
-          <Link href={jobId ? `/tech/jobs/${jobId}` : isEditing && existingDef?.deficiency?.jobId ? `/tech/jobs/${existingDef.deficiency.jobId}` : "/tech/jobs"}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+          <Button variant="ghost" size="icon" aria-label="Back" onClick={handleBack}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
           <h1 className="font-bold text-lg flex-1">
             {isEditing ? 'Edit Deficiency' : 'New Deficiency'}
           </h1>
@@ -1182,6 +1218,14 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
           </Button>
         </div>
       </div>
+
+      <UnsavedChangesDialog
+        open={showLeaveDialog}
+        onOpenChange={setShowLeaveDialog}
+        isSaving={isSaving}
+        onSaveAndExit={() => { setShowLeaveDialog(false); doSave(false); }}
+        onExitWithoutSaving={() => { setShowLeaveDialog(false); setLocation(backHref); }}
+      />
     </div>
   );
 }

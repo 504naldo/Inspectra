@@ -1,5 +1,6 @@
 import { useState } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -220,14 +221,17 @@ export default function AdminCustomers() {
           </div>
         ) : filteredCustomers.length === 0 ? (
           <Card>
-            <CardContent className="py-12 text-center">
-              <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No customers found</p>
-              <Button className="mt-4" onClick={() => setIsCreateOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add First Customer
-              </Button>
-            </CardContent>
+            <EmptyState
+              icon={Building2}
+              title="No customers found"
+              description="Add your first customer organization to start creating sites and jobs."
+              action={
+                <Button onClick={() => setIsCreateOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add First Customer
+                </Button>
+              }
+            />
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
