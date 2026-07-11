@@ -870,7 +870,7 @@ function PartsRequestsSection({ approvedWorkId }: { approvedWorkId: number }) {
   const { data: requests = [], isLoading } = trpc.inventory.getRequestsForApprovedWork.useQuery({ approvedWorkId });
 
   const STATUS_COLORS: Record<string, string> = {
-    draft: "bg-gray-100 text-gray-700",
+    draft: "bg-muted text-muted-foreground",
     submitted: "bg-blue-100 text-blue-700",
     approved: "bg-green-100 text-green-700",
     ordered: "bg-indigo-100 text-indigo-700",
@@ -882,7 +882,7 @@ function PartsRequestsSection({ approvedWorkId }: { approvedWorkId: number }) {
   };
 
   const PRIORITY_COLORS: Record<string, string> = {
-    low: "bg-gray-100 text-gray-600",
+    low: "bg-muted text-muted-foreground",
     medium: "bg-blue-50 text-blue-700",
     high: "bg-orange-100 text-orange-700",
     urgent: "bg-red-100 text-red-700 font-semibold",

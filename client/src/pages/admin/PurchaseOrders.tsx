@@ -36,7 +36,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-700",
+  draft: "bg-muted text-muted-foreground",
   ready_to_order: "bg-blue-100 text-blue-700",
   ordered: "bg-indigo-100 text-indigo-700",
   partially_received: "bg-yellow-100 text-yellow-700",
@@ -45,7 +45,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  low: "bg-gray-100 text-gray-600",
+  low: "bg-muted text-muted-foreground",
   medium: "bg-blue-50 text-blue-700",
   high: "bg-orange-100 text-orange-700",
   urgent: "bg-red-100 text-red-700 font-semibold",
@@ -63,7 +63,7 @@ function OverviewCards({ counts, urgentCount, overdueCount }: {
   overdueCount: number;
 }) {
   const tiles = [
-    { label: "Draft",            key: "draft",            color: "text-gray-700"   },
+    { label: "Draft",            key: "draft",            color: "text-muted-foreground"   },
     { label: "Ready to Order",   key: "ready_to_order",   color: "text-blue-700"   },
     { label: "Ordered",          key: "ordered",          color: "text-indigo-700" },
     { label: "Part. Received",   key: "partially_received", color: "text-yellow-700" },
@@ -211,7 +211,7 @@ function PORow({ po, vendorMap }: { po: any; vendorMap: Map<number, string> }) {
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <span className="font-mono text-sm font-semibold">{po.poNumber}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[po.status] ?? "bg-gray-100"}`}>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[po.status] ?? "bg-muted"}`}>
                 {STATUS_LABELS[po.status] ?? po.status}
               </span>
               <span className={`text-xs px-2 py-0.5 rounded-full ${PRIORITY_COLORS[po.priority] ?? ""}`}>

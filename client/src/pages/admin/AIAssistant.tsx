@@ -397,7 +397,7 @@ export default function AIAssistant() {
                   role="switch"
                   aria-checked={useKnowledgeBase}
                 >
-                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-transform ${
+                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-card shadow-lg transition-transform ${
                     useKnowledgeBase ? "translate-x-4" : "translate-x-0"
                   }`} />
                 </button>

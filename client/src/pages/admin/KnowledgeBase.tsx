@@ -76,7 +76,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   quote_template:      "bg-yellow-100 text-yellow-700",
   report_template:     "bg-cyan-100 text-cyan-700",
   customer_message:    "bg-pink-100 text-pink-700",
-  manufacturer_manual: "bg-gray-100 text-gray-700",
+  manufacturer_manual: "bg-muted text-muted-foreground",
   site_note:           "bg-teal-100 text-teal-700",
   training_note:       "bg-indigo-100 text-indigo-700",
   other:               "bg-muted text-muted-foreground",

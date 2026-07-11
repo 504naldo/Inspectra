@@ -128,7 +128,7 @@ function VendorRow({ vendor, onEdit }: { vendor: any; onEdit: (v: any) => void }
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-sm">{vendor.name}</span>
             {!vendor.isActive && (
-              <span className="text-xs bg-gray-100 text-gray-500 px-1.5 rounded">Inactive</span>
+              <span className="text-xs bg-muted text-muted-foreground px-1.5 rounded">Inactive</span>
             )}
           </div>
           <div className="flex flex-wrap gap-4 mt-0.5 text-xs text-muted-foreground">

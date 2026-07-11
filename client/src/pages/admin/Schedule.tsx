@@ -57,7 +57,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  not_scheduled: "bg-gray-100 text-gray-600",
+  not_scheduled: "bg-muted text-muted-foreground",
   scheduled: "bg-blue-100 text-blue-700",
   in_progress: "bg-yellow-100 text-yellow-700",
   completed: "bg-green-100 text-green-700",
@@ -77,17 +77,17 @@ const RL_STATUS_LABELS: Record<string, string> = {
 };
 
 const RL_STATUS_COLORS: Record<string, string> = {
-  not_started: "bg-gray-100 text-gray-600",
+  not_started: "bg-muted text-muted-foreground",
   draft_needed: "bg-orange-100 text-orange-700",
   drafted: "bg-yellow-100 text-yellow-700",
   sent: "bg-blue-100 text-blue-700",
   follow_up_needed: "bg-purple-100 text-purple-700",
   completed: "bg-green-100 text-green-700",
-  closed: "bg-gray-100 text-gray-400",
+  closed: "bg-muted text-muted-foreground",
 };
 
 const REPORT_STATUS_COLORS: Record<string, string> = {
-  none: "bg-gray-100 text-gray-500",
+  none: "bg-muted text-muted-foreground",
   pending: "bg-yellow-100 text-yellow-700",
   generated: "bg-blue-100 text-blue-700",
   sent: "bg-green-100 text-green-700",
@@ -288,7 +288,7 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
       <div className="rounded-lg border overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-gray-50 border-b text-left text-gray-500 font-semibold">
+            <tr className="bg-muted border-b text-left text-muted-foreground font-semibold">
               <th className="px-3 py-2">Bldg ID</th>
               <th className="px-3 py-2">Site</th>
               <th className="px-3 py-2">Customer</th>
@@ -306,29 +306,29 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={12} className="text-center py-8 text-gray-400">Loading…</td>
+                <td colSpan={12} className="text-center py-8 text-muted-foreground">Loading…</td>
               </tr>
             )}
             {!isLoading && rows.length === 0 && (
               <tr>
-                <td colSpan={12} className="text-center py-8 text-gray-400">
+                <td colSpan={12} className="text-center py-8 text-muted-foreground">
                   No tracking rows for {trackingMonth}.
                   {" "}<button className="text-blue-600 underline" onClick={() => setImportOpen(true)}>Import a spreadsheet</button>
                 </td>
               </tr>
             )}
             {rows.map((row: any) => (
-              <tr key={row.id} className="border-b hover:bg-gray-50 transition-colors align-top">
-                <td className="px-3 py-2 font-mono text-[11px] text-gray-500">{row.buildingId ?? "—"}</td>
+              <tr key={row.id} className="border-b hover:bg-muted transition-colors align-top">
+                <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{row.buildingId ?? "—"}</td>
                 <td className="px-3 py-2 max-w-[140px]">
                   <span className="truncate block font-medium">{row.siteName}</span>
                 </td>
-                <td className="px-3 py-2 max-w-[120px] text-gray-500 truncate">{row.customerName}</td>
+                <td className="px-3 py-2 max-w-[120px] text-muted-foreground truncate">{row.customerName}</td>
                 <td className="px-3 py-2">{row.serviceType}</td>
-                <td className="px-3 py-2 text-gray-500">
+                <td className="px-3 py-2 text-muted-foreground">
                   {row.targetDate ? new Date(row.targetDate).toLocaleDateString() : "—"}
                 </td>
-                <td className="px-3 py-2 text-gray-500">
+                <td className="px-3 py-2 text-muted-foreground">
                   {formatDate(row.scheduledDate)}
                 </td>
                 <td className="px-3 py-2">
@@ -345,7 +345,7 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
                     </Select>
                   ) : (
                     <button onClick={() => openEdit(row)}>
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer ${STATUS_COLORS[row.status] ?? "bg-gray-100 text-gray-500"}`}>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer ${STATUS_COLORS[row.status] ?? "bg-muted text-muted-foreground"}`}>
                         {STATUS_LABELS[row.status] ?? row.status}
                       </span>
                     </button>
@@ -357,14 +357,14 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
                       <Link href={`/admin/jobs/${row.linkedJob.id}`}>
                         <span className="text-blue-600 underline">{row.linkedJob.jobNumber}</span>
                       </Link>
-                      <span className={`inline-block px-1.5 py-0 rounded-full text-[10px] font-medium ${STATUS_COLORS[row.linkedJob.status] ?? "bg-gray-100 text-gray-500"}`}>
+                      <span className={`inline-block px-1.5 py-0 rounded-full text-[10px] font-medium ${STATUS_COLORS[row.linkedJob.status] ?? "bg-muted text-muted-foreground"}`}>
                         {STATUS_LABELS[row.linkedJob.status] ?? row.linkedJob.status}
                       </span>
                     </div>
                   ) : "—"}
                 </td>
                 <td className="px-3 py-2">
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${REPORT_STATUS_COLORS[row.reportStatus] ?? "bg-gray-100 text-gray-500"}`}>
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${REPORT_STATUS_COLORS[row.reportStatus] ?? "bg-muted text-muted-foreground"}`}>
                     {row.reportStatus ?? "none"}
                   </span>
                 </td>
@@ -381,7 +381,7 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
                       className="h-6 text-[11px]"
                     />
                   ) : (
-                    <span className="text-gray-500 truncate block">{row.notes ?? "—"}</span>
+                    <span className="text-muted-foreground truncate block">{row.notes ?? "—"}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">
@@ -423,7 +423,7 @@ function MonthlyTrackingTab({ companyId, utils }: { companyId: number; utils: an
         </table>
       </div>
 
-      <div className="text-xs text-gray-400">{rows.length} row{rows.length !== 1 ? "s" : ""} — click a status badge to edit inline</div>
+      <div className="text-xs text-muted-foreground">{rows.length} row{rows.length !== 1 ? "s" : ""} — click a status badge to edit inline</div>
 
       {importOpen && (
         <ImportDialog
@@ -496,7 +496,7 @@ function CreateJobModal({
           <DialogTitle>Create Job from Schedule</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-muted-foreground">
             <span className="font-medium">{row.siteName}</span> · {row.serviceType}
           </div>
           <div className="space-y-1">
@@ -591,16 +591,16 @@ function ColSelect({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-28 text-xs text-gray-600 shrink-0">{label}</span>
+      <span className="w-28 text-xs text-muted-foreground shrink-0">{label}</span>
       <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
         <SelectTrigger className="h-7 text-xs flex-1">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="-1"><span className="text-gray-400">(not in file)</span></SelectItem>
+          <SelectItem value="-1"><span className="text-muted-foreground">(not in file)</span></SelectItem>
           {headers.map((h, i) => (
             <SelectItem key={i} value={String(i)}>
-              <span className="font-mono text-[11px] text-gray-500 mr-1">{i + 1}:</span> {h || <span className="text-gray-400">(empty)</span>}
+              <span className="font-mono text-[11px] text-muted-foreground mr-1">{i + 1}:</span> {h || <span className="text-muted-foreground">(empty)</span>}
             </SelectItem>
           ))}
         </SelectContent>
@@ -720,11 +720,11 @@ function ImportDialog({
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
             >
-              <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+              <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
               <p className="text-sm font-medium">
                 {parseHeadersMutation.isPending ? "Reading file…" : file ? file.name : "Drop your XLSX here or click to browse"}
               </p>
-              <p className="text-xs text-gray-400 mt-1">Supports .xlsx, .xls, .csv</p>
+              <p className="text-xs text-muted-foreground mt-1">Supports .xlsx, .xls, .csv</p>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
             </div>
 
@@ -738,7 +738,7 @@ function ImportDialog({
           <div className="space-y-4">
             {/* Raw rows preview — lets user identify which row has real headers */}
             <div>
-              <p className="text-xs font-semibold text-gray-500 mb-1">First rows of your file — click the row that contains column headers:</p>
+              <p className="text-xs font-semibold text-muted-foreground mb-1">First rows of your file — click the row that contains column headers:</p>
               <div className="rounded border overflow-x-auto">
                 <table className="text-[11px] w-full">
                   <tbody>
@@ -746,17 +746,17 @@ function ImportDialog({
                       <tr
                         key={ri}
                         onClick={() => reDetect(ri)}
-                        className={`cursor-pointer border-b transition-colors ${headerRowIndex === ri ? "bg-blue-50 border-blue-300" : "hover:bg-gray-50"}`}
+                        className={`cursor-pointer border-b transition-colors ${headerRowIndex === ri ? "bg-blue-50 border-blue-300" : "hover:bg-muted"}`}
                       >
-                        <td className={`px-2 py-1 font-semibold w-10 shrink-0 ${headerRowIndex === ri ? "text-blue-600" : "text-gray-400"}`}>
+                        <td className={`px-2 py-1 font-semibold w-10 shrink-0 ${headerRowIndex === ri ? "text-blue-600" : "text-muted-foreground"}`}>
                           {headerRowIndex === ri ? "▶ " : ""}{ri + 1}
                         </td>
                         {rawRow.slice(0, 10).map((cell, ci) => (
-                          <td key={ci} className="px-2 py-1 truncate max-w-[100px] border-l text-gray-700">
+                          <td key={ci} className="px-2 py-1 truncate max-w-[100px] border-l text-muted-foreground">
                             {cell || <span className="text-gray-300">—</span>}
                           </td>
                         ))}
-                        {rawRow.length > 10 && <td className="px-2 py-1 text-gray-400">+{rawRow.length - 10} more</td>}
+                        {rawRow.length > 10 && <td className="px-2 py-1 text-muted-foreground">+{rawRow.length - 10} more</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -767,7 +767,7 @@ function ImportDialog({
               )}
             </div>
 
-            <p className="text-sm text-gray-600">Map the columns detected from the selected header row:</p>
+            <p className="text-sm text-muted-foreground">Map the columns detected from the selected header row:</p>
 
             <div className="space-y-2">
               <ColSelect label="Building ID *" headers={parsedHeaders} value={colBuildingId} onChange={setColBuildingId} />
@@ -811,7 +811,7 @@ function ImportDialog({
               <div className="flex gap-4 text-sm">
                 <span className="text-green-700 font-semibold">{preview.matched} matched</span>
                 <span className="text-red-600 font-semibold">{preview.unmatched} unmatched</span>
-                <span className="text-gray-500">{preview.totalRows} total rows</span>
+                <span className="text-muted-foreground">{preview.totalRows} total rows</span>
               </div>
 
               {preview.unmatched > 0 && unmatchedBuildingIds.length > 0 && (
@@ -825,7 +825,7 @@ function ImportDialog({
                       const current = manualMappings.find((m) => m.rawBuildingId === bldgId);
                       return (
                         <div key={bldgId} className="flex items-center gap-2">
-                          <span className="font-mono text-xs text-gray-700 w-20 shrink-0">{bldgId}</span>
+                          <span className="font-mono text-xs text-muted-foreground w-20 shrink-0">{bldgId}</span>
                           <Select
                             value={String(current?.siteId ?? -1)}
                             onValueChange={(v) => {
@@ -840,7 +840,7 @@ function ImportDialog({
                               <SelectValue placeholder="— assign to site —" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="-1"><span className="text-gray-400">— skip this building ID —</span></SelectItem>
+                              <SelectItem value="-1"><span className="text-muted-foreground">— skip this building ID —</span></SelectItem>
                               {allSites.map((s: any) => (
                                 <SelectItem key={s.id} value={String(s.id)}>
                                   {s.name}{s.buildingId ? ` (${s.buildingId})` : ""}
@@ -863,7 +863,7 @@ function ImportDialog({
               <div className="rounded border overflow-auto max-h-64">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-gray-50 text-left border-b text-gray-500 font-semibold">
+                    <tr className="bg-muted text-left border-b text-muted-foreground font-semibold">
                       <th className="px-2 py-1">Row</th>
                       <th className="px-2 py-1">Bldg ID</th>
                       <th className="px-2 py-1">Site Name</th>
@@ -881,7 +881,7 @@ function ImportDialog({
                       const manualSite = manual ? allSites.find((s: any) => s.id === manual.siteId) : undefined;
                       return (
                         <tr key={r.rowIndex} className={`border-b ${r.matchStatus === "unmatched" && !manual ? "bg-red-50" : r.matchStatus === "unmatched" && manual ? "bg-yellow-50" : ""}`}>
-                          <td className="px-2 py-1 text-gray-400">{r.rowIndex}</td>
+                          <td className="px-2 py-1 text-muted-foreground">{r.rowIndex}</td>
                           <td className="px-2 py-1 font-mono">{r.rawBuildingId || "—"}</td>
                           <td className="px-2 py-1">{r.rawSiteName || "—"}</td>
                           <td className="px-2 py-1">{r.serviceType}</td>
@@ -895,7 +895,7 @@ function ImportDialog({
                               {r.matchStatus === "matched" ? r.matchMethod : manualSite ? "manual" : "unmatched"}
                             </span>
                           </td>
-                          <td className="px-2 py-1 text-gray-500">{r.matchedSiteName ?? manualSite?.name ?? "—"}</td>
+                          <td className="px-2 py-1 text-muted-foreground">{r.matchedSiteName ?? manualSite?.name ?? "—"}</td>
                         </tr>
                       );
                     })}
@@ -939,9 +939,9 @@ function ImportDialog({
                 <p className="text-blue-700 font-semibold text-lg">{result.updated}</p>
                 <p className="text-blue-600">Updated</p>
               </div>
-              <div className="bg-gray-50 rounded p-3">
-                <p className="text-gray-700 font-semibold text-lg">{result.skipped}</p>
-                <p className="text-gray-500">Skipped</p>
+              <div className="bg-muted rounded p-3">
+                <p className="text-muted-foreground font-semibold text-lg">{result.skipped}</p>
+                <p className="text-muted-foreground">Skipped</p>
               </div>
               <div className="bg-red-50 rounded p-3">
                 <p className="text-red-700 font-semibold text-lg">{result.errors}</p>
@@ -1013,10 +1013,10 @@ function CalendarTab({ companyId }: { companyId: number }) {
           <CardContent>
             <div className="space-y-2">
               {(data as any).overdue.map((job: any) => (
-                <div key={job.id} className="flex items-center justify-between bg-white rounded p-2 border border-red-200">
+                <div key={job.id} className="flex items-center justify-between bg-card rounded p-2 border border-red-200">
                   <div>
                     <p className="font-medium text-sm">{job.title}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       Scheduled: {formatDate(job.scheduledDate)}
                     </p>
                   </div>
@@ -1045,11 +1045,11 @@ function CalendarTab({ companyId }: { companyId: number }) {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-400">Loading schedule…</div>
+              <div className="text-center py-8 text-muted-foreground">Loading schedule…</div>
             ) : (
               <div className="grid grid-cols-7 gap-1">
                 {DAYS.map(d => (
-                  <div key={d} className="text-center text-xs font-semibold text-gray-500 py-1">{d}</div>
+                  <div key={d} className="text-center text-xs font-semibold text-muted-foreground py-1">{d}</div>
                 ))}
                 {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
                 {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -1061,21 +1061,21 @@ function CalendarTab({ companyId }: { companyId: number }) {
                     <button
                       key={day}
                       onClick={() => setSelectedDay(day)}
-                      className={`rounded p-1 min-h-[48px] text-left transition-colors ${isSelected ? "bg-destructive/10 border border-destructive/40" : "hover:bg-gray-50"}`}
+                      className={`rounded p-1 min-h-[48px] text-left transition-colors ${isSelected ? "bg-destructive/10 border border-destructive/40" : "hover:bg-muted"}`}
                     >
-                      <span className={`text-xs block mb-1 ${isToday ? "text-destructive font-bold" : "text-gray-700"}`}>{day}</span>
+                      <span className={`text-xs block mb-1 ${isToday ? "text-destructive font-bold" : "text-muted-foreground"}`}>{day}</span>
                       <div className="flex flex-wrap gap-0.5">
                         {dayJobs.slice(0, 3).map((j: any) => (
                           <span key={j.id} className={`w-2 h-2 rounded-full ${calendarStatusColor(j.status)}`} title={j.title} />
                         ))}
-                        {dayJobs.length > 3 && <span className="text-[9px] text-gray-400">+{dayJobs.length - 3}</span>}
+                        {dayJobs.length > 3 && <span className="text-[9px] text-muted-foreground">+{dayJobs.length - 3}</span>}
                       </div>
                     </button>
                   );
                 })}
               </div>
             )}
-            <div className="flex gap-4 mt-4 text-xs text-gray-500">
+            <div className="flex gap-4 mt-4 text-xs text-muted-foreground">
               {[["bg-[var(--warning)]","Scheduled"],["bg-accent","In Progress"],["bg-[var(--success)]","Complete"],["bg-gray-400","Draft"]].map(([c,l]) => (
                 <span key={l} className="flex items-center gap-1"><span className={`w-2 h-2 rounded-full ${c}`}/>{l}</span>
               ))}
@@ -1091,9 +1091,9 @@ function CalendarTab({ companyId }: { companyId: number }) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {!selectedDay && <p className="text-sm text-gray-400">Click a date to see jobs.</p>}
+            {!selectedDay && <p className="text-sm text-muted-foreground">Click a date to see jobs.</p>}
             {selectedDay && selectedJobs.length === 0 && (
-              <p className="text-sm text-gray-400">No jobs scheduled.</p>
+              <p className="text-sm text-muted-foreground">No jobs scheduled.</p>
             )}
             <div className="space-y-3">
               {selectedJobs.map((job: any) => (
@@ -1106,7 +1106,7 @@ function CalendarTab({ companyId }: { companyId: number }) {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-xs capitalize">{job.status?.replace("_"," ")}</Badge>
-                    {job.jobType && <span className="text-xs text-gray-500">{job.jobType}</span>}
+                    {job.jobType && <span className="text-xs text-muted-foreground">{job.jobType}</span>}
                   </div>
                   <div className="flex gap-2 mt-1">
                     <Link href={`/admin/jobs/${job.id}`} className="flex-1">
@@ -1430,7 +1430,7 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{rows.length} active service schedule{rows.length !== 1 ? "s" : ""}</p>
+        <p className="text-sm text-muted-foreground">{rows.length} active service schedule{rows.length !== 1 ? "s" : ""}</p>
         <Button size="sm" onClick={() => setAddOpen(true)}>
           <Plus className="h-3.5 w-3.5 mr-1" /> Add Schedule
         </Button>
@@ -1439,7 +1439,7 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
       <div className="rounded-lg border overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-gray-50 border-b text-left text-gray-500 font-semibold">
+            <tr className="bg-muted border-b text-left text-muted-foreground font-semibold">
               <th className="px-3 py-2">Site</th>
               <th className="px-3 py-2">Bldg ID</th>
               <th className="px-3 py-2">Service Type</th>
@@ -1452,20 +1452,20 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={8} className="text-center py-8 text-gray-400">Loading…</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">Loading…</td></tr>
             )}
             {!isLoading && rows.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-8 text-gray-400">No service schedules defined.</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No service schedules defined.</td></tr>
             )}
             {rows.map((r: any) => (
-              <tr key={r.id} className="border-b hover:bg-gray-50">
+              <tr key={r.id} className="border-b hover:bg-muted">
                 <td className="px-3 py-2 font-medium">
                   {sites.find((s: any) => s.id === r.siteId)?.name ?? r.siteId}
                 </td>
-                <td className="px-3 py-2 font-mono text-[11px] text-gray-500">{r.buildingId ?? "—"}</td>
+                <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{r.buildingId ?? "—"}</td>
                 <td className="px-3 py-2">{r.serviceType}</td>
                 <td className="px-3 py-2">
-                  <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-[11px]">
+                  <span className="bg-muted text-muted-foreground px-2 py-0.5 rounded-full text-[11px]">
                     {FREQ_LABELS[r.frequency] ?? r.frequency}
                   </span>
                 </td>
@@ -1479,7 +1479,7 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
                   {r.active ? (
                     <span className="text-green-600 font-medium">Active</span>
                   ) : (
-                    <span className="text-gray-400">Inactive</span>
+                    <span className="text-muted-foreground">Inactive</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
@@ -1487,7 +1487,7 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 px-2 text-[11px] text-gray-400 hover:text-red-600"
+                      className="h-6 px-2 text-[11px] text-muted-foreground hover:text-red-600"
                       onClick={() => updateSchedule.mutate({ id: r.id, active: false })}
                       title="Deactivate"
                     >
@@ -1551,7 +1551,7 @@ function ServiceSchedulesTab({ companyId, utils }: { companyId: number; utils: a
             <div className="space-y-1">
               <Label>First Due Date (optional)</Label>
               <Input type="date" value={firstDueAt} onChange={(e) => setFirstDueAt(e.target.value)} />
-              <p className="text-[11px] text-gray-400">Leave blank to default to one frequency interval from today.</p>
+              <p className="text-[11px] text-muted-foreground">Leave blank to default to one frequency interval from today.</p>
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
@@ -1638,7 +1638,7 @@ function RepairLetterTab({ companyId }: { companyId: number }) {
       <div className="rounded-lg border overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-gray-50 border-b text-left text-gray-500 font-semibold">
+            <tr className="bg-muted border-b text-left text-muted-foreground font-semibold">
               <th className="px-3 py-2">Bldg ID</th>
               <th className="px-3 py-2">Site</th>
               <th className="px-3 py-2">Customer</th>
@@ -1653,21 +1653,21 @@ function RepairLetterTab({ companyId }: { companyId: number }) {
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={10} className="text-center py-8 text-gray-400">Loading…</td></tr>
+              <tr><td colSpan={10} className="text-center py-8 text-muted-foreground">Loading…</td></tr>
             )}
             {!isLoading && (rows as any[]).length === 0 && (
               <tr>
-                <td colSpan={10} className="text-center py-8 text-gray-400">
+                <td colSpan={10} className="text-center py-8 text-muted-foreground">
                   No repair letter rows for {period}.{" "}
                   <button className="text-blue-600 underline" onClick={() => setImportOpen(true)}>Import a spreadsheet</button>
                 </td>
               </tr>
             )}
             {(rows as any[]).map((row: any) => (
-              <tr key={row.id} className="border-b hover:bg-gray-50 align-top">
-                <td className="px-3 py-2 font-mono text-[11px] text-gray-500">{row.buildingId ?? "—"}</td>
+              <tr key={row.id} className="border-b hover:bg-muted align-top">
+                <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{row.buildingId ?? "—"}</td>
                 <td className="px-3 py-2 max-w-[140px]"><span className="truncate block font-medium">{row.siteName}</span></td>
-                <td className="px-3 py-2 max-w-[120px] text-gray-500 truncate">{row.customerName}</td>
+                <td className="px-3 py-2 max-w-[120px] text-muted-foreground truncate">{row.customerName}</td>
                 <td className="px-3 py-2">
                   {row.linkedJob ? (
                     <Link href={`/admin/jobs/${row.linkedJob.id}`}>
@@ -1694,23 +1694,23 @@ function RepairLetterTab({ companyId }: { companyId: number }) {
                     </Select>
                   ) : (
                     <button onClick={() => { setEditingRow(row.id); setEditStatus(row.repairLetterStatus); setEditNotes(row.notes ?? ""); }}>
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer ${RL_STATUS_COLORS[row.repairLetterStatus] ?? "bg-gray-100 text-gray-500"}`}>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer ${RL_STATUS_COLORS[row.repairLetterStatus] ?? "bg-muted text-muted-foreground"}`}>
                         {RL_STATUS_LABELS[row.repairLetterStatus] ?? row.repairLetterStatus}
                       </span>
                     </button>
                   )}
                 </td>
-                <td className="px-3 py-2 text-gray-500">
+                <td className="px-3 py-2 text-muted-foreground">
                   {row.letterSentDate ? new Date(row.letterSentDate).toLocaleDateString() : "—"}
                 </td>
-                <td className="px-3 py-2 text-gray-500">
+                <td className="px-3 py-2 text-muted-foreground">
                   {row.followUpDate ? new Date(row.followUpDate).toLocaleDateString() : "—"}
                 </td>
                 <td className="px-3 py-2 max-w-[160px]">
                   {editingRow === row.id ? (
                     <Input value={editNotes} onChange={(e) => setEditNotes(e.target.value)} className="h-6 text-[11px]" />
                   ) : (
-                    <span className="text-gray-500 truncate block">{row.notes ?? "—"}</span>
+                    <span className="text-muted-foreground truncate block">{row.notes ?? "—"}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">
@@ -1733,7 +1733,7 @@ function RepairLetterTab({ companyId }: { companyId: number }) {
         </table>
       </div>
 
-      <div className="text-xs text-gray-400">{(rows as any[]).length} row{(rows as any[]).length !== 1 ? "s" : ""} — click a status badge to edit inline</div>
+      <div className="text-xs text-muted-foreground">{(rows as any[]).length} row{(rows as any[]).length !== 1 ? "s" : ""} — click a status badge to edit inline</div>
 
       {importOpen && (
         <RepairLetterImportDialog
@@ -1803,9 +1803,9 @@ function RepairLetterImportDialog({
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
             >
-              <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+              <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
               <p className="text-sm font-medium">{file ? file.name : "Drop your XLSX here or click to browse"}</p>
-              <p className="text-xs text-gray-400 mt-1">Supports .xlsx, .xls, .csv</p>
+              <p className="text-xs text-muted-foreground mt-1">Supports .xlsx, .xls, .csv</p>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
             </div>
@@ -1828,12 +1828,12 @@ function RepairLetterImportDialog({
             <div className="flex gap-4 text-sm">
               <span className="text-green-700 font-semibold">{preview.matched} matched</span>
               <span className="text-red-600 font-semibold">{preview.unmatched} unmatched</span>
-              <span className="text-gray-500">{preview.totalRows} total rows</span>
+              <span className="text-muted-foreground">{preview.totalRows} total rows</span>
             </div>
             <div className="rounded border overflow-auto max-h-64">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-gray-50 text-left border-b text-gray-500 font-semibold">
+                  <tr className="bg-muted text-left border-b text-muted-foreground font-semibold">
                     <th className="px-2 py-1">Row</th>
                     <th className="px-2 py-1">Bldg ID</th>
                     <th className="px-2 py-1">Site Name</th>
@@ -1845,7 +1845,7 @@ function RepairLetterImportDialog({
                 <tbody>
                   {(preview.previewRows as any[]).map((r: any) => (
                     <tr key={r.rowIndex} className={`border-b ${r.matchStatus === "unmatched" ? "bg-red-50" : ""}`}>
-                      <td className="px-2 py-1 text-gray-400">{r.rowIndex}</td>
+                      <td className="px-2 py-1 text-muted-foreground">{r.rowIndex}</td>
                       <td className="px-2 py-1 font-mono">{r.rawBldg || "—"}</td>
                       <td className="px-2 py-1">{r.rawSite || "—"}</td>
                       <td className="px-2 py-1">{r.rawDefs || "—"}</td>
@@ -1854,7 +1854,7 @@ function RepairLetterImportDialog({
                           {r.matchStatus === "matched" ? r.matchMethod : "unmatched"}
                         </span>
                       </td>
-                      <td className="px-2 py-1 text-gray-500">{r.matchedSiteName ?? "—"}</td>
+                      <td className="px-2 py-1 text-muted-foreground">{r.matchedSiteName ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1888,7 +1888,7 @@ function RepairLetterImportDialog({
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               {[["Created", result.created, "bg-green-50 text-green-700"], ["Updated", result.updated, "bg-blue-50 text-blue-700"],
-                ["Skipped", result.skipped, "bg-gray-50 text-gray-700"], ["Errors", result.errors, "bg-red-50 text-red-700"]].map(([label, val, cls]) => (
+                ["Skipped", result.skipped, "bg-muted text-muted-foreground"], ["Errors", result.errors, "bg-red-50 text-red-700"]].map(([label, val, cls]) => (
                 <div key={label as string} className={`rounded p-3 ${cls}`}>
                   <p className="font-semibold text-lg">{val}</p>
                   <p>{label}</p>

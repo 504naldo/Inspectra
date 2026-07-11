@@ -63,7 +63,7 @@ const WORK_TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-600",
+  draft: "bg-muted text-muted-foreground",
   submitted: "bg-yellow-100 text-yellow-700",
   approved: "bg-green-100 text-green-700",
   rejected: "bg-red-100 text-red-600",
@@ -188,7 +188,7 @@ function SummaryCards({ summary, missingCount }: { summary: any; missingCount: n
         <div className="text-xl font-bold text-red-600">{summary.rejectedCount}</div>
         <div className="text-xs text-muted-foreground">Rejected entries</div>
         {summary.draftCount > 0 && (
-          <div className="text-xs text-gray-500">{summary.draftCount} draft(s)</div>
+          <div className="text-xs text-muted-foreground">{summary.draftCount} draft(s)</div>
         )}
       </CardContent></Card>
       <Card><CardContent className="pt-3 pb-2">
@@ -242,7 +242,7 @@ function MissingHoursPanel({ employees }: { employees: any[] }) {
               <span className="text-xs text-muted-foreground">({emp.role})</span>
               <div className="ml-auto flex gap-2 text-xs">
                 {!emp.hasAnyEntries && <span className="text-muted-foreground">No entries</span>}
-                {emp.draftCount > 0 && <span className="text-gray-600">{emp.draftCount} draft{emp.draftCount !== 1 ? "s" : ""} not submitted</span>}
+                {emp.draftCount > 0 && <span className="text-muted-foreground">{emp.draftCount} draft{emp.draftCount !== 1 ? "s" : ""} not submitted</span>}
                 {emp.rejectedCount > 0 && <span className="text-red-600">{emp.rejectedCount} rejected — needs resubmit</span>}
               </div>
             </div>
@@ -396,7 +396,7 @@ function EntryRow({
       {!canApprove && <div className="w-4 shrink-0" />}
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
-          <span className={`text-xs px-1.5 py-0.5 rounded-full ${STATUS_COLORS[entry.status] ?? "bg-gray-100"}`}>
+          <span className={`text-xs px-1.5 py-0.5 rounded-full ${STATUS_COLORS[entry.status] ?? "bg-muted"}`}>
             {entry.status}
           </span>
           <span className="text-xs text-muted-foreground">{WORK_TYPE_LABELS[entry.workType] ?? entry.workType}</span>
@@ -485,7 +485,7 @@ function EmployeeGroup({
         </div>
         <div className="flex items-center gap-2 ml-auto text-xs text-muted-foreground">
           {Object.entries(statusBreakdown).map(([status, count]) => (
-            <span key={status} className={`px-1.5 py-0.5 rounded-full ${STATUS_COLORS[status] ?? "bg-gray-100"}`}>
+            <span key={status} className={`px-1.5 py-0.5 rounded-full ${STATUS_COLORS[status] ?? "bg-muted"}`}>
               {count as React.ReactNode} {status}
             </span>
           ))}

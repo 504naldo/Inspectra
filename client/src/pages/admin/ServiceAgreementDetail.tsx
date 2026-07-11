@@ -21,11 +21,11 @@ import { ActivityTimeline } from "@/components/ActivityTimeline";
 import type { ServiceAgreementStatus, ServiceAgreementBillingCycle } from "../../../../drizzle/schema";
 
 const STATUS_BADGE: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-600 border-gray-200",
+  draft: "bg-muted text-muted-foreground border-border",
   active: "bg-emerald-50 text-emerald-700 border-emerald-200",
   expiring_soon: "bg-amber-50 text-amber-700 border-amber-200",
   expired: "bg-red-50 text-red-600 border-red-200",
-  cancelled: "bg-gray-100 text-gray-400 border-gray-200",
+  cancelled: "bg-muted text-muted-foreground border-border",
 };
 
 const STATUS_LABELS: Record<string, string> = {

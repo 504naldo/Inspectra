@@ -60,7 +60,7 @@ const STATUS_COLORS: Record<string, string> = {
   scheduled: "bg-blue-100 text-blue-800",
   in_progress: "bg-primary/10 text-primary",
   completed: "bg-green-100 text-green-800",
-  cancelled: "bg-gray-100 text-gray-500",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -74,7 +74,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 function JobCard({ job, packetCached }: { job: any; packetCached?: "cached" | "stale" | "failed" }) {
   const priority = PRIORITY_COLORS[job.priority as string] ?? "";
-  const status = STATUS_COLORS[job.status as string] ?? "bg-gray-100 text-gray-600";
+  const status = STATUS_COLORS[job.status as string] ?? "bg-muted text-muted-foreground";
 
   return (
     <Link href={`/tech/jobs/${job.id}`}>

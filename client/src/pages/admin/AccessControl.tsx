@@ -247,7 +247,7 @@ export default function AccessControl() {
                           {u.email ?? "—"}
                         </TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${meta?.color ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${meta?.color ?? "bg-muted text-muted-foreground border-border"}`}>
                             {u.role}
                           </span>
                         </TableCell>
