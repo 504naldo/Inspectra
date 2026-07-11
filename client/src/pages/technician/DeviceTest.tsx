@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { FieldHeader } from "@/components/field/FieldHeader";
+import { ConnectionBadge } from "@/components/field/ConnectionBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -258,29 +260,14 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom pb-32">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-card border-b">
-        <div className="container flex h-16 items-center gap-4">
-          <Link href={`/tech/jobs/${jobId}`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-lg truncate">Device Test</h1>
-            <p className="text-xs text-muted-foreground">{device?.deviceType || 'Device'}</p>
-          </div>
-          <PageHelpButton size="icon" routeKey="tech_device_test" />
-          {isOnline ? (
-            <span className="online-badge flex items-center gap-1 text-xs">
-              <Wifi className="h-3 w-3" />
-            </span>
-          ) : (
-            <span className="offline-badge flex items-center gap-1 text-xs">
-              <WifiOff className="h-3 w-3" />
-            </span>
-          )}
-        </div>
-      </header>
+      <FieldHeader
+        backHref={`/tech/jobs/${jobId}`}
+        title="Device Test"
+        subtitle={device?.deviceType || 'Device'}
+      >
+        <PageHelpButton size="icon" routeKey="tech_device_test" />
+        <ConnectionBadge online={isOnline} />
+      </FieldHeader>
 
       <main className="container py-4 space-y-6">
         {/* Device Info */}

@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { FieldHeader } from "@/components/field/FieldHeader";
+import { ConnectionBadge } from "@/components/field/ConnectionBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -147,32 +149,21 @@ export default function JobsList() {
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-card border-b">
-        <div className="container flex h-16 items-center gap-4">
-          <Link href="/tech">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="font-bold text-lg flex-1">
+      <FieldHeader
+        backHref="/tech"
+        title={
+          <>
             My Jobs
             {newAssignmentsCount > 0 && (
-              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary text-primary-foreground">
+              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary text-primary-foreground align-middle">
                 {newAssignmentsCount} new
               </span>
             )}
-          </h1>
-          {isOnline ? (
-            <span className="online-badge flex items-center gap-1 text-xs">
-              <Wifi className="h-3 w-3" />
-            </span>
-          ) : (
-            <span className="offline-badge flex items-center gap-1 text-xs">
-              <WifiOff className="h-3 w-3" />
-            </span>
-          )}
-        </div>
-      </header>
+          </>
+        }
+      >
+        <ConnectionBadge online={isOnline} />
+      </FieldHeader>
 
       <main className="container py-4 space-y-4">
         {/* Search */}

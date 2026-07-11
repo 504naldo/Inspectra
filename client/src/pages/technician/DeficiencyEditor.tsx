@@ -533,7 +533,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom pb-24">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-card border-b">
+      <header className="sticky top-0 z-40 bg-card border-b">
         <div className="container flex h-16 items-center gap-4">
           <Link href={jobId ? `/tech/jobs/${jobId}` : isEditing && existingDef?.deficiency?.jobId ? `/tech/jobs/${existingDef.deficiency.jobId}` : "/tech/jobs"}>
             <Button variant="ghost" size="icon">
@@ -1145,7 +1145,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       </Dialog>
 
       {/* Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 safe-bottom">
+      <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 safe-bottom z-40">
         <div className="container space-y-2">
           {!isEditing && (
             <Button

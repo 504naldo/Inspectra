@@ -519,7 +519,7 @@ export default function TemplateFormRenderer() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-card border-b px-4 py-3 flex items-center gap-3">
+      <div className="sticky top-0 z-40 bg-card border-b px-4 py-3 flex items-center gap-3">
         <button onClick={() => setLocation(`/tech/jobs/${jId}`)} className="p-1">
           <ArrowLeft className="h-5 w-5" />
         </button>
