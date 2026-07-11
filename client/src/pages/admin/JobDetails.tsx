@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams, Link } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
+import { DetailSkeleton } from "@/components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -412,9 +413,7 @@ export default function AdminJobDetails() {
   if (jobLoading) {
     return (
       <AdminLayout title="Job Details">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
+        <DetailSkeleton />
       </AdminLayout>
     );
   }

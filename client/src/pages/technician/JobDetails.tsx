@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { MobileDetailSkeleton } from "@/components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -413,11 +414,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   });
 
   if (isLoading && !cachedData && !packetAsJobData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <MobileDetailSkeleton />;
   }
 
   if (!jobData) {
