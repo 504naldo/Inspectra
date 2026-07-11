@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
+import { DetailSkeleton } from "@/components/PageSkeleton";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { WorkflowHint } from "@/components/help/WorkflowHint";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -420,9 +421,7 @@ export default function RepairQuoteDetail() {
   if (isLoading) {
     return (
       <AdminLayout title="Repair Quote">
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
+        <DetailSkeleton />
       </AdminLayout>
     );
   }
