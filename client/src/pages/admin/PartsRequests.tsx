@@ -31,7 +31,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-700",
+  draft: "bg-muted text-muted-foreground",
   submitted: "bg-blue-100 text-blue-700",
   approved: "bg-green-100 text-green-700",
   ordered: "bg-indigo-100 text-indigo-700",
@@ -43,7 +43,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  low: "bg-gray-100 text-gray-600",
+  low: "bg-muted text-muted-foreground",
   medium: "bg-blue-50 text-blue-700",
   high: "bg-orange-100 text-orange-700",
   urgent: "bg-red-100 text-red-700 font-semibold",
@@ -58,7 +58,7 @@ const ALL_STATUSES = [
 
 function OverviewCards({ counts, urgentCount }: { counts: Record<string, number>; urgentCount: number }) {
   const tiles = [
-    { label: "Draft",       key: "draft",       color: "text-gray-700"   },
+    { label: "Draft",       key: "draft",       color: "text-muted-foreground"   },
     { label: "Submitted",   key: "submitted",   color: "text-blue-700"   },
     { label: "Approved",    key: "approved",    color: "text-green-700"  },
     { label: "Ordered",     key: "ordered",     color: "text-indigo-700" },
@@ -97,7 +97,7 @@ function RequestRow({ req }: { req: any }) {
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <span className="font-mono text-sm font-semibold">{req.requestNumber}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[req.status] ?? "bg-gray-100 text-gray-700"}`}>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[req.status] ?? "bg-muted text-muted-foreground"}`}>
                 {STATUS_LABELS[req.status] ?? req.status}
               </span>
               <span className={`text-xs px-2 py-0.5 rounded-full ${PRIORITY_COLORS[req.priority] ?? ""}`}>

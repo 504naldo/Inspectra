@@ -47,7 +47,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-700",
+  draft: "bg-muted text-muted-foreground",
   ready_to_order: "bg-blue-100 text-blue-700",
   ordered: "bg-indigo-100 text-indigo-700",
   partially_received: "bg-yellow-100 text-yellow-700",
@@ -56,7 +56,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  low: "bg-gray-100 text-gray-600",
+  low: "bg-muted text-muted-foreground",
   medium: "bg-blue-50 text-blue-700",
   high: "bg-orange-100 text-orange-700",
   urgent: "bg-red-100 text-red-700 font-semibold",
@@ -584,7 +584,7 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <h1 className="text-2xl font-bold font-mono">{po.poNumber}</h1>
-            <span className={`text-sm px-2.5 py-0.5 rounded-full ${STATUS_COLORS[status] ?? "bg-gray-100"}`}>
+            <span className={`text-sm px-2.5 py-0.5 rounded-full ${STATUS_COLORS[status] ?? "bg-muted"}`}>
               {STATUS_LABELS[status] ?? status}
             </span>
             <span className={`text-sm px-2.5 py-0.5 rounded-full ${PRIORITY_COLORS[po.priority as string] ?? ""}`}>

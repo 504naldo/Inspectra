@@ -52,7 +52,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-700",
+  draft: "bg-muted text-muted-foreground",
   submitted: "bg-blue-100 text-blue-700",
   approved: "bg-green-100 text-green-700",
   ordered: "bg-indigo-100 text-indigo-700",
@@ -64,14 +64,14 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  low: "bg-gray-100 text-gray-600",
+  low: "bg-muted text-muted-foreground",
   medium: "bg-blue-50 text-blue-700",
   high: "bg-orange-100 text-orange-700",
   urgent: "bg-red-100 text-red-700 font-semibold",
 };
 
 const ITEM_STATUS_COLORS: Record<string, string> = {
-  requested: "bg-gray-100 text-gray-700",
+  requested: "bg-muted text-muted-foreground",
   approved: "bg-green-100 text-green-700",
   ordered: "bg-indigo-100 text-indigo-700",
   received: "bg-teal-100 text-teal-700",
@@ -384,7 +384,7 @@ function ItemsTable({ items }: { items: any[] }) {
               <td className="py-2 pr-3 text-right">{item.quantityReceived ?? "—"}</td>
               <td className="py-2 pr-3 text-right">{item.quantityUsed ?? "—"}</td>
               <td className="py-2">
-                <span className={`text-xs px-2 py-0.5 rounded-full ${ITEM_STATUS_COLORS[item.status] ?? "bg-gray-100 text-gray-700"}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${ITEM_STATUS_COLORS[item.status] ?? "bg-muted text-muted-foreground"}`}>
                   {item.status}
                 </span>
               </td>
@@ -503,7 +503,7 @@ export default function PartsRequestDetail({ id }: { id: number }) {
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <h1 className="text-2xl font-bold font-mono">{req.requestNumber}</h1>
-            <span className={`text-sm px-2.5 py-0.5 rounded-full ${STATUS_COLORS[status] ?? "bg-gray-100 text-gray-700"}`}>
+            <span className={`text-sm px-2.5 py-0.5 rounded-full ${STATUS_COLORS[status] ?? "bg-muted text-muted-foreground"}`}>
               {STATUS_LABELS[status] ?? status}
             </span>
             <span className={`text-sm px-2.5 py-0.5 rounded-full ${PRIORITY_COLORS[req.priority as string] ?? ""}`}>
@@ -706,7 +706,7 @@ export default function PartsRequestDetail({ id }: { id: number }) {
                       linkedPO.status === "received" ? "bg-green-100 text-green-700" :
                       linkedPO.status === "ordered" ? "bg-indigo-100 text-indigo-700" :
                       linkedPO.status === "cancelled" ? "bg-red-100 text-red-600" :
-                      "bg-gray-100 text-gray-700"
+                      "bg-muted text-muted-foreground"
                     }`}>
                       {linkedPO.status.replace(/_/g, " ")}
                     </span>

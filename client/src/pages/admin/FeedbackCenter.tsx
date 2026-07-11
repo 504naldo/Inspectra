@@ -39,7 +39,7 @@ const STATUS_CLASS: Record<string, string> = {
   reviewed: "bg-purple-100 text-purple-800",
   in_progress: "bg-amber-100 text-amber-800",
   resolved: "bg-green-100 text-green-800",
-  closed: "bg-gray-100 text-gray-600",
+  closed: "bg-muted text-muted-foreground",
   wont_fix: "bg-red-100 text-red-700",
 };
 
@@ -47,7 +47,7 @@ const PRIORITY_CLASS: Record<string, string> = {
   urgent: "bg-red-100 text-red-800",
   high: "bg-orange-100 text-orange-700",
   medium: "bg-yellow-100 text-yellow-700",
-  low: "bg-gray-100 text-gray-600",
+  low: "bg-muted text-muted-foreground",
 };
 
 type FeedbackStatus = typeof FEEDBACK_STATUSES[number];

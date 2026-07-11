@@ -34,7 +34,7 @@ export default function Home() {
       </p>
       <a
         href={getLoginUrl()}
-        className="inline-flex items-center justify-center rounded-md bg-white px-6 py-2.5 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+        className="inline-flex items-center justify-center rounded-md bg-card px-6 py-2.5 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-card/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
         Sign in to Inspectra
       </a>

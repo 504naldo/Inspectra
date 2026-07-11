@@ -1363,7 +1363,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                       req.status === "approved" || req.status === "ordered" ? "bg-blue-100 text-blue-700" :
                       req.status === "cancelled" ? "bg-red-100 text-red-600" :
                       req.status === "submitted" ? "bg-yellow-100 text-yellow-700" :
-                      "bg-gray-100 text-gray-700"
+                      "bg-muted text-muted-foreground"
                     }`}>
                       {req.status.replace(/_/g, " ")}
                     </span>
@@ -1514,7 +1514,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                           entry.status === "approved" ? "bg-green-100 text-green-700" :
                           entry.status === "submitted" ? "bg-yellow-100 text-yellow-700" :
                           entry.status === "rejected" ? "bg-red-100 text-red-600" :
-                          "bg-gray-100 text-gray-600"
+                          "bg-muted text-muted-foreground"
                         }`}>{entry.status}</span>
                       </div>
                       {entry.description && (

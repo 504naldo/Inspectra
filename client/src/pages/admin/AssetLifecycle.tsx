@@ -80,8 +80,8 @@ const STATUS_VARIANT: Record<LifecycleStatus, string> = {
   needs_service: "bg-yellow-100 text-yellow-800",
   repair_required: "bg-orange-100 text-orange-800",
   replacement_recommended: "bg-red-100 text-red-800",
-  replaced: "bg-gray-200 text-gray-600",
-  removed: "bg-gray-200 text-gray-500",
+  replaced: "bg-muted text-muted-foreground",
+  removed: "bg-muted text-muted-foreground",
 };
 
 const CONDITION_VARIANT: Record<AssetCondition, string> = {
@@ -89,7 +89,7 @@ const CONDITION_VARIANT: Record<AssetCondition, string> = {
   fair: "bg-yellow-100 text-yellow-800",
   poor: "bg-orange-100 text-orange-800",
   failed: "bg-red-100 text-red-800",
-  unknown: "bg-gray-100 text-gray-500",
+  unknown: "bg-muted text-muted-foreground",
 };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -193,7 +193,7 @@ function IndicatorChips({ device }: { device: any }) {
     chips.push({ label: "Service Overdue", icon: <Clock className="h-3 w-3" />, color: "bg-blue-100 text-blue-700" });
   }
   if (device.notInspectedRecently) {
-    chips.push({ label: "Not Inspected (18mo+)", icon: <ClipboardList className="h-3 w-3" />, color: "bg-gray-100 text-gray-600" });
+    chips.push({ label: "Not Inspected (18mo+)", icon: <ClipboardList className="h-3 w-3" />, color: "bg-muted text-muted-foreground" });
   }
   if (device.batteryAgeWarning) {
     chips.push({ label: "Battery Aging", icon: <Battery className="h-3 w-3" />, color: "bg-amber-100 text-amber-700" });
@@ -320,7 +320,7 @@ function AssetHistoryDialog({
                             ? "bg-green-100 text-green-700"
                             : r.result === "fail"
                             ? "bg-red-100 text-red-700"
-                            : "bg-gray-100 text-gray-600"
+                            : "bg-muted text-muted-foreground"
                         }`}
                       >
                         {r.result?.toUpperCase() ?? "N/A"}
@@ -351,7 +351,7 @@ function AssetHistoryDialog({
                               ? "bg-red-100 text-red-700"
                               : def.severity === "major"
                               ? "bg-orange-100 text-orange-700"
-                              : "bg-gray-100 text-gray-600"
+                              : "bg-muted text-muted-foreground"
                           }`}
                         >
                           {def.severity}
@@ -666,14 +666,14 @@ function AssetRow({
             </span>
             {device.lifecycleStatus && (
               <span
-                className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${STATUS_VARIANT[device.lifecycleStatus as LifecycleStatus] ?? "bg-gray-100 text-gray-600"}`}
+                className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${STATUS_VARIANT[device.lifecycleStatus as LifecycleStatus] ?? "bg-muted text-muted-foreground"}`}
               >
                 {STATUS_LABELS[device.lifecycleStatus as LifecycleStatus] ?? device.lifecycleStatus}
               </span>
             )}
             {device.assetCondition && (
               <span
-                className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${CONDITION_VARIANT[device.assetCondition as AssetCondition] ?? "bg-gray-100 text-gray-600"}`}
+                className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${CONDITION_VARIANT[device.assetCondition as AssetCondition] ?? "bg-muted text-muted-foreground"}`}
               >
                 {CONDITION_LABELS[device.assetCondition as AssetCondition] ?? device.assetCondition}
               </span>

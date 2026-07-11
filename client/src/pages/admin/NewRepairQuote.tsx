@@ -152,7 +152,7 @@ export default function NewRepairQuote() {
                         type="checkbox"
                         checked={selectedDefIds.includes(d.id)}
                         onChange={() => toggleDef(d.id)}
-                        className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                        className="mt-0.5 h-4 w-4 rounded border-border"
                       />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">

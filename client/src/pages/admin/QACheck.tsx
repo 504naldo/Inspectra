@@ -368,7 +368,7 @@ export default function QACheck({ jobId }: QACheckProps) {
                                 {photo.isCustomerFacing ? (
                                   <Eye className="h-3 w-3 text-green-500 drop-shadow" />
                                 ) : (
-                                  <EyeOff className="h-3 w-3 text-gray-400 drop-shadow" />
+                                  <EyeOff className="h-3 w-3 text-muted-foreground drop-shadow" />
                                 )}
                               </div>
                               {photo.caption && (

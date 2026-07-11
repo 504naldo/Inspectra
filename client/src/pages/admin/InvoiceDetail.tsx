@@ -65,14 +65,14 @@ const STATUS_LABELS: Record<InvoiceStatus, string> = {
 };
 
 const STATUS_COLORS: Record<InvoiceStatus, string> = {
-  draft:    "bg-gray-100 text-gray-700",
+  draft:    "bg-muted text-muted-foreground",
   sent:     "bg-blue-100 text-blue-700",
   viewed:   "bg-purple-100 text-purple-700",
   approved: "bg-cyan-100 text-cyan-700",
   paid:     "bg-green-100 text-green-700",
   partial:  "bg-yellow-100 text-yellow-700",
   overdue:  "bg-red-100 text-red-700",
-  void:     "bg-gray-100 text-gray-400",
+  void:     "bg-muted text-muted-foreground",
 };
 
 // ── Sub-dialogs ───────────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ function BillingContactSuggestion({
             key={c.id}
             type="button"
             onClick={() => onSelect(c.name, c.email!)}
-            className="text-xs bg-white dark:bg-green-900/40 border border-green-200 dark:border-green-700 rounded px-2 py-0.5 hover:bg-green-100 dark:hover:bg-green-800/40 transition-colors"
+            className="text-xs bg-card dark:bg-green-900/40 border border-green-200 dark:border-green-700 rounded px-2 py-0.5 hover:bg-green-100 dark:hover:bg-green-800/40 transition-colors"
           >
             <span className="font-medium">{c.name}</span>
             <span className="text-muted-foreground ml-1">· {c.email}</span>
@@ -407,7 +407,7 @@ function SendInvoiceDialog({
                       type="checkbox"
                       checked={selected.has(c.email!)}
                       onChange={() => toggle(c.email!)}
-                      className="rounded border-gray-300"
+                      className="rounded border-border"
                     />
                     <span className="flex-1 min-w-0">
                       <span className="text-sm font-medium">{c.name}</span>
@@ -428,7 +428,7 @@ function SendInvoiceDialog({
                   type="checkbox"
                   checked={selected.has(invoice.billToEmail)}
                   onChange={() => toggle(invoice.billToEmail!)}
-                  className="rounded border-gray-300"
+                  className="rounded border-border"
                 />
                 <span className="text-sm">{invoice.billToEmail}</span>
               </label>
@@ -605,7 +605,7 @@ export default function InvoiceDetail({ id }: Props) {
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[invoice.status as InvoiceStatus] ?? "bg-gray-100 text-gray-600"}`}>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[invoice.status as InvoiceStatus] ?? "bg-muted text-muted-foreground"}`}>
                   {STATUS_LABELS[invoice.status as InvoiceStatus] ?? invoice.status}
                 </span>
                 {invoice.sageExportStatus === "exported" && (

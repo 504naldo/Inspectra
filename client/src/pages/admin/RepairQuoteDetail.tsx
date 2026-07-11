@@ -34,7 +34,7 @@ const fmtDate = (d: Date | string | null | undefined) =>
   d ? new Date(d).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" }) : "—";
 
 const ITEM_STATUS_BADGE: Record<string, string> = {
-  pending:                   "bg-gray-100 text-gray-500 border-gray-200",
+  pending:                   "bg-muted text-muted-foreground border-border",
   approved:                  "bg-emerald-50 text-emerald-700 border-emerald-200",
   declined:                  "bg-red-50 text-red-600 border-red-200",
   needs_review:              "bg-amber-50 text-amber-700 border-amber-200",
@@ -168,7 +168,7 @@ function SendQuoteDialog({
                       type="checkbox"
                       checked={selected.has(c.email!)}
                       onChange={() => toggle(c.email!)}
-                      className="rounded border-gray-300"
+                      className="rounded border-border"
                     />
                     <span className="flex-1 min-w-0">
                       <span className="text-sm font-medium">{c.name}</span>
@@ -235,7 +235,7 @@ function QuoteApproverSuggestion({
             key={c.id}
             type="button"
             onClick={() => onSelect(c.name, c.email!)}
-            className="inline-flex items-center text-xs bg-white border border-violet-200 rounded-full px-2.5 py-1 hover:bg-violet-100 transition-colors"
+            className="inline-flex items-center text-xs bg-card border border-violet-200 rounded-full px-2.5 py-1 hover:bg-violet-100 transition-colors"
           >
             <span className="font-medium text-violet-900">{c.name}</span>
             <span className="text-violet-500 ml-1">· {c.email}</span>
@@ -883,10 +883,10 @@ export default function RepairQuoteDetail() {
                     <p className="text-red-800 font-semibold tabular-nums text-sm">{CAD.format(declinedTotal)}</p>
                     <p className="text-red-600 mt-0.5">{declinedItems.length} item{declinedItems.length !== 1 ? "s" : ""}</p>
                   </div>
-                  <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs">
-                    <p className="text-gray-600 font-medium uppercase tracking-wide mb-1">Pending</p>
-                    <p className="text-gray-800 font-semibold tabular-nums text-sm">{CAD.format(pendingTotal)}</p>
-                    <p className="text-gray-500 mt-0.5">{pendingItems.length} item{pendingItems.length !== 1 ? "s" : ""}</p>
+                  <div className="rounded-lg bg-muted border border-border px-3 py-2 text-xs">
+                    <p className="text-muted-foreground font-medium uppercase tracking-wide mb-1">Pending</p>
+                    <p className="text-foreground font-semibold tabular-nums text-sm">{CAD.format(pendingTotal)}</p>
+                    <p className="text-muted-foreground mt-0.5">{pendingItems.length} item{pendingItems.length !== 1 ? "s" : ""}</p>
                   </div>
                 </div>
               )}

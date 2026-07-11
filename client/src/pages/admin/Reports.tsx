@@ -60,7 +60,7 @@ function ReportRecipientSuggestion({
             key={c.id}
             type="button"
             onClick={() => onSelect(c.email!)}
-            className="text-xs bg-white dark:bg-cyan-900/40 border border-cyan-200 dark:border-cyan-700 rounded px-2 py-1 hover:bg-cyan-100 dark:hover:bg-cyan-800/40 transition-colors text-left"
+            className="text-xs bg-card dark:bg-cyan-900/40 border border-cyan-200 dark:border-cyan-700 rounded px-2 py-1 hover:bg-cyan-100 dark:hover:bg-cyan-800/40 transition-colors text-left"
           >
             <span className="font-medium">{c.name}</span>
             <span className="text-muted-foreground ml-1">· {c.email}</span>

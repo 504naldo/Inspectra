@@ -173,7 +173,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
       pass: { label: "PASS", icon: CheckCircle2, color: "text-[var(--success)] bg-[var(--success)]/10" },
       fail: { label: "FAIL", icon: XCircle, color: "text-destructive bg-destructive/10" },
       no_access: { label: "NO ACCESS", icon: Ban, color: "text-[var(--warning)] bg-[var(--warning)]/10" },
-      na: { label: "N/A", icon: Minus, color: "text-gray-600 bg-gray-50 dark:bg-gray-950/20" },
+      na: { label: "N/A", icon: Minus, color: "text-muted-foreground bg-muted dark:bg-gray-950/20" },
     };
 
     const badge = badges[testResult as keyof typeof badges];
@@ -200,7 +200,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
     const badges = {
       expired: { color: "text-destructive bg-destructive/10 border-destructive/20", label: "Expired" },
       expiring_soon: { color: "text-[var(--warning)] bg-[var(--warning)]/10 border-[var(--warning)]/20", label: "Expiring Soon" },
-      unknown: { color: "text-gray-600 bg-gray-50 dark:bg-gray-950/20 border-gray-200", label: "Install Date Required" },
+      unknown: { color: "text-muted-foreground bg-muted dark:bg-gray-950/20 border-border", label: "Install Date Required" },
     };
 
     const badge = badges[expiryInfo.status as keyof typeof badges];
@@ -490,7 +490,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-950/20"
+                      className="text-muted-foreground hover:bg-muted dark:hover:bg-gray-950/20"
                       onClick={() => handleRecordTest(alarm.id, "na")}
                       disabled={recordTest.isPending}
                     >

@@ -51,7 +51,7 @@ const STATUS_COLORS: Record<string, string> = {
   requested: "bg-yellow-100 text-yellow-700",
   approved: "bg-green-100 text-green-700",
   rejected: "bg-red-100 text-red-600",
-  cancelled: "bg-gray-100 text-gray-500",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -62,7 +62,7 @@ const TYPE_COLORS: Record<string, string> = {
   stat_holiday: "bg-green-100 text-green-700",
   unavailable: "bg-red-100 text-red-700",
   available_override: "bg-emerald-100 text-emerald-700",
-  other: "bg-gray-100 text-gray-600",
+  other: "bg-muted text-muted-foreground",
 };
 
 const BLOCK_TYPES = Object.keys(TYPE_LABELS) as Array<keyof typeof TYPE_LABELS>;
@@ -172,7 +172,7 @@ function BlockRow({
           <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[block.status]}`}>
             {block.status}
           </span>
-          <span className={`text-xs px-1.5 py-0.5 rounded-full ${TYPE_COLORS[block.type] ?? "bg-gray-100"}`}>
+          <span className={`text-xs px-1.5 py-0.5 rounded-full ${TYPE_COLORS[block.type] ?? "bg-muted"}`}>
             {TYPE_LABELS[block.type] ?? block.type}
           </span>
           <span className="text-sm font-medium">{fmtDateRange(block.startDate, block.endDate)}</span>

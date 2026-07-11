@@ -323,7 +323,7 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
               FAIL
             </Button>
             <Button
-              className={`action-btn ${result === 'na' ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              className={`action-btn ${result === 'na' ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-muted text-muted-foreground hover:bg-muted'}`}
               onClick={() => { setResult('na'); vibrate('light'); }}
             >
               <Minus className="h-6 w-6 mr-2" />

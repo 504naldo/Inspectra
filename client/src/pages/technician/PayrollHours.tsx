@@ -54,7 +54,7 @@ const WORK_TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-600",
+  draft: "bg-muted text-muted-foreground",
   submitted: "bg-yellow-100 text-yellow-700",
   approved: "bg-green-100 text-green-700",
   rejected: "bg-red-100 text-red-600",
@@ -276,7 +276,7 @@ function EntryCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-1.5 mb-1">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[entry.status] ?? "bg-gray-100"}`}>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[entry.status] ?? "bg-muted"}`}>
               {entry.status}
             </span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">

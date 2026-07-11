@@ -54,7 +54,7 @@ const STATUS_COLORS: Record<string, string> = {
   requested: "bg-yellow-100 text-yellow-700 border-yellow-200",
   approved: "bg-green-100 text-green-700 border-green-200",
   rejected: "bg-red-100 text-red-600 border-red-200",
-  cancelled: "bg-gray-100 text-gray-500 border-gray-200",
+  cancelled: "bg-muted text-muted-foreground border-border",
 };
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
@@ -189,7 +189,7 @@ function BlockCard({
   onEdit: (block: any) => void;
   onCancel: (id: number) => void;
 }) {
-  const colorClass = STATUS_COLORS[block.status] ?? "bg-gray-100 border-gray-200";
+  const colorClass = STATUS_COLORS[block.status] ?? "bg-muted border-border";
   const icon = STATUS_ICONS[block.status];
 
   return (
