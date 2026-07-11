@@ -370,7 +370,7 @@ export default function TechPayrollHours() {
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom pb-8">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-card border-b">
+      <header className="sticky top-0 z-40 bg-card border-b">
         <div className="container flex h-16 items-center gap-3">
           <Link href="/tech">
             <Button variant="ghost" size="icon">

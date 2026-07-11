@@ -183,7 +183,7 @@ export default function TechnicianDashboard() {
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-card border-b">
+      <header className="sticky top-0 z-40 bg-card border-b">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="h-7 w-7 text-primary" />

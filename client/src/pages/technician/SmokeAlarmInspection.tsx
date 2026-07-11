@@ -243,7 +243,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
   return (
     <div className="min-h-screen bg-background safe-top safe-bottom">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-card border-b">
+      <header className="sticky top-0 z-40 bg-card border-b">
         <div className="container flex items-center gap-4 h-14">
           <Button
             variant="ghost"
