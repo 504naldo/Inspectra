@@ -208,6 +208,35 @@ describe("Cross-tenant authorization", () => {
       expect(await A.caller.fileTag.delete({ id: (tag as any).id })).toEqual({ success: true });
     });
 
+    it("customer portal: reads only their own org's reports, cross-org is FORBIDDEN + customer-safe", async () => {
+      // A report on each company's job (each job is scoped to its own customer org).
+      const aReport = await db.createReport({
+        jobId: A.job.id, generatedById: 1, reportNumber: `R-A-${Date.now()}`, title: "A Report",
+        aiSummary: "INTERNAL ai summary", fileKey: "reports/a/x.pdf",
+      } as any);
+      const bReport = await db.createReport({
+        jobId: B.job.id, generatedById: 1, reportNumber: `R-B-${Date.now()}`, title: "B Report",
+        aiSummary: "INTERNAL", fileKey: "reports/b/x.pdf",
+      } as any);
+
+      // A customer scoped to company A's customer org.
+      const custA = appRouter.createCaller(ctxFor("customer", A.company.id, { userId: 10, customerOrgId: A.org.id }));
+
+      // Own report: readable, and customer-safe (internal aiSummary stripped).
+      const own = await custA.report.get({ id: aReport.id });
+      expect(own?.id).toBe(aReport.id);
+      expect((own as any)?.aiSummary).toBeUndefined();
+
+      // Another org's report: forbidden on every read path.
+      await expectCode(custA.report.get({ id: bReport.id }), "FORBIDDEN");
+      await expectCode(custA.report.listByJob({ jobId: B.job.id }), "FORBIDDEN");
+      await expectCode(custA.report.getDownloadUrl({ id: bReport.id }), "FORBIDDEN");
+      await expectCode(custA.report.listByCustomerOrg({ customerOrgId: B.org.id }), "FORBIDDEN");
+
+      // Own org list is allowed.
+      expect(await custA.report.listByCustomerOrg({ customerOrgId: A.org.id })).toBeDefined();
+    });
+
     it("uploadQueue.updateStatus rejects another user's queue item (FAB-02)", async () => {
       // Queue item owned by user 3 (company A).
       const item = await db.createUploadQueueItem({
