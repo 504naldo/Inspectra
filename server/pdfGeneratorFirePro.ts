@@ -415,7 +415,10 @@ function drawAfterServiceLetter(doc: any, data: ReportData, hasDeficiencies: boo
   }
 
   // ── Disclaimer footer on letter page ─────────────────────────────────────
+  // The disclaimer sits below the 70pt bottom margin; writing text there makes
+  // PDFKit auto-append a blank page. Zero the bottom margin so it stays put.
   const disclaimerY = 720;
+  doc.page.margins.bottom = 0;
   doc.moveTo(M, disclaimerY).lineTo(M + CW, disclaimerY).lineWidth(0.5).stroke('#cccccc');
   doc.fontSize(7).font('Helvetica').fillColor('#9ca3af')
      .text(
