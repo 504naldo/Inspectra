@@ -96,6 +96,10 @@ export interface ReportData {
   companyEmail?: string;
   companyLogo?: string;
   summary?: string;
+  // Cover title override. Defaults to "Inspection Report" — these are full
+  // inspection reports (deficiencies are shown as a section, not the whole doc),
+  // so titling by "hasDeficiencies" mislabelled them as "Deficiency Report".
+  reportTitle?: string;
   deviceSummaries: DeviceSummary[];
   deficiencies: Deficiency[];
   inspectionResults: InspectionResult[];
@@ -544,7 +548,7 @@ function drawFireAlarmChecklistSection(doc: any, data: ReportData, startY: numbe
 /** Draws the deficiency table header row and returns the new Y below it. */
 function drawDefTableHeader(doc: any, y: number, colWidths: number[]): number {
   const tableW = colWidths.reduce((a, b) => a + b, 0);
-  doc.rect(M, y, tableW, 20).fill(BLACK);
+  doc.rect(M, y, tableW, 20).fill(NAVY);
   doc.fillColor(WHITE).fontSize(9).font('Helvetica-Bold');
   let dx = M + 5;
   ['#', 'Location & Description', 'System / Device', 'Cost'].forEach((h, i) => {
@@ -749,7 +753,7 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
       // PAGE 1 — COVER
       // ════════════════════════════════════════════════════════════════════
       drawEnhancedCoverPage(doc, {
-        reportTitle: hasDeficiencies ? 'Deficiency Report' : 'Inspection Summary Report',
+        reportTitle: data.reportTitle ?? 'Inspection Report',
         propertyName: data.siteName,
         propertyAddress: data.siteAddress,
         propertyCity: data.siteCity,
@@ -864,7 +868,9 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
           groups[cat].push(def);
         });
 
-        const colW = [32, 276, 112, 92];
+        // Col 0 widened 32→42 so the "CRITICAL" severity badge fits on one line
+        // (col 1 narrowed to keep the total at 512).
+        const colW = [42, 266, 112, 92];
         const tableW = colW.reduce((a, b) => a + b, 0);
 
         for (const [groupName, defs] of Object.entries(groups)) {
@@ -881,7 +887,7 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
           doc.font('Helvetica').fontSize(8).fillColor(BLACK);
 
           defs.forEach((def, i) => {
-            const rowH = 54;
+            const rowH = 66;
             if (defY + rowH > 700) {
               doc.addPage();
               defY = drawPageHeader(doc, data);
@@ -913,9 +919,11 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
             doc.fillColor(BLACK).fontSize(8).font('Helvetica')
                .text(desc, dx, defY + 5, { width: colW[1] - 8, height: 24, lineGap: 2, ellipsis: true });
             if (def.correctiveAction) {
+              // Wrap the corrective action (up to ~3 lines) instead of clipping it
+              // to one line with an ellipsis — it's the actionable remediation text.
               doc.fillColor('#6b7280').fontSize(7).font('Helvetica-Oblique')
-                 .text(`» ${def.correctiveAction}`, dx, defY + 33, {
-                   width: colW[1] - 8, height: 14, lineBreak: false, ellipsis: true,
+                 .text(`» ${def.correctiveAction}`, dx, defY + 31, {
+                   width: colW[1] - 8, height: 30, lineGap: 1, ellipsis: true,
                  });
             }
             dx += colW[1];
