@@ -693,7 +693,7 @@ function drawTemplateChecklistSection(
       // Deficiency reference (small, below question)
       if (item.deficiencyId) {
         doc.fontSize(6).font('Helvetica').fillColor('#6b7280')
-           .text(`↳ Def #${item.deficiencyId}`, M + 4, y + ROW_H - 8, { lineBreak: false });
+           .text(`» Def #${item.deficiencyId}`, M + 4, y + ROW_H - 8, { lineBreak: false });
       }
 
       // Code reference
@@ -914,7 +914,7 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
                .text(desc, dx, defY + 5, { width: colW[1] - 8, height: 24, lineGap: 2, ellipsis: true });
             if (def.correctiveAction) {
               doc.fillColor('#6b7280').fontSize(7).font('Helvetica-Oblique')
-                 .text(`→ ${def.correctiveAction}`, dx, defY + 33, {
+                 .text(`» ${def.correctiveAction}`, dx, defY + 33, {
                    width: colW[1] - 8, height: 14, lineBreak: false, ellipsis: true,
                  });
             }
