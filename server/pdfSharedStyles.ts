@@ -257,11 +257,14 @@ export function drawEnhancedCoverPage(
       { width: boxWidth - 40, align: 'center' }
     );
   
-  // Company info footer (centered at bottom)
+  // Company info footer (centered at bottom). Zero the bottom margin first:
+  // these lines sit at y≈700–730, and their line height would otherwise cross
+  // the page's bottom margin, making PDFKit auto-append a near-empty page 2.
+  doc.page.margins.bottom = 0;
   doc.fontSize(11)
      .font(PDF_FONTS.bold)
      .fillColor(PDF_COLORS.brandNavy)
-     .text(options.companyName, 0, 700, { width: PDF_SIZES.pageWidth, align: 'center' });
+     .text(options.companyName, 0, 700, { width: PDF_SIZES.pageWidth, align: 'center', lineBreak: false });
 
   const tagline = options.companyTagline ?? '';
   if (tagline) {
