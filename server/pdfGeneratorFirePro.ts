@@ -1277,6 +1277,10 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
       const total = doc.bufferedPageRange().count;
       for (let i = 0; i < total; i++) {
         doc.switchToPage(i);
+        // Footer text sits at y≈764, below the 70pt bottom margin (content ends
+        // at y=722). Without this, PDFKit treats each footer write as an overflow
+        // and auto-appends a blank page — producing a block of trailing blanks.
+        doc.page.margins.bottom = 0;
 
         // Rule
         doc.moveTo(M, 758).lineTo(M + CW, 758).lineWidth(0.5).stroke('#d1d5db');
