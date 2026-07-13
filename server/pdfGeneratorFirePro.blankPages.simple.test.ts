@@ -248,4 +248,43 @@ describe('Deficiency Report PDF - Blank Pages Fix (Simplified)', () => {
     expect(pdfBuffer).toBeInstanceOf(Buffer);
     expect(pdfBuffer.length).toBeGreaterThan(0);
   });
+
+  // Regression: the footer loop wrote each footer at y≈764 (below the 70pt bottom
+  // margin), which made PDFKit auto-append a blank page per content page — a
+  // report doubled to ~2x its real length with trailing blanks. The prior tests
+  // only checked buffer.length > 0 and never counted pages, so it slipped through.
+  it('does not append trailing blank pages on a multi-page report', async () => {
+    const countPages = (buf: Buffer) =>
+      (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+
+    const reportData = {
+      ...baseReportData,
+      summary: 'Annual inspection completed with several deficiencies across systems.',
+      deviceSummaries: [
+        { deviceType: 'Fire Alarm Devices', total: 38, passed: 36, failed: 2, na: 0 },
+        { deviceType: 'Smoke Alarms', total: 24, passed: 22, failed: 1, na: 1 },
+        { deviceType: 'Fire Extinguishers', total: 12, passed: 11, failed: 1, na: 0 },
+        { deviceType: 'Emergency Lighting', total: 18, passed: 17, failed: 0, na: 1 },
+      ],
+      inspectionResults: Array.from({ length: 8 }, (_, i) => ({
+        deviceId: i + 1, deviceType: 'Smoke Detector', location: `Level ${i + 1} Corridor`,
+        result: i % 4 === 0 ? 'fail' : 'pass', notes: 'Functional test performed.',
+      })),
+      deficiencies: Array.from({ length: 6 }, (_, i) => ({
+        id: i + 1, title: `Deficiency ${i + 1} requiring corrective action`,
+        severity: (['critical', 'major', 'minor'] as const)[i % 3], status: 'open',
+        description: 'Observed during the annual inspection; see corrective action.',
+        correctiveAction: 'Repair or replace the affected device and re-verify operation.',
+        location: `Level ${i + 1}`, estimatedCost: '120.00',
+        systemCategory: (['FIRE_ALARM', 'FIRE_EXTINGUISHER', 'EMERGENCY_LIGHTING'] as const)[i % 3],
+      })),
+    };
+
+    const pdfBuffer = await generateInspectionReportPDF(reportData);
+    const pages = countPages(pdfBuffer);
+    // This content renders in well under a dozen pages; the pre-fix footer bug
+    // doubled it (22+). A ceiling of 14 catches the regression with headroom.
+    expect(pages).toBeGreaterThan(3);
+    expect(pages).toBeLessThanOrEqual(14);
+  });
 });
