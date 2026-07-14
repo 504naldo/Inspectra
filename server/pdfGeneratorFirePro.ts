@@ -16,6 +16,7 @@ import {
   drawInspectionSummaryPage,
   drawClientAuthorizationBlock,
   fetchImageBuffer,
+  registerReportFonts,
   type SignatureOpts,
 } from './pdfSharedStyles.js';
 
@@ -744,6 +745,9 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
         margins: { top: 50, bottom: 70, left: 50, right: 50 },
         bufferPages: true,
       });
+
+      // Embed Inter (under the legacy Helvetica names) for all text in this doc.
+      registerReportFonts(doc);
 
       const chunks: Buffer[] = [];
       doc.on('data', (c) => chunks.push(c));
