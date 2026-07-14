@@ -37,6 +37,12 @@ export const PDF_COLORS = {
 export const PDF_FONTS = {
   regular: 'Helvetica',
   bold: 'Helvetica-Bold',
+  // A distinct weight for section headings. Defaults to the built-in bold so it
+  // resolves even when the embedded fonts are absent; registerReportFonts()
+  // upgrades it to Inter SemiBold (600) at runtime when the TTFs are present.
+  // Only referenced from generators that call registerReportFonts() first
+  // (never from the compliance generator, which shares drawSectionHeader).
+  semibold: 'Helvetica-Bold',
   italic: 'Helvetica-Oblique',
   boldItalic: 'Helvetica-BoldOblique',
 };
@@ -82,6 +88,16 @@ export function registerReportFonts(doc: PDFKit.PDFDocument): void {
   // Re-activate the regular face so the *current* font is Inter rather than the
   // stale built-in that construction selected before we registered.
   try { doc.font('Helvetica'); } catch { /* ignore — fallback already active */ }
+
+  // Register Inter SemiBold (600) under its own name for section headings and
+  // upgrade PDF_FONTS.semibold to point at it. Falls back to Inter Bold if the
+  // SemiBold face is missing; PDF_FONTS.semibold keeps its built-in default if
+  // registration fails entirely, so heading call sites always resolve.
+  const semiPath = path.join(dir, 'Inter-SemiBold.ttf');
+  try {
+    doc.registerFont('Inter-SemiBold', fs.existsSync(semiPath) ? semiPath : path.join(dir, 'Inter-Bold.ttf'));
+    PDF_FONTS.semibold = 'Inter-SemiBold';
+  } catch { /* keep built-in bold fallback */ }
 }
 
 export const PDF_SIZES = {
@@ -490,7 +506,7 @@ export function drawDeficiencySummaryPage(
      .fill(PDF_COLORS.brandNavy);
   
   doc.fontSize(16)
-     .font(PDF_FONTS.bold)
+     .font(PDF_FONTS.semibold)
      .fillColor(PDF_COLORS.white)
      .text('Executive Summary', PDF_SIZES.margin + 10, currentY + 8);
   
@@ -498,7 +514,7 @@ export function drawDeficiencySummaryPage(
   
   // Deficiency counts by severity section
   doc.fontSize(13)
-     .font(PDF_FONTS.bold)
+     .font(PDF_FONTS.semibold)
      .fillColor(PDF_COLORS.brandNavy)
      .text('Deficiency Summary by Severity', PDF_SIZES.margin, currentY);
   
@@ -578,7 +594,7 @@ export function drawDeficiencySummaryPage(
   
   // Deficiency counts by system category section
   doc.fontSize(13)
-     .font(PDF_FONTS.bold)
+     .font(PDF_FONTS.semibold)
      .fillColor(PDF_COLORS.brandNavy)
      .text('Deficiency Summary by System', PDF_SIZES.margin, currentY);
   
@@ -664,7 +680,7 @@ export function drawAiExecutiveSummaryPage(
 
   doc.rect(PDF_SIZES.margin, y, textWidth, 30).fill(PDF_COLORS.brandNavy);
   doc.fontSize(16)
-     .font(PDF_FONTS.bold)
+     .font(PDF_FONTS.semibold)
      .fillColor(PDF_COLORS.white)
      .text('AI-Generated Executive Summary', PDF_SIZES.margin + 10, y + 8);
   y += 42;
@@ -1042,7 +1058,7 @@ export function drawInspectionSummaryPage(
 
   // ── Section header bar ───────────────────────────────────────────────────
   doc.rect(margin, y, contentWidth, 28).fill(PDF_COLORS.brandNavy);
-  doc.fontSize(12).font(PDF_FONTS.bold).fillColor(PDF_COLORS.white)
+  doc.fontSize(12).font(PDF_FONTS.semibold).fillColor(PDF_COLORS.white)
      .text('INSPECTION SUMMARY', margin + 12, y + 9);
   y += 36;
 

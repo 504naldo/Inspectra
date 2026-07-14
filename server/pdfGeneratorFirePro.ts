@@ -451,7 +451,7 @@ function drawFireAlarmChecklistSection(doc: any, data: ReportData, startY: numbe
   let y = startY;
 
   // Page-section title
-  doc.fontSize(13).font('Helvetica-Bold').fillColor(NAVY)
+  doc.fontSize(13).font(PDF_FONTS.semibold).fillColor(NAVY)
      .text('Fire Alarm Inspection Checklist  —  CAN/ULC-S536', M, y);
   y += 6;
   doc.moveTo(M, y + 8).lineTo(M + CW, y + 8).lineWidth(0.5).stroke(NAVY);
@@ -701,7 +701,7 @@ function drawTemplateChecklistSection(
       // Deficiency reference (small, below question)
       if (item.deficiencyId) {
         doc.fontSize(6).font('Helvetica').fillColor('#6b7280')
-           .text(`» Def #${item.deficiencyId}`, M + 4, y + ROW_H - 8, { lineBreak: false });
+           .text(`↳ Def #${item.deficiencyId}`, M + 4, y + ROW_H - 8, { lineBreak: false });
       }
 
       // Code reference
@@ -886,7 +886,7 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
           if (defY > 660) { doc.addPage(); defY = drawPageHeader(doc, data); }
 
           // Group title
-          doc.fontSize(12).font('Helvetica-Bold').fillColor(NAVY)
+          doc.fontSize(12).font(PDF_FONTS.semibold).fillColor(NAVY)
              .text(groupName, M, defY);
           defY += 22;
 
@@ -929,7 +929,7 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
               // Wrap the corrective action (up to ~3 lines) instead of clipping it
               // to one line with an ellipsis — it's the actionable remediation text.
               doc.fillColor('#6b7280').fontSize(7).font('Helvetica-Oblique')
-                 .text(`» ${def.correctiveAction}`, dx, defY + 31, {
+                 .text(`→ ${def.correctiveAction}`, dx, defY + 31, {
                    width: colW[1] - 8, height: 30, lineGap: 1, ellipsis: true,
                  });
             }
