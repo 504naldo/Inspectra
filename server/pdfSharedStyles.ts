@@ -29,12 +29,60 @@ export const PDF_COLORS = {
   successGreen: '#16a34a',   // Success/pass color
 };
 
+// Font keys used throughout the generators. The values are the *lookup names*,
+// not necessarily the built-in PDFKit fonts: registerReportFonts() below binds
+// these same names to the embedded Inter TTFs, so every `.font('Helvetica…')`
+// call site renders Inter without touching ~80 call sites. If the TTFs are ever
+// missing, the names resolve to PDFKit's built-in Helvetica (graceful fallback).
 export const PDF_FONTS = {
   regular: 'Helvetica',
   bold: 'Helvetica-Bold',
   italic: 'Helvetica-Oblique',
   boldItalic: 'Helvetica-BoldOblique',
 };
+
+/**
+ * Embed Inter (OFL) under the legacy Helvetica lookup names so all existing
+ * `.font('Helvetica' | 'Helvetica-Bold' | 'Helvetica-Oblique')` and PDF_FONTS
+ * call sites render Inter — a taller-x-height, more legible face than the
+ * built-in Helvetica, especially in the small-point deficiency/checklist tables.
+ *
+ * Call once, immediately after creating the PDFDocument and before any drawing.
+ * PDFKit resolves registered names ahead of built-in fonts, so this transparently
+ * overrides Helvetica for this document only. If the TTF files are absent (e.g.
+ * a trimmed deploy), registration is skipped and the built-in Helvetica is used.
+ */
+export function registerReportFonts(doc: PDFKit.PDFDocument): void {
+  const dir = path.join(process.cwd(), 'assets/fonts');
+  const faces: Array<[string, string]> = [
+    ['Helvetica', 'Inter-Regular.ttf'],
+    ['Helvetica-Bold', 'Inter-Bold.ttf'],
+    ['Helvetica-Oblique', 'Inter-Italic.ttf'],
+    // Bold-italic is effectively unused; map it to Bold so nothing falls back
+    // to a different family mid-document if a caller ever reaches for it.
+    ['Helvetica-BoldOblique', 'Inter-Bold.ttf'],
+  ];
+  // Only override if the primary face exists — otherwise leave every name bound
+  // to the built-in Helvetica so we never half-swap the family.
+  if (!fs.existsSync(path.join(dir, 'Inter-Regular.ttf'))) return;
+  // PDFKit selects 'Helvetica' as the document's default font at construction
+  // and caches the built-in face in _fontFamilies under that name. That cached
+  // entry would shadow our registration (a later `.font('Helvetica')` returns
+  // the built-in, not Inter), so evict each name from the cache after
+  // registering to force a rebuild from the embedded TTF.
+  const families = (doc as unknown as { _fontFamilies?: Record<string, unknown> })._fontFamilies;
+  for (const [name, file] of faces) {
+    const fp = path.join(dir, file);
+    if (!fs.existsSync(fp)) continue;
+    try {
+      doc.registerFont(name, fp);
+      if (families) delete families[name];
+    } catch { /* keep built-in fallback */ }
+  }
+  // Re-activate the regular face so the *current* font is Inter rather than the
+  // stale built-in that construction selected before we registered.
+  try { doc.font('Helvetica'); } catch { /* ignore — fallback already active */ }
+}
 
 export const PDF_SIZES = {
   pageWidth: 612,
