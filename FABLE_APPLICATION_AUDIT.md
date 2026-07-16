@@ -53,9 +53,10 @@ This pass found **one new, previously-undocumented cross-tenant IDOR cluster** i
 
 ## Confirmed Findings
 
-### FAB-09 — `fireAlarmFormRouter` is cross-tenant (read, write, delete) with no company scope — **NEW**
+### FAB-09 — `fireAlarmFormRouter` is cross-tenant (read, write, delete) with no company scope — ✅ FIXED
 - **Priority:** P1 · **Severity:** High · **Category:** Authorization / tenant isolation (IDOR)
-- **Affected files:** `server/routers/fireAlarmFormRouter.ts` (entire router, lines 14–179); tables in `drizzle/schema.ts:969` (`fireAlarmFormHeader`), `:1004` (`fireAlarmAttendanceLog`), `fireAlarmAncillaryCircuits`.
+- **Status:** **Fixed.** Every procedure now calls `assertJobCompany(jobId, ctx.user.companyId!)` before reading/writing; the three `upsert*` procedures add `assertJobNotFinalized`; id-addressed upserts verify the row belongs to the scoped job; and the two `delete*` procedures (which take a bare row id) resolve the row's parent job and scope through it before deleting. Covered by `authorization.test.ts` "fireAlarmForm: cross-company technician cannot read/write/delete another company's form (FAB-09)" — a company-B technician is FORBIDDEN on all read/write/delete paths and cannot hijack a row by id (NOT_FOUND). Full suite 1049 passing.
+- **Affected files:** `server/routers/fireAlarmFormRouter.ts` (entire router); tables in `drizzle/schema.ts:969` (`fireAlarmFormHeader`), `:1004` (`fireAlarmAttendanceLog`), `fireAlarmAncillaryCircuits`.
 - **Evidence:**
   - Every procedure is `technicianProcedure` (company-scoped, **not** a platform operator) and none calls `db.assertJobCompany(...)` — the guard used by the sibling `deficiencyRouter` (`deficiencyRouter.ts:13` `await db.assertJobCompany(input.jobId, ctx.user.companyId!)`) and, per my sweep, by **every other** technician router in the tree. `fireAlarmFormRouter` is the only one that omits it.
   - `upsertHeader` (`:49`) upserts by `jobId` with no company check and **no `assertJobNotFinalized`** — writable even after a job is finalized/immutable.
@@ -191,8 +192,8 @@ These are **not** confirmed defects. Each lists the evidence, how to verify, and
 ## Recommended Roadmap
 
 ### Immediate — next 1–2 sessions (max 5)
-1. **FAB-09** — route every `fireAlarmFormRouter` procedure through `assertJobCompany`; scope the two `delete*` procedures through their parent job; add `assertJobNotFinalized` to the three `upsert*`.
-2. **Authorization tests for FAB-09** — company-B technician FORBIDDEN on all eight procedures; finalized-job upsert rejected.
+1. ~~**FAB-09** — route every `fireAlarmFormRouter` procedure through `assertJobCompany`; scope the two `delete*` procedures through their parent job; add `assertJobNotFinalized` to the three `upsert*`.~~ **Done.**
+2. ~~**Authorization tests for FAB-09** — company-B technician FORBIDDEN on all read/write/delete paths; row-hijack-by-id rejected.~~ **Done** (`authorization.test.ts`).
 3. **FAB-03 prod** — run the one-time invoice-number dedup check against the live DB, then apply the `0033` unique ALTER manually.
 4. **FAB-06 register** — flip the stale `open` row to `fixed` in `docs/PRODUCTION_READINESS.md`.
 5. **CI guard** — add a grep/lint that fails when a `technician/officeProcedure` takes a `jobId`/`*Id` input without a same-file `assert*Company`/guard (prevents the next FAB-09).
@@ -241,7 +242,7 @@ These are **not** confirmed defects. Each lists the evidence, how to verify, and
 - [x] **Complete** — CI (frozen install, typecheck, real-MySQL migrate, tests) and passing suite (1048 / 14 skipped)
 - [x] **Complete** — Invoice edit-locking; customer-safe report projection; SSRF-guarded PDF images; client+server CSV injection guard
 - [x] **Complete** — Prior FAB-01/02/04/05/06 fixes verified in current code
-- [ ] **Incomplete / BLOCKER for external multi-tenant** — `fireAlarmFormRouter` tenant scoping (FAB-09)
+- [x] **Complete** — `fireAlarmFormRouter` tenant scoping (FAB-09 fixed + authorization test)
 - [ ] **Incomplete** — Invoice-number uniqueness constraint on production (FAB-03 prod ALTER)
 - [ ] **Incomplete** — `fireAlarmForm.*` and `company.update` authorization tests
 - [ ] **Incomplete** — Documentation consolidation (FAB-07); FAB-06 register row stale
@@ -255,7 +256,7 @@ These are **not** confirmed defects. Each lists the evidence, how to verify, and
 1. **Safe for internal, limited use?** **Yes**, for a single trusted company with a small trained staff. Core workflows are sound and the auth model is real. (FAB-09 is a cross-*company* hole; within one company its blast radius is a technician editing any job's fire-alarm form — still worth fixing, but not an external-data-breach in a single-tenant deployment.)
 2. **Ready for broad staff use?** **Yes**, within a single company. No blockers beyond FAB-09's intra-company mutability (a tech could edit/delete another tech's fire-alarm form rows) and the FAB-03 prod constraint.
 3. **Ready for customer-portal use?** **No.** Keep the portal disabled until FAB-09 closes. Report projection is good, but the fire-alarm IDOR sits in the field-data surface the portal borders.
-4. **Ready for multiple external companies?** **No — this is the hard gate.** FAB-09 is a genuine cross-tenant read/write/delete hole for a non-privileged role; onboarding a second external tenant before it closes risks a real data-isolation incident. Fix it + add its authorization tests first.
-5. **Before relying on it for official reports, payroll, and invoicing:** close FAB-09, complete the FAB-03 production dedup+ALTER, verify RISK-A (report photos don't silently vanish on old jobs), and add the missing authorization + PDF-privacy tests. Reports and payroll are otherwise in good shape; invoice-number integrity on prod is the one financial gap that would bite accounting silently.
+4. **Ready for multiple external companies?** **Closer — the P1 gate is now closed.** FAB-09 (the cross-tenant read/write/delete hole) is fixed and covered by an authorization test, removing the hard blocker. The remaining item before external multi-tenant is operational: complete the FAB-03 production dedup + unique-constraint ALTER so invoice numbers can't collide across the shared accounting export.
+5. **Before relying on it for official reports, payroll, and invoicing:** complete the FAB-03 production dedup+ALTER, verify RISK-A (report photos don't silently vanish on old jobs), and keep the authorization + PDF-privacy test coverage growing. FAB-09 is closed; reports and payroll are otherwise in good shape; invoice-number integrity on prod is the one financial gap that would bite accounting silently.
 
 *No source code was modified and no mutating scripts were run during this audit. Safe checks run: `tsc --noEmit` (pass), `vitest run` (1048 passed / 14 skipped against a throwaway MySQL 8), `npm run build` (pass). The scratch database was created solely for this audit.*

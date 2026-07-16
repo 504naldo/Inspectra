@@ -258,5 +258,30 @@ describe("Cross-tenant authorization", () => {
       // Owner can update their own item.
       expect(await ownerCaller.uploadQueue.updateStatus({ id: item.id, status: "uploading" })).toEqual({ success: true });
     });
+
+    it("fireAlarmForm: cross-company technician cannot read/write/delete another company's form (FAB-09)", async () => {
+      const techA = appRouter.createCaller(ctxFor("technician", A.company.id, { userId: 20 }));
+      const techB = appRouter.createCaller(ctxFor("technician", B.company.id, { userId: 21 }));
+
+      // A's technician seeds header + attendance + circuit rows on A's job.
+      await techA.fireAlarmForm.upsertHeader({ jobId: A.job.id, systemManufacturer: "Acme" });
+      const attRow = await techA.fireAlarmForm.upsertAttendanceRow({ jobId: A.job.id, techName: "A Tech" });
+      const circRow = await techA.fireAlarmForm.upsertAncillaryCircuit({ jobId: A.job.id, circuitDescription: "Elevator recall" });
+
+      // B's technician cannot read A's form data by passing A's jobId.
+      await expectCode(techB.fireAlarmForm.getHeader({ jobId: A.job.id }), "FORBIDDEN");
+      await expectCode(techB.fireAlarmForm.getAttendanceLog({ jobId: A.job.id }), "FORBIDDEN");
+      await expectCode(techB.fireAlarmForm.getAncillaryCircuits({ jobId: A.job.id }), "FORBIDDEN");
+
+      // B cannot write to A's job, nor hijack A's rows by id.
+      await expectCode(techB.fireAlarmForm.upsertHeader({ jobId: A.job.id, systemManufacturer: "Evil" }), "FORBIDDEN");
+      await expectCode(techB.fireAlarmForm.upsertAttendanceRow({ id: attRow.id, jobId: B.job.id, techName: "Evil" }), "NOT_FOUND");
+      await expectCode(techB.fireAlarmForm.deleteAttendanceRow({ id: attRow.id }), "FORBIDDEN");
+      await expectCode(techB.fireAlarmForm.deleteAncillaryCircuit({ id: circRow.id }), "FORBIDDEN");
+
+      // A's own technician still has full access to A's form.
+      expect((await techA.fireAlarmForm.getHeader({ jobId: A.job.id }))?.systemManufacturer).toBe("Acme");
+      expect(await techA.fireAlarmForm.deleteAttendanceRow({ id: attRow.id })).toEqual({ success: true });
+    });
   });
 });
