@@ -6,7 +6,18 @@ import { callerIsPlatformOperator } from "../_core/actorContext";
 import { assertCustomerOrgCompany } from "../tenantGuards";
 import { provisionPrebuiltTemplates } from "../seeds/provisionTemplates";
 
-// Company router
+// Company router.
+//
+// Tenant model (see docs/ROLE_TRUST_MODEL.md): `admin` is a cross-company
+// PLATFORM OPERATOR, not a per-company admin — `callerIsPlatformOperator()`
+// returns true for any admin. There is intentionally NO company-scoped admin
+// role. That is why `list`/`update` below are `adminProcedure` with no
+// `id === ctx.user.companyId` check: a platform operator manages every tenant.
+// office/technician/customer are strictly company-scoped and cannot reach
+// these endpoints at all. If a company-scoped admin role is ever introduced,
+// these endpoints become cross-tenant holes and must gain an ownership check.
+// Intent is pinned by the "company.update/list … platform operator (FAB-10)"
+// case in authorization.test.ts.
 const companyRouter = router({
   list: adminProcedure.query(async () => {
     return db.getAllCompanies();

@@ -283,5 +283,26 @@ describe("Cross-tenant authorization", () => {
       expect((await techA.fireAlarmForm.getHeader({ jobId: A.job.id }))?.systemManufacturer).toBe("Acme");
       expect(await techA.fireAlarmForm.deleteAttendanceRow({ id: attRow.id })).toEqual({ success: true });
     });
+
+    it("company.update/list: admin is a cross-company platform operator; non-admins FORBIDDEN (FAB-10)", async () => {
+      // Pins the intended permission model (docs/ROLE_TRUST_MODEL.md): `admin`
+      // is a platform operator that manages every tenant; office/technician are
+      // strictly scoped and cannot reach these adminProcedure endpoints. If this
+      // test starts failing, the tenant model changed — re-decide deliberately.
+      const adminCaller = appRouter.createCaller(ctxFor("admin", A.company.id, { userId: 30 }));
+      const techA = appRouter.createCaller(ctxFor("technician", A.company.id, { userId: 31 }));
+
+      // Admin (platform operator) may update ANOTHER company by id — by design.
+      expect(await adminCaller.company.update({ id: B.company.id, phone: "555-0100" })).toEqual({ success: true });
+      expect((await db.getCompanyById(B.company.id) as any)?.phone).toBe("555-0100");
+
+      // Admin may enumerate all companies.
+      expect(Array.isArray(await adminCaller.company.list())).toBe(true);
+
+      // Non-admins cannot reach these adminProcedure endpoints at all.
+      await expectCode(B.caller.company.update({ id: B.company.id, phone: "evil" }), "FORBIDDEN");
+      await expectCode(B.caller.company.list(), "FORBIDDEN");
+      await expectCode(techA.company.update({ id: A.company.id, phone: "evil" }), "FORBIDDEN");
+    });
   });
 });

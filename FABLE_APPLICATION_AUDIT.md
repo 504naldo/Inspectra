@@ -99,9 +99,10 @@ This pass found **one new, previously-undocumented cross-tenant IDOR cluster** i
 - **Recommendation:** Incremental extraction by domain (see *Recommended Refactors*). No big-bang rewrite. Add a CI grep that fails when a `technicianProcedure`/`officeProcedure` takes a `jobId`/`*Id` input without a same-file `assert*Company`/guard call.
 - **Complexity:** Medium (incremental). · **Runtime verification required:** No.
 
-### FAB-10 — `company.update` (`entityRouters.update`) has no per-record scope — design observation (accepted) — Low
+### FAB-10 — `company.update` (`entityRouters.update`) has no per-record scope — design observation — ✅ DOCUMENTED + PINNED
 - **Priority:** P3 · **Severity:** Low · **Category:** Permission model (by-design, worth documenting)
-- **Affected files:** `server/routers/entityRouters.ts:40-51`
+- **Status:** **Addressed.** The "admin = platform operator, no company-scoped admin exists" model is now documented in a header comment on the company router (`entityRouters.ts`), and the intent is pinned by `authorization.test.ts` "company.update/list … platform operator (FAB-10)": admin may update/list any company; office/technician are FORBIDDEN on both endpoints. If a company-scoped admin is ever introduced, that test fails and flags that these endpoints need an ownership check.
+- **Affected files:** `server/routers/entityRouters.ts` (company router header + `update`)
 - **Evidence:** `update: adminProcedure.input({ id, name, logo, address, phone, email }).mutation(({ input }) => db.updateCompany(id, data))` — updates any company by id with no `id === ctx.user.companyId` check. **This is consistent with the platform-operator model**: `callerIsPlatformOperator()` returns `true` for *any* `admin` (`_core/actorContext.ts:44-46`), and `companyRouter.list`/`get` already treat `admin` as cross-company. So this is not an isolation bug — `admin` is a platform super-user by design.
 - **Impact:** None under the current model, but the model itself is worth stating explicitly: there is **no per-company admin** — every `admin` is global. If Inspectra ever introduces company-scoped admins, `company.update`, `company.list`, and similar `adminProcedure` endpoints become cross-tenant holes overnight.
 - **Recommendation:** Document the "admin = platform operator, no company-scoped admin exists" decision at the top of `entityRouters.ts` and in the permission-model doc, and add a `company.update` authorization test pinning the current intent (admin allowed cross-company; office/technician/customer FORBIDDEN). No behavior change.
@@ -199,7 +200,7 @@ These are **not** confirmed defects. Each lists the evidence, how to verify, and
 5. **CI guard** — add a grep/lint that fails when a `technician/officeProcedure` takes a `jobId`/`*Id` input without a same-file `assert*Company`/guard (prevents the next FAB-09).
 
 ### Near term — 2–4 weeks (max 8)
-1. `company.update` intent-pinning test + document the "admin = platform operator" model (FAB-10).
+1. ~~`company.update` intent-pinning test + document the "admin = platform operator" model (FAB-10).~~ **Done.**
 2. RISK-A — verify/repair presigned-URL staleness for report photos (re-presign from `fileKey` at generation).
 3. RISK-B — on-device offline E2E (duplicate taps, restart, reassignment-while-offline), including the fire-alarm form.
 4. Add server query-count assertions for the heaviest dashboard/schedule endpoints (RISK-C).
