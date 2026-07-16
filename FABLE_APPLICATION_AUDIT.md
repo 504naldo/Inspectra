@@ -132,10 +132,9 @@ These are **not** confirmed defects. Each lists the evidence, how to verify, and
 - **Expected safe behavior:** Bounded query count per request.
 - **Recommended test:** Query-count assertions around the heaviest list endpoints.
 
-### RISK-D — Radix `Select` empty-value vs. native `<option value="">`
-- **Evidence:** Native `<select>` with `<option value="">` exist in inspection grids (tolerated by native selects). The Radix pitfall (empty-string `SelectItem` throwing) was **not** found in sampled files; full-tree confirmation not done.
-- **Verification:** Grep every `@/components/ui/select` `SelectItem` for `value=""`; render each affected form.
-- **Expected safe behavior:** No Radix `SelectItem` uses an empty-string value.
+### RISK-D — Radix `Select` empty-value sweep — ✅ VERIFIED CLEAN (+ 1 latent vector hardened)
+- **Status:** Full-tree sweep done across all 52 `SelectItem` usages. **No live empty-string `SelectItem` exists.** Static-literal values are non-empty; mapped values come from option constants (non-empty `.value`), DB `.id.toString()` (never empty), or enum keys. The two `{ label: "All", value: "" }` constants (`Invoices.tsx:22`, `ServiceAgreements.tsx:57`) render as `<button>` filter *tabs*, not `SelectItem`s — empty is fine there. `AssetLifecycle.tsx` already uses a `"_none"` sentinel instead of empty. The one **latent** vector: `PartsCatalog.tsx` derived its category filter from `p.category ?? "Uncategorized"`, which (using `??`) would pass through an empty-string category — and bulk imports bypass the API's `.min(1)` validation, so an empty category *could* reach the client and render `<SelectItem value="">` (a Radix crash). **Hardened** by switching to `||` in both the option derivation and the filter match (`PartsCatalog.tsx:91,100`).
+- **Residual:** None known. Native `<select>`/`<option value="">` in inspection grids are tolerated by native selects (not a Radix crash) — unchanged.
 
 ---
 
@@ -204,7 +203,7 @@ These are **not** confirmed defects. Each lists the evidence, how to verify, and
 2. RISK-A — verify/repair presigned-URL staleness for report photos (re-presign from `fileKey` at generation).
 3. RISK-B — on-device offline E2E (duplicate taps, restart, reassignment-while-offline), including the fire-alarm form.
 4. Add server query-count assertions for the heaviest dashboard/schedule endpoints (RISK-C).
-5. Sweep all Radix `SelectItem` for empty-string values (RISK-D).
+5. ~~Sweep all Radix `SelectItem` for empty-string values (RISK-D).~~ **Done** — clean; one latent `PartsCatalog` category vector hardened.
 6. FAB-07 — move historical `*_AUDIT.md`/`*_NOTES.md` into `docs/audits/history/`, keep one live register.
 7. Begin `db.ts` extraction (FAB-08), starting with the finance and attachment data-access slices.
 8. Bundle-size budget for the 1.5 MB server bundle and the main client chunk.
