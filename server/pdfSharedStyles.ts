@@ -624,7 +624,7 @@ export function drawDeficiencySummaryPage(
        .text('•', PDF_SIZES.margin + 10, currentY);
     
     doc.text(
-      `${systemLabels[system] || system}: ${count} ${count === 1 ? 'deficiency' : 'deficiencies'}`,
+      `${systemLabels[system] || system.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}: ${count} ${count === 1 ? 'deficiency' : 'deficiencies'}`,
       PDF_SIZES.margin + 25,
       currentY
     );
