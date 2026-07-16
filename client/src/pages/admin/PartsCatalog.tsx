@@ -85,13 +85,16 @@ export default function PartsCatalog() {
   });
 
   const allCategories = useMemo(() => {
-    const cats = Array.from(new Set(parts.map((p) => p.category ?? "Uncategorized"))).sort();
+    // `||` (not `??`) so a blank category from a bulk import — which bypasses
+    // the API's `.min(1)` validation — coalesces too: an empty-string value
+    // would render a Radix <SelectItem value=""> and crash the category filter.
+    const cats = Array.from(new Set(parts.map((p) => p.category || "Uncategorized"))).sort();
     return cats;
   }, [parts]);
 
   const filteredParts = useMemo(() => {
     let list = parts;
-    if (filterCategory !== "all") list = list.filter((p) => (p.category ?? "Uncategorized") === filterCategory);
+    if (filterCategory !== "all") list = list.filter((p) => (p.category || "Uncategorized") === filterCategory);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(
