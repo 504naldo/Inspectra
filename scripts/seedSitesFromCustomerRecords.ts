@@ -31,6 +31,11 @@
  * Safe update rules:
  *   - Default: fill blank/null Site fields only
  *   - --update-existing: same (no overwrite of populated conflicting fields)
+ *   - --clean-names: the ONE intentional overwrite — replace a JUNK site name
+ *       (summary-sheet-filename fingerprint: "Summary Sheet"/"SUMMARY"/"ver9.x"/
+ *       leading "#NNNN -"/"string or null") with the clean Drive folder header,
+ *       HIGH-confidence matches only. Real business names never match. Always
+ *       preview under --dry-run (prints every before → after) before applying.
  *   - Mismatches between Drive and populated Site fields are always reported
  *
  * Usage:
@@ -140,6 +145,7 @@ interface CliArgs {
   accessToken?: string;
   rootId?: string;
   flat: boolean;
+  cleanNames: boolean;
   orgMap: Record<string, string>;
 }
 
@@ -155,6 +161,7 @@ function parseArgs(): CliArgs {
     outputUnmatched: false,
     outputMismatches: false,
     flat: false,
+    cleanNames: false,
     orgMap: {},
   };
 
@@ -172,6 +179,7 @@ function parseArgs(): CliArgs {
       case "--access-token":    args.accessToken = argv[++i]; break;
       case "--root-id":         args.rootId = argv[++i]; break;
       case "--flat":            args.flat = true; break;
+      case "--clean-names":     args.cleanNames = true; break;
       case "--org-map": {
         const raw = argv[++i];
         const eqIdx = raw.indexOf("=");
@@ -359,6 +367,24 @@ export function extractFileNumberFromText(text: string | null | undefined): stri
   if (!text) return null;
   const m = text.match(/#\s*\d{1,5}(?:-\d+)?/);
   return m ? m[0].replace(/\s+/g, "") : null;
+}
+
+/**
+ * True when a site NAME is import junk rather than a real name — i.e. it carries
+ * a summary-sheet-filename fingerprint that a genuine name ("P.S. MOTORS LTD")
+ * never has. Used by --clean-names to decide which names are safe to overwrite
+ * from the Drive folder header. Conservative on purpose: business names must NOT
+ * match. Every replacement is still shown in a dry-run for review before writes.
+ */
+export function isJunkSiteName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return (
+    n.includes("summary") ||                 // "… - Summary Sheet", "- SUMMARY -"
+    /\bver\s?\d/.test(n) ||                   // "ver9.1", "ver 8"
+    n.includes("string or null") ||          // leaked AI-extraction placeholder
+    /^#\s*\d{2,5}(?:-\d+)?\s*-/.test(name.trim()) // leads with a "#NNNN -" file code
+  );
 }
 
 function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
@@ -747,6 +773,7 @@ async function main() {
   // ── Process each Drive record ───────────────────────────────────────────────
   const results: ProcessResult[] = [];
   const allMismatches: MismatchRow[] = [];
+  const nameCleans: { siteId: number; before: string; after: string }[] = [];
   let created = 0, updated = 0, skipped = 0, skippedNoOrg = 0, skippedNoName = 0;
   let highConf = 0, medConf = 0, lowConf = 0;
   let dupFileConflicts = 0, dupBldgConflicts = 0;
@@ -807,8 +834,22 @@ async function main() {
       if (!match.site.state && record.state) patch.state = record.state;
       if (!match.site.postalCode && record.postalCode) patch.postalCode = record.postalCode;
 
+      // --clean-names: overwrite a JUNK name (summary-sheet fingerprint) with the
+      // clean Drive folder header. HIGH-confidence matches only, and only when the
+      // existing name is provably junk — real business names are never touched.
+      if (
+        args.cleanNames &&
+        match.confidence === "high" &&
+        record.siteName &&
+        isJunkSiteName(match.site.name) &&
+        normName(record.siteName) !== normName(match.site.name)
+      ) {
+        patch.name = record.siteName;
+        nameCleans.push({ siteId: match.site.id, before: match.site.name, after: record.siteName });
+      }
+
       const hasUpdate = Object.keys(patch).length > 0;
-      const shouldUpdate = hasUpdate && args.updateExisting;
+      const shouldUpdate = hasUpdate && (args.updateExisting || args.cleanNames);
 
       let action: ActionType;
       if (!hasUpdate) {
@@ -1048,6 +1089,10 @@ async function main() {
   const updateLabel = args.dryRun ? "Would update (dry-run):" : "Sites updated (blank fields):";
   console.log(`  ${pad(createLabel, 40)} ${created}`);
   console.log(`  ${pad(updateLabel, 40)} ${updated}`);
+  if (args.cleanNames) {
+    const cleanLabel = args.dryRun ? "Would clean junk names (dry-run):" : "Junk names cleaned:";
+    console.log(`  ${pad(cleanLabel, 40)} ${nameCleans.length}`);
+  }
   console.log(`  ${pad("Skipped (already complete):", 40)} ${skipped}`);
   console.log(`  ${pad("Skipped (no org matched):", 40)} ${skippedNoOrg}`);
   console.log(`  ${pad("Skipped (no name/address):", 40)} ${skippedNoName}`);
@@ -1078,6 +1123,18 @@ async function main() {
     console.log(`  FOLDERS WITHOUT #NNNN PATTERN (${unparsedFolders.length})`);
     console.log(line);
     unparsedFolders.forEach((f) => console.log(`  org="${f.orgFolder}"  folder="${f.siteName}"`));
+  }
+
+  if (args.cleanNames && nameCleans.length > 0) {
+    const label = args.dryRun ? "WOULD CLEAN NAMES" : "CLEANED NAMES";
+    console.log(`\n${line}`);
+    console.log(`  ${label} (${nameCleans.length}) — junk name → Drive folder header`);
+    console.log(line);
+    for (const c of nameCleans) {
+      console.log(`  siteId=${c.siteId}`);
+      console.log(`     from: "${c.before}"`);
+      console.log(`     to:   "${c.after}"`);
+    }
   }
 
   const creates = results.filter((r) => r.action === "create" || r.action === "dry-run-create");
