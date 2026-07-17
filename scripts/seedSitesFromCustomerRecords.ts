@@ -3,16 +3,24 @@
  *
  * Seed and reconcile Sites from Customer Records (Google Drive folder tree).
  *
- * Customer Records = the Google Drive folder tree under GOOGLE_DRIVE_CUSTOMER_ROOT_ID.
- * Folder structure:
- *   <Customer Org Name>/
- *     #0007 - 1407 E. Georgia Street/
- *     #0012 - 123 Main St, Vancouver, BC V5L 2S4/
+ * Customer Records = the Google Drive folder tree under GOOGLE_DRIVE_CUSTOMER_ROOT_ID
+ * (or --root-id). Two supported layouts:
+ *
+ *   NESTED (default):                 FLAT (--flat):
+ *     <Customer Org Name>/              #0001 - 230 West 10th Ave/
+ *       #0007 - 1407 E. Georgia St/     #0007 - 1407 E. Georgia Street/
+ *       #0012 - 123 Main St, …/         #0012 - 123 Main St, …/
+ *
+ * In --flat mode the root is a single flat list of `#NNNN - <address>` building
+ * folders (no org layer). Each top-level folder IS a site; matched sites keep
+ * their existing customer org, and unmatched folders are reported (never created
+ * under a guessed org). Flat matching also recovers sites whose `#NNNN` code was
+ * imported into the NAME with a wrong fileNumber field (via byNameFileNumber).
  *
  * Workflow:
- *   Drive org folder → match customerOrg in DB by normalized name
+ *   Drive org folder → match customerOrg in DB by normalized name  (nested only)
  *   Drive site folder → parse fileNumber + siteName
- *   Match to existing Site by buildingId > fileNumber > address > name
+ *   Match to existing Site by buildingId > fileNumber > name-embedded #NNNN > address > name
  *   Detect mismatches, plan creates/updates, apply or report in dry-run
  *
  * Matching confidence:
@@ -43,6 +51,7 @@
  */
 
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { drizzle } from "drizzle-orm/mysql2";
 import { eq } from "drizzle-orm";
 import * as schema from "../drizzle/schema.js";
@@ -130,6 +139,7 @@ interface CliArgs {
   adminUserId?: number;
   accessToken?: string;
   rootId?: string;
+  flat: boolean;
   orgMap: Record<string, string>;
 }
 
@@ -144,6 +154,7 @@ function parseArgs(): CliArgs {
     reconcileExisting: false,
     outputUnmatched: false,
     outputMismatches: false,
+    flat: false,
     orgMap: {},
   };
 
@@ -160,6 +171,7 @@ function parseArgs(): CliArgs {
       case "--admin-user-id":   args.adminUserId = parseInt(argv[++i], 10); break;
       case "--access-token":    args.accessToken = argv[++i]; break;
       case "--root-id":         args.rootId = argv[++i]; break;
+      case "--flat":            args.flat = true; break;
       case "--org-map": {
         const raw = argv[++i];
         const eqIdx = raw.indexOf("=");
@@ -331,13 +343,28 @@ function parseSiteFolder(name: string): { fileNumber: string; siteName: string }
 interface SiteIndexes {
   byFileNumber: Map<string, DbSite>;
   byBuildingId: Map<string, DbSite>;
+  /** Existing sites keyed by a `#NNNN` code found *inside their name* (normBldg). */
+  byNameFileNumber: Map<string, DbSite>;
   /** key: `${orgId}::${normName(site.name)}` */
   byOrgName: Map<string, DbSite>;
+}
+
+/**
+ * Pull a `#NNNN` (optionally `#NNNN-N`) code out of a free-text string. Older
+ * imports dumped the building code into the site NAME (e.g. "#0538 - 1130 Jervis
+ * St - Summary Sheet") while leaving the fileNumber field wrong, so flat-mode
+ * matching needs to recover it from the name.
+ */
+export function extractFileNumberFromText(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const m = text.match(/#\s*\d{1,5}(?:-\d+)?/);
+  return m ? m[0].replace(/\s+/g, "") : null;
 }
 
 function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
   const byFileNumber = new Map<string, DbSite>();
   const byBuildingId = new Map<string, DbSite>();
+  const byNameFileNumber = new Map<string, DbSite>();
   const byOrgName = new Map<string, DbSite>();
   for (const s of sites) {
     if (s.fileNumber && !byFileNumber.has(normBldg(s.fileNumber))) {
@@ -346,10 +373,14 @@ function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
     if (s.buildingId && !byBuildingId.has(normBldg(s.buildingId))) {
       byBuildingId.set(normBldg(s.buildingId), s);
     }
+    const nameCode = extractFileNumberFromText(s.name);
+    if (nameCode && !byNameFileNumber.has(normBldg(nameCode))) {
+      byNameFileNumber.set(normBldg(nameCode), s);
+    }
     const nameKey = `${s.customerOrgId}::${normName(s.name)}`;
     if (!byOrgName.has(nameKey)) byOrgName.set(nameKey, s);
   }
-  return { byFileNumber, byBuildingId, byOrgName };
+  return { byFileNumber, byBuildingId, byNameFileNumber, byOrgName };
 }
 
 // ─── Site matching ────────────────────────────────────────────────────────────
@@ -369,6 +400,13 @@ function matchSite(
   // HIGH: exact buildingId match (O(1))
   const byBI = indexes.byBuildingId.get(normFN);
   if (byBI) return { site: byBI, confidence: "high", matchedBy: "buildingId" };
+
+  // HIGH: the Drive `#NNNN` appears inside an existing site's NAME (O(1)). This
+  // recovers matches for sites imported with the code buried in the name and a
+  // wrong/placeholder fileNumber field — the common case in flat Customer
+  // Records trees.
+  const byNameFN = indexes.byNameFileNumber.get(normFN);
+  if (byNameFN) return { site: byNameFN, confidence: "high", matchedBy: "name-fileNumber" };
 
   // MEDIUM: normalized address prefix match (linear — no practical index for prefix queries)
   if (record.address) {
@@ -583,15 +621,45 @@ async function main() {
   for (const org of allOrgs) orgByNorm.set(normName(org.name), org);
 
   // ── Walk Drive tree ─────────────────────────────────────────────────────────
-  console.log(`Listing customer org folders under Drive root ${rootId}...`);
-  const orgFolders = await listFolders(rootId, token);
-  console.log(`  Found ${orgFolders.length} org folders\n`);
-
   // Collect all Drive records
   const allDriveRecords: DriveCustomerRecord[] = [];
   const unmatchedOrgFolders: string[] = [];
   const unparsedFolders: { orgFolder: string; siteName: string }[] = [];
   const orgFolderToOrgId = new Map<string, number>();
+
+  if (args.flat) {
+    // FLAT mode: the Customer Records root is a single flat list of
+    // `#NNNN - <address>` building folders (no <Org>/<#NNNN-Site> nesting).
+    // Each top-level folder IS a site. Org is not derived from the tree here —
+    // matched sites keep their existing org; unmatched folders are reported,
+    // never blindly created under a guessed org.
+    console.log(`Listing site (building) folders under Drive root ${rootId} [FLAT mode]...`);
+    const siteFolders = await listFolders(rootId, token);
+    console.log(`  Found ${siteFolders.length} folders\n`);
+    for (const sf of siteFolders) {
+      const parsed = parseSiteFolder(sf.name);
+      if (!parsed) {
+        unparsedFolders.push({ orgFolder: "(root)", siteName: sf.name });
+        continue;
+      }
+      const addrParts = parseAddressComponents(parsed.siteName);
+      allDriveRecords.push({
+        orgFolderName: "(root)",
+        orgFolderId: sf.id, // no org layer — key won't resolve, so orgId stays undefined
+        siteFolderName: sf.name,
+        siteFolderId: sf.id,
+        fileNumber: parsed.fileNumber,
+        siteName: parsed.siteName,
+        address: addrParts.streetAddress,
+        city: addrParts.city,
+        state: addrParts.state,
+        postalCode: addrParts.postalCode,
+      });
+    }
+  } else {
+  console.log(`Listing customer org folders under Drive root ${rootId}...`);
+  const orgFolders = await listFolders(rootId, token);
+  console.log(`  Found ${orgFolders.length} org folders\n`);
 
   for (const orgFolder of orgFolders) {
     // Restrict to specific org if --customer-org
@@ -665,6 +733,7 @@ async function main() {
       });
     }
   }
+  } // end non-flat org walk
 
   // Apply --limit
   const records = args.limit !== undefined ? allDriveRecords.slice(0, args.limit) : allDriveRecords;
@@ -1111,9 +1180,14 @@ async function main() {
   console.log();
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("\nFatal:", err instanceof Error ? err.message : err);
-    process.exit(1);
-  });
+// Only run when executed directly (`tsx seedSitesFromCustomerRecords.ts`), not
+// when imported for its exported helpers (e.g. from a test).
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isDirectRun) {
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("\nFatal:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    });
+}
