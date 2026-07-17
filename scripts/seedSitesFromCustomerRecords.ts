@@ -626,6 +626,9 @@ async function main() {
   const unmatchedOrgFolders: string[] = [];
   const unparsedFolders: { orgFolder: string; siteName: string }[] = [];
   const orgFolderToOrgId = new Map<string, number>();
+  // Count of top-level Drive folders — building folders in flat mode, org
+  // folders in nested mode. Hoisted so the SUMMARY can reference it in both.
+  let topLevelFolderCount = 0;
 
   if (args.flat) {
     // FLAT mode: the Customer Records root is a single flat list of
@@ -635,6 +638,7 @@ async function main() {
     // never blindly created under a guessed org.
     console.log(`Listing site (building) folders under Drive root ${rootId} [FLAT mode]...`);
     const siteFolders = await listFolders(rootId, token);
+    topLevelFolderCount = siteFolders.length;
     console.log(`  Found ${siteFolders.length} folders\n`);
     for (const sf of siteFolders) {
       const parsed = parseSiteFolder(sf.name);
@@ -659,6 +663,7 @@ async function main() {
   } else {
   console.log(`Listing customer org folders under Drive root ${rootId}...`);
   const orgFolders = await listFolders(rootId, token);
+  topLevelFolderCount = orgFolders.length;
   console.log(`  Found ${orgFolders.length} org folders\n`);
 
   for (const orgFolder of orgFolders) {
@@ -1022,11 +1027,15 @@ async function main() {
   console.log(line);
 
   const total = allDriveRecords.length;
-  const orgFoldersTotal = orgFolders.length;
-  console.log(`  ${pad("Drive org folders found:", 40)} ${orgFoldersTotal}`);
-  console.log(`  ${pad("Org folders matched to DB customerOrg:", 40)} ${orgFoldersTotal - unmatchedOrgFolders.length}`);
-  console.log(`  ${pad("Org folders unmatched:", 40)} ${unmatchedOrgFolders.length}`);
-  console.log(`  ${pad("Total Customer Records (site folders):", 40)} ${total}`);
+  const orgFoldersTotal = topLevelFolderCount;
+  if (args.flat) {
+    console.log(`  ${pad("Drive building folders found:", 40)} ${orgFoldersTotal}`);
+  } else {
+    console.log(`  ${pad("Drive org folders found:", 40)} ${orgFoldersTotal}`);
+    console.log(`  ${pad("Org folders matched to DB customerOrg:", 40)} ${orgFoldersTotal - unmatchedOrgFolders.length}`);
+    console.log(`  ${pad("Org folders unmatched:", 40)} ${unmatchedOrgFolders.length}`);
+  }
+  console.log(`  ${pad("Site (building) folders parsed:", 40)} ${total}`);
   console.log(`  ${pad("Folders with no #NNNN pattern:", 40)} ${unparsedFolders.length}`);
   console.log(`  ${pad("Processed (after limit):", 40)} ${records.length}`);
   console.log();
