@@ -129,6 +129,7 @@ interface CliArgs {
   outputMismatches: boolean;
   adminUserId?: number;
   accessToken?: string;
+  rootId?: string;
   orgMap: Record<string, string>;
 }
 
@@ -158,6 +159,7 @@ function parseArgs(): CliArgs {
       case "--output-mismatches": args.outputMismatches = true; break;
       case "--admin-user-id":   args.adminUserId = parseInt(argv[++i], 10); break;
       case "--access-token":    args.accessToken = argv[++i]; break;
+      case "--root-id":         args.rootId = argv[++i]; break;
       case "--org-map": {
         const raw = argv[++i];
         const eqIdx = raw.indexOf("=");
@@ -184,6 +186,10 @@ function parseArgs(): CliArgs {
         console.error("       Drive folder name matched to a real customerOrgs row. See the audit doc.");
         process.exit(1);
       default:
+        // A bare "--" is the argument separator that npm/pnpm inject between the
+        // script name and its flags (e.g. `pnpm seed:… -- --company 1`). It is not
+        // an option — skip it rather than erroring "Unknown option: --".
+        if (argv[i] === "--") break;
         if (argv[i].startsWith("--")) {
           console.error(`Unknown option: ${argv[i]}`);
           process.exit(1);
@@ -516,11 +522,13 @@ async function main() {
     process.exit(1);
   }
 
-  const rootId = process.env.GOOGLE_DRIVE_CUSTOMER_ROOT_ID;
+  // The --root-id flag overrides the env var, so the Drive folder can be passed
+  // inline (handy in the Railway console) without editing service variables.
+  const rootId = args.rootId ?? process.env.GOOGLE_DRIVE_CUSTOMER_ROOT_ID;
   if (!rootId) {
-    console.error("ERROR: GOOGLE_DRIVE_CUSTOMER_ROOT_ID is not set in .env");
-    console.error("       Customer Records are stored in Google Drive. Set this variable to the");
-    console.error("       root Drive folder ID that contains the customer org folders.");
+    console.error("ERROR: no Customer Records Drive folder specified.");
+    console.error("       Pass --root-id <folderId> or set GOOGLE_DRIVE_CUSTOMER_ROOT_ID.");
+    console.error("       This is the root Drive folder ID containing the customer org folders.");
     process.exit(1);
   }
 
