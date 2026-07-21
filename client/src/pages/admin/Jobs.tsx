@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SiteCombobox } from "@/components/SiteCombobox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -380,19 +381,12 @@ export default function AdminJobs() {
                   
                   <div className="space-y-2">
                     <Label>Site *</Label>
-                    <Select
+                    <SiteCombobox
+                      sites={sites}
                       value={newJob.siteId}
-                      onValueChange={(v) => setNewJob({ ...newJob, siteId: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select site" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {sites?.map((s: any) => (
-                          <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      onChange={(v) => setNewJob({ ...newJob, siteId: v })}
+                      loading={sitesLoading}
+                    />
                     {lastInspectionSummary?.found && (
                       <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
                         <Info className="mt-0.5 h-4 w-4 shrink-0" />
