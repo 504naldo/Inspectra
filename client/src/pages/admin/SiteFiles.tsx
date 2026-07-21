@@ -31,10 +31,14 @@ import {
 } from "lucide-react";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
 import { useState, useRef, useCallback } from "react";
-import { useParams, Link } from "wouter";
+import { Link } from "wouter";
 import { toast } from "sonner";
 
-export default function SiteFiles() {
+type SiteFilesProps = {
+  siteId: number;
+};
+
+export default function SiteFiles({ siteId }: SiteFilesProps) {
   const { user } = useAuth();
 
   if (!user || !user.companyId) {
@@ -49,8 +53,6 @@ export default function SiteFiles() {
     );
   }
 
-  const params = useParams<{ siteId: string }>();
-  const siteId = parseInt(params.siteId || "0");
   const utils = trpc.useUtils();
 
   const [searchQuery, setSearchQuery] = useState("");

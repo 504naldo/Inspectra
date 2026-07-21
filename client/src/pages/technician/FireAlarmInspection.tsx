@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,13 +33,16 @@ type InspectionResult = {
   textValue?: string;
 };
 
-export default function FireAlarmInspection() {
-  const { jobId } = useParams();
+type FireAlarmInspectionProps = {
+  jobId: number;
+};
+
+export default function FireAlarmInspection({ jobId }: FireAlarmInspectionProps) {
   const [location, setLocation] = useLocation();
-  
+
   // Track inspection progress for resume functionality
   useTrackInspectionProgress(
-    jobId!,
+    jobId,
     location,
     'fire-alarm',
     'Fire Alarm Inspection'
@@ -52,7 +55,7 @@ export default function FireAlarmInspection() {
 
   // Fetch job details
   const { data: job, isLoading: loadingJob } = trpc.job.get.useQuery(
-    { id: parseInt(jobId!) },
+    { id: jobId },
     { enabled: !!jobId }
   );
 
@@ -67,7 +70,7 @@ export default function FireAlarmInspection() {
 
   // Fetch existing results
   const { data: existingResults } = trpc.fireAlarm.getInspectionResults.useQuery(
-    { jobId: parseInt(jobId!) },
+    { jobId },
     { enabled: !!jobId }
   );
 
@@ -108,7 +111,7 @@ export default function FireAlarmInspection() {
     setResults(newResults);
 
     const data = {
-      jobId: parseInt(jobId!),
+      jobId,
       fireAlarmSystemId: fireAlarmSystem?.id!,
       checklistItemId: itemId,
       result,
@@ -200,7 +203,7 @@ export default function FireAlarmInspection() {
     if (!currentResult) return;
 
     const data = {
-      jobId: parseInt(jobId!),
+      jobId,
       fireAlarmSystemId: fireAlarmSystem?.id!,
       checklistItemId: itemId,
       result: (currentResult.result as "pass" | "fail" | "na" | "not_tested") || "not_tested",

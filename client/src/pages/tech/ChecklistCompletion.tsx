@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -249,9 +249,11 @@ const CHECKLIST_SECTIONS: ChecklistSection[] = [
   },
 ];
 
-export default function ChecklistCompletion() {
-  const params = useParams();
-  const jobId = parseInt(params.id || '0');
+type ChecklistCompletionProps = {
+  jobId: number;
+};
+
+export default function ChecklistCompletion({ jobId }: ChecklistCompletionProps) {
   const [, setLocation] = useLocation();
   const isOnline = useOnlineStatus();
   

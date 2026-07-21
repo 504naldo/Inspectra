@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useRoute, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { DetailSkeleton } from "@/components/PageSkeleton";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -247,10 +247,12 @@ function QuoteApproverSuggestion({
   );
 }
 
-export default function RepairQuoteDetail() {
-  const [, params] = useRoute("/admin/repair-quotes/:id");
+type RepairQuoteDetailProps = {
+  id: number;
+};
+
+export default function RepairQuoteDetail({ id: quoteId }: RepairQuoteDetailProps) {
   const [, navigate] = useLocation();
-  const quoteId = parseInt(params?.id ?? "0");
 
   const [showAddItem, setShowAddItem] = useState(false);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);

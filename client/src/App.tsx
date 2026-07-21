@@ -298,11 +298,11 @@ function Router() {
           ))}
         </Route>
         <Route path="/tech/jobs/:jobId/fire-alarm">
-          {params => (
+          {params => withNumericParams(params, ["jobId"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
-              <FireAlarmInspection />
+              <FireAlarmInspection jobId={ids.jobId} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/tech/jobs/:jobId/smoke-alarms">
           {params => withNumericParams(params, ["jobId"], ids => (
@@ -319,11 +319,11 @@ function Router() {
           ))}
         </Route>
         <Route path="/tech/jobs/:id/checklist">
-          {params => (
+          {params => withNumericParams(params, ["id"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
-              <ChecklistCompletion />
+              <ChecklistCompletion jobId={ids.id} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/tech/sync">
           <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
@@ -353,9 +353,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/jobs/:jobId">
-          <ProtectedRoute allowedRoles={["admin", "office"]}>
-            <AdminJobDetails />
-          </ProtectedRoute>
+          {params => withNumericParams(params, ["jobId"], ids => (
+            <ProtectedRoute allowedRoles={["admin", "office"]}>
+              <AdminJobDetails jobId={ids.jobId} />
+            </ProtectedRoute>
+          ))}
         </Route>
         <Route path="/admin/job-assignments">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -378,11 +380,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/sites/:siteId/fire-alarm">
-          {params => (
+          {params => withNumericParams(params, ["siteId"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office"]}>
-              <FireAlarmSetup />
+              <FireAlarmSetup siteId={ids.siteId} />
             </ProtectedRoute>
-          )}
+          ))}
         </Route>
         <Route path="/admin/devices">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -407,26 +409,32 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/inspection-templates/:id">
-          {params => withNumericParams(params, ["id"], () => (
+          {params => withNumericParams(params, ["id"], ids => (
             <ProtectedRoute allowedRoles={["admin", "office"]}>
-              <AdminInspectionTemplateDetail />
+              <AdminInspectionTemplateDetail templateId={ids.id} />
             </ProtectedRoute>
           ))}
         </Route>
         <Route path="/admin/sites/:siteId/files">
-          <ProtectedRoute allowedRoles={["admin", "office"]}>
-            <SiteFiles />
-          </ProtectedRoute>
+          {params => withNumericParams(params, ["siteId"], ids => (
+            <ProtectedRoute allowedRoles={["admin", "office"]}>
+              <SiteFiles siteId={ids.siteId} />
+            </ProtectedRoute>
+          ))}
         </Route>
         <Route path="/admin/sites/:siteId/knowledge">
-          <ProtectedRoute allowedRoles={["admin", "office"]}>
-            <SiteKnowledge />
-          </ProtectedRoute>
+          {params => withNumericParams(params, ["siteId"], ids => (
+            <ProtectedRoute allowedRoles={["admin", "office"]}>
+              <SiteKnowledge siteId={ids.siteId} />
+            </ProtectedRoute>
+          ))}
         </Route>
         <Route path="/admin/equipment-knowledge/:modelId">
-          <ProtectedRoute allowedRoles={["admin", "office"]}>
-            <EquipmentKnowledgeDetail />
-          </ProtectedRoute>
+          {params => withNumericParams(params, ["modelId"], ids => (
+            <ProtectedRoute allowedRoles={["admin", "office"]}>
+              <EquipmentKnowledgeDetail modelId={ids.modelId} />
+            </ProtectedRoute>
+          ))}
         </Route>
         <Route path="/admin/equipment-knowledge">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -439,9 +447,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/sites/:siteId/import">
-          <ProtectedRoute allowedRoles={["admin", "office"]}>
-            <AssetImport />
-          </ProtectedRoute>
+          {params => withNumericParams(params, ["siteId"], ids => (
+            <ProtectedRoute allowedRoles={["admin", "office"]}>
+              <AssetImport siteId={ids.siteId} />
+            </ProtectedRoute>
+          ))}
         </Route>
         <Route path="/admin/sites/:siteId/work-site-info">
           {params => withNumericParams(params, ["siteId"], ids => (
@@ -471,9 +481,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/quotes/:id">
-          <ProtectedRoute allowedRoles={["admin", "office"]}>
-            <BuildingQuoteDetail />
-          </ProtectedRoute>
+          {params => withNumericParams(params, ["id"], ids => (
+            <ProtectedRoute allowedRoles={["admin", "office"]}>
+              <BuildingQuoteDetail id={ids.id} />
+            </ProtectedRoute>
+          ))}
         </Route>
         <Route path="/admin/quotes">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -491,9 +503,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/admin/repair-quotes/:id">
-          <ProtectedRoute allowedRoles={["admin", "office"]}>
-            <RepairQuoteDetail />
-          </ProtectedRoute>
+          {params => withNumericParams(params, ["id"], ids => (
+            <ProtectedRoute allowedRoles={["admin", "office"]}>
+              <RepairQuoteDetail id={ids.id} />
+            </ProtectedRoute>
+          ))}
         </Route>
         <Route path="/admin/approved-work">
           <ProtectedRoute allowedRoles={["admin", "office"]}>
@@ -661,9 +675,11 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/tech/jobs/:jobId/template/:templateId">
-          <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
-            <TemplateFormRenderer />
-          </ProtectedRoute>
+          {params => withNumericParams(params, ["jobId", "templateId"], ids => (
+            <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>
+              <TemplateFormRenderer jobId={ids.jobId} templateId={ids.templateId} />
+            </ProtectedRoute>
+          ))}
         </Route>
         <Route path="/admin/feedback">
           <ProtectedRoute allowedRoles={["admin", "office"]}>

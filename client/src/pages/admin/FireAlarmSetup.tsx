@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,8 +12,11 @@ import { toast } from "sonner";
 import { ArrowLeft, Save } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
 
-export default function FireAlarmSetup() {
-  const { siteId } = useParams();
+type FireAlarmSetupProps = {
+  siteId: number;
+};
+
+export default function FireAlarmSetup({ siteId }: FireAlarmSetupProps) {
   const [, setLocation] = useLocation();
   const [formData, setFormData] = useState({
     manufacturer: "",
@@ -27,13 +30,13 @@ export default function FireAlarmSetup() {
 
   // Fetch site details
   const { data: site, isLoading: loadingSite } = trpc.site.get.useQuery(
-    { id: parseInt(siteId!) },
+    { id: siteId },
     { enabled: !!siteId }
   );
 
   // Fetch existing fire alarm system
   const { data: existingSystem, isLoading: loadingSystem } = trpc.fireAlarm.getSystemBySite.useQuery(
-    { siteId: parseInt(siteId!) },
+    { siteId },
     { enabled: !!siteId }
   );
 
@@ -67,7 +70,7 @@ export default function FireAlarmSetup() {
     e.preventDefault();
 
     await upsertSystem.mutateAsync({
-      siteId: parseInt(siteId!),
+      siteId,
       ...formData,
     });
   };

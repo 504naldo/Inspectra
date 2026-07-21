@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Link } from "wouter";
+import { Link } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { DetailSkeleton } from "@/components/PageSkeleton";
 import { Button } from "@/components/ui/button";
@@ -58,8 +58,11 @@ function InfoField({ label, value, multiline, highlight }: {
   );
 }
 
-export default function AdminJobDetails() {
-  const { jobId } = useParams<{ jobId: string }>();
+type AdminJobDetailsProps = {
+  jobId: number;
+};
+
+export default function AdminJobDetails({ jobId }: AdminJobDetailsProps) {
   const { user } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -93,7 +96,7 @@ export default function AdminJobDetails() {
     onSuccess: () => {
       toast.success("Job updated");
       setJobEditOpen(false);
-      utils.job.get.invalidate({ id: parseInt(jobId!) });
+      utils.job.get.invalidate({ id: jobId });
     },
     onError: (err) => toast.error(err.message || "Failed to update job"),
   });
@@ -104,7 +107,7 @@ export default function AdminJobDetails() {
       setDeclineDialogOpen(false);
       setDeclineReason("");
       setDeclineCustomerName("");
-      utils.job.get.invalidate({ id: parseInt(jobId!) });
+      utils.job.get.invalidate({ id: jobId });
     },
     onError: (err) => toast.error(err.message || "Failed to record decline"),
   });
@@ -166,7 +169,7 @@ export default function AdminJobDetails() {
   const createCalendarEventMutation = trpc.calendar.createEvent.useMutation({
     onSuccess: () => {
       toast.success("Calendar event created");
-      utils.job.get.invalidate({ id: parseInt(jobId!) });
+      utils.job.get.invalidate({ id: jobId });
     },
     onError: (err) => {
       toast.error(err.message);
@@ -185,7 +188,7 @@ export default function AdminJobDetails() {
   const deleteCalendarEventMutation = trpc.calendar.deleteEvent.useMutation({
     onSuccess: () => {
       toast.success("Calendar event removed");
-      utils.job.get.invalidate({ id: parseInt(jobId!) });
+      utils.job.get.invalidate({ id: jobId });
     },
     onError: (err) => {
       toast.error(err.message);
@@ -196,7 +199,7 @@ export default function AdminJobDetails() {
     setVerifyDialogOpen(true);
     setVerifyResult(null);
     try {
-      const result = await utils.compliance.verifyJobHash.fetch({ jobId: parseInt(jobId!) });
+      const result = await utils.compliance.verifyJobHash.fetch({ jobId: jobId });
       setVerifyResult(result);
     } catch (err: any) {
       setVerifyResult({ error: err.message || 'Verification failed' });
@@ -204,32 +207,32 @@ export default function AdminJobDetails() {
   };
 
   const { data: job, isLoading: jobLoading } = trpc.job.get.useQuery(
-    { id: parseInt(jobId!) },
+    { id: jobId },
     { enabled: !!jobId }
   );
 
   const { data: files, isLoading: filesLoading } = trpc.files.listByJob.useQuery(
-    { jobId: parseInt(jobId!) },
+    { jobId: jobId },
     { enabled: !!jobId }
   );
 
   const { data: deficiencies, isLoading: deficienciesLoading } = trpc.deficiency.listByJob.useQuery(
-    { jobId: parseInt(jobId!) },
+    { jobId: jobId },
     { enabled: !!jobId }
   );
 
   const { data: quotes, refetch: refetchQuotes } = trpc.quote.listByJob.useQuery(
-    { jobId: parseInt(jobId!) },
+    { jobId: jobId },
     { enabled: !!jobId }
   );
 
   const { data: wsi } = trpc.workSiteInfo.getForJob.useQuery(
-    { jobId: parseInt(jobId!) },
+    { jobId: jobId },
     { enabled: !!jobId }
   );
 
   const { data: workOrder, refetch: refetchWorkOrder } = trpc.workOrder.listByJob.useQuery(
-    { jobId: parseInt(jobId!) },
+    { jobId: jobId },
     { enabled: !!jobId }
   );
 
@@ -462,7 +465,7 @@ export default function AdminJobDetails() {
                     variant="outline"
                     size="sm"
                     className="gap-2 border-[var(--success)]/30 text-[var(--success)] hover:bg-[var(--success)]/5"
-                    onClick={() => updateCalendarEventMutation.mutate({ jobId: parseInt(jobId!) })}
+                    onClick={() => updateCalendarEventMutation.mutate({ jobId: jobId })}
                     disabled={updateCalendarEventMutation.isPending}
                   >
                     {updateCalendarEventMutation.isPending ? (
@@ -476,7 +479,7 @@ export default function AdminJobDetails() {
                     variant="ghost"
                     size="sm"
                     className="gap-2 text-muted-foreground hover:text-destructive hover:bg-destructive/5"
-                    onClick={() => deleteCalendarEventMutation.mutate({ jobId: parseInt(jobId!) })}
+                    onClick={() => deleteCalendarEventMutation.mutate({ jobId: jobId })}
                     disabled={deleteCalendarEventMutation.isPending}
                   >
                     {deleteCalendarEventMutation.isPending ? (
@@ -491,7 +494,7 @@ export default function AdminJobDetails() {
                   variant="outline"
                   size="sm"
                   className="gap-2"
-                  onClick={() => createCalendarEventMutation.mutate({ jobId: parseInt(jobId!) })}
+                  onClick={() => createCalendarEventMutation.mutate({ jobId: jobId })}
                   disabled={createCalendarEventMutation.isPending}
                 >
                   {createCalendarEventMutation.isPending ? (
@@ -1349,7 +1352,7 @@ export default function AdminJobDetails() {
                 <CardTitle className="text-base">Activity Log</CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <ActivityTimeline entityType="job" entityId={parseInt(jobId!)} />
+                <ActivityTimeline entityType="job" entityId={jobId} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -1452,7 +1455,7 @@ export default function AdminJobDetails() {
             </Button>
             <Button
               className="bg-[var(--warning)] hover:bg-[var(--warning)]/90 text-white"
-              onClick={() => cloneMutation.mutate({ jobId: parseInt(jobId!) })}
+              onClick={() => cloneMutation.mutate({ jobId: jobId })}
               disabled={cloneMutation.isPending}
             >
               {cloneMutation.isPending ? (
@@ -1548,7 +1551,7 @@ export default function AdminJobDetails() {
                 disabled={selectedDeficiencyIds.length === 0 || createQuoteMutation.isPending}
                 onClick={() =>
                   createQuoteMutation.mutate({
-                    jobId: parseInt(jobId!),
+                    jobId: jobId,
                     deficiencyIds: selectedDeficiencyIds,
                     notes: quoteNotes || undefined,
                   })
@@ -1644,7 +1647,7 @@ export default function AdminJobDetails() {
                 disabled={!jobEditTitle.trim() || updateJobMutation.isPending}
                 onClick={() =>
                   updateJobMutation.mutate({
-                    id: parseInt(jobId!),
+                    id: jobId,
                     title: jobEditTitle.trim(),
                     description: jobEditDescription || undefined,
                     notes: jobEditNotes || undefined,
@@ -1704,7 +1707,7 @@ export default function AdminJobDetails() {
                 disabled={recordDeclineMutation.isPending}
                 onClick={() =>
                   recordDeclineMutation.mutate({
-                    jobId: parseInt(jobId!),
+                    jobId: jobId,
                     reason: declineReason || undefined,
                     customerName: declineCustomerName || undefined,
                   })

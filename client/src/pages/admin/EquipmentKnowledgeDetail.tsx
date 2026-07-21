@@ -1,4 +1,4 @@
-import { useParams, Link } from "wouter";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AdminLayout from "@/components/AdminLayout";
@@ -7,10 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import KnowledgePanel from "@/components/knowledge/KnowledgePanel";
 import { trpc } from "@/lib/trpc";
 
-export default function EquipmentKnowledgeDetail() {
+type EquipmentKnowledgeDetailProps = {
+  modelId: number;
+};
+
+export default function EquipmentKnowledgeDetail({ modelId }: EquipmentKnowledgeDetailProps) {
   const { user } = useAuth();
-  const params = useParams<{ modelId: string }>();
-  const equipmentModelId = parseInt(params.modelId || "0");
+  const equipmentModelId = modelId;
 
   if (!user || !user.companyId) {
     return (

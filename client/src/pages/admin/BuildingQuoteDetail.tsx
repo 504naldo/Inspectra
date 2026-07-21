@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useRoute, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { ArrowLeft, Download, FileText, Clock, Send, CheckCircle, XCircle } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
@@ -45,10 +45,12 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function BuildingQuoteDetail() {
+type BuildingQuoteDetailProps = {
+  id: number;
+};
+
+export default function BuildingQuoteDetail({ id: quoteId }: BuildingQuoteDetailProps) {
   const [, navigate] = useLocation();
-  const [, params] = useRoute("/admin/quotes/:id");
-  const quoteId = parseInt(params?.id ?? "0", 10);
 
   const { data, isLoading, refetch } = trpc.quote.getBuilding.useQuery(
     { id: quoteId },
