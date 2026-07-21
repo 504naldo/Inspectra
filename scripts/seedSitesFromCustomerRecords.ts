@@ -408,6 +408,25 @@ export function isJunkSiteName(name: string | null | undefined): boolean {
   );
 }
 
+/**
+ * Safety net for --clean-names: do the OLD name and the NEW folder header refer
+ * to the same building? Some site names carry the WRONG file code (mislabeled at
+ * the source), so their `#NNNN` matches a folder for a different address. We can't
+ * detect a bad code, but we CAN refuse to rename to a clearly different building:
+ * require that the two strings share a ≥3-digit street number (the most reliable
+ * address token). "2374 W 5th Ave" vs "8580 Cumberland Pl" share none → refuse.
+ */
+export function sharesBuildingNumber(a: string | null | undefined, b: string | null | undefined): boolean {
+  // Strip "#NNNN"/"#NNNN-N" file codes first so a code can't masquerade as a
+  // street number, then collect the remaining ≥3-digit numbers.
+  const nums = (s: string | null | undefined) =>
+    new Set((s ?? "").replace(/#\s*\d+(?:-\d+)?/g, " ").match(/\d{3,}/g) ?? []);
+  const A = nums(a);
+  if (A.size === 0) return true; // no street number to compare — don't block on this signal
+  for (const n of nums(b)) if (A.has(n)) return true;
+  return false;
+}
+
 export function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
   const byFileNumber = new Map<string, DbSite>();
   const byBuildingId = new Map<string, DbSite>();
@@ -805,6 +824,7 @@ async function main() {
   const results: ProcessResult[] = [];
   const allMismatches: MismatchRow[] = [];
   const nameCleans: { siteId: number; before: string; after: string }[] = [];
+  const suspiciousNameCleans: { siteId: number; before: string; after: string }[] = [];
   let created = 0, updated = 0, skipped = 0, skippedNoOrg = 0, skippedNoName = 0;
   let highConf = 0, medConf = 0, lowConf = 0;
   let dupFileConflicts = 0, dupBldgConflicts = 0;
@@ -875,8 +895,14 @@ async function main() {
         isJunkSiteName(match.site.name) &&
         normName(record.siteName) !== normName(match.site.name)
       ) {
-        patch.name = record.siteName;
-        nameCleans.push({ siteId: match.site.id, before: match.site.name, after: record.siteName });
+        if (sharesBuildingNumber(record.siteName, match.site.name)) {
+          patch.name = record.siteName;
+          nameCleans.push({ siteId: match.site.id, before: match.site.name, after: record.siteName });
+        } else {
+          // The folder header is a DIFFERENT building than the current name —
+          // the site's `#NNNN` is likely mislabeled. Never rename; flag it.
+          suspiciousNameCleans.push({ siteId: match.site.id, before: match.site.name, after: record.siteName });
+        }
       }
 
       const hasUpdate = Object.keys(patch).length > 0;
@@ -1165,6 +1191,18 @@ async function main() {
       console.log(`  siteId=${c.siteId}`);
       console.log(`     from: "${c.before}"`);
       console.log(`     to:   "${c.after}"`);
+    }
+  }
+
+  if (args.cleanNames && suspiciousNameCleans.length > 0) {
+    console.log(`\n${line}`);
+    console.log(`  SKIPPED — SUSPECT WRONG BUILDING (${suspiciousNameCleans.length}) — NOT renamed; review by hand`);
+    console.log(`  The site's #NNNN matched a folder for a different address (no shared street number).`);
+    console.log(line);
+    for (const c of suspiciousNameCleans) {
+      console.log(`  siteId=${c.siteId}`);
+      console.log(`     name:   "${c.before}"`);
+      console.log(`     folder: "${c.after}"`);
     }
   }
 
