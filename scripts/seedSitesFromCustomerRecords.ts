@@ -36,6 +36,12 @@
  *       leading "#NNNN -"/"string or null") with the clean Drive folder header,
  *       HIGH-confidence matches only. Real business names never match. Always
  *       preview under --dry-run (prints every before → after) before applying.
+ *   - --fix-suspects: an EXPLICIT, human-verified `siteId=#NNNN` map that
+ *       re-points a mislabeled site at the correct Drive folder. The --clean-*
+ *       passes skip sites whose name #NNNN points at a different building (the
+ *       code is wrong at the source and can't be auto-corrected); this applies
+ *       the folder header for the code the operator supplies, bypassing the
+ *       sharesBuildingNumber guard on purpose. Always preview under --dry-run.
  *   - Mismatches between Drive and populated Site fields are always reported
  *
  * Usage:
@@ -46,6 +52,12 @@
  *   # Live seed + reconcile
  *   pnpm seed:sites-from-customer-records -- \
  *     --company 1 --update-existing --reconcile-existing --output-mismatches
+ *
+ *   # Fix mislabeled "suspect" sites from a verified map (preview first!)
+ *   pnpm seed:sites-from-customer-records:dry -- \
+ *     --company 1 --flat --fix-suspects "475=#0148,571=#0479" --dry-run
+ *   #   …or from a file: --fix-suspects-file data/suspect-fixes.json
+ *   #   ({ "475": "#0148", "571": "#0479" })
  *
  * Authentication (Google Drive):
  *   --admin-user-id N   Use stored Google token for DB user N
@@ -147,6 +159,8 @@ interface CliArgs {
   flat: boolean;
   cleanNames: boolean;
   cleanFields: boolean;
+  /** Explicit, human-verified `siteId → #NNNN` overrides for mislabeled sites. */
+  fixSuspects: Record<number, string>;
   orgMap: Record<string, string>;
 }
 
@@ -164,6 +178,7 @@ function parseArgs(): CliArgs {
     flat: false,
     cleanNames: false,
     cleanFields: false,
+    fixSuspects: {},
     orgMap: {},
   };
 
@@ -183,6 +198,39 @@ function parseArgs(): CliArgs {
       case "--flat":            args.flat = true; break;
       case "--clean-names":     args.cleanNames = true; break;
       case "--clean-fields":    args.cleanFields = true; break;
+      case "--fix-suspects": {
+        // Inline map: "475=#0148,571=#0479 610=#0575" (comma and/or whitespace).
+        const raw = argv[++i];
+        for (const entry of (raw ?? "").split(/[,\s]+/).filter(Boolean)) {
+          const eqIdx = entry.indexOf("=");
+          if (eqIdx < 1) {
+            console.error(`--fix-suspects entries must be "siteId=#NNNN", got: ${entry}`);
+            process.exit(1);
+          }
+          const id = parseInt(entry.slice(0, eqIdx), 10);
+          const code = entry.slice(eqIdx + 1).trim();
+          if (!Number.isInteger(id) || !code) {
+            console.error(`--fix-suspects entry has a bad siteId or code: ${entry}`);
+            process.exit(1);
+          }
+          args.fixSuspects[id] = code;
+        }
+        break;
+      }
+      case "--fix-suspects-file": {
+        const filePath = argv[++i];
+        try {
+          const raw = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, string>;
+          for (const [k, v] of Object.entries(raw)) {
+            const id = parseInt(k, 10);
+            if (Number.isInteger(id) && v) args.fixSuspects[id] = String(v).trim();
+          }
+        } catch (e) {
+          console.error(`Failed to read --fix-suspects-file "${filePath}": ${e}`);
+          process.exit(1);
+        }
+        break;
+      }
       case "--org-map": {
         const raw = argv[++i];
         const eqIdx = raw.indexOf("=");
@@ -848,6 +896,9 @@ async function main() {
   const nameCleans: { siteId: number; before: string; after: string }[] = [];
   const suspiciousNameCleans: { siteId: number; before: string; after: string }[] = [];
   const fieldCleans: { siteId: number; changed: string[]; fromFile: string; toFile: string; fromAddr: string; toAddr: string }[] = [];
+  const suspectFixes: { siteId: number; code: string; changed: string[]; beforeName: string; afterName: string; beforeFile: string; afterFile: string; beforeAddr: string; afterAddr: string }[] = [];
+  const suspectFixErrors: { siteId: number; code: string; reason: string }[] = [];
+  const fixedSuspectIds = new Set<number>();
   let created = 0, updated = 0, skipped = 0, skippedNoOrg = 0, skippedNoName = 0;
   let highConf = 0, medConf = 0, lowConf = 0;
   let dupFileConflicts = 0, dupBldgConflicts = 0;
@@ -1105,6 +1156,71 @@ async function main() {
     });
   }
 
+  // ── Fix suspect sites (explicit siteId → #NNNN overrides) ───────────────────
+  // The --clean-* passes deliberately skip sites whose name #NNNN points at a
+  // different building — the code is mislabeled at the source and can't be
+  // auto-corrected. Only a human who knows the real building number can fix
+  // those. --fix-suspects takes that verified map and re-points each site at the
+  // CORRECT Drive folder, overwriting its address/file-number (and junk name)
+  // from that folder header. This intentionally bypasses the sharesBuildingNumber
+  // guard: that guard is exactly what flagged these, and the operator is
+  // overriding it on purpose. Missing sites or codes are reported, never guessed.
+  if (Object.keys(args.fixSuspects).length > 0) {
+    console.log("\nApplying --fix-suspects overrides...");
+
+    // Index every Drive folder by its canonical file code so a supplied #NNNN
+    // resolves to its folder header in either layout (flat or nested).
+    const driveByCode = new Map<string, DriveCustomerRecord>();
+    for (const r of allDriveRecords) {
+      const key = normFileCode(r.fileNumber);
+      if (key && !driveByCode.has(key)) driveByCode.set(key, r);
+    }
+
+    for (const [idStr, code] of Object.entries(args.fixSuspects)) {
+      const siteId = Number(idStr);
+      const site = allSites.find((s) => s.id === siteId);
+      if (!site) {
+        suspectFixErrors.push({ siteId, code, reason: `no site ${siteId} in company ${args.companyId}` });
+        continue;
+      }
+      const rec = driveByCode.get(normFileCode(code));
+      if (!rec) {
+        suspectFixErrors.push({ siteId, code, reason: `no Drive folder matches code ${code}` });
+        continue;
+      }
+
+      // Re-point from the authoritative folder header. fileNumber/buildingId take
+      // the folder's canonical `#NNNN` (not the operator's typed form).
+      const patch: Partial<schema.InsertSite> = { fileNumber: rec.fileNumber, buildingId: rec.fileNumber };
+      const changed: string[] = ["fileNumber", "buildingId"];
+      if (rec.address) { patch.address = rec.address; changed.push("address"); }
+      if (rec.city) { patch.city = rec.city; changed.push("city"); }
+      if (rec.state) { patch.state = rec.state; changed.push("state"); }
+      if (rec.postalCode) { patch.postalCode = rec.postalCode; changed.push("postalCode"); }
+      // Replace the name only when it's import junk — never clobber a real name.
+      if (isJunkSiteName(site.name) && rec.siteName && normName(rec.siteName) !== normName(site.name)) {
+        patch.name = rec.siteName; changed.push("name");
+      }
+
+      suspectFixes.push({
+        siteId, code: rec.fileNumber, changed,
+        beforeName: site.name, afterName: patch.name ?? site.name,
+        beforeFile: site.fileNumber ?? "", afterFile: rec.fileNumber,
+        beforeAddr: site.address ?? "", afterAddr: rec.address ?? "",
+      });
+
+      if (!args.dryRun) {
+        await db.update(schema.sites).set(patch).where(eq(schema.sites.id, siteId));
+        const idx = allSites.findIndex((s) => s.id === siteId);
+        if (idx !== -1) allSites[idx] = { ...allSites[idx], ...patch };
+      }
+      fixedSuspectIds.add(siteId);
+    }
+
+    console.log(`  Suspect sites ${args.dryRun ? "to fix" : "fixed"}: ${suspectFixes.length}` +
+      (suspectFixErrors.length ? `, skipped (bad input): ${suspectFixErrors.length}` : ""));
+  }
+
   // ── Reconcile existing sites ────────────────────────────────────────────────
   const orphanedSites: DbSite[] = [];
   const reconciledSiteMismatches: MismatchRow[] = [];
@@ -1121,7 +1237,7 @@ async function main() {
       : allSites;
 
     for (const site of sitesInScope) {
-      if (matchedSiteIds.has(site.id)) continue; // already matched above
+      if (matchedSiteIds.has(site.id) || fixedSuspectIds.has(site.id)) continue; // already matched/fixed above
 
       // Try to find a Drive record for this site
       let driveMatch: DriveCustomerRecord | null = null;
@@ -1214,6 +1330,13 @@ async function main() {
     const fLabel = args.dryRun ? "Would fix address/file# (dry-run):" : "Address/file# fixed:";
     console.log(`  ${pad(fLabel, 40)} ${fieldCleans.length}`);
   }
+  if (Object.keys(args.fixSuspects).length > 0) {
+    const sLabel = args.dryRun ? "Would fix suspect sites (dry-run):" : "Suspect sites fixed:";
+    console.log(`  ${pad(sLabel, 40)} ${suspectFixes.length}`);
+    if (suspectFixErrors.length > 0) {
+      console.log(`  ${pad("Suspect fixes skipped (bad input):", 40)} ${suspectFixErrors.length}`);
+    }
+  }
   console.log(`  ${pad("Skipped (already complete):", 40)} ${skipped}`);
   console.log(`  ${pad("Skipped (no org matched):", 40)} ${skippedNoOrg}`);
   console.log(`  ${pad("Skipped (no name/address):", 40)} ${skippedNoName}`);
@@ -1267,6 +1390,29 @@ async function main() {
       console.log(`  siteId=${c.siteId}  [${c.changed.join(", ")}]`);
       if (c.changed.includes("fileNumber")) console.log(`     file#:   "${c.fromFile}" → "${c.toFile}"`);
       if (c.changed.includes("address"))    console.log(`     address: "${c.fromAddr}" → "${c.toAddr}"`);
+    }
+  }
+
+  if (suspectFixes.length > 0) {
+    const label = args.dryRun ? "WOULD FIX SUSPECTS" : "FIXED SUSPECTS";
+    console.log(`\n${line}`);
+    console.log(`  ${label} (${suspectFixes.length}) — explicit siteId → #NNNN re-point`);
+    console.log(line);
+    for (const c of suspectFixes) {
+      console.log(`  siteId=${c.siteId} → ${c.code}  [${c.changed.join(", ")}]`);
+      if (c.changed.includes("name"))    console.log(`     name:    "${c.beforeName}" → "${c.afterName}"`);
+      console.log(`     file#:   "${c.beforeFile}" → "${c.afterFile}"`);
+      if (c.changed.includes("address")) console.log(`     address: "${c.beforeAddr}" → "${c.afterAddr}"`);
+    }
+  }
+
+  if (suspectFixErrors.length > 0) {
+    console.log(`\n${line}`);
+    console.log(`  SUSPECT FIXES SKIPPED — bad input (${suspectFixErrors.length})`);
+    console.log(`  Nothing was written for these. Correct the siteId/code and re-run.`);
+    console.log(line);
+    for (const e of suspectFixErrors) {
+      console.log(`  siteId=${e.siteId} code="${e.code}": ${e.reason}`);
     }
   }
 
@@ -1383,7 +1529,7 @@ async function main() {
   if (args.dryRun) {
     console.log("DRY RUN complete — no changes written to the database.");
     console.log("Review the output above, then re-run without --dry-run to apply.");
-  } else if (created + updated > 0) {
+  } else if (created + updated + suspectFixes.length > 0) {
     console.log("Done. Review any mismatches above manually.");
   } else {
     console.log("Done. No changes applied.");
