@@ -10,6 +10,7 @@ import { generateInspectionReportPDF } from "../pdfGeneratorFirePro";
 import { buildCustomerSafeReportData, buildCustomerSafeComplianceData } from "../customerSafeReport";
 import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
 import { fetchImageBuffer } from "../pdfSharedStyles";
+import { resolveAttachmentImageForPdf } from "../pdfImageResolver";
 import * as checklists from "../complianceChecklists";
 import { sendReportEmail, sendReportReadyEmail, sendReportApprovedNotification } from "../emailService";
 import { ENV } from "../_core/env";
@@ -432,14 +433,29 @@ const reportRouter = router({
               )
               .orderBy(attachments.sortOrder, attachments.createdAt);
 
-            const buffers = await Promise.all(
-              mediaRows.map(async (row) => {
-                const buf = await fetchImageBuffer(row.fileUrl);
-                if (!buf) return null;
-                return { buffer: buf, caption: row.caption, locationNote: row.locationNote };
-              })
+            // Re-sign each photo from its durable fileKey at generation time —
+            // the stored fileUrl is a presigned URL that expires (7 days), so a
+            // report regenerated later would otherwise drop every photo.
+            const resolved = await Promise.all(
+              mediaRows.map((row) =>
+                resolveAttachmentImageForPdf(row, {
+                  reportRef: `job ${job.jobNumber} def#${d.id}`,
+                })
+              )
             );
-            photos = buffers.filter((b): b is NonNullable<typeof b> => b !== null);
+            photos = resolved.flatMap((res, i) =>
+              res.ok
+                ? [{ buffer: res.buffer, caption: mediaRows[i].caption, locationNote: mediaRows[i].locationNote }]
+                : []
+            );
+            // Never silently treat an expected photo as embedded when it failed:
+            // record how many customer-facing photos could not be loaded.
+            const failed = mediaRows.length - photos.length;
+            if (failed > 0) {
+              console.warn(
+                `[pdf-image] job ${job.jobNumber} def#${d.id}: ${failed}/${mediaRows.length} customer-facing photo(s) could not be embedded`
+              );
+            }
           }
         } catch {
           // Non-fatal: photos are best-effort in PDF
