@@ -38,3 +38,9 @@ CI (`.github/workflows/ci.yml`) provisions a fresh `mysql:8` service container a
 - tRPC procedures: `protectedProcedure`, `officeProcedure`, `technicianProcedure`, `adminOrOfficeProcedure`
 - Finalized jobs (`finalizedAt != null`) are immutable — all mutations must check this first
 - PDF generators must pre-fetch all async resources (images, signatures) **before** entering the synchronous `new Promise` PDFKit callback
+- **Tenant scoping:** any non-admin procedure that accepts a record id (`jobId`, `siteId`, `attachmentId`, …) must scope it to the caller — route through an `assert*Company` / `*ForCompany` guard (see `tenantGuards.ts`), never trust `input.companyId`. `admin` is the cross-company platform operator (`ROLE_TRUST_MODEL.md`) and is the only intended cross-company role. Run `pnpm security:tenant-audit` (advisory heuristic, `docs/security/TENANT_GUARD_AUDIT.md`) to spot procedures missing a visible check.
+
+## Documentation & Audits
+
+- **`docs/PRODUCTION_READINESS.md` is the single active findings register.** Record every new production-readiness / security finding there as a row (evidence, fix commit, validation).
+- **Do NOT create a new root `*_AUDIT.md`/`*_NOTES.md`** for ongoing work. The ~150 existing root snapshots are frozen history, intentionally left in place (moving them breaks references) — see `docs/audits/README.md`. When a historical finding is still open, copy it into the register and add a "superseded" banner to the snapshot; don't edit the snapshot's findings.
