@@ -45,11 +45,11 @@ describe("Per-job scoping", () => {
       templateResponses: [{ jobId: 1, synced: true }],
     };
     const job1 = pendingSyncCountsForJob(stores, 1);
-    expect(job1).toEqual({ pendingResults: 1, pendingDeficiencies: 2, pendingChecklistResponses: 0, pendingTemplateResponses: 0 });
+    expect(job1).toEqual({ pendingResults: 1, pendingDeficiencies: 2, pendingChecklistResponses: 0, pendingTemplateResponses: 0, pendingFireAlarmResults: 0, pendingSmokeTests: 0 });
     expect(pendingSyncItemCount(job1)).toBe(3);
 
     const job2 = pendingSyncCountsForJob(stores, 2);
-    expect(job2).toEqual({ pendingResults: 1, pendingDeficiencies: 0, pendingChecklistResponses: 1, pendingTemplateResponses: 0 });
+    expect(job2).toEqual({ pendingResults: 1, pendingDeficiencies: 0, pendingChecklistResponses: 1, pendingTemplateResponses: 0, pendingFireAlarmResults: 0, pendingSmokeTests: 0 });
   });
 
   it("job A's submit is not blocked by job B's unsynced data", () => {
@@ -58,5 +58,41 @@ describe("Per-job scoping", () => {
     expect(isQaSubmitBlocked(pendingSyncCountsForJob(stores, 1), false)).toBe(false);
     // Job 2 itself is still blocked.
     expect(isQaSubmitBlocked(pendingSyncCountsForJob(stores, 2), false)).toBe(true);
+  });
+});
+
+describe("Fire-alarm & smoke queues (IndexedDB) count toward the preflight", () => {
+  it("blocks QA submit when only a fire-alarm result is pending for the job", () => {
+    // Regression guard: these live in IndexedDB, not the localStorage stores, and
+    // were previously omitted from the preflight — so an unsynced fire-alarm
+    // result could be silently left out of a submitted report.
+    const counts = pendingSyncCountsForJob({ fireAlarmResults: [{ jobId: 1, synced: false }] }, 1);
+    expect(counts.pendingFireAlarmResults).toBe(1);
+    expect(isQaSubmitBlocked(counts, false)).toBe(true);
+  });
+
+  it("blocks QA submit when only a smoke-alarm test is pending for the job", () => {
+    const counts = pendingSyncCountsForJob({ smokeTests: [{ jobId: 1, synced: false }] }, 1);
+    expect(counts.pendingSmokeTests).toBe(1);
+    expect(isQaSubmitBlocked(counts, false)).toBe(true);
+  });
+
+  it("scopes fire-alarm / smoke counts to the job and ignores synced items", () => {
+    const counts = pendingSyncCountsForJob(
+      {
+        fireAlarmResults: [
+          { jobId: 1, synced: false },
+          { jobId: 1, synced: false },
+          { jobId: 2, synced: false }, // other job
+        ],
+        smokeTests: [
+          { jobId: 1, synced: false },
+          { jobId: 1, synced: true }, // already synced
+        ],
+      },
+      1,
+    );
+    expect(counts.pendingFireAlarmResults).toBe(2);
+    expect(counts.pendingSmokeTests).toBe(1);
   });
 });

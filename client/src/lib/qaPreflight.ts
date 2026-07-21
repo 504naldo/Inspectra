@@ -12,6 +12,12 @@ export interface QaSyncCounts {
   pendingDeficiencies: number;
   pendingChecklistResponses?: number;
   pendingTemplateResponses?: number;
+  // Fire-alarm checklist results and smoke-alarm tests are queued in IndexedDB
+  // (offlineStorage.ts), separate from the four localStorage stores above. They
+  // are just as critical — an unsynced fire-alarm result omitted from a report
+  // is exactly what this preflight exists to catch — so they count here too.
+  pendingFireAlarmResults?: number;
+  pendingSmokeTests?: number;
 }
 
 /** Total unsynced critical items across the offline stores. */
@@ -20,7 +26,9 @@ export function pendingSyncItemCount(s: QaSyncCounts): number {
     (s.pendingResults || 0) +
     (s.pendingDeficiencies || 0) +
     (s.pendingChecklistResponses ?? 0) +
-    (s.pendingTemplateResponses ?? 0)
+    (s.pendingTemplateResponses ?? 0) +
+    (s.pendingFireAlarmResults ?? 0) +
+    (s.pendingSmokeTests ?? 0)
   );
 }
 
@@ -52,6 +60,8 @@ export function pendingSyncCountsForJob(
     deficiencies?: JobScopedItem[];
     checklistResponses?: JobScopedItem[];
     templateResponses?: JobScopedItem[];
+    fireAlarmResults?: JobScopedItem[];
+    smokeTests?: JobScopedItem[];
   },
   jobId: number,
 ): QaSyncCounts {
@@ -60,5 +70,7 @@ export function pendingSyncCountsForJob(
     pendingDeficiencies: countUnsyncedForJob(stores.deficiencies, jobId),
     pendingChecklistResponses: countUnsyncedForJob(stores.checklistResponses, jobId),
     pendingTemplateResponses: countUnsyncedForJob(stores.templateResponses, jobId),
+    pendingFireAlarmResults: countUnsyncedForJob(stores.fireAlarmResults, jobId),
+    pendingSmokeTests: countUnsyncedForJob(stores.smokeTests, jobId),
   };
 }
