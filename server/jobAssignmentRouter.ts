@@ -1,9 +1,21 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "./db";
+import { getDb, assertJobCompany } from "./db";
+import { callerIsPlatformOperator } from "./_core/actorContext";
 import { jobs, users, jobAssignments, sites, customerOrgs } from "../drizzle/schema";
 import { eq, inArray, and, or, isNull, gte, lte, sql } from "drizzle-orm";
+
+/**
+ * Company-scope a client-supplied `companyId` on a read endpoint. Office/technician
+ * callers may only pass their own company; `admin` is the cross-company platform
+ * operator (docs/ROLE_TRUST_MODEL.md) and may pass any company.
+ */
+function assertCompanyScope(inputCompanyId: number, callerCompanyId: number | null | undefined): void {
+  if (inputCompanyId !== callerCompanyId && !callerIsPlatformOperator()) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Cannot access another company's data" });
+  }
+}
 
 /**
  * Job Assignment Router
@@ -73,6 +85,9 @@ export const jobAssignmentRouter = router({
           message: "Only admin or office users can view all job assignments",
         });
       }
+      // Never trust the client-supplied companyId: office is scoped to its own
+      // company; only the admin platform operator may query another company.
+      assertCompanyScope(input.companyId, ctx.user.companyId);
 
       const db = await getDb();
       if (!db) {
@@ -156,6 +171,7 @@ export const jobAssignmentRouter = router({
           message: "Only admin or office users can list technicians",
         });
       }
+      assertCompanyScope(input.companyId, ctx.user.companyId);
 
       const db = await getDb();
       if (!db) {
@@ -221,6 +237,11 @@ export const jobAssignmentRouter = router({
         });
       }
 
+      // Scope the target job to the caller's company (admin platform operator
+      // bypasses per docs/ROLE_TRUST_MODEL.md). Runs before the unassign-all
+      // delete below so that path is guarded too.
+      const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
+
       // Allow empty assignments (unassign all)
       if (input.technicianIds.length === 0) {
         // Delete all assignments and return
@@ -246,7 +267,8 @@ export const jobAssignmentRouter = router({
         });
       }
 
-      // Validate all assigned users exist and are active (admin, office, or technician)
+      // Validate all assigned users exist, are active, and belong to the job's
+      // company (assignees are tenant-scoped — never assign a foreign user).
       if (input.technicianIds.length > 0) {
         const validTechs = await db
           .select({ id: users.id })
@@ -254,13 +276,14 @@ export const jobAssignmentRouter = router({
           .where(and(
             inArray(users.id, input.technicianIds),
             inArray(users.role, ['technician', 'admin', 'office']),
+            eq(users.companyId, job.companyId),
             eq(users.isActive, 1)
           ));
 
         if (validTechs.length !== input.technicianIds.length) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "One or more invalid or inactive technician IDs",
+            message: "One or more invalid, inactive, or out-of-company technician IDs",
           });
         }
       }
@@ -312,7 +335,10 @@ export const jobAssignmentRouter = router({
         });
       }
 
-      // Validate assigned users exist and are active (admin, office, or technician)
+      // Scope the target job to the caller's company (admin bypasses per model).
+      const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
+
+      // Validate assigned users exist, are active, and belong to the job's company.
       if (input.technicianIds.length > 0) {
         const validTechs = await db
           .select({ id: users.id })
@@ -320,13 +346,14 @@ export const jobAssignmentRouter = router({
           .where(and(
             inArray(users.id, input.technicianIds),
             inArray(users.role, ['technician', 'admin', 'office']),
+            eq(users.companyId, job.companyId),
             eq(users.isActive, 1)
           ));
 
         if (validTechs.length !== input.technicianIds.length) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "One or more invalid or inactive technician IDs",
+            message: "One or more invalid, inactive, or out-of-company technician IDs",
           });
         }
       }
@@ -382,6 +409,9 @@ export const jobAssignmentRouter = router({
           message: "Database not available",
         });
       }
+
+      // Scope the target job to the caller's company (admin bypasses per model).
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
 
       // Check if removing the Lead technician
       const assignment = await db
@@ -484,20 +514,42 @@ export const jobAssignmentRouter = router({
         });
       }
 
-      // Validate technicians
+      // Verify every target job belongs to the caller's company (admin platform
+      // operator bypasses per docs/ROLE_TRUST_MODEL.md).
+      const jobRows = await db
+        .select({ id: jobs.id, companyId: jobs.companyId })
+        .from(jobs)
+        .where(inArray(jobs.id, input.jobIds));
+
+      if (jobRows.length !== input.jobIds.length) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "One or more jobs not found" });
+      }
+      if (!callerIsPlatformOperator() && jobRows.some((j) => j.companyId !== ctx.user.companyId)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot assign jobs from another company" });
+      }
+      // Assignees are tenant-scoped, so a single technician set can only be valid
+      // if all target jobs share one company.
+      const jobCompanyIds = new Set(jobRows.map((j) => j.companyId));
+      if (jobCompanyIds.size > 1) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "All selected jobs must belong to the same company" });
+      }
+      const targetCompanyId = jobRows[0].companyId;
+
+      // Validate technicians exist, are active, and belong to the jobs' company.
       const validTechs = await db
         .select({ id: users.id })
         .from(users)
         .where(and(
           inArray(users.id, input.technicianIds),
           eq(users.role, "technician"),
+          eq(users.companyId, targetCompanyId),
           eq(users.isActive, 1)
         ));
 
       if (validTechs.length !== input.technicianIds.length) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "One or more invalid or inactive technician IDs",
+          message: "One or more invalid, inactive, or out-of-company technician IDs",
         });
       }
 
@@ -555,6 +607,7 @@ export const jobAssignmentRouter = router({
       if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Admin or office only" });
       }
+      assertCompanyScope(input.companyId, ctx.user.companyId);
 
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });

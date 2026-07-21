@@ -14,7 +14,7 @@ import { eq } from "drizzle-orm";
 import * as db from "./db";
 import * as guards from "./tenantGuards";
 import { appRouter } from "./routers";
-import { inspectionTemplateSections } from "../drizzle/schema";
+import { inspectionTemplateSections, users } from "../drizzle/schema";
 import type { TrpcContext } from "./_core/context";
 
 function ctxFor(role: string, companyId: number, opts: { userId?: number; customerOrgId?: number } = {}): TrpcContext {
@@ -304,5 +304,78 @@ describe("Cross-tenant authorization", () => {
       await expectCode(B.caller.company.list(), "FORBIDDEN");
       await expectCode(techA.company.update({ id: A.company.id, phone: "evil" }), "FORBIDDEN");
     });
+  });
+});
+
+describe("jobAssignmentRouter — cross-tenant hardening (PR-18)", () => {
+  let A: Tenant, B: Tenant;
+  let techAId: number, techBId: number;
+
+  beforeAll(async () => {
+    A = await setupCompany("JA-A");
+    B = await setupCompany("JA-B");
+    const d = (await db.getDb())!;
+    const [ta] = await d.insert(users).values({
+      openId: "ja-techA", name: "TechA", email: "ja-techa@e.com", role: "technician",
+      companyId: A.company.id, isActive: 1,
+    }).$returningId();
+    techAId = ta.id;
+    const [tb] = await d.insert(users).values({
+      openId: "ja-techB", name: "TechB", email: "ja-techb@e.com", role: "technician",
+      companyId: B.company.id, isActive: 1,
+    }).$returningId();
+    techBId = tb.id;
+  });
+
+  // ── Write mutations: office in B must not touch A's job ────────────────────
+  it("office cannot setJobAssignments on another company's job", async () => {
+    await expectCode(B.caller.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techBId], leadId: techBId }), "FORBIDDEN");
+  });
+  it("office cannot addJobAssignments on another company's job", async () => {
+    await expectCode(B.caller.jobAssignment.addJobAssignments({ jobId: A.job.id, technicianIds: [techBId] }), "FORBIDDEN");
+  });
+  it("office cannot removeJobAssignment on another company's job", async () => {
+    await expectCode(B.caller.jobAssignment.removeJobAssignment({ jobId: A.job.id, technicianId: techAId }), "FORBIDDEN");
+  });
+  it("office cannot bulkAssignJobs including another company's job", async () => {
+    await expectCode(B.caller.jobAssignment.bulkAssignJobs({ jobIds: [A.job.id], technicianIds: [techBId], leadId: techBId }), "FORBIDDEN");
+  });
+
+  // ── Read queries: office in B must not pass A's companyId ──────────────────
+  it("office cannot listJobsWithAssignees for another company", async () => {
+    await expectCode(B.caller.jobAssignment.listJobsWithAssignees({ companyId: A.company.id }), "FORBIDDEN");
+  });
+  it("office cannot listTechnicians for another company", async () => {
+    await expectCode(B.caller.jobAssignment.listTechnicians({ companyId: A.company.id }), "FORBIDDEN");
+  });
+  it("office cannot listDispatch for another company", async () => {
+    await expectCode(B.caller.jobAssignment.listDispatch({ companyId: A.company.id, startDate: "2026-01-01", endDate: "2026-12-31" }), "FORBIDDEN");
+  });
+
+  // ── Assignee tenant-scoping: no assigning a foreign technician ─────────────
+  it("office cannot assign a technician from another company to its own job", async () => {
+    await expectCode(A.caller.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techBId], leadId: techBId }), "BAD_REQUEST");
+  });
+
+  // ── Positive: office scoped to its own company still works ─────────────────
+  it("office can list technicians for its own company", async () => {
+    const techs = await A.caller.jobAssignment.listTechnicians({ companyId: A.company.id });
+    expect(techs.some((t: any) => t.id === techAId)).toBe(true);
+  });
+  it("office can assign its own company's technician to its own job", async () => {
+    const res = await A.caller.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techAId], leadId: techAId });
+    expect(res).toMatchObject({ success: true, count: 1 });
+  });
+
+  // ── Admin platform operator: cross-company preserved (model unchanged) ─────
+  it("admin (platform operator) may list another company's technicians", async () => {
+    const admin = appRouter.createCaller(ctxFor("admin", B.company.id));
+    const techs = await admin.jobAssignment.listTechnicians({ companyId: A.company.id });
+    expect(techs.some((t: any) => t.id === techAId)).toBe(true);
+  });
+  it("admin (platform operator) may assign across companies (techs scoped to the job's company)", async () => {
+    const admin = appRouter.createCaller(ctxFor("admin", B.company.id));
+    const res = await admin.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techAId], leadId: techAId });
+    expect(res).toMatchObject({ success: true });
   });
 });
