@@ -1,5 +1,17 @@
 # Inspectra — Fable Application Audit
 
+> ⚠️ **HISTORICAL SNAPSHOT — SUPERSEDED. Do not use for current status.**
+> This is a point-in-time audit of commit `f1e33ef` (2026-07-16). Findings below
+> are frozen as they were then. **The headline finding, FAB-09
+> (`fireAlarmFormRouter` cross-tenant IDOR), is FIXED** — every procedure now
+> routes through `assertJobCompany` (+ `assertJobNotFinalized` on upserts),
+> verified by `authorization.test.ts`. FAB-01…FAB-06 and FAB-10 are likewise
+> fixed. The runtime risk flagged here for "presigned-URL expiry on old report
+> photos" is also fixed (see PR-16).
+> **For live status, always use the authoritative register:
+> [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).** Record new
+> findings there — do not edit this snapshot or start a new root `*_AUDIT.md`.
+
 **Date:** 2026-07-16
 **Auditor:** Claude (Fable) — evidence-based static audit + safe non-mutating build/test runs
 **Commit audited:** `f1e33ef` (main)

@@ -16,6 +16,8 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
+    "security:tenant-audit": "tsx scripts/auditTenantGuards.ts",
+    "security:tenant-audit:strict": "tsx scripts/auditTenantGuards.ts --strict",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "backfill:building-ids:dry": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1 --dry-run",
     "backfill:building-ids": "tsx scripts/backfillSiteBuildingIds.ts --file \"./client/src/data/FILE MONTHLY SERVICE LIST (1).xlsx\" --company 1",

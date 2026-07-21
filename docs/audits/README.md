@@ -11,6 +11,23 @@ distinguishes the authoritative active document from the historical snapshots.
 - `PRODUCTION_HARDENING_PLAN.md` (root) — plan for the 2026-06-30 hardening pass.
 - `PRODUCTION_HARDENING_RESULTS.md` (root) — results of that pass.
 
+## Tooling
+- **`pnpm security:tenant-audit`** (`scripts/auditTenantGuards.ts`) — static
+  heuristic that flags id-addressed router procedures with no visible tenant
+  scope. Advisory; see `docs/security/TENANT_GUARD_AUDIT.md`. Not a proof —
+  reviewed decisions live in its allowlist and in the register.
+
+## Point-in-time application audits (date / commit each covers)
+Whole-app audits, newest first. Each is a **frozen snapshot**; current status is
+in the register. When a snapshot's finding is still open, it is copied into the
+register — do not read status from the snapshot.
+
+| Snapshot (root) | Date | Commit audited | Status |
+|-----------------|------|----------------|--------|
+| `FABLE_APPLICATION_AUDIT.md` | 2026-07-16 | `f1e33ef` | Superseded — banner added; FAB-01…10 fixed, tracked as PR-/FAB- rows in the register |
+| `INSPECTRA_APPLICATION_AUDIT.md` | 2026-06-10 | (see file) | Historical |
+| `PRODUCTION_READINESS_AUDIT.md` | 2026-05-17 | (see file) | Historical |
+
 ## Historical snapshots (root `*_AUDIT.md`, `*_NOTES.md`)
 These are read-only history. Representative examples (non-exhaustive):
 
