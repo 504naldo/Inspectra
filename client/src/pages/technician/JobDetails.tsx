@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { pendingSyncItemCount, isQaSubmitBlocked, pendingSyncCountsForJob } from "@/lib/qaPreflight";
+import { usePendingFireAlarmResults } from "@/hooks/usePendingFireAlarmResults";
+import { usePendingSmokeAlarmTests } from "@/hooks/usePendingSmokeAlarmTests";
 import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { SiteDetails } from "@/components/SiteDetails";
@@ -377,6 +379,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   // Submit for QA
   const [qaDialogOpen, setQaDialogOpen] = useState(false);
   const [qaOverride, setQaOverride] = useState(false);
+  // Reactive IndexedDB queues (fire-alarm checklist results + smoke-alarm tests)
+  // for the QA preflight below. Both return only unsynced items.
+  const pendingFireAlarmResults = usePendingFireAlarmResults();
+  const pendingSmokeTests = usePendingSmokeAlarmTests();
+
   // Unsynced field data for THIS job across all critical offline stores. QA
   // submission is blocked while this is > 0 unless the technician explicitly
   // overrides, so a submit can't silently omit device tests / deficiencies /
@@ -392,12 +399,17 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           deficiencies: getOfflineDeficiencies(),
           checklistResponses: getOfflineChecklistResponses(),
           templateResponses: getOfflineTemplateResponses(),
+          // Fire-alarm + smoke-alarm queues live in IndexedDB; both hooks return
+          // only unsynced items and carry a jobId, so the per-job preflight
+          // counts them alongside the localStorage stores.
+          fireAlarmResults: pendingFireAlarmResults,
+          smokeTests: pendingSmokeTests,
         },
         jobId,
       ),
     // syncStatus is the reactive signal that offline stores changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [jobId, syncStatus, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses],
+    [jobId, syncStatus, pendingFireAlarmResults, pendingSmokeTests, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses],
   );
   const pendingSyncCount = pendingSyncItemCount(jobSyncCounts);
   const { data: templateCompleteness } = trpc.inspectionTemplate.getCompletenessForJob.useQuery(
@@ -1704,6 +1716,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   {jobSyncCounts.pendingDeficiencies > 0 && <li>{jobSyncCounts.pendingDeficiencies} deficienc{jobSyncCounts.pendingDeficiencies !== 1 ? "ies" : "y"}</li>}
                   {(jobSyncCounts.pendingChecklistResponses ?? 0) > 0 && <li>{jobSyncCounts.pendingChecklistResponses} checklist response{jobSyncCounts.pendingChecklistResponses !== 1 ? "s" : ""}</li>}
                   {(jobSyncCounts.pendingTemplateResponses ?? 0) > 0 && <li>{jobSyncCounts.pendingTemplateResponses} template response{jobSyncCounts.pendingTemplateResponses !== 1 ? "s" : ""}</li>}
+                  {(jobSyncCounts.pendingFireAlarmResults ?? 0) > 0 && <li>{jobSyncCounts.pendingFireAlarmResults} fire-alarm result{jobSyncCounts.pendingFireAlarmResults !== 1 ? "s" : ""}</li>}
+                  {(jobSyncCounts.pendingSmokeTests ?? 0) > 0 && <li>{jobSyncCounts.pendingSmokeTests} smoke-alarm test{jobSyncCounts.pendingSmokeTests !== 1 ? "s" : ""}</li>}
                 </ul>
                 <p className="text-amber-700 dark:text-amber-400 text-xs">
                   These are stored on this device only. Sync first so the report includes them.
