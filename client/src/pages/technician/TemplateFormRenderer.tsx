@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -354,12 +354,16 @@ function ItemRenderer({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function TemplateFormRenderer() {
-  const { jobId, templateId } = useParams<{ jobId: string; templateId: string }>();
+type TemplateFormRendererProps = {
+  jobId: number;
+  templateId: number;
+};
+
+export default function TemplateFormRenderer({ jobId, templateId }: TemplateFormRendererProps) {
   const [, setLocation] = useLocation();
 
-  const jId = parseInt(jobId!);
-  const tId = parseInt(templateId!);
+  const jId = jobId;
+  const tId = templateId;
 
   const isOnline = useOnlineStatus();
   const {

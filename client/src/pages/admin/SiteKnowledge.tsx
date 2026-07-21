@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Link } from "wouter";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AdminLayout from "@/components/AdminLayout";
@@ -23,10 +23,12 @@ const SYSTEM_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ] as const;
 
-export default function SiteKnowledge() {
+type SiteKnowledgeProps = {
+  siteId: number;
+};
+
+export default function SiteKnowledge({ siteId }: SiteKnowledgeProps) {
   const { user } = useAuth();
-  const params = useParams<{ siteId: string }>();
-  const siteId = parseInt(params.siteId || "0");
   const [activeTab, setActiveTab] = useState("property");
 
   if (!user || !user.companyId) {

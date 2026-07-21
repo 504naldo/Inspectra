@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Link } from "wouter";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
@@ -442,9 +442,11 @@ function AssignmentsCard({
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function InspectionTemplateDetail() {
-  const { id } = useParams<{ id: string }>();
-  const templateId = parseInt(id!);
+type InspectionTemplateDetailProps = {
+  templateId: number;
+};
+
+export default function InspectionTemplateDetail({ templateId }: InspectionTemplateDetailProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 

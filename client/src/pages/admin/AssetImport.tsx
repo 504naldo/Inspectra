@@ -24,7 +24,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useState, useRef } from "react";
-import { useParams, Link, useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { isSpreadsheetFile, getSpreadsheetErrorMessage, getSpreadsheetAcceptAttribute } from "@/_core/utils/fileTypes";
 import { autoMapColumns } from "@/_core/utils/autoMapping";
@@ -73,7 +73,11 @@ const getFieldsForImportType = (importType: ImportType) => {
   ];
 };
 
-export default function AssetImport() {
+type AssetImportProps = {
+  siteId: number;
+};
+
+export default function AssetImport({ siteId }: AssetImportProps) {
   const { user } = useAuth();
 
   if (!user || !user.companyId) {
@@ -88,9 +92,7 @@ export default function AssetImport() {
     );
   }
 
-  const params = useParams<{ siteId: string }>();
   const [, navigate] = useLocation();
-  const siteId = parseInt(params.siteId || "0");
   const companyId = user.companyId;
 
   const [step, setStep] = useState<ImportStep>('selectType');
