@@ -109,10 +109,10 @@ const ALLOWLIST: Record<string, string> = {
     "delegates to compliance/finalizeJob.ts, which enforces job.companyId === ctx.user.companyId before finalizing",
   "server/jobAssignmentRouter.ts::listMyJobs":
     "self-scoped: returns only the caller's own assignments (WHERE jobAssignments.userId = ctx.user.id)",
-  "server/jobAssignmentRouter.ts::listJobsWithAssignees":
-    "office/admin dispatch list filtered by input.companyId; client-supplied-companyId trust for office is tracked as PR-15 residual in docs/PRODUCTION_READINESS.md",
-  "server/jobAssignmentRouter.ts::listDispatch":
-    "office/admin dispatch list filtered by input.companyId; client-supplied-companyId trust for office is tracked as PR-15 residual in docs/PRODUCTION_READINESS.md",
+  // listJobsWithAssignees / listDispatch previously relied on this allowlist for
+  // their input.companyId trust; both now enforce assertCompanyScope() (office
+  // scoped to its own company, admin cross-company), so they no longer need an
+  // entry — the heuristic clears them on the ctx.user.companyId signal.
 };
 
 function listRouterFiles(): string[] {
