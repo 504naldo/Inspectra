@@ -541,6 +541,9 @@ export const inspectionTemplateRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = (await getDb())!;
 
+      // Company + finalized scope only — NOT assignment-scoped, so a reassigned
+      // technician's captured offline template responses still sync (no
+      // field-data loss). Locked by offlineSyncSafeguards.test.ts.
       const [job] = await db.select({ companyId: jobs.companyId, finalizedAt: jobs.finalizedAt })
         .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
       if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });

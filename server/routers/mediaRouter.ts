@@ -75,6 +75,9 @@ export const mediaRouter = router({
     .mutation(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId;
       if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      // assertDeficiencyAccess scopes by company + finalized job only — NOT by
+      // the assignment list, so a reassigned technician's captured offline photos
+      // still upload (no field-data loss). Locked by offlineSyncSafeguards.test.ts.
       const { deficiency, job } = await assertDeficiencyAccess(input.deficiencyId, companyId);
 
       // Idempotent replay: if this offline upload was already applied, return the
