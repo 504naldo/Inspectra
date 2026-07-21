@@ -146,6 +146,7 @@ interface CliArgs {
   rootId?: string;
   flat: boolean;
   cleanNames: boolean;
+  cleanFields: boolean;
   orgMap: Record<string, string>;
 }
 
@@ -162,6 +163,7 @@ function parseArgs(): CliArgs {
     outputMismatches: false,
     flat: false,
     cleanNames: false,
+    cleanFields: false,
     orgMap: {},
   };
 
@@ -180,6 +182,7 @@ function parseArgs(): CliArgs {
       case "--root-id":         args.rootId = argv[++i]; break;
       case "--flat":            args.flat = true; break;
       case "--clean-names":     args.cleanNames = true; break;
+      case "--clean-fields":    args.cleanFields = true; break;
       case "--org-map": {
         const raw = argv[++i];
         const eqIdx = raw.indexOf("=");
@@ -353,6 +356,10 @@ interface SiteIndexes {
   byBuildingId: Map<string, DbSite>;
   /** Existing sites keyed by a `#NNNN` code found *inside their name* (normBldg). */
   byNameFileNumber: Map<string, DbSite>;
+  /** Existing sites keyed by their fully-normalized NAME (identity match). Used
+   *  as a flat-mode fallback once names have already been cleaned to the folder
+   *  header and no longer carry a `#NNNN` to match on. */
+  byExactName: Map<string, DbSite>;
   /** key: `${orgId}::${normName(site.name)}` */
   byOrgName: Map<string, DbSite>;
 }
@@ -431,7 +438,15 @@ export function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
   const byFileNumber = new Map<string, DbSite>();
   const byBuildingId = new Map<string, DbSite>();
   const byNameFileNumber = new Map<string, DbSite>();
+  const byExactName = new Map<string, DbSite>();
   const byOrgName = new Map<string, DbSite>();
+  // Names that are NOT unique across the DB can't safely identity-match; drop
+  // them from byExactName so an ambiguous name never matches a folder.
+  const nameCounts = new Map<string, number>();
+  for (const s of sites) {
+    const nn = normName(s.name);
+    if (nn) nameCounts.set(nn, (nameCounts.get(nn) ?? 0) + 1);
+  }
   for (const s of sites) {
     if (s.fileNumber && !byFileNumber.has(normBldg(s.fileNumber))) {
       byFileNumber.set(normBldg(s.fileNumber), s);
@@ -443,10 +458,12 @@ export function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
     if (nameCode && !byNameFileNumber.has(normFileCode(nameCode))) {
       byNameFileNumber.set(normFileCode(nameCode), s);
     }
+    const nn = normName(s.name);
+    if (nn && nameCounts.get(nn) === 1) byExactName.set(nn, s);
     const nameKey = `${s.customerOrgId}::${normName(s.name)}`;
     if (!byOrgName.has(nameKey)) byOrgName.set(nameKey, s);
   }
-  return { byFileNumber, byBuildingId, byNameFileNumber, byOrgName };
+  return { byFileNumber, byBuildingId, byNameFileNumber, byExactName, byOrgName };
 }
 
 // ─── Site matching ────────────────────────────────────────────────────────────
@@ -469,7 +486,12 @@ export function matchSite(
   // site to another building's address, which is not.
   if (flatMode) {
     const byNameFN = indexes.byNameFileNumber.get(normFileCode(record.fileNumber));
-    return byNameFN ? { site: byNameFN, confidence: "high", matchedBy: "name-fileNumber" } : null;
+    if (byNameFN) return { site: byNameFN, confidence: "high", matchedBy: "name-fileNumber" };
+    // Fallback: once names have been cleaned to the folder header they no longer
+    // carry a `#NNNN`, so match on the folder header == the (unique) site name.
+    const byName = indexes.byExactName.get(normName(record.siteName));
+    if (byName) return { site: byName, confidence: "high", matchedBy: "exact-name" };
+    return null;
   }
 
   // HIGH: exact fileNumber match (O(1))
@@ -825,6 +847,7 @@ async function main() {
   const allMismatches: MismatchRow[] = [];
   const nameCleans: { siteId: number; before: string; after: string }[] = [];
   const suspiciousNameCleans: { siteId: number; before: string; after: string }[] = [];
+  const fieldCleans: { siteId: number; changed: string[]; fromFile: string; toFile: string; fromAddr: string; toAddr: string }[] = [];
   let created = 0, updated = 0, skipped = 0, skippedNoOrg = 0, skippedNoName = 0;
   let highConf = 0, medConf = 0, lowConf = 0;
   let dupFileConflicts = 0, dupBldgConflicts = 0;
@@ -905,8 +928,45 @@ async function main() {
         }
       }
 
+      // --clean-fields: overwrite the scrambled address + file-number fields from
+      // the authoritative folder header, for a verified same-building match only
+      // (HIGH confidence + shares a street number with the current name). This is
+      // the pass that corrects addresses left pointing at another building.
+      if (
+        args.cleanFields &&
+        match.confidence === "high" &&
+        sharesBuildingNumber(record.siteName, match.site.name)
+      ) {
+        const before = {
+          fileNumber: match.site.fileNumber, address: match.site.address, city: match.site.city,
+        };
+        const changed: string[] = [];
+        if (record.fileNumber && normFileCode(match.site.fileNumber) !== normFileCode(record.fileNumber)) {
+          patch.fileNumber = record.fileNumber; patch.buildingId = record.fileNumber; changed.push("fileNumber");
+        }
+        if (record.address && normAddress(match.site.address ?? "") !== normAddress(record.address)) {
+          patch.address = record.address; changed.push("address");
+        }
+        if (record.city && normName(match.site.city ?? "") !== normName(record.city)) {
+          patch.city = record.city; changed.push("city");
+        }
+        if (record.state && normName(match.site.state ?? "") !== normName(record.state)) {
+          patch.state = record.state; changed.push("state");
+        }
+        if (record.postalCode && (match.site.postalCode ?? "") !== record.postalCode) {
+          patch.postalCode = record.postalCode; changed.push("postalCode");
+        }
+        if (changed.length) {
+          fieldCleans.push({
+            siteId: match.site.id, changed,
+            fromFile: before.fileNumber ?? "", toFile: record.fileNumber,
+            fromAddr: before.address ?? "", toAddr: record.address ?? "",
+          });
+        }
+      }
+
       const hasUpdate = Object.keys(patch).length > 0;
-      const shouldUpdate = hasUpdate && (args.updateExisting || args.cleanNames);
+      const shouldUpdate = hasUpdate && (args.updateExisting || args.cleanNames || args.cleanFields);
 
       let action: ActionType;
       if (!hasUpdate) {
@@ -1150,6 +1210,10 @@ async function main() {
     const cleanLabel = args.dryRun ? "Would clean junk names (dry-run):" : "Junk names cleaned:";
     console.log(`  ${pad(cleanLabel, 40)} ${nameCleans.length}`);
   }
+  if (args.cleanFields) {
+    const fLabel = args.dryRun ? "Would fix address/file# (dry-run):" : "Address/file# fixed:";
+    console.log(`  ${pad(fLabel, 40)} ${fieldCleans.length}`);
+  }
   console.log(`  ${pad("Skipped (already complete):", 40)} ${skipped}`);
   console.log(`  ${pad("Skipped (no org matched):", 40)} ${skippedNoOrg}`);
   console.log(`  ${pad("Skipped (no name/address):", 40)} ${skippedNoName}`);
@@ -1191,6 +1255,18 @@ async function main() {
       console.log(`  siteId=${c.siteId}`);
       console.log(`     from: "${c.before}"`);
       console.log(`     to:   "${c.after}"`);
+    }
+  }
+
+  if (args.cleanFields && fieldCleans.length > 0) {
+    const label = args.dryRun ? "WOULD FIX FIELDS" : "FIXED FIELDS";
+    console.log(`\n${line}`);
+    console.log(`  ${label} (${fieldCleans.length}) — address / file-number from Drive folder`);
+    console.log(line);
+    for (const c of fieldCleans) {
+      console.log(`  siteId=${c.siteId}  [${c.changed.join(", ")}]`);
+      if (c.changed.includes("fileNumber")) console.log(`     file#:   "${c.fromFile}" → "${c.toFile}"`);
+      if (c.changed.includes("address"))    console.log(`     address: "${c.fromAddr}" → "${c.toAddr}"`);
     }
   }
 
