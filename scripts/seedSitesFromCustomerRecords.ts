@@ -370,6 +370,27 @@ export function extractFileNumberFromText(text: string | null | undefined): stri
 }
 
 /**
+ * Precise file-code key that keeps sub-numbers distinct. normBldg() strips the
+ * dash and leading zeros, so "#0070-1" and "#0701" both collapse to "701" — a
+ * collision that mis-matches sub-numbered files (#NNNN-N) to a different
+ * building. This preserves the dash: "#0070-1" → "70-1", "#0701" → "701".
+ */
+export function normFileCode(s: string | null | undefined): string {
+  if (!s) return "";
+  return s
+    .replace(/^\s*#\s*/, "")
+    .trim()
+    .toLowerCase()
+    .split("-")
+    .map((part) => {
+      const a = part.replace(/[^a-z0-9]+/g, "");
+      return /^\d+$/.test(a) ? String(parseInt(a, 10)) : a;
+    })
+    .filter((p) => p !== "")
+    .join("-");
+}
+
+/**
  * True when a site NAME is import junk rather than a real name — i.e. it carries
  * a summary-sheet-filename fingerprint that a genuine name ("P.S. MOTORS LTD")
  * never has. Used by --clean-names to decide which names are safe to overwrite
@@ -400,8 +421,8 @@ export function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
       byBuildingId.set(normBldg(s.buildingId), s);
     }
     const nameCode = extractFileNumberFromText(s.name);
-    if (nameCode && !byNameFileNumber.has(normBldg(nameCode))) {
-      byNameFileNumber.set(normBldg(nameCode), s);
+    if (nameCode && !byNameFileNumber.has(normFileCode(nameCode))) {
+      byNameFileNumber.set(normFileCode(nameCode), s);
     }
     const nameKey = `${s.customerOrgId}::${normName(s.name)}`;
     if (!byOrgName.has(nameKey)) byOrgName.set(nameKey, s);
@@ -428,7 +449,7 @@ export function matchSite(
   // ALONE. No match is safe (site is left untouched); a wrong match renames a
   // site to another building's address, which is not.
   if (flatMode) {
-    const byNameFN = indexes.byNameFileNumber.get(normFN);
+    const byNameFN = indexes.byNameFileNumber.get(normFileCode(record.fileNumber));
     return byNameFN ? { site: byNameFN, confidence: "high", matchedBy: "name-fileNumber" } : null;
   }
 
@@ -441,7 +462,7 @@ export function matchSite(
   if (byBI) return { site: byBI, confidence: "high", matchedBy: "buildingId" };
 
   // HIGH: the Drive `#NNNN` appears inside an existing site's NAME (O(1)).
-  const byNameFN = indexes.byNameFileNumber.get(normFN);
+  const byNameFN = indexes.byNameFileNumber.get(normFileCode(record.fileNumber));
   if (byNameFN) return { site: byNameFN, confidence: "high", matchedBy: "name-fileNumber" };
 
   // MEDIUM: normalized address prefix match (linear — no practical index for prefix queries)
