@@ -387,7 +387,7 @@ export function isJunkSiteName(name: string | null | undefined): boolean {
   );
 }
 
-function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
+export function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
   const byFileNumber = new Map<string, DbSite>();
   const byBuildingId = new Map<string, DbSite>();
   const byNameFileNumber = new Map<string, DbSite>();
@@ -411,13 +411,26 @@ function buildSiteIndexes(sites: DbSite[]): SiteIndexes {
 
 // ─── Site matching ────────────────────────────────────────────────────────────
 
-function matchSite(
+export function matchSite(
   record: DriveCustomerRecord,
   orgId: number | undefined,
   allSites: DbSite[],
-  indexes: SiteIndexes
+  indexes: SiteIndexes,
+  flatMode = false
 ): SiteMatch | null {
   const normFN = normBldg(record.fileNumber);
+
+  // FLAT-MODE MATCHING: in a flat Customer Records tree the site fileNumber /
+  // buildingId FIELDS and the address are frequently corrupt — they point at a
+  // *different* building than the site's own name (a summary-sheet import left
+  // the correct `#NNNN` only in the NAME). Matching on those fields produces
+  // confident-but-wrong matches, so flat mode trusts the name-embedded `#NNNN`
+  // ALONE. No match is safe (site is left untouched); a wrong match renames a
+  // site to another building's address, which is not.
+  if (flatMode) {
+    const byNameFN = indexes.byNameFileNumber.get(normFN);
+    return byNameFN ? { site: byNameFN, confidence: "high", matchedBy: "name-fileNumber" } : null;
+  }
 
   // HIGH: exact fileNumber match (O(1))
   const byFN = indexes.byFileNumber.get(normFN);
@@ -427,10 +440,7 @@ function matchSite(
   const byBI = indexes.byBuildingId.get(normFN);
   if (byBI) return { site: byBI, confidence: "high", matchedBy: "buildingId" };
 
-  // HIGH: the Drive `#NNNN` appears inside an existing site's NAME (O(1)). This
-  // recovers matches for sites imported with the code buried in the name and a
-  // wrong/placeholder fileNumber field — the common case in flat Customer
-  // Records trees.
+  // HIGH: the Drive `#NNNN` appears inside an existing site's NAME (O(1)).
   const byNameFN = indexes.byNameFileNumber.get(normFN);
   if (byNameFN) return { site: byNameFN, confidence: "high", matchedBy: "name-fileNumber" };
 
@@ -794,7 +804,7 @@ async function main() {
       ? allOrgs.find((o) => o.id === orgId)?.name
       : undefined;
 
-    const match = matchSite(record, orgId, allSites, siteIndexes);
+    const match = matchSite(record, orgId, allSites, siteIndexes, args.flat);
     const confidence: Confidence | "none" = match?.confidence ?? "none";
 
     if (match) {
