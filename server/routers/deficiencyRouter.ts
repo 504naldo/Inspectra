@@ -69,6 +69,9 @@ const deficiencyRouter = router({
     // find-or-create on this key so a retry never duplicates the record.
     idempotencyKey: z.string().min(1).max(64).optional(),
   })).mutation(async ({ input, ctx }) => {
+    // Company + finalized scope only — NOT assignment-scoped, so a technician
+    // reassigned away mid-inspection can still sync a deficiency they captured
+    // offline (no field-data loss). Locked by offlineSyncSafeguards.test.ts.
     await db.assertJobCompany(input.jobId, ctx.user.companyId!);
 
     // Idempotent replay: if this offline create was already applied, return the

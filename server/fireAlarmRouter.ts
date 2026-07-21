@@ -206,6 +206,9 @@ export const fireAlarmRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // Company + finalized scope only — NOT assignment-scoped, so a reassigned
+      // technician's captured offline fire-alarm results still sync (no
+      // field-data loss). Locked by offlineSyncSafeguards.test.ts.
       await assertJobCompany(input.jobId, ctx.user.companyId!);
       await assertJobNotFinalized(input.jobId);
       const database = await getDb();

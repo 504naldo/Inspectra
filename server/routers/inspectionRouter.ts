@@ -104,6 +104,10 @@ const inspectionResultRouter = router({
   })).mutation(async ({ input, ctx }) => {
     const jobIds = Array.from(new Set(input.results.map((r) => r.jobId)));
     for (const jobId of jobIds) {
+      // Company + finalized scope only — intentionally NOT assignment-scoped, so
+      // a technician reassigned away mid-inspection can still sync work they
+      // already captured offline (no field-data loss). Do not add an
+      // isUserAssignedToJob gate here; offlineSyncSafeguards.test.ts locks this.
       await assertJobCompany(jobId, ctx.user.companyId!);
       await assertJobNotFinalized(jobId);
     }
@@ -159,6 +163,8 @@ const checklistRouter = router({
   })).mutation(async ({ input, ctx }) => {
     const jobIds = Array.from(new Set(input.responses.map((r) => r.jobId)));
     for (const jobId of jobIds) {
+      // Company + finalized scope only — NOT assignment-scoped (see syncBatch
+      // above), so a reassigned technician's captured offline work still syncs.
       await assertJobCompany(jobId, ctx.user.companyId!);
       await assertJobNotFinalized(jobId);
     }

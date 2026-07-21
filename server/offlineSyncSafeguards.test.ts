@@ -123,3 +123,57 @@ describe("Offline sync — company scoping (no client-supplied company id)", () 
     expect(created.id).toBeTruthy();
   });
 });
+
+/**
+ * Reassignment must NOT reject a technician's already-captured offline work.
+ *
+ * Scenario: a technician is assigned a job, captures field data offline, is then
+ * reassigned away (removed from job_assignments) while still offline, and
+ * reconnects to sync. Their queued work must still be accepted — the offline
+ * write paths are scoped by company + finalized state, deliberately NOT by the
+ * current assignment list, so a mid-inspection reassignment can't silently drop
+ * a shift's worth of captured results.
+ *
+ * This is a REGRESSION LOCK. If a future tenant-hardening pass adds an
+ * `isUserAssignedToJob` gate to any offline write procedure (they look
+ * "under-guarded" — technicianProcedure taking a jobId with only a company
+ * check), that change will fail here. Keep it that way, or make the removal of
+ * this guarantee an explicit, reviewed product decision.
+ */
+describe("Offline sync — a reassigned technician's captured work is still accepted", () => {
+  let T: Awaited<ReturnType<typeof tenant>>;
+  let deviceId: number;
+  const TECH_USER_ID = 1; // matches techCtx default
+
+  beforeAll(async () => {
+    T = await tenant("REASSIGN");
+    const device = await db.createDevice({
+      companyId: T.company.id, siteId: T.site.id, deviceType: "Smoke Detector", category: "FIRE_ALARM_DEVICE",
+    } as any);
+    deviceId = device.id;
+    // The technician WAS assigned, then is reassigned away (removed) while offline.
+    await db.addJobAssignment({ jobId: T.job.id, userId: TECH_USER_ID, companyId: T.company.id, role: "lead" } as any);
+    await db.removeJobAssignment(T.job.id, TECH_USER_ID);
+    // Sanity: the technician is no longer on the assignment list.
+    expect(await db.isUserAssignedToJob(T.job.id, TECH_USER_ID)).toBe(false);
+  });
+
+  it("accepts a queued device-test batch after reassignment", async () => {
+    const res = await T.caller.inspectionResult.syncBatch({
+      results: [{ jobId: T.job.id, deviceId, result: "pass" }],
+    });
+    expect(res.synced).toBe(1);
+  });
+
+  it("accepts queued checklist responses after reassignment", async () => {
+    const res = await T.caller.checklist.bulkSaveResponses({
+      responses: [{ jobId: T.job.id, sectionNumber: "1", itemId: "a", status: "PASS" }],
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("accepts a queued deficiency after reassignment", async () => {
+    const created = await T.caller.deficiency.create({ jobId: T.job.id, title: "captured before reassignment" });
+    expect(created.id).toBeTruthy();
+  });
+});

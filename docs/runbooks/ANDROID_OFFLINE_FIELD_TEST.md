@@ -205,14 +205,16 @@ sync (nothing is marked synced merely because connectivity returned).
 4. On the device, reconnect and **Sync**.
 5. Record the actual outcome.
 
-**What to observe (do not assume):** the current server model authorizes
-technician writes by **company + finalized state**, not by the assignment list,
-so a same-company technician's queued write is expected to still sync. Capture
-whether it synced or was rejected, and whether the office user sees the data.
+**Expected (guaranteed behavior):** offline writes are authorized by **company +
+finalized state**, deliberately **not** by the assignment list, so the reassigned
+technician's already-captured work **must still sync** — reassignment must never
+drop a shift's worth of field data. This is locked by
+`server/offlineSyncSafeguards.test.ts`; §13 verifies it holds on a real device.
 
-**Pass criteria:** behavior matches the documented model **and** no data is
-silently lost without a message. Flag any surprising result to engineering — the
-assignment-scoping decision is an open product question (see audit notes).
+**Pass criteria:** the reassigned technician's queued work syncs successfully and
+the office user can see it on the job; **no** captured data is lost or rejected.
+**Fail:** any queued item is rejected or silently dropped because the technician
+was reassigned.
 
 ---
 
@@ -349,8 +351,8 @@ duplicate.
 7. Camera permission flow is graceful (§17).
 8. Server shows **one correctly-attributed row per item**, no cross-company
    leakage (§18).
-9. Reassignment behavior (§13) matches the documented model with **no silent data
-   loss** (any policy change is a separate, deliberate decision).
+9. A **reassigned** technician's already-captured work still syncs (§13) — **no
+   data lost or rejected** because of the reassignment.
 
 **FAIL** if any of: queued data lost on restart; duplicates on replay; a write
 lands on a finalized job; "synced" shown for a server-rejected item; a photo
