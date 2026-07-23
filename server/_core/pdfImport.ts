@@ -2,6 +2,7 @@ import { createRequire } from "module";
 import { invokeLLM } from "./llm";
 import * as db from "../db";
 import { storagePut } from "../storage";
+import { isSchemaEcho } from "./schemaEcho";
 
 const require = createRequire(import.meta.url);
 
@@ -47,26 +48,16 @@ export interface ExtractedSiteData {
   };
 }
 
-// Matches values where the model echoed a schema type description instead of a
-// real extraction, e.g. "string or null - the building/site name", "string",
-// "string - street address", or a literal "null". These must never be persisted
-// as if they were real data (they surfaced as sites literally named
-// "string or null - the buil…"). A genuine value like "String Lighting Co" is
-// NOT matched because "String" is not followed by " or null", end-of-string, or
-// a separator.
-const SCHEMA_ECHO_RE = /^"?string(?:\s+or\s+null)?"?(?:\s*[-–—:].*)?$/i;
-
 /**
  * Reject a value that is obviously a leaked schema placeholder rather than
  * extracted content. Returns the trimmed string, or null when the value is
- * empty / a placeholder echo / a literal "null".
+ * empty / a placeholder echo (see isSchemaEcho) / a literal "null".
  */
 function cleanExtractedValue(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (trimmed.toLowerCase() === "null") return null;
-  if (SCHEMA_ECHO_RE.test(trimmed)) return null;
+  if (isSchemaEcho(trimmed)) return null;
   return trimmed;
 }
 

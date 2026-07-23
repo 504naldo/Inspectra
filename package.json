@@ -34,6 +34,8 @@
     "seed:sites-from-customer-records": "tsx scripts/seedSitesFromCustomerRecords.ts --company 1",
     "merge:sites:dry": "tsx scripts/mergeSites.ts --company 1 --dry-run",
     "merge:sites": "tsx scripts/mergeSites.ts --company 1",
+    "cleanup:schema-echo-names:dry": "tsx scripts/cleanupSchemaEchoNames.ts --company 1",
+    "cleanup:schema-echo-names": "tsx scripts/cleanupSchemaEchoNames.ts --company 1 --fix",
     "normalize:site-names:dry": "tsx scripts/normalizeSiteNames.ts",
     "normalize:site-names": "tsx scripts/normalizeSiteNames.ts --apply",
     "backfill:work-site-info:dry": "tsx scripts/backfillWorkSiteInfoFromCustomerRecords.ts",
