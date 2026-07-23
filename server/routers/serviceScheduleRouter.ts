@@ -196,6 +196,9 @@ export const serviceScheduleRouter = router({
     .input(z.object({
       scheduleId: z.number().int().positive(),
       scheduledDate: z.string().optional(),
+      scheduledStartAt: z.string().optional(), // ISO datetime (UTC wall-clock)
+      scheduledEndAt: z.string().optional(),   // ISO datetime (UTC wall-clock)
+      scopeOfWork: z.string().max(2000).optional(),
       title: z.string().max(200).optional(),
       notes: z.string().max(2000).optional(),
       leadTechnicianId: z.number().int().positive().optional(),
@@ -227,6 +230,8 @@ export const serviceScheduleRouter = router({
       };
       const jobType = (jobTypeMap[sched.frequency] ?? "annual") as any;
       const scheduledDate = input.scheduledDate ? new Date(input.scheduledDate) : undefined;
+      const scheduledStartAt = input.scheduledStartAt ? new Date(input.scheduledStartAt) : undefined;
+      const scheduledEndAt = input.scheduledEndAt ? new Date(input.scheduledEndAt) : undefined;
       const jobNumber = `JOB-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
       const jobTitle = input.title?.trim() || `${sched.serviceType} — ${site.name}`;
 
@@ -241,6 +246,9 @@ export const serviceScheduleRouter = router({
         status: scheduledDate ? "scheduled" : "pending",
         priority: "medium",
         scheduledDate,
+        scheduledStartAt,
+        scheduledEndAt,
+        scopeOfWork: input.scopeOfWork?.trim() || undefined,
         ...(input.leadTechnicianId ? { leadTechnicianId: input.leadTechnicianId } : {}),
       });
 
@@ -382,6 +390,9 @@ export const serviceScheduleRouter = router({
       z.object({
         trackingId: z.number().int().positive(),
         scheduledDate: z.string().optional(),
+        scheduledStartAt: z.string().optional(), // ISO datetime (UTC wall-clock)
+        scheduledEndAt: z.string().optional(),   // ISO datetime (UTC wall-clock)
+        scopeOfWork: z.string().max(2000).optional(),
         notes: z.string().max(2000).optional(),
         title: z.string().max(200).optional(),
         leadTechnicianId: z.number().int().positive().optional(),
@@ -410,6 +421,8 @@ export const serviceScheduleRouter = router({
       const scheduledDateParsed = input.scheduledDate
         ? new Date(input.scheduledDate)
         : (row.scheduledDate ?? undefined);
+      const scheduledStartAt = input.scheduledStartAt ? new Date(input.scheduledStartAt) : undefined;
+      const scheduledEndAt = input.scheduledEndAt ? new Date(input.scheduledEndAt) : undefined;
 
       const jobNumber = `JOB-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
       const jobTitle = input.title?.trim() || `${row.serviceType} — ${site.name}`;
@@ -425,6 +438,9 @@ export const serviceScheduleRouter = router({
         status: scheduledDateParsed ? "scheduled" : "pending",
         priority: "medium",
         scheduledDate: scheduledDateParsed,
+        scheduledStartAt,
+        scheduledEndAt,
+        scopeOfWork: input.scopeOfWork?.trim() || undefined,
         ...(input.leadTechnicianId ? { leadTechnicianId: input.leadTechnicianId } : {}),
       });
 
