@@ -589,20 +589,21 @@ export const filesRouter = router({
             );
 
           if (existing.length > 0) {
-            // Update existing
+            // Update existing — realign to the source order too (source is authoritative).
             await dbInstance
               .update(devices)
               .set({
                 location,
                 deviceType: description,
                 category,
+                sortOrder: sequenceOrder,
                 updatedAt: new Date(),
               })
               .where(eq(devices.id, existing[0].id));
 
             updated[counterKey]++;
           } else {
-            // Insert new
+            // Insert new — sortOrder follows the source row order.
             await dbInstance.insert(devices).values({
               companyId: targetCompanyId,
               siteId: input.siteId,
@@ -610,6 +611,7 @@ export const filesRouter = router({
               deviceType: description,
               category,
               externalRef: dedupeKey,
+              sortOrder: sequenceOrder,
               isActive: true,
             });
 

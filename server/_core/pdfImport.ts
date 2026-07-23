@@ -340,13 +340,17 @@ export async function importPdfData(opts: PdfImportOpts): Promise<PdfImportResul
     }
   }
 
-  // 5. Create devices
+  // 5. Create devices — preserve the order they appear in the report, appended
+  //    after any devices already on the site.
   let devicesCreated = 0;
-  for (const device of extracted.devices) {
+  const sortBase = await db.getMaxDeviceSortOrder(siteId!);
+  for (let idx = 0; idx < extracted.devices.length; idx++) {
+    const device = extracted.devices[idx];
     try {
       await db.createDevice({
         companyId,
         siteId: siteId!,
+        sortOrder: sortBase + idx + 1,
         deviceType: device.deviceType,
         category: device.category as any,
         location: device.location || undefined,
