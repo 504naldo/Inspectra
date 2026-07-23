@@ -10,6 +10,21 @@ import { getLoginUrl } from "./const";
 import { mutationQueue } from "@/lib/mutationQueue";
 import "./index.css";
 
+// Vite fires this when a <link rel="modulepreload"> chunk fails to load — the
+// classic "app was redeployed while a tab was open" case. Reload once (guarded
+// against a loop) to pull the fresh index.html + chunk graph.
+window.addEventListener("vite:preloadError", (event) => {
+  const KEY = "chunk-reload:preload";
+  try {
+    if (sessionStorage.getItem(KEY)) return; // already reloaded once this tab
+    sessionStorage.setItem(KEY, "1");
+  } catch {
+    /* sessionStorage unavailable — fall through and reload anyway */
+  }
+  event.preventDefault();
+  window.location.reload();
+});
+
 // Retry mutations up to 2 times for transient network failures (when online)
 const queryClient = new QueryClient({
   defaultOptions: {
