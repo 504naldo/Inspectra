@@ -1,13 +1,14 @@
 import { useState, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { formatDate } from "@/lib/utils";
+import { formatDate, combineDateTimeInput } from "@/lib/utils";
 import AdminLayout from "@/components/AdminLayout";
 import { DispatchBoard } from "./DispatchBoard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -463,6 +464,9 @@ function CreateJobModal({
   onSubmit: (fields: {
     title?: string;
     scheduledDate?: string;
+    scheduledStartAt?: string;
+    scheduledEndAt?: string;
+    scopeOfWork?: string;
     leadTechnicianId?: number;
     assignedTechnicianIds?: number[];
     notes?: string;
@@ -477,13 +481,29 @@ function CreateJobModal({
 
   const [title, setTitle] = useState(defaultTitle);
   const [scheduledDate, setScheduledDate] = useState(defaultDate);
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [scopeOfWork, setScopeOfWork] = useState("");
   const [leadTechId, setLeadTechId] = useState<string>("");
   const [notes, setNotes] = useState(row.notes ?? "");
 
   function handleSubmit() {
+    if ((startTime || endTime) && !scheduledDate) {
+      toast.error("Pick a scheduled date before setting a start or end time");
+      return;
+    }
+    if (startTime && endTime && endTime <= startTime) {
+      toast.error("End time must be after the start time");
+      return;
+    }
     onSubmit({
       title: title.trim() || undefined,
       scheduledDate: scheduledDate || undefined,
+      scheduledStartAt:
+        scheduledDate && startTime ? combineDateTimeInput(scheduledDate, startTime).toISOString() : undefined,
+      scheduledEndAt:
+        scheduledDate && endTime ? combineDateTimeInput(scheduledDate, endTime).toISOString() : undefined,
+      scopeOfWork: scopeOfWork.trim() || undefined,
       leadTechnicianId: leadTechId ? Number(leadTechId) : undefined,
       notes: notes.trim() || undefined,
     });
@@ -516,6 +536,40 @@ function CreateJobModal({
               type="date"
               value={scheduledDate}
               onChange={(e) => setScheduledDate(e.target.value)}
+              className="text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="job-start" className="text-xs">Start Time</Label>
+              <Input
+                id="job-start"
+                type="time"
+                value={startTime}
+                disabled={!scheduledDate}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="job-end" className="text-xs">End Time</Label>
+              <Input
+                id="job-end"
+                type="time"
+                value={endTime}
+                disabled={!scheduledDate}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="text-sm"
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="job-scope" className="text-xs">Scope of Work</Label>
+            <Textarea
+              id="job-scope"
+              value={scopeOfWork}
+              onChange={(e) => setScopeOfWork(e.target.value)}
+              placeholder="What the technician will do on site (shown on their schedule + dashboard)…"
               className="text-sm"
             />
           </div>
@@ -1166,6 +1220,9 @@ function DueSoonTab({ companyId, utils }: { companyId: number; utils: any }) {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<any>(null);
   const [scheduledDate, setScheduledDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [scopeOfWork, setScopeOfWork] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [leadTechId, setLeadTechId] = useState("");
@@ -1188,6 +1245,9 @@ function DueSoonTab({ companyId, utils }: { companyId: number; utils: any }) {
       setScheduleOpen(false);
       setSelectedSchedule(null);
       setScheduledDate("");
+      setStartTime("");
+      setEndTime("");
+      setScopeOfWork("");
       setJobTitle("");
       setNotes("");
       setLeadTechId("");
@@ -1203,9 +1263,22 @@ function DueSoonTab({ companyId, utils }: { companyId: number; utils: any }) {
 
   function handleSchedule() {
     if (!selectedSchedule) return;
+    if ((startTime || endTime) && !scheduledDate) {
+      toast.error("Pick a scheduled date before setting a start or end time");
+      return;
+    }
+    if (startTime && endTime && endTime <= startTime) {
+      toast.error("End time must be after the start time");
+      return;
+    }
     scheduleNow.mutate({
       scheduleId: selectedSchedule.id,
       scheduledDate: scheduledDate || undefined,
+      scheduledStartAt:
+        scheduledDate && startTime ? combineDateTimeInput(scheduledDate, startTime).toISOString() : undefined,
+      scheduledEndAt:
+        scheduledDate && endTime ? combineDateTimeInput(scheduledDate, endTime).toISOString() : undefined,
+      scopeOfWork: scopeOfWork.trim() || undefined,
       title: jobTitle || undefined,
       notes: notes || undefined,
       leadTechnicianId: leadTechId ? Number(leadTechId) : undefined,
@@ -1342,6 +1415,26 @@ function DueSoonTab({ companyId, utils }: { companyId: number; utils: any }) {
               <div className="space-y-1.5">
                 <Label>Scheduled Date (optional)</Label>
                 <Input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Start Time</Label>
+                  <Input type="time" value={startTime} disabled={!scheduledDate} onChange={(e) => setStartTime(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>End Time</Label>
+                  <Input type="time" value={endTime} disabled={!scheduledDate} onChange={(e) => setEndTime(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Scope of Work (optional)</Label>
+                <Textarea
+                  value={scopeOfWork}
+                  onChange={(e) => setScopeOfWork(e.target.value)}
+                  placeholder="What the technician will do on site (shown on their schedule + dashboard)…"
+                />
               </div>
 
               <div className="space-y-1.5">
