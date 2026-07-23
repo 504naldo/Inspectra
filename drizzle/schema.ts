@@ -1633,6 +1633,27 @@ export type InsertSiteWorkSiteInfo = typeof siteWorkSiteInfo.$inferInsert;
 // ============================================
 // COMPANY SETTINGS (Business rules / defaults per company)
 // ============================================
+// Company-scoped per-role permission overrides. A row means: for this company,
+// this role's `permission` is explicitly allowed (1) or denied (0), overriding
+// the baseline ROLE_PERMISSIONS in shared/permissions.ts. No row → baseline.
+// The `admin` role is never overridden (platform operator keeps all permissions).
+export const companyRolePermissions = mysqlTable("company_role_permissions", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  role: mysqlEnum("role", ["office", "technician", "customer"]).notNull(),
+  permission: varchar("permission", { length: 64 }).notNull(),
+  allowed: tinyint("allowed").notNull(),
+  updatedByUserId: int("updatedByUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqueCompanyRolePermission: unique("company_role_permission_unique").on(table.companyId, table.role, table.permission),
+  companyIdIdx: index("company_role_permissions_companyId_idx").on(table.companyId),
+}));
+
+export type CompanyRolePermission = typeof companyRolePermissions.$inferSelect;
+export type InsertCompanyRolePermission = typeof companyRolePermissions.$inferInsert;
+
 export const companySettings = mysqlTable("company_settings", {
   id: int("id").autoincrement().primaryKey(),
   companyId: int("companyId").notNull(),

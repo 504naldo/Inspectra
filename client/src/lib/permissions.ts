@@ -1,10 +1,15 @@
 export {
   hasPermission,
+  resolvePermission,
   ROLE_PERMISSIONS,
   PERMISSION_MODULES,
   ROLE_META,
+  OVERRIDABLE_ROLES,
+  ENFORCED_PERMISSIONS,
+  isRoleOverridable,
   type Role,
   type Permission,
   type RoleMeta,
   type PermissionModule,
+  type PermissionOverride,
 } from "@shared/permissions";

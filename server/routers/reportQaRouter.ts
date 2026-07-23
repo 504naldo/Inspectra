@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { requireCompanyPermission } from "../permissions";
 import { getJobForCompany } from "../tenantGuards";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import {
@@ -185,6 +186,8 @@ export const reportQaRouter = router({
       note: z.string().max(1000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // Company admins can revoke reports.approve from the office role (default: allowed).
+      await requireCompanyPermission(ctx, "reports.approve");
       const report = await db.getReportById(input.reportId);
       if (!report) throw new TRPCError({ code: "NOT_FOUND" });
       await assertCompanyOwns(report.jobId, ctx.user.companyId!);
