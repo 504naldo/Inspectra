@@ -131,6 +131,8 @@ export default function CustomerRecords() {
   } | null>(null);
   // Names created from this screen this session, so the button can show "Added".
   const [createdNames, setCreatedNames] = useState<Set<string>>(new Set());
+  // Folder currently being read for summary-sheet details (drives the spinner).
+  const [extractingFolderId, setExtractingFolderId] = useState<string | null>(null);
 
   if (!user?.companyId) {
     return (
@@ -216,6 +218,9 @@ export default function CustomerRecords() {
     onError: (err) => toast.error(err.message || "Failed to add customer"),
   });
 
+  // Reads a folder's summary sheet to prefill the add-customer form.
+  const extractCustomer = trpc.customerRecords.extractCustomerFromFolder.useMutation();
+
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handleSearch = useCallback(() => {
@@ -271,16 +276,46 @@ export default function CustomerRecords() {
     [existingCustomers]
   );
 
-  // Open the "add customer" dialog prefilled from a Drive folder's name.
-  const openAddFromFolder = useCallback((folderName: string) => {
-    setAddCustomer({
-      name: folderName.trim(),
-      contactName: "",
-      contactEmail: "",
-      contactPhone: "",
-      address: "",
-    });
-  }, []);
+  // Open the "add customer" dialog, prefilling from the folder's summary sheet
+  // when one is found; otherwise fall back to just the folder name.
+  const addFromFolder = useCallback(
+    (folderId: string, folderName: string) => {
+      setExtractingFolderId(folderId);
+      extractCustomer.mutate(
+        { folderId },
+        {
+          onSuccess: (res) => {
+            setExtractingFolderId(null);
+            setAddCustomer({
+              name: (res.name || folderName).trim(),
+              contactName: res.contactName ?? "",
+              contactEmail: res.contactEmail ?? "",
+              contactPhone: res.contactPhone ?? "",
+              address: res.address ?? "",
+            });
+            if (res.found) {
+              toast.success(`Loaded details from "${res.source?.fileName ?? "summary sheet"}"`);
+            } else {
+              toast.message("No summary sheet found — enter details manually.");
+            }
+          },
+          onError: (err) => {
+            setExtractingFolderId(null);
+            // Don't block the user — open with the folder name so they can type.
+            setAddCustomer({
+              name: folderName.trim(),
+              contactName: "",
+              contactEmail: "",
+              contactPhone: "",
+              address: "",
+            });
+            toast.error(err.message || "Couldn't read the summary sheet — enter details manually.");
+          },
+        }
+      );
+    },
+    [extractCustomer]
+  );
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
@@ -562,10 +597,15 @@ export default function CustomerRecords() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-7 w-7 shrink-0 mr-0.5 text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 focus:opacity-100"
-                                title="Add as customer"
-                                onClick={() => openAddFromFolder(e.name)}
+                                title="Add as customer (reads the folder's summary sheet)"
+                                disabled={extractingFolderId === e.id}
+                                onClick={() => addFromFolder(e.id, e.name)}
                               >
-                                <UserPlus className="h-4 w-4" />
+                                {extractingFolderId === e.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <UserPlus className="h-4 w-4" />
+                                )}
                               </Button>
                             )
                           )}
@@ -642,21 +682,24 @@ export default function CustomerRecords() {
                   const folderName = breadcrumbs[breadcrumbs.length - 1].name;
                   const already =
                     customerExists(folderName) || createdNames.has(folderName.trim().toLowerCase());
+                  const extracting = extractingFolderId === currentFolderId;
                   return (
                     <Button
                       variant="outline"
                       size="sm"
                       className="ml-auto shrink-0"
-                      disabled={already}
+                      disabled={already || extracting}
                       title={
                         already
                           ? "A customer with this name already exists"
-                          : "Create a customer from this folder"
+                          : "Create a customer from this folder's summary sheet"
                       }
-                      onClick={() => openAddFromFolder(folderName)}
+                      onClick={() => addFromFolder(currentFolderId, folderName)}
                     >
                       {already ? (
                         <><CheckCircle2 className="h-4 w-4 mr-1 text-green-600" />Customer exists</>
+                      ) : extracting ? (
+                        <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Reading…</>
                       ) : (
                         <><UserPlus className="h-4 w-4 mr-1" />Add as customer</>
                       )}
@@ -829,8 +872,8 @@ export default function CustomerRecords() {
               Add Customer from Records
             </DialogTitle>
             <DialogDescription>
-              Create a customer organisation using the folder name from Customer Records.
-              Fill in contact details if you have them.
+              Details are pulled from the folder's summary sheet when one is found.
+              Review them, fill any gaps, then create the customer.
             </DialogDescription>
           </DialogHeader>
 

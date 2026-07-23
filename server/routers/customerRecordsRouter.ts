@@ -12,11 +12,18 @@
  */
 
 import { z } from "zod";
+import * as XLSX from "xlsx";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import { getValidGoogleToken } from "../_core/googleAuth.js";
 import { ENV } from "../_core/env.js";
 import * as drive from "../customerRecords/driveService.js";
+import {
+  pickSummarySpreadsheet,
+  pickSummarySheetName,
+  summaryToCustomer,
+} from "../customerRecords/summaryExtract.js";
+import { parseSummarySheet } from "../summarySheetParser.js";
 import * as db from "../db.js";
 
 // ─── Audit helper ─────────────────────────────────────────────────────────────
@@ -183,6 +190,72 @@ export const customerRecordsRouter = router({
       auditLog("customer_records_list_folder", ctx, { folderId: input.folderId });
       const token = await requireToken(ctx);
       return drive.listFolderById(input.folderId, token);
+    }),
+
+  /**
+   * Locate and read the "summary sheet" spreadsheet inside a customer folder
+   * and return customer-org fields (name, contact, address) parsed from it, so
+   * the UI can prefill the "Add customer" form. Best-effort: when no summary
+   * sheet is found `found:false` is returned (never an error) so the caller can
+   * fall back to the folder name.
+   *
+   * folderId must have been previously returned by listRoot / listFolder /
+   * search — the UI never constructs IDs from raw user input.
+   */
+  extractCustomerFromFolder: officeProcedure
+    .input(z.object({ folderId: z.string().min(1).max(200) }))
+    .mutation(async ({ input, ctx }) => {
+      auditLog("customer_records_extract_customer", ctx, { folderId: input.folderId });
+
+      const token = await requireToken(ctx);
+
+      const { entries, error } = await drive.listFolderById(input.folderId, token);
+      if (error) throw new TRPCError({ code: "BAD_REQUEST", message: error });
+
+      const empty = {
+        found: false as const,
+        source: null,
+        name: null,
+        contactName: null,
+        contactEmail: null,
+        contactPhone: null,
+        address: null,
+      };
+
+      const chosen = pickSummarySpreadsheet(entries);
+      if (!chosen) return empty;
+
+      const dl = await drive.downloadDriveFile(chosen.id, token);
+      if ("error" in dl) throw new TRPCError({ code: "BAD_REQUEST", message: dl.error });
+
+      let sheetName: string | null;
+      let extracted;
+      try {
+        const workbook = XLSX.read(dl.data, { type: "buffer" });
+        sheetName = pickSummarySheetName(workbook.SheetNames);
+        const sheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+        if (!sheet) return { ...empty, source: { fileName: chosen.name, sheetName: null } };
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+        extracted = summaryToCustomer(parseSummarySheet(rows));
+      } catch {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Could not read the summary sheet "${chosen.name}".`,
+        });
+      }
+
+      const anyField =
+        extracted.name ||
+        extracted.contactName ||
+        extracted.contactEmail ||
+        extracted.contactPhone ||
+        extracted.address;
+
+      return {
+        found: Boolean(anyField),
+        source: { fileName: chosen.name, sheetName },
+        ...extracted,
+      };
     }),
 
   /**
