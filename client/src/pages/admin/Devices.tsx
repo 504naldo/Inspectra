@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -11,7 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { Search, AlertCircle, Pencil, Save, Loader2, GripVertical, RotateCcw } from "lucide-react";
+import { findDuplicateGroups, removableDuplicateIds } from "@/lib/deviceDuplicates";
+import { Search, AlertCircle, Pencil, Save, Loader2, GripVertical, RotateCcw, Copy, Trash2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
@@ -131,6 +133,11 @@ export default function AdminDevices() {
   const [editNotes, setEditNotes] = useState("");
   const [editIsActive, setEditIsActive] = useState(true);
 
+  // Duplicate-removal mode (for cleaning up devices added during mapping).
+  const [dupMode, setDupMode] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<any>(null);
+  const [confirmBulk, setConfirmBulk] = useState(false);
+
   const { data: sites } = trpc.site.listByCompany.useQuery({ companyId });
   const { data: devices, isLoading, refetch } = trpc.device.listBySite.useQuery(
     { siteId: parseInt(selectedSiteId) },
@@ -151,6 +158,24 @@ export default function AdminDevices() {
     onSuccess: () => { toast.success("Device updated"); setEditDevice(null); refetch(); },
     onError: (err) => toast.error(err.message || "Failed to update device"),
   });
+
+  const removeOne = trpc.device.update.useMutation({
+    onSuccess: () => { toast.success("Device removed"); setRemoveTarget(null); refetch(); },
+    onError: (err) => toast.error(err.message || "Failed to remove device"),
+  });
+
+  const bulkRemove = trpc.device.bulkSoftDelete.useMutation({
+    onSuccess: (r) => {
+      toast.success(`Removed ${r.removed} duplicate${r.removed === 1 ? "" : "s"}`);
+      setConfirmBulk(false);
+      refetch();
+    },
+    onError: (err) => toast.error(err.message || "Failed to remove duplicates"),
+  });
+
+  // Duplicate groups among the current site's active devices.
+  const dupGroups = useMemo(() => findDuplicateGroups(devices ?? []), [devices]);
+  const removableIds = useMemo(() => removableDuplicateIds(dupGroups), [dupGroups]);
 
   useEffect(() => {
     if (devices) {
@@ -203,7 +228,7 @@ export default function AdminDevices() {
       <div className="space-y-4">
         {/* Filters + actions */}
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={selectedSiteId} onValueChange={(v) => { setSelectedSiteId(v); setIsDirty(false); }}>
+          <Select value={selectedSiteId} onValueChange={(v) => { setSelectedSiteId(v); setIsDirty(false); setDupMode(false); }}>
             <SelectTrigger className="w-[250px]">
               <SelectValue placeholder="Select a site" />
             </SelectTrigger>
@@ -238,7 +263,7 @@ export default function AdminDevices() {
               Save Order
             </Button>
           )}
-          {hasManualOrder && !isDirty && selectedSiteId !== "all" && (
+          {hasManualOrder && !isDirty && selectedSiteId !== "all" && !dupMode && (
             <Button
               size="sm"
               variant="outline"
@@ -247,6 +272,24 @@ export default function AdminDevices() {
             >
               <RotateCcw className="h-4 w-4 mr-2" /> Reset Order
             </Button>
+          )}
+          {selectedSiteId !== "all" && !isLoading && (
+            dupMode ? (
+              <Button size="sm" variant="outline" onClick={() => setDupMode(false)}>
+                <ArrowLeft className="h-4 w-4 mr-2" /> All devices
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant={dupGroups.length > 0 ? "default" : "outline"}
+                onClick={() => setDupMode(true)}
+                disabled={dupGroups.length === 0}
+                title={dupGroups.length === 0 ? "No duplicate devices detected" : "Review and remove duplicate devices"}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                {dupGroups.length > 0 ? `Find duplicates (${removableIds.length})` : "No duplicates"}
+              </Button>
+            )
           )}
         </div>
 
@@ -262,6 +305,91 @@ export default function AdminDevices() {
           <div className="flex justify-center py-8">
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
+        ) : dupMode ? (
+          dupGroups.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Copy className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                <p className="text-muted-foreground">No duplicate devices found for this site.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+                <p className="text-sm">
+                  Found <strong>{removableIds.length}</strong> duplicate device
+                  {removableIds.length === 1 ? "" : "s"} across <strong>{dupGroups.length}</strong> group
+                  {dupGroups.length === 1 ? "" : "s"}. Removing keeps one device per group (marked{" "}
+                  <span className="text-green-600 font-medium">Keep</span>); the rest are marked inactive and
+                  drop off the inspection report.
+                </p>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => setConfirmBulk(true)}
+                  disabled={bulkRemove.isPending}
+                >
+                  {bulkRemove.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Removing…</>
+                  ) : (
+                    <><Trash2 className="h-4 w-4 mr-2" />Remove all extras ({removableIds.length})</>
+                  )}
+                </Button>
+              </div>
+
+              {dupGroups.map((group) => {
+                const keeper = group.devices.find((x) => x.id === group.keeperId)!;
+                const label = [keeper.deviceType, keeper.location, keeper.floor].filter(Boolean).join(" · ");
+                return (
+                  <div key={group.signature} className="rounded-lg border overflow-hidden">
+                    <div className="bg-muted/60 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                      {label || "Device"} — {group.devices.length} copies
+                    </div>
+                    <table className="w-full text-sm border-collapse">
+                      <tbody>
+                        {group.devices.map((dev) => {
+                          const isKeeper = dev.id === group.keeperId;
+                          return (
+                            <tr key={dev.id} className="border-t hover:bg-muted/30 text-sm">
+                              <td className="px-3 py-2 text-muted-foreground font-mono text-xs w-16">
+                                {dev.floor || <span className="text-muted-foreground/30">—</span>}
+                              </td>
+                              <td className="px-3 py-2 font-medium max-w-[10rem] truncate">{dev.deviceType}</td>
+                              <td className="px-3 py-2 text-muted-foreground max-w-[12rem] truncate">
+                                {dev.location || <span className="text-muted-foreground/30">—</span>}
+                              </td>
+                              <td className="hidden md:table-cell px-3 py-2 text-muted-foreground text-xs max-w-[8rem] truncate">
+                                {dev.serialNumber || <span className="text-muted-foreground/30">—</span>}
+                              </td>
+                              <td className="px-3 py-2 w-20">
+                                {isKeeper ? (
+                                  <Badge className="bg-green-600 hover:bg-green-600 text-[10px] px-1.5 py-0">Keep</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">Duplicate</Badge>
+                                )}
+                              </td>
+                              <td className="px-2 py-2 w-10 text-right">
+                                {!isKeeper && (
+                                  <button
+                                    className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+                                    onClick={() => setRemoveTarget(dev)}
+                                    title="Remove this duplicate"
+                                    disabled={removeOne.isPending}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+          )
         ) : filteredDevices.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
@@ -387,6 +515,58 @@ export default function AdminDevices() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm single duplicate removal */}
+      <AlertDialog open={!!removeTarget} onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this device?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removeTarget && (
+                <>
+                  “{[removeTarget.deviceType, removeTarget.location, removeTarget.floor].filter(Boolean).join(" · ")}”
+                  will be marked inactive and removed from the inspection report. You can re-activate it later by
+                  editing the device.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeOne.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => removeOne.mutate({ id: removeTarget.id, isActive: false })}
+              disabled={removeOne.isPending}
+            >
+              {removeOne.isPending ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm bulk removal of all extras */}
+      <AlertDialog open={confirmBulk} onOpenChange={(open) => { if (!open) setConfirmBulk(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {removableIds.length} duplicate device{removableIds.length === 1 ? "" : "s"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              One device is kept in each of the {dupGroups.length} group{dupGroups.length === 1 ? "" : "s"}; the
+              other {removableIds.length} {removableIds.length === 1 ? "copy is" : "copies are"} marked inactive and
+              removed from the inspection report. This can be undone by re-activating a device from its edit screen.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkRemove.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => bulkRemove.mutate({ deviceIds: removableIds })}
+              disabled={bulkRemove.isPending || removableIds.length === 0}
+            >
+              {bulkRemove.isPending ? "Removing…" : `Remove ${removableIds.length}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }
