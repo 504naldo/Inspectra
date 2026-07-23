@@ -3,7 +3,15 @@ import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
@@ -26,6 +34,8 @@ import {
   WifiOff,
   Loader2,
   LogIn,
+  UserPlus,
+  CheckCircle2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -111,6 +121,17 @@ export default function CustomerRecords() {
   // Download tracking
   const [downloading, setDownloading] = useState<string | null>(null);
 
+  // "Add as customer" dialog — prefilled from a Drive folder's name.
+  const [addCustomer, setAddCustomer] = useState<{
+    name: string;
+    contactName: string;
+    contactEmail: string;
+    contactPhone: string;
+    address: string;
+  } | null>(null);
+  // Names created from this screen this session, so the button can show "Added".
+  const [createdNames, setCreatedNames] = useState<Set<string>>(new Set());
+
   if (!user?.companyId) {
     return (
       <AdminLayout title="Customer Records">
@@ -175,6 +196,26 @@ export default function CustomerRecords() {
     },
   });
 
+  // Existing customers — used to prefill / detect duplicates when adding a
+  // customer from a Drive folder. utils lets us refetch after a create.
+  const utils = trpc.useUtils();
+  const { data: existingCustomers } = trpc.customerOrg.list.useQuery(
+    { companyId: user.companyId },
+    { staleTime: 30_000 }
+  );
+
+  const createCustomer = trpc.customerOrg.create.useMutation({
+    onSuccess: (created: any) => {
+      toast.success(`Customer "${created?.name ?? addCustomer?.name}" added`);
+      if (addCustomer) {
+        setCreatedNames((prev) => new Set(prev).add(addCustomer.name.toLowerCase()));
+      }
+      setAddCustomer(null);
+      utils.customerOrg.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message || "Failed to add customer"),
+  });
+
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handleSearch = useCallback(() => {
@@ -220,6 +261,26 @@ export default function CustomerRecords() {
     },
     [downloadMutation]
   );
+
+  // True when a customer org with this name (case-insensitive) already exists.
+  const customerExists = useCallback(
+    (name: string) => {
+      const n = name.trim().toLowerCase();
+      return (existingCustomers ?? []).some((c: any) => c.name.trim().toLowerCase() === n);
+    },
+    [existingCustomers]
+  );
+
+  // Open the "add customer" dialog prefilled from a Drive folder's name.
+  const openAddFromFolder = useCallback((folderName: string) => {
+    setAddCustomer({
+      name: folderName.trim(),
+      contactName: "",
+      contactEmail: "",
+      contactPhone: "",
+      address: "",
+    });
+  }, []);
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
@@ -467,22 +528,50 @@ export default function CustomerRecords() {
                   </p>
                 ) : (
                   <div className="space-y-0.5 max-h-[50vh] overflow-y-auto">
-                    {rootData!.entries.map((e) => (
-                      <button
-                        key={e.id}
-                        className="w-full text-left px-2 py-1.5 rounded text-sm hover:bg-muted flex items-center gap-2"
-                        onClick={() =>
-                          e.isFolder
-                            ? openFolder(e.id, e.name)
-                            : e.webViewLink
-                            ? window.open(e.webViewLink, "_blank", "noopener,noreferrer")
-                            : undefined
-                        }
-                      >
-                        {fileIcon(e)}
-                        <span className="truncate">{e.name}</span>
-                      </button>
-                    ))}
+                    {rootData!.entries.map((e) => {
+                      const exists = e.isFolder && customerExists(e.name);
+                      const added = e.isFolder && createdNames.has(e.name.trim().toLowerCase());
+                      return (
+                        <div
+                          key={e.id}
+                          className="group flex items-center gap-1 rounded hover:bg-muted"
+                        >
+                          <button
+                            className="flex-1 min-w-0 text-left px-2 py-1.5 text-sm flex items-center gap-2"
+                            onClick={() =>
+                              e.isFolder
+                                ? openFolder(e.id, e.name)
+                                : e.webViewLink
+                                ? window.open(e.webViewLink, "_blank", "noopener,noreferrer")
+                                : undefined
+                            }
+                          >
+                            {fileIcon(e)}
+                            <span className="truncate">{e.name}</span>
+                          </button>
+                          {e.isFolder && (
+                            exists || added ? (
+                              <span
+                                className="shrink-0 mr-1 text-green-600 flex items-center"
+                                title="A customer with this name already exists"
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                              </span>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 shrink-0 mr-0.5 text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                title="Add as customer"
+                                onClick={() => openAddFromFolder(e.name)}
+                              >
+                                <UserPlus className="h-4 w-4" />
+                              </Button>
+                            )
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -549,6 +638,31 @@ export default function CustomerRecords() {
                     />
                   </div>
                 )}
+                {currentFolderId && breadcrumbs.length > 0 && (() => {
+                  const folderName = breadcrumbs[breadcrumbs.length - 1].name;
+                  const already =
+                    customerExists(folderName) || createdNames.has(folderName.trim().toLowerCase());
+                  return (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto shrink-0"
+                      disabled={already}
+                      title={
+                        already
+                          ? "A customer with this name already exists"
+                          : "Create a customer from this folder"
+                      }
+                      onClick={() => openAddFromFolder(folderName)}
+                    >
+                      {already ? (
+                        <><CheckCircle2 className="h-4 w-4 mr-1 text-green-600" />Customer exists</>
+                      ) : (
+                        <><UserPlus className="h-4 w-4 mr-1" />Add as customer</>
+                      )}
+                    </Button>
+                  );
+                })()}
               </div>
             </CardHeader>
 
@@ -705,6 +819,104 @@ export default function CustomerRecords() {
           </Card>
         </main>
       </div>
+
+      {/* Add-customer dialog — prefilled from a Drive folder name */}
+      <Dialog open={!!addCustomer} onOpenChange={(open) => { if (!open) setAddCustomer(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-4 w-4" />
+              Add Customer from Records
+            </DialogTitle>
+            <DialogDescription>
+              Create a customer organisation using the folder name from Customer Records.
+              Fill in contact details if you have them.
+            </DialogDescription>
+          </DialogHeader>
+
+          {addCustomer && (() => {
+            const nameTrimmed = addCustomer.name.trim();
+            const duplicate = customerExists(nameTrimmed);
+            return (
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label>Company Name <span className="text-destructive">*</span></Label>
+                  <Input
+                    value={addCustomer.name}
+                    onChange={(e) => setAddCustomer({ ...addCustomer, name: e.target.value })}
+                    placeholder="Customer company name"
+                  />
+                  {duplicate && (
+                    <p className="text-xs text-amber-600 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3 shrink-0" />
+                      A customer named "{nameTrimmed}" already exists.
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Contact Name</Label>
+                  <Input
+                    value={addCustomer.contactName}
+                    onChange={(e) => setAddCustomer({ ...addCustomer, contactName: e.target.value })}
+                    placeholder="Primary contact name"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Contact Email</Label>
+                    <Input
+                      type="email"
+                      value={addCustomer.contactEmail}
+                      onChange={(e) => setAddCustomer({ ...addCustomer, contactEmail: e.target.value })}
+                      placeholder="email@example.com"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Contact Phone</Label>
+                    <Input
+                      value={addCustomer.contactPhone}
+                      onChange={(e) => setAddCustomer({ ...addCustomer, contactPhone: e.target.value })}
+                      placeholder="(555) 123-4567"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Address</Label>
+                  <Input
+                    value={addCustomer.address}
+                    onChange={(e) => setAddCustomer({ ...addCustomer, address: e.target.value })}
+                    placeholder="Business address"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button variant="outline" onClick={() => setAddCustomer(null)} disabled={createCustomer.isPending}>
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={!nameTrimmed || duplicate || createCustomer.isPending}
+                    onClick={() =>
+                      createCustomer.mutate({
+                        companyId: user.companyId!,
+                        name: nameTrimmed,
+                        contactName: addCustomer.contactName.trim() || undefined,
+                        contactEmail: addCustomer.contactEmail.trim() || undefined,
+                        contactPhone: addCustomer.contactPhone.trim() || undefined,
+                        address: addCustomer.address.trim() || undefined,
+                      })
+                    }
+                  >
+                    {createCustomer.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding…</>
+                    ) : (
+                      <><UserPlus className="h-4 w-4 mr-2" />Add Customer</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }
