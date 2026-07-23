@@ -288,6 +288,14 @@ export const jobs = mysqlTable("jobs", {
   status: mysqlEnum("status", ["pending", "scheduled", "in_progress", "completed", "cancelled"]).default("pending").notNull(),
   priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium").notNull(),
   scheduledDate: timestamp("scheduledDate"),
+  // Explicit scheduled start/end times. scheduledDate stays the "which day"
+  // field (unchanged, date-only semantics); these hold the time window when the
+  // office sets one. Null on legacy/date-only jobs. Stored as UTC wall-clock so
+  // the entered time round-trips regardless of the viewer's timezone.
+  scheduledStartAt: timestamp("scheduledStartAt"),
+  scheduledEndAt: timestamp("scheduledEndAt"),
+  // Scope of work for the visit — shown to technicians on their schedule + dashboard.
+  scopeOfWork: text("scopeOfWork"),
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
   notes: text("notes"),

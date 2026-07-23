@@ -246,6 +246,13 @@
       "when": 1784775544434,
       "tag": "0034_company_role_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1784821591028,
+      "tag": "0035_job_schedule_times_scope",
+      "breakpoints": true
     }
   ]
 }
