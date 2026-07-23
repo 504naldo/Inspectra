@@ -46,6 +46,17 @@ export function SiteCombobox({
   const [open, setOpen] = useState(false);
   const selected = sites?.find((s) => String(s.id) === value);
 
+  // Deterministic substring match instead of cmdk's default fuzzy scorer, which
+  // scatters a query like "0420" across unrelated sites (#0490, #0412…) as loose
+  // subsequence matches and can bury the exact one. Normalizing away "#" and
+  // whitespace makes "0420", "#0420", and "04 20" all match a "#0420" file/site.
+  // Matching runs over each item's keywords (the real site fields), NOT its
+  // value — value is the unique id, so cmdk never collapses two sites that share
+  // a name (e.g. duplicate imports) and the id digits never pollute the search.
+  const normalize = (s: string) => s.toLowerCase().replace(/[#\s]+/g, "");
+  const filter = (_itemValue: string, search: string, keywords?: string[]) =>
+    normalize((keywords ?? []).join(" ")).includes(normalize(search)) ? 1 : 0;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -64,7 +75,7 @@ export function SiteCombobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-        <Command>
+        <Command filter={filter}>
           <CommandInput placeholder="Search by name, file #, building ID, address…" />
           <CommandList>
             <CommandEmpty>No site found.</CommandEmpty>
@@ -74,8 +85,10 @@ export function SiteCombobox({
                 return (
                   <CommandItem
                     key={s.id}
-                    // cmdk filters on this value; onSelect uses the closured id.
-                    value={`${s.name} ${s.fileNumber ?? ""} ${s.buildingId ?? ""} ${s.address ?? ""} ${s.city ?? ""}`}
+                    // Unique value (id) so cmdk can't dedupe two same-named sites;
+                    // search matches against keywords via the custom filter above.
+                    value={String(s.id)}
+                    keywords={[s.name, s.fileNumber ?? "", s.buildingId ?? "", s.address ?? "", s.city ?? ""]}
                     onSelect={() => {
                       onChange(String(s.id));
                       setOpen(false);
