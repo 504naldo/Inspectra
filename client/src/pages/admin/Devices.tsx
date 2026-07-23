@@ -117,7 +117,14 @@ export default function AdminDevices() {
 
   const companyId = user.companyId;
 
-  const [selectedSiteId, setSelectedSiteId] = useState<string>("all");
+  // Pre-select a site when arrived via /admin/devices?site=<id> (e.g. the
+  // "Devices" link on a site card), else the empty picker.
+  const initialSiteId = (() => {
+    if (typeof window === "undefined") return "all";
+    const raw = new URLSearchParams(window.location.search).get("site");
+    return raw && /^\d+$/.test(raw) ? raw : "all";
+  })();
+  const [selectedSiteId, setSelectedSiteId] = useState<string>(initialSiteId);
   const [searchQuery, setSearchQuery] = useState("");
   const [localOrder, setLocalOrder] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
