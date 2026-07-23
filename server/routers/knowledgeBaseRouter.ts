@@ -12,6 +12,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { requireCompanyPermission } from "../permissions";
 import { logActivity } from "../activityLogger";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -97,6 +98,7 @@ export const knowledgeBaseRouter = router({
   create: officeProcedure
     .input(itemWriteSchema)
     .mutation(async ({ input, ctx }) => {
+      await requireCompanyPermission(ctx, "ai.knowledgeManage");
       const companyId = ctx.user.companyId!;
       const item = await db.createKnowledgeBaseEntry({
         companyId,
@@ -132,6 +134,7 @@ export const knowledgeBaseRouter = router({
   update: officeProcedure
     .input(z.object({ id: z.number().int().positive() }).merge(itemWriteSchema))
     .mutation(async ({ input, ctx }) => {
+      await requireCompanyPermission(ctx, "ai.knowledgeManage");
       const existing = await db.getKnowledgeBaseById(input.id);
       if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
       if (existing.companyId !== ctx.user.companyId!) throw new TRPCError({ code: "FORBIDDEN" });

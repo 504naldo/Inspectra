@@ -239,6 +239,13 @@
       "when": 1783471249488,
       "tag": "0033_invoice_number_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1784775544434,
+      "tag": "0034_company_role_permissions",
+      "breakpoints": true
     }
   ]
 }

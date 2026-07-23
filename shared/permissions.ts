@@ -346,3 +346,50 @@ export function hasPermission(
   if (!perms) return false;
   return perms.includes(permission);
 }
+
+// ─── Company-scoped per-role overrides ────────────────────────────────────────
+
+/** Roles a company admin may customize. `admin` is the platform operator and is
+ *  never overridable (it always keeps every permission — prevents self-lockout). */
+export const OVERRIDABLE_ROLES: Role[] = ["office", "technician", "customer"];
+
+export function isRoleOverridable(role: string): role is Exclude<Role, "admin"> {
+  return (OVERRIDABLE_ROLES as string[]).includes(role);
+}
+
+/** A single company override: for `role`, `permission` is explicitly allowed/denied. */
+export type PermissionOverride = { role: Role; permission: Permission; allowed: boolean };
+
+/**
+ * Permissions whose per-role override is ENFORCED server-side today (via
+ * requireCompanyPermission at the relevant endpoints). Editing any permission
+ * persists, but only these currently change what a role can actually do; the UI
+ * badges them so admins aren't misled. Grown incrementally as more endpoints
+ * adopt requireCompanyPermission.
+ */
+export const ENFORCED_PERMISSIONS: Permission[] = [
+  "reports.approve",
+  "ai.knowledgeManage",
+];
+
+/**
+ * Effective permission = baseline ROLE_PERMISSIONS, adjusted by a company's
+ * overrides. `admin` is never overridden. No matching override → baseline, so
+ * behaviour is identical to hasPermission() when a company has set nothing.
+ * Safe on client and server.
+ */
+export function resolvePermission(
+  role: string,
+  permission: Permission,
+  overrides: PermissionOverride[] | undefined,
+): boolean {
+  if (role === "admin") return hasPermission({ role }, permission);
+  if (overrides && overrides.length > 0) {
+    // Last match wins (callers pass at most one per role+permission).
+    for (let i = overrides.length - 1; i >= 0; i--) {
+      const o = overrides[i];
+      if (o.role === role && o.permission === permission) return o.allowed;
+    }
+  }
+  return hasPermission({ role }, permission);
+}

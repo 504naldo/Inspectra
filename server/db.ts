@@ -3975,3 +3975,68 @@ export async function listKnowledgeQuestionsByPage(pageId: number, limit = 50): 
     .orderBy(desc(knowledgeQuestions.createdAt))
     .limit(limit);
 }
+
+// ============================================
+// COMPANY ROLE-PERMISSION OVERRIDES
+// ============================================
+import type { PermissionOverride } from "../shared/permissions";
+
+/** All per-role permission overrides for a company (empty = pure baseline). */
+export async function getRolePermissionOverrides(companyId: number): Promise<PermissionOverride[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      role: schema.companyRolePermissions.role,
+      permission: schema.companyRolePermissions.permission,
+      allowed: schema.companyRolePermissions.allowed,
+    })
+    .from(schema.companyRolePermissions)
+    .where(eq(schema.companyRolePermissions.companyId, companyId));
+  return rows.map((r) => ({
+    role: r.role as PermissionOverride["role"],
+    permission: r.permission as PermissionOverride["permission"],
+    allowed: r.allowed === 1,
+  }));
+}
+
+/** Upsert one override (companyId, role, permission) → allowed. */
+export async function setRolePermissionOverride(input: {
+  companyId: number;
+  role: "office" | "technician" | "customer";
+  permission: string;
+  allowed: boolean;
+  updatedByUserId?: number;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .insert(schema.companyRolePermissions)
+    .values({
+      companyId: input.companyId,
+      role: input.role,
+      permission: input.permission,
+      allowed: input.allowed ? 1 : 0,
+      updatedByUserId: input.updatedByUserId ?? null,
+    })
+    .onDuplicateKeyUpdate({
+      set: { allowed: input.allowed ? 1 : 0, updatedByUserId: input.updatedByUserId ?? null, updatedAt: new Date() },
+    });
+}
+
+/** Remove an override so the role/permission reverts to the baseline. */
+export async function clearRolePermissionOverride(
+  companyId: number,
+  role: "office" | "technician" | "customer",
+  permission: string,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .delete(schema.companyRolePermissions)
+    .where(and(
+      eq(schema.companyRolePermissions.companyId, companyId),
+      eq(schema.companyRolePermissions.role, role),
+      eq(schema.companyRolePermissions.permission, permission),
+    ));
+}
