@@ -504,6 +504,12 @@ export async function getDevicesByIds(ids: number[]) {
   return db.select().from(devices).where(inArray(devices.id, ids));
 }
 
+export async function setDevicesActive(ids: number[], isActive: boolean) {
+  const db = await getDb();
+  if (!db || ids.length === 0) return;
+  await db.update(devices).set({ isActive }).where(inArray(devices.id, ids));
+}
+
 export async function getDeviceCountBySite(siteId: number) {
   const db = await getDb();
   if (!db) return 0;

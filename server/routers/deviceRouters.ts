@@ -223,6 +223,20 @@ const deviceRouter = router({
     await db.updateDevice(input.deviceId, { isActive: false } as any);
     return { success: true };
   }),
+
+  // Office bulk soft-delete (marks isActive = false). Used by the Devices page's
+  // "remove duplicates" flow. Every id must belong to the caller's company.
+  bulkSoftDelete: officeProcedure.input(z.object({
+    deviceIds: z.array(z.number()).min(1).max(1000),
+  })).mutation(async ({ input, ctx }) => {
+    const ids = Array.from(new Set(input.deviceIds));
+    const owned = await db.getDevicesByIds(ids);
+    if (owned.length !== ids.length || owned.some((d) => d.companyId !== ctx.user.companyId)) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    await db.setDevicesActive(ids, false);
+    return { success: true, removed: ids.length };
+  }),
 });
 
 // Smoke Alarm router
