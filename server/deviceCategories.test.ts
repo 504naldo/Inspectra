@@ -1,5 +1,32 @@
 import { describe, it, expect } from 'vitest';
-import { categorizeDevice, isSmokeAlarm } from '../shared/deviceCategories';
+import { categorizeDevice, isSmokeAlarm, isFireAlarmGridDevice } from '../shared/deviceCategories';
+
+describe('isFireAlarmGridDevice (grid = pull stations, heat detectors, horns, strobes)', () => {
+  const fa = (deviceType: string, category: string | null = 'FIRE_ALARM_DEVICE') =>
+    ({ deviceType, category, model: null, description: null });
+
+  it('includes pull stations, heat detectors, horns, strobes, and horn/strobe combos', () => {
+    expect(isFireAlarmGridDevice(fa('Pull Station'))).toBe(true);
+    expect(isFireAlarmGridDevice(fa('Heat Detector'))).toBe(true);
+    expect(isFireAlarmGridDevice(fa('Horn'))).toBe(true);
+    expect(isFireAlarmGridDevice(fa('Strobe'))).toBe(true);
+    expect(isFireAlarmGridDevice(fa('Horn/Strobe'))).toBe(true);
+  });
+
+  it('excludes smoke detectors and other fire-alarm device types', () => {
+    expect(isFireAlarmGridDevice(fa('Smoke Detector'))).toBe(false);
+    expect(isFireAlarmGridDevice(fa('Duct Detector'))).toBe(false);
+    expect(isFireAlarmGridDevice(fa('Control Module'))).toBe(false);
+    expect(isFireAlarmGridDevice(fa('Flow Switch'))).toBe(false);
+    expect(isFireAlarmGridDevice(fa('Unknown'))).toBe(false);
+  });
+
+  it('excludes devices from other categories even if the type keyword matches', () => {
+    // An extinguisher/emergency/smoke device never belongs in the fire-alarm grid
+    expect(isFireAlarmGridDevice({ deviceType: 'Heat', category: 'FIRE_EXTINGUISHER', model: null, description: null })).toBe(false);
+    expect(isFireAlarmGridDevice({ deviceType: 'Smoke Detector', category: 'SMOKE_ALARM', model: null, description: null })).toBe(false);
+  });
+});
 
 describe('Device Categorization', () => {
   it('should categorize fire extinguishers by category field', () => {

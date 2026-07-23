@@ -104,6 +104,27 @@ export function categorizeDevice(device: {
   return 'other';
 }
 
+// The Fire Alarm Devices inspection grid is scoped to these device types only
+// (pull stations, heat detectors, horns, strobes — incl. horn/strobe combos).
+// Other fire-alarm-category devices (smoke/duct detectors, modules, flow/tamper
+// switches, …) are intentionally excluded from this grid.
+const FIRE_ALARM_GRID_TYPE_RE = /pull|heat|horn|strobe/i;
+
+/**
+ * True when a device belongs in the "Fire Alarm Devices" grid: it is a
+ * fire-alarm-category device AND its type is a pull station, heat detector,
+ * horn, or strobe.
+ */
+export function isFireAlarmGridDevice(device: {
+  deviceType?: string | null;
+  category?: string | null;
+  model?: string | null;
+  description?: string | null;
+}): boolean {
+  if (categorizeDevice(device) !== 'fire_alarm') return false;
+  return FIRE_ALARM_GRID_TYPE_RE.test(device.deviceType ?? '');
+}
+
 /**
  * Gets a human-readable label for a category
  */
