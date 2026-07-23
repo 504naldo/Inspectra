@@ -428,10 +428,14 @@ const importRouter = router({
       originalData: any;
       errorMessage?: string;
     }> = [];
-    
+
+    // Preserve the source spreadsheet order: give each imported device a
+    // sortOrder following its row position, appended after any existing devices.
+    const sortBase = await db.getMaxDeviceSortOrder(input.siteId);
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      
+
       // Skip heading/note rows and pricing tables
       if (shouldSkipRow(row, headers)) {
         skippedCount++;
@@ -518,6 +522,8 @@ const importRouter = router({
           const deviceData: any = {
             companyId: targetCompanyId,
             siteId: input.siteId,
+            // Row position (1-based) after existing devices → source order.
+            sortOrder: sortBase + i + 1,
             category: schema.category || 'FIRE_ALARM_DEVICE',
             deviceType: resolvedDeviceType,
             manufacturer: rowData.manufacturer,

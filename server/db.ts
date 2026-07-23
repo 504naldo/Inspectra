@@ -517,6 +517,21 @@ export async function getDeviceCountBySite(siteId: number) {
   return result[0]?.count ?? 0;
 }
 
+/**
+ * Highest sortOrder currently used for a site (0 when none). Import paths add to
+ * this so a new mapping batch preserves its source order and appends after the
+ * devices already on the site instead of interleaving.
+ */
+export async function getMaxDeviceSortOrder(siteId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db
+    .select({ max: sql<number>`COALESCE(MAX(${devices.sortOrder}), 0)` })
+    .from(devices)
+    .where(eq(devices.siteId, siteId));
+  return Number(result[0]?.max ?? 0);
+}
+
 // ============================================
 // SMOKE ALARM QUERIES
 // ============================================
