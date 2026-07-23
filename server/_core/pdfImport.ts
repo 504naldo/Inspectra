@@ -47,6 +47,73 @@ export interface ExtractedSiteData {
   };
 }
 
+// Matches values where the model echoed a schema type description instead of a
+// real extraction, e.g. "string or null - the building/site name", "string",
+// "string - street address", or a literal "null". These must never be persisted
+// as if they were real data (they surfaced as sites literally named
+// "string or null - the buil…"). A genuine value like "String Lighting Co" is
+// NOT matched because "String" is not followed by " or null", end-of-string, or
+// a separator.
+const SCHEMA_ECHO_RE = /^"?string(?:\s+or\s+null)?"?(?:\s*[-–—:].*)?$/i;
+
+/**
+ * Reject a value that is obviously a leaked schema placeholder rather than
+ * extracted content. Returns the trimmed string, or null when the value is
+ * empty / a placeholder echo / a literal "null".
+ */
+function cleanExtractedValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase() === "null") return null;
+  if (SCHEMA_ECHO_RE.test(trimmed)) return null;
+  return trimmed;
+}
+
+/**
+ * Scrub an AI extraction result so leaked schema placeholders never reach the
+ * database. Every free-text field is passed through cleanExtractedValue, and
+ * device rows whose type collapses to nothing are dropped.
+ */
+export function sanitizeExtractedSiteData(data: ExtractedSiteData): ExtractedSiteData {
+  const site = data.site ?? ({} as ExtractedSiteData["site"]);
+  const cleanedSite = {
+    name: cleanExtractedValue(site.name),
+    address: cleanExtractedValue(site.address),
+    city: cleanExtractedValue(site.city),
+    state: cleanExtractedValue(site.state),
+    postalCode: cleanExtractedValue(site.postalCode),
+    contactName: cleanExtractedValue(site.contactName),
+    contactPhone: cleanExtractedValue(site.contactPhone),
+    contactEmail: cleanExtractedValue(site.contactEmail),
+    customerOrgName: cleanExtractedValue(site.customerOrgName),
+    monitoringCompany: cleanExtractedValue(site.monitoringCompany),
+    monitoringAccount: cleanExtractedValue(site.monitoringAccount),
+    buildingId: cleanExtractedValue(site.buildingId),
+    buildingYear: cleanExtractedValue(site.buildingYear),
+    buildingClass: cleanExtractedValue(site.buildingClass),
+    stories: cleanExtractedValue(site.stories),
+    notes: cleanExtractedValue(site.notes),
+  };
+
+  const devices = Array.isArray(data.devices) ? data.devices : [];
+  const cleanedDevices = devices
+    .map((d) => ({
+      ...d,
+      deviceType: cleanExtractedValue(d.deviceType) ?? "",
+      location: cleanExtractedValue(d.location),
+      floor: cleanExtractedValue(d.floor),
+      manufacturer: cleanExtractedValue(d.manufacturer),
+      model: cleanExtractedValue(d.model),
+      serialNumber: cleanExtractedValue(d.serialNumber),
+      notes: cleanExtractedValue(d.notes),
+    }))
+    // A device with no usable type is unusable noise (usually a leaked schema row).
+    .filter((d) => d.deviceType.length > 0);
+
+  return { ...data, site: cleanedSite, devices: cleanedDevices };
+}
+
 /**
  * Extract text from a PDF buffer using pdf-parse.
  */
@@ -71,46 +138,66 @@ export async function extractSiteDataFromPdf(pdfText: string): Promise<Extracted
     messages: [
       {
         role: "system",
-        content: `You are a fire alarm inspection data extraction expert. You extract structured data from fire inspection report text. You must return ONLY valid JSON with no other text. The JSON must match this exact schema:
+        content: `You are a fire alarm inspection data extraction expert. You extract structured data from fire inspection report text. You must return ONLY valid JSON with no other text.
+
+Return JSON with EXACTLY this shape. Every value below is shown as null / "" / 0 — replace it with the real value extracted from the report. If the report does not contain a field, leave it as null. NEVER copy the field descriptions in the "Field guide" below into the output — those are guidance only, not values.
 
 {
   "site": {
-    "name": "string or null - the building/site name",
-    "address": "string or null - street address",
-    "city": "string or null",
-    "state": "string or null - province/state",
-    "postalCode": "string or null",
-    "contactName": "string or null - building manager or site contact",
-    "contactPhone": "string or null",
-    "contactEmail": "string or null",
-    "customerOrgName": "string or null - the client/customer organization name",
-    "monitoringCompany": "string or null - alarm monitoring company name",
-    "monitoringAccount": "string or null - monitoring account number",
-    "buildingId": "string or null - EWF building/account ID or file number if present (e.g. 'EWF-1234', 'A-0042')",
-    "buildingYear": "string or null",
-    "buildingClass": "string or null",
-    "stories": "string or null - number of stories/floors",
-    "notes": "string or null - any relevant notes about the site"
+    "name": null,
+    "address": null,
+    "city": null,
+    "state": null,
+    "postalCode": null,
+    "contactName": null,
+    "contactPhone": null,
+    "contactEmail": null,
+    "customerOrgName": null,
+    "monitoringCompany": null,
+    "monitoringAccount": null,
+    "buildingId": null,
+    "buildingYear": null,
+    "buildingClass": null,
+    "stories": null,
+    "notes": null
   },
   "devices": [
     {
-      "deviceType": "string - e.g. 'Smoke Detector', 'Pull Station', 'Heat Detector', 'Horn/Strobe', 'Fire Extinguisher', 'Emergency Light', 'Exit Sign', 'Sprinkler Head'",
-      "category": "string - MUST be exactly one of: FIRE_ALARM_DEVICE, SMOKE_ALARM, FIRE_EXTINGUISHER, EMERGENCY_LIGHT, SPRINKLER",
-      "location": "string or null - where in the building",
-      "floor": "string or null - floor number or name",
-      "manufacturer": "string or null",
-      "model": "string or null",
-      "serialNumber": "string or null",
-      "notes": "string or null"
+      "deviceType": "",
+      "category": "",
+      "location": null,
+      "floor": null,
+      "manufacturer": null,
+      "model": null,
+      "serialNumber": null,
+      "notes": null
     }
   ],
   "summary": {
     "totalDevices": 0,
     "categories": {"FIRE_ALARM_DEVICE": 0, "SMOKE_ALARM": 0, "FIRE_EXTINGUISHER": 0, "EMERGENCY_LIGHT": 0, "SPRINKLER": 0},
-    "confidence": "high, medium, or low",
+    "confidence": "high",
     "warnings": []
   }
 }
+
+Field guide (describes what to put in each field — do NOT output this text):
+- site.name: the building/site name
+- site.address: street address
+- site.state: province/state
+- site.contactName: building manager or site contact
+- site.customerOrgName: the client/customer organization name
+- site.monitoringCompany: alarm monitoring company name
+- site.monitoringAccount: monitoring account number
+- site.buildingId: EWF building/account ID or file number if present (e.g. 'EWF-1234', 'A-0042')
+- site.stories: number of stories/floors
+- site.notes: any relevant notes about the site
+- devices[].deviceType: e.g. 'Smoke Detector', 'Pull Station', 'Heat Detector', 'Horn/Strobe', 'Fire Extinguisher', 'Emergency Light', 'Exit Sign', 'Sprinkler Head'
+- devices[].category: MUST be exactly one of FIRE_ALARM_DEVICE, SMOKE_ALARM, FIRE_EXTINGUISHER, EMERGENCY_LIGHT, SPRINKLER
+- devices[].location: where in the building
+- devices[].floor: floor number or name
+- summary.confidence: one of "high", "medium", or "low"
+- If there are no devices, return "devices": [].
 
 Category mapping rules (use EXACTLY these values):
 - FIRE_ALARM_DEVICE: smoke detectors, heat detectors, pull stations, manual call points, horns, strobes, horn/strobes, duct detectors, beam detectors, annunciators, FACP, control panels, flow switches, tamper switches
@@ -134,11 +221,15 @@ Extract ALL devices you can find. If a device count is mentioned but locations a
     throw new Error("AI extraction returned empty response");
   }
 
+  let parsed: ExtractedSiteData;
   try {
-    return JSON.parse(content.replace(/```json|```/g, "").trim()) as ExtractedSiteData;
+    parsed = JSON.parse(content.replace(/```json|```/g, "").trim()) as ExtractedSiteData;
   } catch {
     throw new Error("AI extraction returned invalid JSON: " + content.substring(0, 200));
   }
+  // Guard against the model echoing the schema's placeholder descriptions
+  // (e.g. a site literally named "string or null - the building/site name").
+  return sanitizeExtractedSiteData(parsed);
 }
 
 export interface PdfImportOpts {
