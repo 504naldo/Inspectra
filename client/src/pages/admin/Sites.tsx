@@ -154,6 +154,12 @@ function SiteCard({
                           Import Assets
                         </DropdownMenuItem>
                       </Link>
+                      <Link href={`/admin/devices?site=${site.id}`}>
+                        <DropdownMenuItem>
+                          <Cpu className="h-4 w-4 mr-2" />
+                          Devices
+                        </DropdownMenuItem>
+                      </Link>
                       <Link href={`/admin/sites/${site.id}/fire-alarm`}>
                         <DropdownMenuItem>
                           <Flame className="h-4 w-4 mr-2" />
