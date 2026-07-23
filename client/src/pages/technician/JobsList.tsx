@@ -7,13 +7,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatScheduleRange } from "@/lib/utils";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { 
   ArrowLeft, 
   Search, 
   MapPin, 
   Calendar,
+  Clock,
+  ClipboardList,
   ChevronRight,
   Wifi,
   WifiOff,
@@ -233,12 +235,25 @@ export default function JobsList() {
                           </div>
                           <h3 className="font-semibold safe-text">{job.title}</h3>
                           <p className="text-sm text-muted-foreground safe-text">{job.jobNumber}</p>
-                          
+
+                          {(job as any).scopeOfWork && (
+                            <p className="text-sm mt-1.5 flex items-start gap-1.5 safe-text">
+                              <ClipboardList className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
+                              <span className="whitespace-pre-wrap">{(job as any).scopeOfWork}</span>
+                            </p>
+                          )}
+
                           <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
                             {job.scheduledDate && (
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
                                 {formatDate(job.scheduledDate)}
+                              </span>
+                            )}
+                            {(job as any).scheduledStartAt && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {formatScheduleRange((job as any).scheduledStartAt, (job as any).scheduledEndAt)}
                               </span>
                             )}
                           </div>

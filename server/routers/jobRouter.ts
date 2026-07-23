@@ -116,6 +116,9 @@ const jobRouter = router({
     jobType: z.enum(['annual', 'semi_annual', 'quarterly', 'monthly', 'service_call', 'repair']).optional(),
     priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
     scheduledDate: z.date().optional(),
+    scheduledStartAt: z.date().optional(),
+    scheduledEndAt: z.date().optional(),
+    scopeOfWork: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
     // Prevent cross-company job creation.
     if (input.companyId !== ctx.user.companyId) {
@@ -205,7 +208,13 @@ const jobRouter = router({
           if (startDate.getHours() === 0 && startDate.getMinutes() === 0) {
             startDate.setHours(8, 0, 0, 0);
           }
-          const endDate = new Date(startDate.getTime() + 4 * 60 * 60 * 1000);
+          // Use the scheduled window's duration when start+end were provided,
+          // else default to a 4-hour block.
+          const durationMs =
+            input.scheduledStartAt && input.scheduledEndAt
+              ? input.scheduledEndAt.getTime() - input.scheduledStartAt.getTime()
+              : 4 * 60 * 60 * 1000;
+          const endDate = new Date(startDate.getTime() + Math.max(durationMs, 30 * 60 * 1000));
           const eventBody = {
             summary: `🔥 Inspection: ${input.title}`,
             start: {
@@ -391,6 +400,9 @@ const jobRouter = router({
     status: z.enum(['pending', 'scheduled', 'in_progress', 'completed', 'cancelled']).optional(),
     priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
     scheduledDate: z.date().optional(),
+    scheduledStartAt: z.date().nullable().optional(),
+    scheduledEndAt: z.date().nullable().optional(),
+    scopeOfWork: z.string().optional(),
     notes: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
     const job = await getJobForCompany(input.id, ctx.user.companyId!);

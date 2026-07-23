@@ -14,12 +14,14 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { formatDate, parseDateInput } from "@/lib/utils";
+import { formatDate, parseDateInput, combineDateTimeInput, formatScheduleRange } from "@/lib/utils";
 import {
   Plus,
   Search,
   ChevronRight,
   Calendar,
+  Clock,
+  ClipboardList,
   CheckCircle2,
   X,
   Star,
@@ -73,6 +75,9 @@ export default function AdminJobs() {
     jobType: "annual",
     priority: "medium",
     scheduledDate: "",
+    startTime: "",
+    endTime: "",
+    scopeOfWork: "",
   });
 
   const [assignmentFilter, setAssignmentFilter] = useState<string>("all");
@@ -152,6 +157,9 @@ export default function AdminJobs() {
         jobType: "annual",
         priority: "medium",
         scheduledDate: "",
+        startTime: "",
+        endTime: "",
+        scopeOfWork: "",
       });
       refetch();
     },
@@ -208,6 +216,16 @@ export default function AdminJobs() {
       toast.error('Please fill in required fields');
       return;
     }
+    // Start/end times only apply when a date is chosen; they require a date.
+    if ((newJob.startTime || newJob.endTime) && !newJob.scheduledDate) {
+      toast.error('Pick a scheduled date before setting a start or end time');
+      return;
+    }
+    if (newJob.startTime && newJob.endTime && newJob.endTime <= newJob.startTime) {
+      toast.error('End time must be after the start time');
+      return;
+    }
+    const date = newJob.scheduledDate;
     createJob.mutate({
       companyId,
       siteId: parseInt(newJob.siteId),
@@ -216,7 +234,10 @@ export default function AdminJobs() {
       description: newJob.description || undefined,
       jobType: newJob.jobType as any,
       priority: newJob.priority as any,
-      scheduledDate: newJob.scheduledDate ? parseDateInput(newJob.scheduledDate) : undefined,
+      scheduledDate: date ? parseDateInput(date) : undefined,
+      scheduledStartAt: date && newJob.startTime ? combineDateTimeInput(date, newJob.startTime) : undefined,
+      scheduledEndAt: date && newJob.endTime ? combineDateTimeInput(date, newJob.endTime) : undefined,
+      scopeOfWork: newJob.scopeOfWork.trim() || undefined,
     });
   };
 
@@ -449,6 +470,41 @@ export default function AdminJobs() {
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Start Time</Label>
+                    <Input
+                      type="time"
+                      value={newJob.startTime}
+                      disabled={!newJob.scheduledDate}
+                      onChange={(e) => setNewJob({ ...newJob, startTime: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Time</Label>
+                    <Input
+                      type="time"
+                      value={newJob.endTime}
+                      disabled={!newJob.scheduledDate}
+                      onChange={(e) => setNewJob({ ...newJob, endTime: e.target.value })}
+                    />
+                  </div>
+                </div>
+                {!newJob.scheduledDate && (
+                  <p className="text-xs text-muted-foreground -mt-2">
+                    Pick a scheduled date to set start and end times.
+                  </p>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Scope of Work</Label>
+                  <Textarea
+                    value={newJob.scopeOfWork}
+                    onChange={(e) => setNewJob({ ...newJob, scopeOfWork: e.target.value })}
+                    placeholder="What the technician will do on site (shown on their schedule + dashboard)…"
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <Label>Description</Label>
                   <Textarea
@@ -518,8 +574,20 @@ export default function AdminJobs() {
                               {formatDate(job.scheduledDate)}
                             </span>
                           )}
+                          {(job as any).scheduledStartAt && (
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {formatScheduleRange((job as any).scheduledStartAt, (job as any).scheduledEndAt)}
+                            </span>
+                          )}
                           <span>{job.jobType}</span>
                         </div>
+                        {(job as any).scopeOfWork && (
+                          <p className="text-sm text-muted-foreground mt-1 flex items-start gap-1.5">
+                            <ClipboardList className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
+                            <span className="line-clamp-2 safe-text">{(job as any).scopeOfWork}</span>
+                          </p>
+                        )}
                       </div>
                       <div className="card-actions">
                         <div className="flex-1 min-w-0">

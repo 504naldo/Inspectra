@@ -24,6 +24,50 @@ export function formatDate(d: Date | string | null | undefined, fallback = "—"
 }
 
 /**
+ * Combine a YYYY-MM-DD date and an HH:mm time (from <input type="date"/time">)
+ * into a Date whose UTC wall-clock equals the entered values. Storing as UTC
+ * wall-clock lets the time round-trip through the UTC-based formatters below
+ * regardless of the viewer's timezone (matching formatDate's convention).
+ */
+export function combineDateTimeInput(date: string, time: string): Date {
+  return new Date(`${date}T${time}:00Z`);
+}
+
+/**
+ * Format the time-of-day of a stored schedule timestamp, interpreting it as
+ * UTC wall-clock (matching combineDateTimeInput / formatDate). Returns "" when
+ * there is no value.
+ */
+export function formatScheduleTime(d: Date | string | null | undefined): string {
+  if (!d) return "";
+  return new Date(d).toLocaleTimeString(undefined, {
+    timeZone: "UTC",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Format a scheduled start–end window, e.g. "9:00 AM – 1:00 PM". Falls back to
+ * just the start when no end is set, and "" when there is no start.
+ */
+export function formatScheduleRange(
+  start: Date | string | null | undefined,
+  end: Date | string | null | undefined,
+): string {
+  const s = formatScheduleTime(start);
+  if (!s) return "";
+  const e = formatScheduleTime(end);
+  return e ? `${s} – ${e}` : s;
+}
+
+/** The HH:mm value of a stored UTC-wall-clock timestamp, for <input type="time">. */
+export function scheduleTimeInputValue(d: Date | string | null | undefined): string {
+  if (!d) return "";
+  return new Date(d).toISOString().slice(11, 16);
+}
+
+/**
  * Format a monetary amount as USD with thousands separators, e.g. "$12,345.00".
  */
 export function formatCurrency(amount: unknown): string {

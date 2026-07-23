@@ -24,6 +24,7 @@ import {
   CloudOff,
 } from "lucide-react";
 import { Link } from "wouter";
+import { formatScheduleRange } from "@/lib/utils";
 import { FeedbackButton } from "@/components/FeedbackButton";
 import { PageHelpButton } from "@/components/help/PageHelpButton";
 import { NotificationBell } from "@/components/technician/NotificationBell";
@@ -108,7 +109,18 @@ function JobCard({ job, packetCached }: { job: any; packetCached?: "cached" | "s
             <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
               <Clock className="h-3 w-3 shrink-0" />
               {formatScheduledDate((job as any).scheduledDate)}
+              {(job as any).scheduledStartAt && (
+                <span className="text-foreground/80">
+                  · {formatScheduleRange((job as any).scheduledStartAt, (job as any).scheduledEndAt)}
+                </span>
+              )}
             </p>
+            {(job as any).scopeOfWork && (
+              <p className="text-xs mt-1 flex items-start gap-1">
+                <ClipboardList className="h-3 w-3 mt-0.5 shrink-0 text-primary" />
+                <span className="line-clamp-2">{(job as any).scopeOfWork}</span>
+              </p>
+            )}
           </div>
           <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
         </CardContent>
