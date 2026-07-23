@@ -23,7 +23,7 @@ import { EmergencyLightGrid } from "@/components/inspection/EmergencyLightGrid";
 import { FireAlarmChecklist } from "@/components/inspection/FireAlarmChecklist";
 import { SmokeAlarmGrid } from "@/components/inspection/SmokeAlarmGrid";
 import { SignaturePad } from "@/components/SignaturePad";
-import { isSmokeAlarm, categorizeDevice } from "@shared/deviceCategories";
+import { isSmokeAlarm, categorizeDevice, isFireAlarmGridDevice } from "@shared/deviceCategories";
 import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending } from "@shared/deviceHelpers";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -482,10 +482,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   // Calculate progress for each category using centralized helpers
   const smokeAlarms = devices?.filter((d: any) => isSmokeAlarm(d)) || [];
-  const fireAlarmDevices = devices?.filter((d: any) => {
-    const category = categorizeDevice(d);
-    return category === 'fire_alarm';
-  }) || [];
+  // Fire Alarm Devices grid is scoped to pull stations, heat detectors, horns,
+  // and strobes only (see isFireAlarmGridDevice).
+  const fireAlarmDevices = devices?.filter((d: any) => isFireAlarmGridDevice(d)) || [];
   const extinguishers = devices?.filter((d: any) => categorizeDevice(d) === 'extinguisher') || [];
   const emergencyLights = devices?.filter((d: any) => categorizeDevice(d) === 'emergency') || [];
 
@@ -528,11 +527,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const getFireAlarmStats = () => {
     const tested = inspectionResults?.filter((r: any) => {
       const device = devices?.find((d: any) => d.id === r.deviceId);
-      return device && categorizeDevice(device) === 'fire_alarm';
+      return device && isFireAlarmGridDevice(device);
     }) || [];
     const defCount = deficiencies?.filter((d: any) => {
       const device = devices?.find((dev: any) => dev.id === d.deviceId);
-      return device && categorizeDevice(device) === 'fire_alarm';
+      return device && isFireAlarmGridDevice(device);
     }).length || 0;
     return { tested: tested.length, total: fireAlarmDevices.length, deficiencies: defCount };
   };
