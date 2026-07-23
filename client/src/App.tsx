@@ -11,7 +11,10 @@ import {
   usePortalPreview,
 } from "./contexts/PortalPreviewContext";
 import { useAuth } from "./_core/hooks/useAuth";
-import { lazy, Suspense, useEffect } from "react";
+import { Suspense, useEffect } from "react";
+// Deploy-safe React.lazy: auto-reloads once if a route chunk 404s after a
+// redeploy (new hashed filenames) instead of crashing to the error boundary.
+import { lazyWithReload as lazy } from "./lib/lazyWithReload";
 import { getRoleBasedPath } from "./lib/roleRedirect";
 import { parseRequiredRouteId } from "./lib/routeParams";
 import { useNativeInit } from "./hooks/useNativeInit";

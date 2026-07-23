@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { isChunkLoadError } from "@/lib/lazyWithReload";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Component, ReactNode } from "react";
 
@@ -23,6 +24,10 @@ class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      // A chunk that 404s after a redeploy usually self-heals via the one-time
+      // reload in lazyWithReload; if it still reaches here (reload already
+      // tried this tab), show a clear "new version" message instead of a stack.
+      const isStaleDeploy = isChunkLoadError(this.state.error);
       return (
         <div className="flex items-center justify-center min-h-screen p-8 bg-background">
           <div className="flex flex-col items-center w-full max-w-2xl p-8">
@@ -31,13 +36,24 @@ class ErrorBoundary extends Component<Props, State> {
               className="text-destructive mb-6 flex-shrink-0"
             />
 
-            <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
+            <h2 className="text-xl mb-4">
+              {isStaleDeploy
+                ? "A new version is available."
+                : "An unexpected error occurred."}
+            </h2>
 
-            <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
-              <pre className="text-sm text-muted-foreground whitespace-break-spaces">
-                {this.state.error?.stack}
-              </pre>
-            </div>
+            {isStaleDeploy ? (
+              <p className="text-sm text-muted-foreground mb-6 text-center max-w-md">
+                The app was updated while this page was open. Reload to get the
+                latest version — your saved work is not affected.
+              </p>
+            ) : (
+              <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
+                <pre className="text-sm text-muted-foreground whitespace-break-spaces">
+                  {this.state.error?.stack}
+                </pre>
+              </div>
+            )}
 
             <button
               onClick={() => window.location.reload()}
