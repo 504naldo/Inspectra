@@ -272,6 +272,11 @@ function MobileCard({
               <div className="flex flex-col gap-0.5 col-span-2">
                 <span className="text-[10px] font-medium text-muted-foreground">Device Type</span>
                 <select className="text-xs border rounded px-2 py-1 bg-background" value={deviceType} onChange={(e) => onFieldChange("deviceType", e.target.value)}>
+                  {/* Keep the device's own stored type visible even when it isn't
+                      one of the standard fire-alarm types. */}
+                  {deviceType && !FIRE_ALARM_DEVICE_TYPES.includes(deviceType) && (
+                    <option value={deviceType}>{deviceType}</option>
+                  )}
                   {FIRE_ALARM_DEVICE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
@@ -765,6 +770,16 @@ export function IndividualDeviceGrid({
                         value={(localDeviceEdits[device.id]?.deviceType ?? device.deviceType) || ""}
                         onChange={(e) => handleDeviceTypeChange(device.id, e.target.value)}
                       >
+                        {/* Always show the device's own stored type, even if it's
+                            not a standard fire-alarm type, so the grid reflects
+                            the individual device record instead of defaulting to
+                            the first option. */}
+                        {(() => {
+                          const current = (localDeviceEdits[device.id]?.deviceType ?? device.deviceType) || "";
+                          return current && !FIRE_ALARM_DEVICE_TYPES.includes(current)
+                            ? <option value={current}>{current}</option>
+                            : null;
+                        })()}
                         {FIRE_ALARM_DEVICE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                       </select>
                     )}
