@@ -137,6 +137,9 @@ export default function AdminDevices() {
   const [editModel, setEditModel] = useState("");
   const [editSerialNumber, setEditSerialNumber] = useState("");
   const [editBarcode, setEditBarcode] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [editCircuitAddress, setEditCircuitAddress] = useState("");
+  const [editZone, setEditZone] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [editIsActive, setEditIsActive] = useState(true);
 
@@ -226,6 +229,9 @@ export default function AdminDevices() {
     setEditModel(device.model ?? "");
     setEditSerialNumber(device.serialNumber ?? "");
     setEditBarcode(device.barcode ?? "");
+    setEditLabel(device.label ?? "");
+    setEditCircuitAddress(device.circuitAddress ?? "");
+    setEditZone(device.zone ?? "");
     setEditNotes(device.notes ?? "");
     setEditIsActive(device.isActive ?? true);
   }
@@ -477,6 +483,20 @@ export default function AdminDevices() {
                 <Input value={editBarcode} onChange={(e) => setEditBarcode(e.target.value)} placeholder="Barcode" />
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label>Label / Tag</Label>
+                <Input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} placeholder="e.g. D-14" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Circuit Address</Label>
+                <Input value={editCircuitAddress} onChange={(e) => setEditCircuitAddress(e.target.value)} placeholder="e.g. L1-M23" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Zone</Label>
+                <Input value={editZone} onChange={(e) => setEditZone(e.target.value)} placeholder="e.g. Zone 3" />
+              </div>
+            </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
               <Select value={editIsActive ? "active" : "inactive"} onValueChange={(v) => setEditIsActive(v === "active")}>
@@ -507,6 +527,9 @@ export default function AdminDevices() {
                     model: editModel || undefined,
                     serialNumber: editSerialNumber || undefined,
                     barcode: editBarcode || undefined,
+                    label: editLabel || undefined,
+                    circuitAddress: editCircuitAddress || undefined,
+                    zone: editZone || undefined,
                     notes: editNotes || undefined,
                     isActive: editIsActive,
                   })
