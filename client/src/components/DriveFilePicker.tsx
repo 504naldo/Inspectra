@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,6 +25,8 @@ import {
   Building2,
   Cpu,
   Users,
+  Search,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { friendlyErrorMessage } from "@/lib/utils";
@@ -137,6 +140,8 @@ export function DriveFilePicker({
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [pdfPreview, setPdfPreview] = useState<PdfImportResult | null>(null);
   const [extractingId, setExtractingId] = useState<string | null>(null);
+  // Type-ahead filter over the current folder's contents (client-side, name match).
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -146,8 +151,15 @@ export function DriveFilePicker({
       setDownloadingId(null);
       setPdfPreview(null);
       setExtractingId(null);
+      setSearch("");
     }
   }, [open]);
+
+  // Clear the filter whenever we move to a different folder so the box doesn't
+  // silently hide items in the newly-opened location.
+  useEffect(() => {
+    setSearch("");
+  }, [currentFolderId, isSharedWithMe]);
 
   const ewfQuery = trpc.drive.findFolder.useQuery(
     { name: "EWF Accounts" },
@@ -263,7 +275,11 @@ export function DriveFilePicker({
   };
 
   const isLoading = listQuery.isLoading;
-  const items = listQuery.data?.items ?? [];
+  const allItems = listQuery.data?.items ?? [];
+  const query = search.trim().toLowerCase();
+  const items = query
+    ? allItems.filter((i) => i.name.toLowerCase().includes(query))
+    : allItems;
   const folders = items.filter((i) => i.isFolder);
   const spreadsheets = items.filter((i) => isSpreadsheet(i));
   const pdfs = items.filter((i) => isPdf(i));
@@ -341,11 +357,26 @@ export function DriveFilePicker({
             </Button>
           )}
 
-          <span className="text-xs text-muted-foreground ml-auto">
-            {onPdfImportComplete
-              ? "Select a spreadsheet or PDF inspection report"
-              : "Select a file to import"}
-          </span>
+          <div className="relative ml-auto w-48">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search this folder…"
+              disabled={isBusy}
+              className="h-8 pl-8 pr-8 text-sm"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* PDF extraction preview */}
@@ -454,8 +485,15 @@ export function DriveFilePicker({
               <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
                 <Folder className="h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  This folder is empty or contains no supported files.
+                  {query
+                    ? `No files or folders match "${search.trim()}".`
+                    : "This folder is empty or contains no supported files."}
                 </p>
+                {query && (
+                  <Button variant="outline" size="sm" onClick={() => setSearch("")}>
+                    Clear search
+                  </Button>
+                )}
               </div>
             )}
 
