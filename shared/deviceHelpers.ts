@@ -7,37 +7,51 @@ export interface DeviceWithWalkOrder {
   location?: string | null;
   deviceType?: string | null;
   walkOrder?: number | null;
+  /** Imported source order (row order in the workbook's device tab). */
+  sortOrder?: number | null;
   suiteNumber?: string | null;
   category?: string | null;
   [key: string]: any;
 }
 
 /**
- * Sorts devices by walk order, then location, then device type
- * Walk order nulls are placed last
+ * Sorts devices by walk order, then imported source order (sortOrder), then
+ * location, then device type. Walk-order and sort-order nulls are placed last.
+ *
+ * The sortOrder tiebreak makes freshly imported devices (which have no walk
+ * order yet) appear in the exact row order of the source workbook's device tab,
+ * rather than falling back to alphabetical location.
  */
 export function sortByWalkOrderThenLocation<T extends DeviceWithWalkOrder>(items: T[]): T[] {
   return [...items].sort((a, b) => {
-    // Sort by walkOrder first (nulls last)
+    // Sort by walkOrder first (nulls last) — an in-progress walk wins.
     const aWalkOrder = a.walkOrder ?? Number.MAX_SAFE_INTEGER;
     const bWalkOrder = b.walkOrder ?? Number.MAX_SAFE_INTEGER;
-    
+
     if (aWalkOrder !== bWalkOrder) {
       return aWalkOrder - bWalkOrder;
     }
-    
+
+    // Then by imported source order (nulls last) — replicates the workbook tab.
+    const aSortOrder = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+    const bSortOrder = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+
+    if (aSortOrder !== bSortOrder) {
+      return aSortOrder - bSortOrder;
+    }
+
     // Then by location (nulls last)
     const aLocation = a.location ?? '';
     const bLocation = b.location ?? '';
-    
+
     if (aLocation !== bLocation) {
       return aLocation.localeCompare(bLocation);
     }
-    
+
     // Finally by device type
     const aType = a.deviceType ?? '';
     const bType = b.deviceType ?? '';
-    
+
     return aType.localeCompare(bType);
   });
 }
