@@ -693,7 +693,16 @@ const jobRouter = router({
 
   getJobTechnicians: protectedProcedure.input(z.object({
     jobId: z.number()
-  })).query(async ({ input }) => {
+  })).query(async ({ input, ctx }) => {
+    if (ctx.user.role === 'customer') {
+      const job = await db.getJobById(input.jobId);
+      if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+      if (ctx.user.customerOrgId == null || ctx.user.customerOrgId !== job.customerOrgId) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+    } else {
+      await getJobForCompany(input.jobId, ctx.user.companyId!);
+    }
     return db.getJobTechnicians(input.jobId);
   }),
 

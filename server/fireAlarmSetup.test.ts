@@ -3,9 +3,9 @@ import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
 // Mock the DB so tests don't need a real database connection
-vi.mock("./db", () => ({ getDb: vi.fn() }));
+vi.mock("./db", () => ({ getDb: vi.fn(), getSiteById: vi.fn() }));
 import * as db from "./db";
-import { createMockDb } from "./fireAlarmTestFixture";
+import { createMockDb, PARENT_SITE_FIXTURE } from "./fireAlarmTestFixture";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -16,7 +16,7 @@ function createAuthContext(companyId: number = 2): { ctx: TrpcContext } {
     email: "test@example.com",
     name: "Test User",
     loginMethod: "manus",
-    role: "admin",
+    role: "office",
     companyId,
     customerOrgId: null,
     createdAt: new Date(),
@@ -35,7 +35,9 @@ function createAuthContext(companyId: number = 2): { ctx: TrpcContext } {
 
 // Each test gets a fresh in-memory DB (no cross-test state)
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.mocked(db.getDb).mockResolvedValue(createMockDb() as any);
+  vi.mocked(db.getSiteById).mockImplementation(async id => PARENT_SITE_FIXTURE.find(site => site.id === id));
 });
 
 describe("fireAlarm.upsertSystem", () => {
@@ -111,8 +113,26 @@ describe("fireAlarm.getSystemBySite", () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
-    const system = await caller.fireAlarm.getSystemBySite({ siteId: 9999 });
+    const system = await caller.fireAlarm.getSystemBySite({ siteId: 3 });
 
     expect(system).toBeNull();
+  });
+
+  it("rejects a missing site before reading child systems", async () => {
+    const caller = appRouter.createCaller(createAuthContext().ctx);
+
+    await expect(caller.fireAlarm.getSystemBySite({ siteId: 9999 })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(db.getDb).not.toHaveBeenCalled();
+  });
+
+  it("rejects a foreign-company site before reading child systems", async () => {
+    const caller = appRouter.createCaller(createAuthContext(1).ctx);
+
+    await expect(caller.fireAlarm.getSystemBySite({ siteId: 2 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(db.getDb).not.toHaveBeenCalled();
   });
 });

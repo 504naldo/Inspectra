@@ -3,6 +3,22 @@
  * Builds the template fixture from seed data and provides a mock DB factory.
  */
 import { FIRE_ALARM_CHECKLIST_TEMPLATE } from './seeds/fireAlarmChecklist';
+import type { Site } from '../drizzle/schema';
+
+// Real parent sites for router authorization; site 3 deliberately has no system.
+export const PARENT_SITE_FIXTURE: Site[] = [
+  { id: 1, companyId: 1, customerOrgId: 11, name: 'Auto-save site' },
+  { id: 2, companyId: 2, customerOrgId: 22, name: 'Setup site' },
+  { id: 3, companyId: 2, customerOrgId: 22, name: 'Site without a system' },
+].map(site => ({
+  ...site,
+  address: null, city: null, state: null, postalCode: null,
+  latitude: null, longitude: null, contactName: null, contactPhone: null,
+  notes: null, summary: null, fileNumber: null, buildingId: null,
+  keyLocation: null, keyNumber: null, keySignOutDate: null, keySignedOutBy: null,
+  createdAt: new Date('2026-01-01T00:00:00Z'),
+  updatedAt: new Date('2026-01-01T00:00:00Z'),
+}));
 
 // Convert seed format to DB row format (mirrors what 0020_seed_fire_alarm_checklist_template.sql inserts)
 let _itemId = 1;

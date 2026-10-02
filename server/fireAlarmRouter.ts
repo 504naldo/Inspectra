@@ -1,6 +1,8 @@
 import { router, protectedProcedure, technicianProcedure } from "./_core/trpc";
 import { z } from "zod";
-import { getDb, assertJobCompany, assertJobNotFinalized } from "./db";
+import { TRPCError } from "@trpc/server";
+import { getDb, getSiteById, assertJobCompany, assertJobNotFinalized } from "./db";
+import { assertSiteCompany } from "./tenantGuards";
 import { fireAlarmSystems, fireAlarmChecklistTemplates, fireAlarmInspectionResults } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 
@@ -84,7 +86,17 @@ export const fireAlarmRouter = router({
   // Get fire alarm system by site ID
   getSystemBySite: protectedProcedure
     .input(z.object({ siteId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      if (ctx.user.role === "customer") {
+        // Portal accounts can have no companyId; their organization is the boundary.
+        const site = await getSiteById(input.siteId);
+        if (!site) throw new TRPCError({ code: "NOT_FOUND", message: "Site not found" });
+        if (ctx.user.customerOrgId == null || ctx.user.customerOrgId !== site.customerOrgId) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+      } else {
+        await assertSiteCompany(input.siteId, ctx.user.companyId!);
+      }
       const database = await getDb();
       if (!database) return null;
 
@@ -267,7 +279,7 @@ export const fireAlarmRouter = router({
     }),
 
   // Create or update fire alarm system
-  upsertSystem: protectedProcedure
+  upsertSystem: technicianProcedure
     .input(
       z.object({
         siteId: z.number(),
@@ -280,7 +292,10 @@ export const fireAlarmRouter = router({
         monitoringCentrePhone: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // Company-scoped, not assignment-scoped: reassigned technicians must be
+      // able to sync system details they already captured offline (PR-11).
+      await assertSiteCompany(input.siteId, ctx.user.companyId!);
       const database = await getDb();
       if (!database) throw new Error("Database not available");
 
