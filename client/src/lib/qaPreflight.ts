@@ -18,6 +18,7 @@ export interface QaSyncCounts {
   // is exactly what this preflight exists to catch — so they count here too.
   pendingFireAlarmResults?: number;
   pendingSmokeTests?: number;
+  pendingLegacyRequests?: number;
 }
 
 /** Total unsynced critical items across the offline stores. */
@@ -28,13 +29,17 @@ export function pendingSyncItemCount(s: QaSyncCounts): number {
     (s.pendingChecklistResponses ?? 0) +
     (s.pendingTemplateResponses ?? 0) +
     (s.pendingFireAlarmResults ?? 0) +
-    (s.pendingSmokeTests ?? 0)
+    (s.pendingSmokeTests ?? 0) +
+    (s.pendingLegacyRequests ?? 0)
   );
 }
 
 /** True when QA submission should be blocked (unsynced data and no override). */
 export function isQaSubmitBlocked(s: QaSyncCounts, override: boolean): boolean {
-  return pendingSyncItemCount(s) > 0 && !override;
+  return (
+    (s.pendingLegacyRequests ?? 0) > 0 ||
+    ( pendingSyncItemCount(s) > 0 && !override)
+  );
 }
 
 /** An offline-store record that belongs to a job and may already be synced. */
@@ -45,7 +50,7 @@ export interface JobScopedItem {
 
 /** Count records for a specific job that are not yet synced. */
 export function countUnsyncedForJob(items: JobScopedItem[] | undefined, jobId: number): number {
-  return (items ?? []).filter((i) => i.jobId === jobId && !i.synced).length;
+  return (items ?? []).filter(i => i.jobId === jobId && !i.synced).length;
 }
 
 /**
@@ -63,7 +68,7 @@ export function pendingSyncCountsForJob(
     fireAlarmResults?: JobScopedItem[];
     smokeTests?: JobScopedItem[];
   },
-  jobId: number,
+  jobId: number
 ): QaSyncCounts {
   return {
     pendingResults: countUnsyncedForJob(stores.results, jobId),

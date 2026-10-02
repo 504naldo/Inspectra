@@ -1,8 +1,11 @@
+import { resolveDocumentUrl } from "../documentUrl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, adminOrOfficeProcedure } from "../_core/trpc";
 import * as db from "../db";
-import { getJobForCompany } from "../tenantGuards";
+import {
+  assertSiteCompany,
+  assertCustomerOrgCompany, getJobForCompany, } from "../tenantGuards";
 import { getValidGoogleToken } from "../_core/googleAuth";
 import { uploadReportToDrive } from "../_core/driveUpload";
 import { escapeDriveQueryValue } from "../_core/driveQuery";
@@ -64,7 +67,7 @@ export const driveRouter = router({
       // Download PDF from S3
       let pdfBuffer: Buffer;
       try {
-        const pdfUrl = report.fileUrl || (await storageGet(report.fileKey!)).url;
+        const pdfUrl = (await resolveDocumentUrl(report))!;
         await assertPublicHttpUrl(pdfUrl);
         const pdfResponse = await fetch(pdfUrl, { redirect: "error" });
         if (!pdfResponse.ok) throw new Error(`PDF download failed: ${pdfResponse.status}`);
@@ -146,7 +149,7 @@ export const driveRouter = router({
       return { drives: [] as { id: string; name: string }[] };
     }
 
-    const data = (await response.json()) as { drives: { id: string; name: string }[] };
+    const data = (await response.json()) as { drives: { id: string; name: string }[]; };
     return { drives: data.drives ?? [] };
   }),
 
@@ -159,8 +162,8 @@ export const driveRouter = router({
     .input(z.object({
       folderId: z.string().optional(),
       sharedWithMe: z.boolean().optional(),
-      /** When true, return all file types instead of only spreadsheets/folders/PDFs.
-       *  Used by the import picker so users can see the full folder contents. */
+        /** When true, return all file types instead of only spreadsheets/folders/PDFs.
+         *  Used by the import picker so users can see the full folder contents. */
       allFiles: z.boolean().optional(),
     }))
     .query(async ({ input, ctx }) => {
@@ -190,7 +193,7 @@ export const driveRouter = router({
       baseUrl.searchParams.set("includeItemsFromAllDrives", "true");
       baseUrl.searchParams.set("supportsAllDrives", "true");
 
-      type DriveFile = { id: string; name: string; mimeType: string; modifiedTime: string; size?: string };
+      type DriveFile = { id: string; name: string; mimeType: string; modifiedTime: string; size?: string; };
       const allFiles: DriveFile[] = [];
       let pageToken: string | null = null;
 
@@ -222,7 +225,7 @@ export const driveRouter = router({
           });
         }
 
-        const data = (await response.json()) as { files: DriveFile[]; nextPageToken?: string };
+        const data = (await response.json()) as { files: DriveFile[]; nextPageToken?: string; };
         allFiles.push(...(data.files ?? []));
         pageToken = data.nextPageToken ?? null;
       } while (pageToken);
@@ -235,7 +238,7 @@ export const driveRouter = router({
         "text/csv",
       ]);
 
-      const items = allFiles.map((f) => ({
+      const items = allFiles.map(f => ({
         id: f.id,
         name: f.name,
         mimeType: f.mimeType,
@@ -287,7 +290,7 @@ export const driveRouter = router({
           return { folders: [] };
         }
 
-        const data = (await response.json()) as { files: { id: string; name: string }[]; nextPageToken?: string };
+        const data = (await response.json()) as { files: { id: string; name: string }[]; nextPageToken?: string; };
         allFolders.push(...(data.files ?? []));
         pageToken = data.nextPageToken ?? null;
       } while (pageToken);
@@ -308,6 +311,22 @@ export const driveRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      if (input.siteId)
+        await assertSiteCompany(input.siteId, ctx.user.companyId!);
+      if ("customerOrgId" in input && typeof input.customerOrgId === "number") {
+        await assertCustomerOrgCompany(
+          input.customerOrgId,
+          ctx.user.companyId!
+        );
+        if (input.siteId) {
+          const site = await db.getSiteById(input.siteId);
+          if (site?.customerOrgId !== input.customerOrgId)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Site and customer organization do not match",
+            });
+        }
+      }
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
         throw new TRPCError({
@@ -317,7 +336,7 @@ export const driveRouter = router({
       }
 
       if (input.companyId !== undefined && input.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot access data for another company." });
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot access data for another company.", });
       }
 
       // 1. Fetch file metadata
@@ -326,7 +345,7 @@ export const driveRouter = router({
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       if (!metaResponse.ok) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Drive file not found or no access." });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Drive file not found or no access.", });
       }
       const meta = (await metaResponse.json()) as {
         id: string;
@@ -381,7 +400,7 @@ export const driveRouter = router({
 
       // 4. Create attachment record if siteId provided
       let attachmentId: number | null = null;
-      if (input.siteId && input.companyId) {
+      if (input.siteId) {
         const attachment = await db.createAttachment({
           entityType: "site",
           entityId: input.siteId,
@@ -423,7 +442,23 @@ export const driveRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       if (input.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company." });
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company.", });
+      }
+      if (input.siteId)
+        await assertSiteCompany(input.siteId, ctx.user.companyId!);
+      if ("customerOrgId" in input && typeof input.customerOrgId === "number") {
+        await assertCustomerOrgCompany(
+          input.customerOrgId,
+          ctx.user.companyId!
+        );
+        if (input.siteId) {
+          const site = await db.getSiteById(input.siteId);
+          if (site?.customerOrgId !== input.customerOrgId)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Site and customer organization do not match",
+            });
+        }
       }
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
@@ -468,7 +503,7 @@ export const driveRouter = router({
       }
 
       // 3. Try to extract site info from a dedicated site/summary sheet
-      const siteSheetName = sheetNames.find((n) => {
+      const siteSheetName = sheetNames.find(n => {
         const l = n.toLowerCase();
         return (
           l.includes("site") ||
@@ -515,7 +550,10 @@ export const driveRouter = router({
       }
 
       // 4. Upsert customer org
-      let customerOrgId = input.customerOrgId;
+      let customerOrgId = input.customerOrgId ??
+        (input.siteId
+          ? (await db.getSiteById(input.siteId))?.customerOrgId
+          : undefined);
       if (!customerOrgId) {
         const orgName =
           siteInfo.customerOrgName ||
@@ -622,7 +660,23 @@ export const driveRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       if (input.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company." });
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company.", });
+      }
+      if (input.siteId)
+        await assertSiteCompany(input.siteId, ctx.user.companyId!);
+      if ("customerOrgId" in input && typeof input.customerOrgId === "number") {
+        await assertCustomerOrgCompany(
+          input.customerOrgId,
+          ctx.user.companyId!
+        );
+        if (input.siteId) {
+          const site = await db.getSiteById(input.siteId);
+          if (site?.customerOrgId !== input.customerOrgId)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Site and customer organization do not match",
+            });
+        }
       }
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
@@ -679,7 +733,7 @@ export const driveRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       if (input.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company." });
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company.", });
       }
       const pdfBuffer = Buffer.from(input.fileData, "base64");
       const { importPdfData } = await import("../_core/pdfImport");

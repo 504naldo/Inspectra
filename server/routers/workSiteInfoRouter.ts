@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure, protectedProcedure } from "../_core/trpc";
+import { router, officeProcedure, technicianProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { assertSiteCompany } from "../tenantGuards";
 
@@ -47,7 +47,7 @@ export const workSiteInfoRouter = router({
    * Available to all authenticated users (technicians need it in the field).
    * Verifies the job belongs to the user's company.
    */
-  getForJob: protectedProcedure
+  getForJob: technicianProcedure
     .input(z.object({ jobId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const job = await db.getJobById(input.jobId);

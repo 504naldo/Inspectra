@@ -1,3 +1,5 @@
+import { sendEmailOnce, EmailProviderRejected } from "../emailOutbox";
+import { resolveDocumentUrl } from "../documentUrl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, adminOrOfficeProcedure } from "../_core/trpc";
@@ -80,6 +82,7 @@ export const gmailRouter = router({
     .input(z.object({
       jobId: z.number(),
       reportId: z.number(),
+        requestId: z.string().uuid(),
       recipientEmail: z.string().email(),
       recipientName: z.string().optional(),
       subject: z.string().min(1),
@@ -114,7 +117,7 @@ export const gmailRouter = router({
       // 3. Download the PDF from S3
       let pdfBuffer: Buffer;
       try {
-        const pdfUrl = report.fileUrl || (await storageGet(report.fileKey!)).url;
+        const pdfUrl = (await resolveDocumentUrl(report))!;
         await assertPublicHttpUrl(pdfUrl);
         const pdfResponse = await fetch(pdfUrl, { redirect: "error" });
         if (!pdfResponse.ok) {
@@ -173,7 +176,16 @@ export const gmailRouter = router({
       );
 
       try {
-        const gmailResponse = await fetch(
+        const result = await sendEmailOnce({
+          requestId: input.requestId,
+          companyId: job.companyId,
+          userId: ctx.user.id,
+          entityType: "report",
+          entityId: report.id,
+          provider: "gmail",
+          payload: input,
+          send: async () => {
+            const response = await fetch(
           "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
           {
             method: "POST",
@@ -185,43 +197,33 @@ export const gmailRouter = router({
           }
         );
 
-        if (!gmailResponse.ok) {
-          const errorBody = await gmailResponse.text().catch(() => "");
-          console.error("[Gmail] Send failed:", gmailResponse.status, errorBody);
-
-          if (gmailResponse.status === 401 || gmailResponse.status === 403) {
-            throw new TRPCError({
-              code: "PRECONDITION_FAILED",
-              message: "Gmail permission denied. Please log out and log back in to reconnect your Google account with email permissions.",
-            });
+        if (!response.ok) {
+              if ([401, 403, 429].includes(response.status))
+                throw new EmailProviderRejected(
+                  `Gmail rejected the request (${response.status})`);
+              throw new Error(
+                `Gmail outcome could not be confirmed (${response.status})`);
           }
+            return (await response.json()) as {
+          id: string };
+        },
+        });
 
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to send email via Gmail. Please try again.",
-          });
-        }
-
-        const result = (await gmailResponse.json()) as {
-          id: string;
-          threadId: string;
-          labelIds: string[];
-        };
-
-        // Mark the report as sent so the status reflects delivery.
+        // "sent" means provider acceptance, not confirmed recipient delivery.
         await db.updateReport(input.reportId, { status: "sent" });
 
         return {
           success: true,
           messageId: result.id,
-          threadId: result.threadId,
+          acceptance: result.acceptance,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         console.error("[Gmail] Send error:", error);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to send email. Please try again.",
+          message:
+            "Email outcome could not be confirmed. Review delivery tracking before starting another send.",
         });
       }
     }),

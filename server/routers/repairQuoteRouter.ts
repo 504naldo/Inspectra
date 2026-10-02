@@ -25,7 +25,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
 import * as db from "../db.js";
-import { getJobForCompany, getQuoteForCompany, assertPartsCatalogItemCompany } from "../tenantGuards.js";
+import { getJobForCompany, getQuoteForCompany, assertPartsCatalogItemCompany, } from "../tenantGuards.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateRepairQuotePDF } from "../quotePdfGenerator.js";
@@ -57,7 +57,7 @@ function calcItemTotals(item: {
   return { partTotal, labourTotal, lineSubtotal, gst, pst, total };
 }
 
-function calcQuoteTotals(items: Array<{ partTotal: number; labourTotal: number; fuelCharge: number; backflowReportFee: number; gst: number; pst: number; total: number }>) {
+function calcQuoteTotals(items: Array<{ partTotal: number; labourTotal: number; fuelCharge: number; backflowReportFee: number; gst: number; pst: number; total: number; }>) {
   const subtotal = items.reduce((s, i) => s + i.partTotal + i.labourTotal + i.fuelCharge + i.backflowReportFee, 0);
   const gst = items.reduce((s, i) => s + i.gst, 0);
   const pst = items.reduce((s, i) => s + i.pst, 0);
@@ -74,7 +74,7 @@ async function assertNotFinalized(quoteId: number, companyId: number) {
   // so callers get a single guard instead of a separate companyId compare.
   const q = await getQuoteForCompany(quoteId, companyId);
   if ((q as any).finalizedAt) {
-    throw new TRPCError({ code: "CONFLICT", message: "This quote is finalized and cannot be edited. Create a revision to make changes." });
+    throw new TRPCError({ code: "CONFLICT", message: "This quote is finalized and cannot be edited. Create a revision to make changes.", });
   }
   return q;
 }
@@ -85,7 +85,7 @@ const repairItemInputSchema = z.object({
   deficiencyId: z.number().int().positive().optional().nullable(),
   description: z.string().min(1).max(500),
   repairNotes: z.string().max(2000).optional().nullable(),
-  systemType: z.enum(["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER", "BACKFLOW", "OTHER"]).optional().nullable(),
+  systemType: z.enum(["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER", "BACKFLOW", "OTHER",]).optional().nullable(),
   location: z.string().max(255).optional().nullable(),
   quantity: z.number().int().min(1).default(1),
   // Part (optional — some items are labour-only)
@@ -218,7 +218,7 @@ export const repairQuoteRouter = router({
 
       // Pre-populate items from deficiencies if provided
       if (input.deficiencyIds?.length) {
-        const defs = await Promise.all(input.deficiencyIds.map((id) => db.getDeficiencyById(id)));
+        const defs = await Promise.all(input.deficiencyIds.map(id => db.getDeficiencyById(id)));
         const valid = defs.filter((d): d is NonNullable<typeof d> => !!d && d.jobId === input.jobId);
         for (let i = 0; i < valid.length; i++) {
           const d = valid[i];
@@ -251,7 +251,7 @@ export const repairQuoteRouter = router({
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: quote.id, eventType: "created",
         title: `Repair quote created: ${quoteNumber}`,
-        relatedEntityType: "job", relatedEntityId: input.jobId });
+        relatedEntityType: "job", relatedEntityId: input.jobId, });
       return { quoteId: quote.id, quoteNumber };
     }),
 
@@ -331,7 +331,7 @@ export const repairQuoteRouter = router({
       const techLabourRate = input.techLabourRate || toNum((quote as any).techLabourRate);
       const fitterLabourRate = input.fitterLabourRate || toNum((quote as any).fitterLabourRate);
 
-      const calc = calcItemTotals({ ...input, partUnitPrice, techLabourRate, fitterLabourRate });
+      const calc = calcItemTotals({ ...input, partUnitPrice, techLabourRate, fitterLabourRate, });
 
       const item = await db.createRepairQuoteItem({
         quoteId: input.quoteId,
@@ -363,7 +363,7 @@ export const repairQuoteRouter = router({
     }),
 
   updateItem: officeProcedure
-    .input(z.object({ id: z.number().int().positive(), quoteId: z.number().int().positive() }).merge(repairItemInputSchema.partial()))
+    .input(z.object({ id: z.number().int().positive(), quoteId: z.number().int().positive(), }).merge(repairItemInputSchema.partial()))
     .mutation(async ({ ctx, input }) => {
       const quote = await assertNotFinalized(input.quoteId, ctx.user.companyId!);
       const existing = await db.getRepairQuoteItemById(input.id);
@@ -418,8 +418,15 @@ export const repairQuoteRouter = router({
     }),
 
   removeItem: officeProcedure
-    .input(z.object({ id: z.number().int().positive(), quoteId: z.number().int().positive() }))
+    .input(z.object({ id: z.number().int().positive(), quoteId: z.number().int().positive(), }))
     .mutation(async ({ ctx, input }) => {
+      const item = await db.getRepairQuoteItemById(input.id);
+      if (!item) throw new TRPCError({ code: "NOT_FOUND" });
+      if (item.quoteId !== input.quoteId)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Item does not belong to this quote",
+        });
       const quote = await assertNotFinalized(input.quoteId, ctx.user.companyId!);
       await db.deleteRepairQuoteItem(input.id);
       await _recalcQuoteTotals(input.quoteId);
@@ -432,14 +439,14 @@ export const repairQuoteRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
-      if ((quote as any).finalizedAt) throw new TRPCError({ code: "CONFLICT", message: "Already finalized." });
-      if (quote.status !== "draft") throw new TRPCError({ code: "BAD_REQUEST", message: "Only draft quotes can be finalized." });
+      if ((quote as any).finalizedAt) throw new TRPCError({ code: "CONFLICT", message: "Already finalized.", });
+      if (quote.status !== "draft") throw new TRPCError({ code: "BAD_REQUEST", message: "Only draft quotes can be finalized.", });
       const items = await db.getRepairQuoteItemsByQuote(input.id);
-      if (!items.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one item before finalizing." });
+      if (!items.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one item before finalizing.", });
 
       await db.updateQuote(input.id, { finalizedAt: new Date() } as any);
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "status_changed",
-        title: "Repair quote finalized" });
+        title: "Repair quote finalized", });
       return { success: true };
     }),
 
@@ -460,13 +467,13 @@ export const repairQuoteRouter = router({
 
       if (input.status === "accepted") {
         await _createWorkOrderFromQuote(quote.id, ctx.user.companyId!);
-        _createApprovedWorkFromQuote(quote.id, "internal").catch((err) => {
+        _createApprovedWorkFromQuote(quote.id, "internal").catch(err => {
           console.warn("[ApprovedWork] Auto-create failed on office accept:", err);
         });
       }
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "status_changed",
-        title: `Repair quote ${input.status}`, oldValue: quote.status, newValue: input.status });
+        title: `Repair quote ${input.status}`, oldValue: quote.status, newValue: input.status, });
       return { success: true };
     }),
 
@@ -501,7 +508,7 @@ export const repairQuoteRouter = router({
         jobNumber: job?.jobNumber ?? `JOB-${quote.jobId}`,
         createdAt: quote.createdAt,
         validUntil: q.validUntil ? new Date(q.validUntil) : null,
-        items: items.map((i) => ({
+        items: items.map(i => ({
           description: i.description,
           repairNotes: i.repairNotes ?? null,
           systemType: i.systemType ?? null,
@@ -543,7 +550,7 @@ export const repairQuoteRouter = router({
     .mutation(async ({ ctx, input }) => {
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const q = quote as any;
-      if (!q.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Finalize the quote before sending." });
+      if (!q.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Finalize the quote before sending.", });
 
       const [items, job, site, customer, company] = await Promise.all([
         db.getRepairQuoteItemsByQuote(input.id),
@@ -567,7 +574,7 @@ export const repairQuoteRouter = router({
         jobNumber: job?.jobNumber ?? `JOB-${quote.jobId}`,
         createdAt: quote.createdAt,
         validUntil: q.validUntil ? new Date(q.validUntil) : null,
-        items: items.map((i) => ({
+        items: items.map(i => ({
           description: i.description,
           repairNotes: i.repairNotes ?? null,
           systemType: i.systemType ?? null,
@@ -598,7 +605,7 @@ export const repairQuoteRouter = router({
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
 
       if (ENV.resendApiKey) {
-        const CAD = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
+        const CAD = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", });
         const total = CAD.format(toNum(quote.total));
         const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head>
 <body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
@@ -616,20 +623,20 @@ export const repairQuoteRouter = router({
 </body></html>`;
         await fetch("https://api.resend.com/emails", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${ENV.resendApiKey}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${ENV.resendApiKey}`, },
           body: JSON.stringify({
             from: `${company?.name ?? "Inspectra"} <noreply@inspectrafire.ca>`,
             to: input.to,
             subject: `Repair Quote — ${site?.name ?? ""} (${job?.jobNumber ?? ""})`,
             html,
-            attachments: [{ filename: `repair-quote-${quote.id}.pdf`, content: pdfBuffer.toString("base64") }],
+            attachments: [{ filename: `repair-quote-${quote.id}.pdf`, content: pdfBuffer.toString("base64"), },],
           }),
         });
       }
 
-      await db.updateQuote(input.id, { pdfUrl, status: "sent", ...(!q.sentAt && { sentAt: new Date() }) } as any);
+      await db.updateQuote(input.id, { pdfUrl, status: "sent", ...(!q.sentAt && { sentAt: new Date() }), } as any);
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.sent",
-        title: `Quote emailed to ${input.to.join(", ")}`, oldValue: q.status, newValue: "sent" });
+        title: `Quote emailed to ${input.to.join(", ")}`, oldValue: q.status, newValue: "sent", });
 
       return { pdfUrl };
     }),
@@ -641,9 +648,9 @@ export const repairQuoteRouter = router({
     .mutation(async ({ ctx, input }) => {
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const q = quote as any;
-      const approvedStatuses = ["accepted", "approved", "partially_approved", "converted_to_approved_work"];
+      const approvedStatuses = ["accepted", "approved", "partially_approved", "converted_to_approved_work",];
       if (!approvedStatuses.includes(q.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Only approved quotes can be converted to a work order." });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only approved quotes can be converted to a work order.", });
       }
       return _createWorkOrderFromQuote(quote.id, ctx.user.companyId!);
     }),
@@ -655,13 +662,13 @@ export const repairQuoteRouter = router({
     .mutation(async ({ ctx, input }) => {
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
       const q = quote as any;
-      if (!q.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Finalize the quote before marking it ready to send." });
+      if (!q.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Finalize the quote before marking it ready to send.", });
       const items = await db.getRepairQuoteItemsByQuote(input.id);
-      if (!items.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one item before marking ready to send." });
+      if (!items.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one item before marking ready to send.", });
 
       await db.updateQuote(input.id, { status: "ready_to_send" } as any);
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "status_changed",
-        title: "Quote marked ready to send", oldValue: quote.status, newValue: "ready_to_send" });
+        title: "Quote marked ready to send", oldValue: quote.status, newValue: "ready_to_send", });
       return { success: true as const };
     }),
 
@@ -676,7 +683,7 @@ export const repairQuoteRouter = router({
       await db.updateQuote(input.id, update as any);
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.sent",
-        title: "Quote marked sent", oldValue: quote.status, newValue: "sent" });
+        title: "Quote marked sent", oldValue: quote.status, newValue: "sent", });
       return { success: true as const };
     }),
 
@@ -691,7 +698,7 @@ export const repairQuoteRouter = router({
       await db.updateQuote(input.id, update as any);
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.viewed",
-        title: "Quote marked viewed by customer", oldValue: quote.status, newValue: "viewed" });
+        title: "Quote marked viewed by customer", oldValue: quote.status, newValue: "viewed", });
       return { success: true as const };
     }),
 
@@ -700,7 +707,7 @@ export const repairQuoteRouter = router({
       id: z.number().int().positive(),
       approvedByName: z.string().max(255).optional().nullable(),
       approvedByEmail: z.string().email().max(320).optional().nullable(),
-      approvalSource: z.enum(["email", "phone", "signed_pdf", "in_person", "portal_later", "internal_entry"]),
+      approvalSource: z.enum(["email", "phone", "signed_pdf", "in_person", "portal_later", "internal_entry",]),
       approvedAt: z.string().optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -717,7 +724,7 @@ export const repairQuoteRouter = router({
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.approvalRecorded",
         title: `Approval recorded (${input.approvalSource})`,
-        metadata: { approvedByName: input.approvedByName, approvalSource: input.approvalSource } });
+        metadata: { approvedByName: input.approvedByName, approvalSource: input.approvalSource, }, });
       return { success: true as const };
     }),
 
@@ -727,13 +734,13 @@ export const repairQuoteRouter = router({
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const items = await db.getRepairQuoteItemsByQuote(input.id);
-      await Promise.all(items.map((item) =>
-        db.updateRepairQuoteItem(item.id, { approvalStatus: "approved" } as any)
+      await Promise.all(items.map(item =>
+        db.updateRepairQuoteItem(item.id, { approvalStatus: "approved", } as any)
       ));
       await _recalcQuoteApprovalStatus(input.id);
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.allItemsApproved",
-        title: `All ${items.length} items approved` });
+        title: `All ${items.length} items approved`, });
       return { success: true as const };
     }),
 
@@ -743,13 +750,13 @@ export const repairQuoteRouter = router({
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const items = await db.getRepairQuoteItemsByQuote(input.id);
-      await Promise.all(items.map((item) =>
-        db.updateRepairQuoteItem(item.id, { approvalStatus: "declined" } as any)
+      await Promise.all(items.map(item =>
+        db.updateRepairQuoteItem(item.id, { approvalStatus: "declined", } as any)
       ));
-      await db.updateQuote(input.id, { status: "declined", declinedAt: new Date() } as any);
+      await db.updateQuote(input.id, { status: "declined", declinedAt: new Date(), } as any);
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.allItemsDeclined",
-        title: `All ${items.length} items declined`, newValue: "declined" });
+        title: `All ${items.length} items declined`, newValue: "declined", });
 
       const companyId = ctx.user.companyId!;
       const dedupeKey = `quote-declined-${input.id}`;
@@ -780,17 +787,17 @@ export const repairQuoteRouter = router({
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const items = await db.getRepairQuoteItemsByQuote(input.id);
-      const validIds = new Set(items.map((i) => i.id));
-      const toApprove = input.itemIds.filter((id) => validIds.has(id));
-      if (!toApprove.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No valid items to approve." });
+      const validIds = new Set(items.map(i => i.id));
+      const toApprove = input.itemIds.filter(id => validIds.has(id));
+      if (!toApprove.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No valid items to approve.", });
 
-      await Promise.all(toApprove.map((id) =>
+      await Promise.all(toApprove.map(id =>
         db.updateRepairQuoteItem(id, { approvalStatus: "approved" } as any)
       ));
       const newStatus = await _recalcQuoteApprovalStatus(input.id);
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.itemsApproved",
-        title: `${toApprove.length} item(s) approved`, metadata: { itemIds: toApprove, newQuoteStatus: newStatus } });
+        title: `${toApprove.length} item(s) approved`, metadata: { itemIds: toApprove, newQuoteStatus: newStatus }, });
       return { success: true as const, newStatus };
     }),
 
@@ -803,17 +810,17 @@ export const repairQuoteRouter = router({
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const items = await db.getRepairQuoteItemsByQuote(input.id);
-      const validIds = new Set(items.map((i) => i.id));
-      const toDecline = input.itemIds.filter((id) => validIds.has(id));
-      if (!toDecline.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No valid items to decline." });
+      const validIds = new Set(items.map(i => i.id));
+      const toDecline = input.itemIds.filter(id => validIds.has(id));
+      if (!toDecline.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No valid items to decline.", });
 
-      await Promise.all(toDecline.map((id) =>
+      await Promise.all(toDecline.map(id =>
         db.updateRepairQuoteItem(id, { approvalStatus: "declined" } as any)
       ));
       const newStatus = await _recalcQuoteApprovalStatus(input.id);
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.itemsDeclined",
-        title: `${toDecline.length} item(s) declined`, metadata: { itemIds: toDecline, newQuoteStatus: newStatus } });
+        title: `${toDecline.length} item(s) declined`, metadata: { itemIds: toDecline, newQuoteStatus: newStatus }, });
       return { success: true as const, newStatus };
     }),
 
@@ -821,7 +828,7 @@ export const repairQuoteRouter = router({
     .input(z.object({
       itemId: z.number().int().positive(),
       quoteId: z.number().int().positive(),
-      approvalStatus: z.enum(["pending", "approved", "declined", "needs_review"]),
+      approvalStatus: z.enum(["pending", "approved", "declined", "needs_review",]),
       customerNotes: z.string().max(1000).optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -838,29 +845,29 @@ export const repairQuoteRouter = router({
       const newStatus = await _recalcQuoteApprovalStatus(input.quoteId);
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.quoteId, eventType: "quote.itemStatusChanged",
         title: `Item #${input.itemId} → ${input.approvalStatus}`,
-        metadata: { itemId: input.itemId, approvalStatus: input.approvalStatus } });
+        metadata: { itemId: input.itemId, approvalStatus: input.approvalStatus, }, });
       return { success: true as const, newStatus };
     }),
 
   convertApprovedItemsToApprovedWork: officeProcedure
     .input(z.object({
       id: z.number().int().positive(),
-      approvalSource: z.enum(["email", "phone", "signed_pdf", "in_person", "portal_later", "internal_entry"]).default("internal_entry"),
+      approvalSource: z.enum(["email", "phone", "signed_pdf", "in_person", "portal_later", "internal_entry",]).default("internal_entry"),
     }))
     .mutation(async ({ ctx, input }) => {
       const companyId = ctx.user.companyId!;
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
 
       const q = quote as any;
-      const approvedStatuses = ["approved", "accepted", "partially_approved", "converted_to_approved_work"];
+      const approvedStatuses = ["approved", "accepted", "partially_approved", "converted_to_approved_work",];
       if (!approvedStatuses.includes(q.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Quote must be approved or partially approved before converting items." });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Quote must be approved or partially approved before converting items.", });
       }
 
       const items = await db.getRepairQuoteItemsByQuote(input.id);
-      const itemsToConvert = items.filter((i) => (i as any).approvalStatus === "approved");
+      const itemsToConvert = items.filter(i => (i as any).approvalStatus === "approved");
       if (!itemsToConvert.length) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "No approved items to convert. Approve items first." });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No approved items to convert. Approve items first.", });
       }
 
       let created = 0;
@@ -889,24 +896,24 @@ export const repairQuoteRouter = router({
           createdById: ctx.user.id,
         } as any);
 
-        await db.updateRepairQuoteItem(item.id, { approvalStatus: "converted_to_approved_work" } as any);
+        await db.updateRepairQuoteItem(item.id, { approvalStatus: "converted_to_approved_work", } as any);
         created++;
       }
 
       // Update quote status if all approved items are now converted
       const refreshedItems = await db.getRepairQuoteItemsByQuote(input.id);
-      const allApprovedConverted = refreshedItems.every((i) =>
+      const allApprovedConverted = refreshedItems.every(i =>
         ["converted_to_approved_work", "declined", "needs_review"].includes((i as any).approvalStatus ?? "pending")
         && (i as any).approvalStatus !== "pending"
         && (i as any).approvalStatus !== "approved"
       );
       if (allApprovedConverted) {
-        await db.updateQuote(input.id, { status: "converted_to_approved_work" } as any);
+        await db.updateQuote(input.id, { status: "converted_to_approved_work", } as any);
       }
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.converted",
         title: `${created} item(s) converted to Approved Work`,
-        metadata: { created, skipped } });
+        metadata: { created, skipped }, });
 
       const dedupeKey = `quote-approved-ready-${input.id}`;
       const alreadyNotified = await db.hasUndismissedNotification(companyId, dedupeKey);
@@ -935,7 +942,7 @@ export const repairQuoteRouter = router({
 
       await db.updateQuote(input.id, { status: "expired" } as any);
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.expired",
-        title: "Quote expired", oldValue: quote.status, newValue: "expired" });
+        title: "Quote expired", oldValue: quote.status, newValue: "expired", });
       return { success: true as const };
     }),
 
@@ -946,7 +953,7 @@ export const repairQuoteRouter = router({
 
       await db.updateQuote(input.id, { status: "cancelled" } as any);
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.cancelled",
-        title: "Quote cancelled", oldValue: quote.status, newValue: "cancelled" });
+        title: "Quote cancelled", oldValue: quote.status, newValue: "cancelled", });
       return { success: true as const };
     }),
 });
@@ -957,10 +964,10 @@ async function _recalcQuoteApprovalStatus(quoteId: number): Promise<string> {
   const items = await db.getRepairQuoteItemsByQuote(quoteId);
   if (!items.length) return "";
 
-  const approvedOrConverted = items.filter((i) =>
+  const approvedOrConverted = items.filter(i =>
     (i as any).approvalStatus === "approved" || (i as any).approvalStatus === "converted_to_approved_work"
   ).length;
-  const declined = items.filter((i) => (i as any).approvalStatus === "declined").length;
+  const declined = items.filter(i => (i as any).approvalStatus === "declined").length;
   const total = items.length;
 
   let newStatus: string | null = null;
@@ -984,7 +991,7 @@ async function _recalcQuoteApprovalStatus(quoteId: number): Promise<string> {
 
 async function _recalcQuoteTotals(quoteId: number) {
   const items = await db.getRepairQuoteItemsByQuote(quoteId);
-  const mapped = items.map((i) => ({
+  const mapped = items.map(i => ({
     partTotal: toNum(i.partTotal),
     labourTotal: toNum(i.labourTotal),
     fuelCharge: toNum(i.fuelCharge),
@@ -1036,8 +1043,8 @@ export async function _createWorkOrderFromQuote(quoteId: number, companyId: numb
       total: String(quote.total),
     });
     // Mark deficiencies as quoted
-    const defIds = items.map((i) => i.deficiencyId).filter((id): id is number => id !== null);
-    await Promise.all(defIds.map((id) => db.updateDeficiency(id, { status: "quoted", workOrderId: existing.id })));
+    const defIds = items.map(i => i.deficiencyId).filter((id): id is number => id !== null);
+    await Promise.all(defIds.map(id => db.updateDeficiency(id, { status: "quoted", workOrderId: existing.id })));
     return { workOrderId: existing.id };
   }
 
@@ -1061,8 +1068,8 @@ export async function _createWorkOrderFromQuote(quoteId: number, companyId: numb
     total: String(quote.total),
   });
 
-  const defIds = items.map((i) => i.deficiencyId).filter((id): id is number => id !== null);
-  await Promise.all(defIds.map((id) => db.updateDeficiency(id, { status: "quoted", workOrderId: wo.id })));
+  const defIds = items.map(i => i.deficiencyId).filter((id): id is number => id !== null);
+  await Promise.all(defIds.map(id => db.updateDeficiency(id, { status: "quoted", workOrderId: wo.id })));
 
   return { workOrderId: wo.id };
 }

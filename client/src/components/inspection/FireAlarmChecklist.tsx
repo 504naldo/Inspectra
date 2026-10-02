@@ -1,3 +1,4 @@
+import { PendingSaves, fireAlarmDraftKey } from "@/lib/pendingSaves";
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -7,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, } from "@/components/ui/accordion";
 import { Check, X, Minus, Loader2, Info, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -51,7 +52,7 @@ interface FireAlarmChecklistProps {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChecklistProps) {
+export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChecklistProps) {
   const { user } = useAuth();
 
   // ── Queries ──
@@ -89,12 +90,9 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // Debounce refs
-  const headerTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const checklistTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingSaves = useRef<PendingSaves>(new PendingSaves());
   const attendanceDraftRef = useRef<Record<number, Record<string, any>>>({});
-  const attendanceTimers = useRef<Record<number, NodeJS.Timeout>>({});
   const ancillaryDraftRef = useRef<Record<number, Record<string, any>>>({});
-  const ancillaryTimers = useRef<Record<number, NodeJS.Timeout>>({});
 
   // ── Mutations ──
   const upsertHeader = trpc.fireAlarmForm.upsertHeader.useMutation({
@@ -103,25 +101,83 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
   });
   const upsertAttendanceRow = trpc.fireAlarmForm.upsertAttendanceRow.useMutation({
     onSuccess: () => refetchAttendance(),
+      onError: err => toast.error(`Save failed: ${err.message}`),
   });
   const deleteAttendanceRowMutation = trpc.fireAlarmForm.deleteAttendanceRow.useMutation({
     onSuccess: () => refetchAttendance(),
+      onError: err => toast.error(`Save failed: ${err.message}`),
   });
   const upsertAncillaryCircuit = trpc.fireAlarmForm.upsertAncillaryCircuit.useMutation({
     onSuccess: () => refetchAncillary(),
+      onError: err => toast.error(`Save failed: ${err.message}`),
   });
   const deleteAncillaryCircuitMutation = trpc.fireAlarmForm.deleteAncillaryCircuit.useMutation({
     onSuccess: () => refetchAncillary(),
+      onError: err => toast.error(`Save failed: ${err.message}`),
   });
   const saveResult = trpc.fireAlarm.saveInspectionResult.useMutation({
     onSuccess: () => { setSaveStatus("saved"); setTimeout(() => setSaveStatus("idle"), 2000); },
     onError: (err: any) => { setSaveStatus("error"); toast.error(`Save failed: ${err.message}`); },
   });
 
+  useEffect(() => {
+    if (!user?.id) return;
+    const queue = new PendingSaves({
+      key: fireAlarmDraftKey(user.id, user.companyId, jobId),
+      storage: localStorage,
+      send: (key, payload) => {
+        if (payload.jobId !== jobId)
+          return Promise.reject(new Error("Draft belongs to a different job"));
+        if (key === "header") return upsertHeader.mutateAsync(payload);
+        if (key.startsWith("result:")) return saveResult.mutateAsync(payload);
+        if (key.startsWith("attendance:"))
+          return upsertAttendanceRow.mutateAsync(payload);
+        if (key.startsWith("ancillary:"))
+          return upsertAncillaryCircuit.mutateAsync(payload);
+        return Promise.reject(new Error("Unknown saved draft type"));
+      },
+    });
+    pendingSaves.current = queue;
+    const flush = () => {
+      if (navigator.onLine) void queue.flush();
+    };
+    flush();
+    window.addEventListener("online", flush);
+    return () => {
+      window.removeEventListener("online", flush);
+      queue.close();
+    };
+    // Mutation objects change each render; queue callbacks still use their stable client.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.companyId, jobId]);
+
+  const scheduleSave = (key: string, payload: any, delay: number) => {
+    if (!user?.id) return;
+    try {
+      pendingSaves.current.schedule(
+        key,
+        () => {
+          if (key === "header") return upsertHeader.mutateAsync(payload);
+          if (key.startsWith("result:")) return saveResult.mutateAsync(payload);
+          if (key.startsWith("attendance:"))
+            return upsertAttendanceRow.mutateAsync(payload);
+          return upsertAncillaryCircuit.mutateAsync(payload);
+        },
+        delay,
+        payload
+      );
+    } catch {
+      setSaveStatus("error");
+      toast.error(
+        "Could not save this edit locally. Keep this page open and restore storage before continuing."
+      );
+    }
+  };
+
   // ── Seed header from server data ──
   useEffect(() => {
     if (savedHeader) {
-      setHeader((prev) => ({
+      setHeader(prev => ({
         ...prev,
         inspectionDate: savedHeader.inspectionDate ?? prev.inspectionDate,
         systemManufacturer: savedHeader.systemManufacturer ?? prev.systemManufacturer,
@@ -139,6 +195,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
         techCompany: savedHeader.techCompany ?? prev.techCompany,
         recommendations: savedHeader.recommendations ?? prev.recommendations,
         sectionHeaderValues: (savedHeader.sectionHeaderValues as any) ?? prev.sectionHeaderValues,
+        ...pendingSaves.current.payload("header"),
       }));
     }
   }, [savedHeader]);
@@ -146,7 +203,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
   // Auto-fill blanks from job/system/user if no saved header yet
   useEffect(() => {
     if (savedHeader !== null) return;
-    setHeader((prev) => ({
+    setHeader(prev => ({
       ...prev,
       systemManufacturer: prev.systemManufacturer || fireAlarmSystem?.manufacturer || "",
       systemModel: prev.systemModel || fireAlarmSystem?.modelNumber || "",
@@ -164,7 +221,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
   useEffect(() => {
     if (!jobChecklist) return;
     const map: Record<number, ItemResult> = {};
-    (jobChecklist as ChecklistRow[]).forEach((row) => {
+    (jobChecklist as ChecklistRow[]).forEach(row => {
       if (row.result !== "not_tested" || row.numericValue || row.textValue) {
         map[row.id] = {
           result: row.result,
@@ -174,18 +231,12 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
         };
       }
     });
+    for (const [key, payload] of pendingSaves.current.entries()) {
+      if (key.startsWith("result:") && payload)
+        map[Number(key.slice(7))] = payload as ItemResult;
+    }
     setResults(map);
   }, [jobChecklist]);
-
-  // Cleanup timers
-  useEffect(() => {
-    return () => {
-      if (headerTimerRef.current) clearTimeout(headerTimerRef.current);
-      if (checklistTimerRef.current) clearTimeout(checklistTimerRef.current);
-      Object.values(attendanceTimers.current).forEach(clearTimeout);
-      Object.values(ancillaryTimers.current).forEach(clearTimeout);
-    };
-  }, []);
 
   // ── Header save (debounced) ──
   const updateHeader = (key: string, value: any) => {
@@ -193,9 +244,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
     const updated = { ...header, [key]: value };
     setHeader(updated);
     setSaveStatus("saving");
-    if (headerTimerRef.current) clearTimeout(headerTimerRef.current);
-    headerTimerRef.current = setTimeout(() => {
-      upsertHeader.mutate({ jobId, ...updated });
+    scheduleSave ("header",{ jobId, ...updated
     }, 1500);
   };
 
@@ -212,9 +261,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
     };
     setHeader(updated);
     setSaveStatus("saving");
-    if (headerTimerRef.current) clearTimeout(headerTimerRef.current);
-    headerTimerRef.current = setTimeout(() => {
-      upsertHeader.mutate({ jobId, ...updated });
+    scheduleSave ("header",{ jobId, ...updated
     }, 1500);
   };
 
@@ -227,7 +274,8 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
     if (!r) return;
     const systemId = resolveSystemId(row);
     if (!systemId) return;
-    saveResult.mutate({
+    scheduleSave(
+      `result:${itemId}`,{
       jobId,
       fireAlarmSystemId: systemId,
       checklistItemId: itemId,
@@ -235,12 +283,13 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
       notes: r.notes,
       numericValue: r.numericValue || undefined,
       textValue: r.textValue || undefined,
-    });
+    },
+      0);
   };
 
   const handleResultClick = (item: ChecklistRow, result: ItemResult["result"]) => {
     if (isFinalized) return;
-    const base = results[item.id] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
+    const base = results[item.id] || { result: "not_tested", notes: "", numericValue: "", textValue: "", };
     const updated = { ...results, [item.id]: { ...base, result } };
     setResults(updated);
     setSaveStatus("saving");
@@ -249,43 +298,48 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
 
   const handleValueChange = (item: ChecklistRow, field: "numericValue" | "textValue", value: string) => {
     if (isFinalized) return;
-    const base = results[item.id] || { result: "not_tested", notes: "", numericValue: "", textValue: "" };
+    const base = results[item.id] || { result: "not_tested", notes: "", numericValue: "", textValue: "", };
     const updated = { ...results, [item.id]: { ...base, [field]: value } };
     setResults(updated);
     setSaveStatus("saving");
-    if (checklistTimerRef.current) clearTimeout(checklistTimerRef.current);
-    checklistTimerRef.current = setTimeout(() => doSaveResult(item.id, updated, item), 1500);
+    const systemId = resolveSystemId(item);
+    if (systemId)
+      scheduleSave(
+        `result:${item.id}`,
+        {
+          jobId,
+          fireAlarmSystemId: systemId,
+          checklistItemId:item.id,
+          ... updated[item.id],
+        }, 1500);
   };
 
   const handleSectionNA = (sectionItems: ChecklistRow[]) => {
     if (isFinalized) return;
     const updated = { ...results };
-    sectionItems.forEach((item) => {
-      updated[item.id] = { result: "na", notes: "", numericValue: "", textValue: "" };
+    sectionItems.forEach(item => {
+      updated[item.id] = { result: "na", notes: "", numericValue: "", textValue: "", };
       doSaveResult(item.id, updated, item);
     });
     setResults(updated);
   };
 
   const isSectionNA = (sectionItems: ChecklistRow[]) =>
-    sectionItems.length > 0 && sectionItems.every((item) => results[item.id]?.result === "na");
+    sectionItems.length > 0 && sectionItems.every(item => results[item.id]?.result === "na");
 
   // ── Attendance handlers ──
   const handleAttendanceField = (rowId: number, field: string, value: string) => {
     if (isFinalized) return;
     if (!attendanceDraftRef.current[rowId]) attendanceDraftRef.current[rowId] = {};
     attendanceDraftRef.current[rowId][field] = value;
-    if (attendanceTimers.current[rowId]) clearTimeout(attendanceTimers.current[rowId]);
-    attendanceTimers.current[rowId] = setTimeout(() => {
-      const draft = attendanceDraftRef.current[rowId] ?? {};
-      upsertAttendanceRow.mutate({ id: rowId, jobId, ...draft });
-      delete attendanceDraftRef.current[rowId];
+    scheduleSave (
+      `attendance:${rowId}`,{ id: rowId, jobId, ... attendanceDraftRef.current[rowId]
     }, 1000);
   };
 
   const addAttendanceRow = () => {
     if (isFinalized) return;
-    upsertAttendanceRow.mutate({ jobId, rowOrder: attendanceData?.length ?? 0 });
+    upsertAttendanceRow.mutate({ jobId, rowOrder: attendanceData?.length ?? 0, });
   };
 
   // ── Ancillary circuit handlers ──
@@ -293,22 +347,19 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
     if (isFinalized) return;
     if (!ancillaryDraftRef.current[rowId]) ancillaryDraftRef.current[rowId] = {};
     ancillaryDraftRef.current[rowId][field] = value;
-    if (ancillaryTimers.current[rowId]) clearTimeout(ancillaryTimers.current[rowId]);
-    ancillaryTimers.current[rowId] = setTimeout(() => {
-      const draft = ancillaryDraftRef.current[rowId] ?? {};
-      upsertAncillaryCircuit.mutate({ id: rowId, jobId, ...draft } as any);
-      delete ancillaryDraftRef.current[rowId];
+    scheduleSave (
+      `ancillary:${rowId}`,{ id: rowId, jobId, ... ancillaryDraftRef.current[rowId]
     }, 1000);
   };
 
   const addAncillaryRow = () => {
     if (isFinalized) return;
-    upsertAncillaryCircuit.mutate({ jobId, rowOrder: ancillaryData?.length ?? 0 });
+    upsertAncillaryCircuit.mutate({ jobId, rowOrder: ancillaryData?.length ?? 0, });
   };
 
   // ── Group checklist into sections ──
   const sections = new Map<string, { meta: ChecklistRow; items: ChecklistRow[] }>();
-  ((jobChecklist || []) as ChecklistRow[]).forEach((row) => {
+  ((jobChecklist || []) as ChecklistRow[]).forEach(row => {
     const key = `${row.sectionOrder}:${row.sectionName}`;
     if (!sections.has(key)) sections.set(key, { meta: row, items: [] });
     sections.get(key)!.items.push(row);
@@ -316,8 +367,8 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
   const sortedSections = Array.from(sections.values()).sort((a, b) => a.meta.sectionOrder - b.meta.sectionOrder);
 
   // Split: sections 1-11 vs section 13+
-  const checklistSections = sortedSections.filter((s) => s.meta.sectionOrder <= 11);
-  const fsrcSections = sortedSections.filter((s) => s.meta.sectionOrder >= 13);
+  const checklistSections = sortedSections.filter(s => s.meta.sectionOrder <= 11);
+  const fsrcSections = sortedSections.filter(s => s.meta.sectionOrder >= 13);
 
   // Progress
   const totalItems = (jobChecklist || []).length;
@@ -338,7 +389,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
     if (item.inputType === "checkbox") {
       return (
         <div className="flex gap-1.5 mt-2 flex-wrap">
-          {(["pass", "fail", "na"] as const).map((val) => (
+          {(["pass", "fail", "na"] as const).map(val => (
             <Button
               key={val}
               size="sm"
@@ -370,17 +421,22 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
       return (
         <div className="flex items-center gap-2 mt-2 flex-wrap">
           {item.numericLabel && (
-            <Label className="text-xs text-muted-foreground min-w-[80px]">{item.numericLabel}</Label>
+            <Label className="text-xs text-muted-foreground min-w-[80px]">
+              {item.numericLabel}
+            </Label>
           )}
           <Input
             type="text"
             value={r.numericValue || ""}
-            onChange={(e) => handleValueChange(item, "numericValue", e.target.value)}
+            onChange={e => handleValueChange(item, "numericValue", e.target.value)}
             placeholder={item.inputType === "year" ? "YYYY" : "Enter value"}
             className="h-7 text-xs max-w-[160px]"
             disabled={isFinalized}
           />
-          {item.numericUnit && <span className="text-xs text-muted-foreground">{item.numericUnit}</span>}
+          {item.numericUnit && ( <span className="text-xs text-muted-foreground">
+              {item.numericUnit}
+            </span>
+          )}
         </div>
       );
     }
@@ -389,12 +445,14 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
       return (
         <div className="flex items-center gap-2 mt-2">
           {item.numericLabel && (
-            <Label className="text-xs text-muted-foreground min-w-[80px]">{item.numericLabel}</Label>
+            <Label className="text-xs text-muted-foreground min-w-[80px]">
+              {item.numericLabel}
+            </Label>
           )}
           <Input
             type={item.inputType}
             value={r.textValue || ""}
-            onChange={(e) => handleValueChange(item, "textValue", e.target.value)}
+            onChange={e => handleValueChange(item, "textValue", e.target.value)}
             className="h-7 text-xs max-w-[200px]"
             disabled={isFinalized}
           />
@@ -405,9 +463,9 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
     return null;
   };
 
-  const renderChecklistSection = ({ meta, items: sectionItems }: { meta: ChecklistRow; items: ChecklistRow[] }) => {
-    const effectiveResults = sectionItems.map((i) => results[i.id]?.result ?? i.result);
-    const sectionCompleted = effectiveResults.filter((r) => r !== "not_tested").length;
+  const renderChecklistSection = ({ meta, items: sectionItems, }: { meta: ChecklistRow; items: ChecklistRow[]; }) => {
+    const effectiveResults = sectionItems.map(i => results[i.id]?.result ?? i.result);
+    const sectionCompleted = effectiveResults.filter(r => r !== "not_tested").length;
     const allDone = sectionCompleted === sectionItems.length && sectionItems.length > 0;
     const sectionNAActive = isSectionNA(sectionItems);
     const secVals = header.sectionHeaderValues?.[String(meta.sectionOrder)] ?? {};
@@ -421,7 +479,9 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
         <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-muted/50">
           <div className="flex items-center justify-between w-full pr-2">
             <span className="text-sm font-medium text-left">
-              <span className="text-muted-foreground mr-1.5">{meta.sectionOrder}.</span>
+              <span className="text-muted-foreground mr-1.5">
+                {meta.sectionOrder}.
+              </span>
               {meta.sectionName}
             </span>
             <Badge
@@ -438,13 +498,15 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
             {/* Section header fields */}
             {meta.headerFields && meta.headerFields.length > 0 && (
               <div className="p-2 bg-muted/30 rounded border space-y-1.5">
-                {meta.headerFields.map((field) => (
+                {meta.headerFields.map(field => (
                   <div key={field} className="flex items-center gap-2">
-                    <Label className="text-xs text-muted-foreground min-w-[140px] shrink-0">{field}</Label>
+                    <Label className="text-xs text-muted-foreground min-w-[140px] shrink-0">
+                      {field}
+                    </Label>
                     <Input
                       className="h-6 text-xs"
                       value={secVals[field] ?? ""}
-                      onChange={(e) => updateSectionHeaderField(meta.sectionOrder, field, e.target.value)}
+                      onChange={e => updateSectionHeaderField(meta.sectionOrder, field, e.target.value)}
                       disabled={isFinalized}
                     />
                   </div>
@@ -465,12 +527,14 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                   <Minus className="h-3 w-3 mr-1" />
                   Mark entire section N/A
                 </Button>
-                <span className="text-xs text-muted-foreground italic">{meta.notApplicableNote}</span>
+                <span className="text-xs text-muted-foreground italic">
+                  {meta.notApplicableNote}
+                </span>
               </div>
             )}
 
             {/* Checklist items */}
-            {sectionItems.map((item) => {
+            {sectionItems.map(item => {
               const effectiveResult = results[item.id]?.result ?? item.result;
               const isDone = effectiveResult !== "not_tested";
               return (
@@ -485,16 +549,22 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                   )}
                 >
                   <p className="text-xs leading-snug">
-                    {item.itemLetter && <span className="font-semibold mr-1">{item.itemLetter}.</span>}
+                    {item.itemLetter && ( <span className="font-semibold mr-1">
+                        {item.itemLetter}.
+                      </span>
+                    )}
                     {item.itemDescription}
-                    {item.isRequired && <span className="text-red-500 ml-1">*</span>}
+                    {item.isRequired && ( <span className="text-red-500 ml-1">*</span>
+                    )}
                   </p>
                   {item.hasSubItems && item.subItems && item.subItems.length > 0 && (
                     <ul className="mt-1.5 ml-4 space-y-0.5">
-                      {item.subItems.map((sub, i) => (
-                        <li key={i} className="text-xs text-muted-foreground list-disc list-outside">{sub}</li>
+                        {item.subItems.map((sub, i) => (
+                        <li key={i} className="text-xs text-muted-foreground list-disc list-outside">
+                            {sub}
+                          </li>
                       ))}
-                    </ul>
+                      </ul>
                   )}
                   {renderItemInput(item)}
                 </div>
@@ -523,12 +593,13 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
   // ── Render ──
   return (
     <div className="space-y-4">
-
       {/* Save status + progress */}
       <div className="flex items-center gap-3">
         <div className="flex-1">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-muted-foreground">{completedItems} / {totalItems} items completed</span>
+            <span className="text-xs text-muted-foreground">
+              {completedItems} / {totalItems} items completed
+            </span>
             <div className="flex items-center gap-2">
               {saveStatus === "saving" && (
                 <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -540,7 +611,9 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                   <Check className="h-3 w-3" /> Saved
                 </span>
               )}
-              <Badge variant="outline" className="text-xs">{progressPct}%</Badge>
+              <Badge variant="outline" className="text-xs">
+                {progressPct}%
+              </Badge>
             </div>
           </div>
           <Progress value={progressPct} className="h-1.5" />
@@ -550,25 +623,30 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
       {/* ── SECTION 0: Cover Page ── */}
       <div className="border rounded-lg overflow-hidden">
         <div className="px-3 py-2 bg-[#16324F] text-white">
-          <h3 className="text-sm font-semibold">Fire Alarm System Verification — Cover Page</h3>
+          <h3 className="text-sm font-semibold">
+            Fire Alarm System Verification — Cover Page
+          </h3>
           <p className="text-xs opacity-75">CAN/ULC-S536:2019-REV1</p>
         </div>
         <div className="p-4 space-y-4">
-
           {/* Inspection & Building Info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Inspection Date</Label>
+              <Label className="text-xs text-muted-foreground">
+                Inspection Date
+              </Label>
               <Input
                 type="date"
                 value={header.inspectionDate ?? ""}
-                onChange={(e) => updateHeader("inspectionDate", e.target.value)}
+                onChange={e => updateHeader("inspectionDate", e.target.value)}
                 className="h-8 text-xs"
                 disabled={isFinalized}
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Building / Customer</Label>
+              <Label className="text-xs text-muted-foreground">
+                Building / Customer
+              </Label>
               <Input
                 value={customerOrg?.name ?? ""}
                 readOnly
@@ -576,7 +654,9 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
               />
             </div>
             <div className="space-y-1 sm:col-span-2">
-              <Label className="text-xs text-muted-foreground">Building Address</Label>
+              <Label className="text-xs text-muted-foreground">
+                Building Address
+              </Label>
               <Input
                 value={[site?.address, site?.city].filter(Boolean).join(", ") ?? ""}
                 readOnly
@@ -587,7 +667,9 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
 
           {/* System Info */}
           <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">System Information</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              System Information
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
                 { key: "systemManufacturer", label: "Manufacturer" },
@@ -597,10 +679,12 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                 { key: "operationType", label: "Operation Type" },
               ].map(({ key, label }) => (
                 <div key={key} className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">{label}</Label>
+                  <Label className="text-xs text-muted-foreground">
+                    {label}
+                  </Label>
                   <Input
                     value={header[key] ?? ""}
-                    onChange={(e) => updateHeader(key, e.target.value)}
+                    onChange={e => updateHeader(key, e.target.value)}
                     className="h-8 text-xs"
                     disabled={isFinalized}
                   />
@@ -612,7 +696,9 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
           {/* FSRC Info */}
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">FSRC Connection</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                FSRC Connection
+              </p>
               <Button
                 size="sm"
                 variant={header.connectedToFSRC ? "default" : "outline"}
@@ -631,10 +717,12 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                   { key: "fsrcAccountNo", label: "Account No." },
                 ].map(({ key, label }) => (
                   <div key={key} className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">{label}</Label>
+                    <Label className="text-xs text-muted-foreground">
+                      {label}
+                    </Label>
                     <Input
                       value={header[key] ?? ""}
-                      onChange={(e) => updateHeader(key, e.target.value)}
+                      onChange={e => updateHeader(key, e.target.value)}
                       className="h-8 text-xs"
                       disabled={isFinalized}
                     />
@@ -646,7 +734,9 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
 
           {/* Technician Info */}
           <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Technician</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Technician
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
                 { key: "techName", label: "Name" },
@@ -655,10 +745,12 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                 { key: "techCompany", label: "Company" },
               ].map(({ key, label }) => (
                 <div key={key} className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">{label}</Label>
+                  <Label className="text-xs text-muted-foreground">
+                    {label}
+                  </Label>
                   <Input
                     value={header[key] ?? ""}
-                    onChange={(e) => updateHeader(key, e.target.value)}
+                    onChange={e => updateHeader(key, e.target.value)}
                     className="h-8 text-xs"
                     disabled={isFinalized}
                   />
@@ -673,25 +765,39 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
       <div className="border rounded-lg overflow-hidden">
         <div className="px-3 py-2 bg-[#16324F] text-white flex items-center justify-between">
           <h3 className="text-sm font-semibold">Deficiency Summary</h3>
-          <Badge variant="secondary" className="bg-white/20 text-white text-xs">{deficiencies.length}</Badge>
+          <Badge variant="secondary" className="bg-white/20 text-white text-xs">
+            {deficiencies.length}
+          </Badge>
         </div>
         {deficiencies.length === 0 ? (
-          <p className="text-xs text-muted-foreground p-4">No deficiencies recorded for this job.</p>
+          <p className="text-xs text-muted-foreground p-4">
+            No deficiencies recorded for this job.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-muted/40">
-                  <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">#</th>
-                  <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Description</th>
-                  <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Severity</th>
-                  <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Status</th>
+                  <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">
+                    #
+                  </th>
+                  <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">
+                    Description
+                  </th>
+                  <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">
+                    Severity
+                  </th>
+                  <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">
+                    Status
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {deficiencies.map((def: any, i: number) => (
                   <tr key={def.id} className="border-t">
-                    <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">
+                      {i + 1}
+                    </td>
                     <td className="px-3 py-1.5">{def.title}</td>
                     <td className="px-3 py-1.5">
                       <Badge
@@ -706,7 +812,9 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                         {def.severity}
                       </Badge>
                     </td>
-                    <td className="px-3 py-1.5 capitalize text-muted-foreground">{def.status}</td>
+                    <td className="px-3 py-1.5 capitalize text-muted-foreground">
+                      {def.status}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -724,7 +832,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
           <Textarea
             placeholder="Enter any recommendations for this system…"
             value={header.recommendations ?? ""}
-            onChange={(e) => updateHeader("recommendations", e.target.value)}
+            onChange={e => updateHeader("recommendations", e.target.value)}
             className="text-xs min-h-[80px] resize-none"
             disabled={isFinalized}
           />
@@ -746,12 +854,24 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-muted/40">
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Date</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Technician</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Cert. No.</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Time In</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Time Out</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Notes</th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Date
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Technician
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Cert. No.
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Time In
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Time Out
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Notes
+                </th>
                 {!isFinalized && <th className="px-2 py-1.5" />}
               </tr>
             </thead>
@@ -765,12 +885,12 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
               ) : (
                 (attendanceData ?? []).map((row: any) => (
                   <tr key={row.id} className="border-t">
-                    {["attendanceDate", "techName", "certNo", "timeIn", "timeOut", "notes"].map((field) => (
+                    {["attendanceDate", "techName", "certNo", "timeIn", "timeOut", "notes",].map(field => (
                       <td key={field} className="px-1 py-1">
                         <Input
                           type={field === "attendanceDate" ? "date" : "text"}
                           defaultValue={row[field] ?? ""}
-                          onChange={(e) => handleAttendanceField(row.id, field, e.target.value)}
+                          onChange={e => handleAttendanceField(row.id, field, e.target.value)}
                           className="h-6 text-xs border-0 bg-transparent focus:bg-background"
                           disabled={isFinalized}
                         />
@@ -806,8 +926,12 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
       <div className="border rounded-lg overflow-hidden">
         <div className="px-3 py-2 bg-[#16324F] text-white flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold">12. Ancillary Device Circuit Test</h3>
-            <p className="text-xs opacity-75">Record all ancillary device circuits tested</p>
+            <h3 className="text-sm font-semibold">
+              12. Ancillary Device Circuit Test
+            </h3>
+            <p className="text-xs opacity-75">
+              Record all ancillary device circuits tested
+            </p>
           </div>
           {!isFinalized && (
             <Button size="sm" variant="ghost" className="h-6 text-xs text-white hover:bg-white/20"
@@ -820,12 +944,24 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-muted/40">
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Circuit Description</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Type</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Powered By</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Confirmed</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Method</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Notes</th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Circuit Description
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Type
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Powered By
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Confirmed
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Method
+                </th>
+                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                  Notes
+                </th>
                 {!isFinalized && <th className="px-2 py-1.5" />}
               </tr>
             </thead>
@@ -839,19 +975,19 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
               ) : (
                 (ancillaryData ?? []).map((row: any) => (
                   <tr key={row.id} className="border-t">
-                    {["circuitDescription", "circuitType", "poweredBy"].map((field) => (
+                    {["circuitDescription", "circuitType", "poweredBy"].map(field => (
                       <td key={field} className="px-1 py-1">
-                        <Input
+                          <Input
                           defaultValue={row[field] ?? ""}
-                          onChange={(e) => handleAncillaryField(row.id, field, e.target.value)}
+                          onChange={e => handleAncillaryField(row.id, field, e.target.value)}
                           className="h-6 text-xs border-0 bg-transparent focus:bg-background min-w-[80px]"
                           disabled={isFinalized}
                         />
-                      </td>
+                        </td>
                     ))}
                     <td className="px-1 py-1">
                       <div className="flex gap-0.5">
-                        {(["yes", "no", "na"] as const).map((v) => (
+                        {(["yes", "no", "na"] as const).map(v => (
                           <Button
                             key={v}
                             size="sm"
@@ -862,7 +998,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                               row.operationConfirmed === v && v === "no" && "bg-red-600 hover:bg-red-700",
                               row.operationConfirmed === v && v === "na" && "bg-gray-500 hover:bg-gray-600"
                             )}
-                            onClick={() => upsertAncillaryCircuit.mutate({ id: row.id, jobId, operationConfirmed: v })}
+                            onClick={() => upsertAncillaryCircuit.mutate({ id: row.id, jobId, operationConfirmed: v, })}
                             disabled={isFinalized}
                           >
                             {v.toUpperCase()}
@@ -870,11 +1006,11 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                         ))}
                       </div>
                     </td>
-                    {["confirmationMethod", "notes"].map((field) => (
+                    {["confirmationMethod", "notes"].map(field => (
                       <td key={field} className="px-1 py-1">
                         <Input
                           defaultValue={row[field] ?? ""}
-                          onChange={(e) => handleAncillaryField(row.id, field, e.target.value)}
+                          onChange={e => handleAncillaryField(row.id, field, e.target.value)}
                           className="h-6 text-xs border-0 bg-transparent focus:bg-background min-w-[80px]"
                           disabled={isFinalized}
                         />
@@ -885,7 +1021,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized }: FireAlarmChec
                         <Button
                           size="sm" variant="ghost"
                           className="h-6 w-6 p-0 text-muted-foreground hover:text-red-500"
-                          onClick={() => deleteAncillaryCircuitMutation.mutate({ id: row.id })}
+                          onClick={() => deleteAncillaryCircuitMutation.mutate({ id: row.id, })}
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>

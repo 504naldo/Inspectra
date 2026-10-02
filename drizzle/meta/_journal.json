@@ -253,6 +253,13 @@
       "when": 1784821591028,
       "tag": "0035_job_schedule_times_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1790924190457,
+      "tag": "0036_opposite_franklin_richards",
+      "breakpoints": true
     }
   ]
 }

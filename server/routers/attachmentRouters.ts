@@ -1,10 +1,13 @@
+import { toCustomerSafeAttachment } from "../customerDto";
+import { withAudit } from "../db";
+import { assertAttachmentDestination } from "../attachmentAccess";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
+import { router, protectedProcedure, officeProcedure, technicianProcedure, } from "../_core/trpc";
 import * as db from "../db";
 import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
-import { assertSiteCompany, assertAttachmentCompany, assertEntityCompany, assertDeviceCompany } from "../tenantGuards";
+import { assertSiteCompany, assertAttachmentCompany, assertEntityCompany, assertDeviceCompany, } from "../tenantGuards";
 
 /** Finalized jobs are immutable — skip the check for attachments not linked to a job. */
 async function assertAttachmentJobNotFinalized(jobId: number | null | undefined) {
@@ -18,7 +21,7 @@ async function assertAttachmentJobNotFinalized(jobId: number | null | undefined)
  */
 async function requireOwnedQueueItem(id: number, userId: number) {
   const item = await db.getUploadQueueItemById(id);
-  if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Upload queue item not found" });
+  if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Upload queue item not found", });
   if (item.userId !== userId) throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   return item;
 }
@@ -26,11 +29,16 @@ async function requireOwnedQueueItem(id: number, userId: number) {
 // Attachment router - Enhanced with bulk upload, tagging, and linking
 const attachmentRouter = router({
   listByEntity: protectedProcedure.input(z.object({
-    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org']),
-    entityId: z.number()
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org',]),
+    entityId: z.number(),
   })).query(async ({ input, ctx }) => {
-    await assertEntityCompany(input.entityType, input.entityId, ctx.user.companyId!);
-    return db.getAttachmentsByEntity(input.entityType, input.entityId);
+    await assertAttachmentDestination(input, ctx.user);
+      const rows = await db.getAttachmentsByEntity(input.entityType, input.entityId);
+      return ctx.user.role === "customer"
+        ? rows
+            .filter(row => row.isCustomerFacing === 1)
+            .map(toCustomerSafeAttachment)
+        : rows;
   }),
   
   listBySite: officeProcedure.input(z.object({ siteId: z.number() })).query(async ({ input, ctx }) => {
@@ -38,42 +46,38 @@ const attachmentRouter = router({
     return db.getAttachmentsBySite(input.siteId);
   }),
   
-  listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
-    const job = await db.getJobById(input.jobId);
-    if (job && ctx.user.role !== 'admin' && ctx.user.companyId !== job.companyId) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
-    }
-    return db.getAttachmentsByJob(input.jobId);
+  listByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => { await assertAttachmentDestination(
+        { entityType: "job", entityId:input.jobId }, ctx.user);
+      const rows = await db.getAttachmentsByJob(input.jobId);
+      return ctx.user.role === "customer"
+        ? rows
+            .filter(row => row.isCustomerFacing === 1)
+            .map(toCustomerSafeAttachment)
+        : rows;
   }),
   
-  listByDevice: protectedProcedure.input(z.object({ deviceId: z.number() })).query(async ({ input, ctx }) => {
-    const device = await db.getDeviceById(input.deviceId);
-    if (device && ctx.user.role !== 'admin' && ctx.user.companyId !== device.companyId) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
-    }
-    return db.getAttachmentsByDevice(input.deviceId);
+  listByDevice: protectedProcedure.input(z.object({ deviceId: z.number() })).query(async ({ input, ctx }) => { await assertAttachmentDestination(
+        { entityType: "device", entityId:input.deviceId }, ctx.user);
+      const rows = await db.getAttachmentsByDevice(input.deviceId);
+      return ctx.user.role === "customer"
+        ? rows
+            .filter(row => row.isCustomerFacing === 1)
+            .map(toCustomerSafeAttachment)
+        : rows;
   }),
   
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
     const attachment = await db.getAttachmentById(input.id);
     if (!attachment) return undefined;
-    // Scope: verify via parent job or site
-    if (attachment.jobId) {
-      const job = await db.getJobById(attachment.jobId);
-      if (job && ctx.user.role !== 'admin' && ctx.user.companyId !== job.companyId) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
-      }
-    } else if (attachment.siteId) {
-      const site = await db.getSiteById(attachment.siteId);
-      if (site && ctx.user.role !== 'admin' && ctx.user.companyId !== site.companyId) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
-      }
-    }
-    return attachment;
+      await assertAttachmentDestination (attachment, ctx.user);
+      if ( ctx.user.role === "customer" && attachment.isCustomerFacing !== 1)
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      return ctx.user.role === "customer"
+        ? toCustomerSafeAttachment(attachment): attachment;
   }),
   
   upload: technicianProcedure.input(z.object({
-    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org']),
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org',]),
     entityId: z.number(),
     fileName: z.string(),
     fileData: z.string(), // Base64 encoded
@@ -83,13 +87,11 @@ const attachmentRouter = router({
     siteId: z.number().optional(),
     jobId: z.number().optional(),
     deviceId: z.number().optional(),
-  })).mutation(async ({ input, ctx }) => {
+  })).mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "attachmentRouters.mutation", async () => {
     const companyId = ctx.user.companyId!;
-    await assertEntityCompany(input.entityType, input.entityId, companyId);
-    if (input.siteId !== undefined) await assertSiteCompany(input.siteId, companyId);
-    if (input.jobId !== undefined) await db.assertJobCompany(input.jobId, companyId);
-    if (input.deviceId !== undefined) await assertDeviceCompany(input.deviceId, companyId);
-    await assertAttachmentJobNotFinalized(input.jobId);
+        const parent =
+    await assertAttachmentDestination(input, ctx.user, true);
 
     const buffer = Buffer.from(input.fileData, 'base64');
     const fileKey = `attachments/${input.entityType}/${input.entityId}/${nanoid()}-${input.fileName}`;
@@ -106,15 +108,15 @@ const attachmentRouter = router({
       fileSize: buffer.length,
       caption: input.caption,
       tags: input.tags as any,
-      siteId: input.siteId,
-      jobId: input.jobId,
-      deviceId: input.deviceId,
+      siteId: parent.siteId,
+      jobId: parent.jobId,
+      deviceId: parent.deviceId,
     });
-  }),
+  })),
   
   // Bulk upload multiple files
   bulkUpload: officeProcedure.input(z.object({
-    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org']),
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org',]),
     entityId: z.number(),
     files: z.array(z.object({
       fileName: z.string(),
@@ -126,13 +128,11 @@ const attachmentRouter = router({
     siteId: z.number().optional(),
     jobId: z.number().optional(),
     deviceId: z.number().optional(),
-  })).mutation(async ({ input, ctx }) => {
+  })).mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "attachmentRouters.mutation", async () => {
     const companyId = ctx.user.companyId!;
-    await assertEntityCompany(input.entityType, input.entityId, companyId);
-    if (input.siteId !== undefined) await assertSiteCompany(input.siteId, companyId);
-    if (input.jobId !== undefined) await db.assertJobCompany(input.jobId, companyId);
-    if (input.deviceId !== undefined) await assertDeviceCompany(input.deviceId, companyId);
-    await assertAttachmentJobNotFinalized(input.jobId);
+        const parent =
+    await assertAttachmentDestination(input, ctx.user, true);
 
     const results = [];
 
@@ -152,15 +152,15 @@ const attachmentRouter = router({
         fileSize: buffer.length,
         caption: file.caption,
         tags: input.tags as any,
-        siteId: input.siteId,
-        jobId: input.jobId,
-        deviceId: input.deviceId,
+        siteId: parent.siteId,
+        jobId: parent.jobId,
+        deviceId: parent.deviceId,
       });
       results.push(attachment);
     }
     
     return { success: true, count: results.length, attachments: results };
-  }),
+  })),
   
   // Update attachment metadata
   update: officeProcedure.input(z.object({
@@ -170,25 +170,30 @@ const attachmentRouter = router({
     siteId: z.number().optional(),
     jobId: z.number().optional(),
     deviceId: z.number().optional(),
-  })).mutation(async ({ input, ctx }) => {
+  })).mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "attachmentRouters.mutation", async () => {
     const { id, ...data } = input;
     const attachment = await assertAttachmentCompany(id, ctx.user.companyId!);
-    await assertAttachmentJobNotFinalized(attachment.jobId);
-    await assertAttachmentJobNotFinalized(data.jobId);
+    await assertAttachmentDestination(attachment, ctx.user, true);
+    await assertAttachmentDestination(
+          { ...attachment, ...data },
+          ctx.user,
+          true);
     await db.updateAttachment(id, { ...data, tags: data.tags as any });
     return { success: true };
-  }),
+  })),
 
   // Update tags only
   updateTags: officeProcedure.input(z.object({
     id: z.number(),
     tags: z.array(z.string()),
-  })).mutation(async ({ input, ctx }) => {
+  })).mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "attachmentRouters.mutation", async () => {
     const attachment = await assertAttachmentCompany(input.id, ctx.user.companyId!);
-    await assertAttachmentJobNotFinalized(attachment.jobId);
+    await assertAttachmentDestination(attachment, ctx.user, true);
     await db.updateAttachmentTags(input.id, input.tags);
     return { success: true };
-  }),
+  })),
 
   // Link attachment to additional entities
   linkToEntities: officeProcedure.input(z.object({
@@ -196,21 +201,26 @@ const attachmentRouter = router({
     siteId: z.number().optional(),
     jobId: z.number().optional(),
     deviceId: z.number().optional(),
-  })).mutation(async ({ input, ctx }) => {
+  })).mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "attachmentRouters.mutation", async () => {
     const { id, ...links } = input;
     const attachment = await assertAttachmentCompany(id, ctx.user.companyId!);
-    await assertAttachmentJobNotFinalized(attachment.jobId);
-    await assertAttachmentJobNotFinalized(links.jobId);
+    await assertAttachmentDestination(attachment, ctx.user, true);
+    await assertAttachmentDestination(
+          { ...attachment, ...links },
+          ctx.user,
+          true);
     await db.updateAttachment(id, links);
     return { success: true };
-  }),
+  })),
 
-  delete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+  delete: technicianProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "attachmentRouters.mutation", async () => {
     const attachment = await assertAttachmentCompany(input.id, ctx.user.companyId!);
-    await assertAttachmentJobNotFinalized(attachment.jobId);
+    await assertAttachmentDestination(attachment, ctx.user, true);
     await db.deleteAttachment(input.id);
     return { success: true };
-  }),
+  })),
 });
 
 // File Tags router
@@ -257,7 +267,7 @@ const uploadQueueRouter = router({
     fileName: z.string(),
     mimeType: z.string().optional(),
     fileSize: z.number().optional(),
-    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org']),
+    entityType: z.enum(['inspection_result', 'deficiency', 'repair', 'device', 'job', 'site', 'customer_org',]),
     entityId: z.number(),
     tags: z.array(z.string()).optional(),
     caption: z.string().optional(),
@@ -286,7 +296,7 @@ const uploadQueueRouter = router({
   
   updateStatus: technicianProcedure.input(z.object({
     id: z.number(),
-    status: z.enum(['queued', 'uploading', 'paused', 'completed', 'failed']),
+    status: z.enum(['queued', 'uploading', 'paused', 'completed', 'failed',]),
     progress: z.number().optional(),
     lastError: z.string().optional(),
     fileKey: z.string().optional(),

@@ -10,7 +10,11 @@
  *   ctx.user.role === 'customer' ? toCustomerSafeReport(report) : report
  */
 
-import type { Report, Deficiency, Repair } from "../drizzle/schema";
+import type { Report, Deficiency, Repair,
+  Job,
+  Invoice,
+  Site,
+  Attachment, } from "../drizzle/schema";
 
 // Returns the nominal row type (not `Omit<...>`) so non-customer call sites
 // that read the stripped fields keep type-checking correctly — TS otherwise
@@ -30,4 +34,110 @@ export function toCustomerSafeDeficiency(deficiency: Deficiency): Deficiency {
 export function toCustomerSafeRepair(repair: Repair): Repair {
   const { aiRecommendations, ...safe } = repair;
   return safe as Repair;
+}
+
+export function toCustomerSafeJob(job: Job): Job {
+  const {
+    id,
+    companyId,
+    customerOrgId,
+    siteId,
+    jobNumber,
+    title,
+    jobType,
+    status,
+    priority,
+    scheduledDate,
+    scheduledStartAt,
+    scheduledEndAt,
+    startedAt,
+    completedAt,
+    createdAt,
+    updatedAt,
+  } = job;
+  return {
+    id,
+    companyId,
+    customerOrgId,
+    siteId,
+    jobNumber,
+    title,
+    jobType,
+    status,
+    priority,
+    scheduledDate,
+    scheduledStartAt,
+    scheduledEndAt,
+    startedAt,
+    completedAt,
+    createdAt,
+    updatedAt,
+  } as Job;
+}
+export function toCustomerSafeInvoice(invoice: Invoice): Invoice {
+  const {
+    internalNotes,
+    sageCustomerCode,
+    sageGlCode,
+    sageDepartment,
+    sageExportStatus,
+    sageExportedAt,
+    createdById,
+    approvedWorkId,
+    workOrderId,
+    quoteId,
+    ...safe
+  } = invoice;
+  return safe as Invoice;
+}
+export function toCustomerSafeSite(site: Site): Site {
+  const {
+    id,
+    companyId,
+    customerOrgId,
+    name,
+    address,
+    city,
+    state,
+    postalCode,
+    createdAt,
+    updatedAt,
+  } = site;
+  return {
+    id,
+    companyId,
+    customerOrgId,
+    name,
+    address,
+    city,
+    state,
+    postalCode,
+    createdAt,
+    updatedAt,
+  } as Site;
+}
+
+export function toCustomerSafeAttachment(row: Attachment): Attachment {
+  const {
+    id,
+    fileName,
+    fileUrl,
+    mimeType,
+    fileSize,
+    caption,
+    locationNote,
+    createdAt,
+    updatedAt,
+  } = row;
+  return {
+    id,
+    fileName,
+    fileUrl,
+    mimeType,
+    fileSize,
+    caption,
+    locationNote,
+    createdAt,
+    updatedAt,
+  } as Attachment;
 }

@@ -1,14 +1,13 @@
 {
   "name": "Inspectra",
-  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
   "features": {
-    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" }
   },
   "postCreateCommand": "corepack enable && corepack prepare pnpm@10.4.1 --activate && pnpm install --frozen-lockfile && (test -f .env || cp .env.example .env)",
-  "forwardPorts": [5000, 5173],
+  "forwardPorts": [3000],
   "portsAttributes": {
-    "5173": { "label": "Vite dev server", "onAutoForward": "openBrowser" },
-    "5000": { "label": "API server" }
+    "3000": { "label": "Inspectra app and API", "onAutoForward": "openBrowser" }
   },
   "remoteUser": "node"
 }

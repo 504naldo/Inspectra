@@ -27,7 +27,7 @@ const __dirname = dirname(__filename);
 export interface ChecklistItem {
   id: string;
   description: string;
-  result: 'YES' | 'NO' | 'N/A';
+  result: 'YES' | 'NO' | 'N/A' | "RECORDED";
 }
 
 export interface ChecklistSection {
@@ -72,7 +72,8 @@ export interface ComplianceReportData {
   // Header information
   workOrderNumber: string;
   dateOfService: Date;
-  inspectionFrequency: 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly' | 'Annual' | '3 Year' | '5 Year' | '25 Year';
+  inspectionFrequency:
+    | 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly' | 'Annual' | '3 Year' | '5 Year' | '25 Year';
   contactPerson: string;
   contactPhone: string;
   buildingName: string;
@@ -166,7 +167,7 @@ function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
     { label: 'Daily',     value: 'Daily',     x: rightBoxX + 5,   y: freqY + 5 },
     { label: 'Weekly',    value: 'Weekly',    x: rightBoxX + 60,  y: freqY + 5 },
     { label: 'Monthly',   value: 'Monthly',   x: rightBoxX + 120, y: freqY + 5 },
-    { label: 'Quarterly', value: 'Quarterly', x: rightBoxX + 180, y: freqY + 5 },
+    { label: 'Quarterly', value: 'Quarterly', x: rightBoxX + 180, y: freqY + 5, },
     { label: 'Annual',    value: 'Annual',    x: rightBoxX + 5,   y: freqY + 17 },
     { label: '3 Year',    value: '3 Year',    x: rightBoxX + 60,  y: freqY + 17 },
     { label: '5 Year',    value: '5 Year',    x: rightBoxX + 120, y: freqY + 17 },
@@ -252,11 +253,11 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
       const doc = new PDFDocument({
         size: 'LETTER',
         margins: { top: 40, bottom: 50, left: 40, right: 40 },
-        bufferPages: true
+        bufferPages: true,
       });
       
       const chunks: Buffer[] = [];
-      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('data',chunk => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
       
@@ -292,19 +293,19 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
       currentY += 30;
       
       const systems = [
-        { label: 'Fire Alarm System', checked: data.systemsInspected.fireAlarmSystem },
-        { label: 'Common Area Devices', checked: data.systemsInspected.commonAreaDevices },
-        { label: 'In-suite Devices', checked: data.systemsInspected.inSuiteDevices },
-        { label: 'Sprinkler System', checked: data.systemsInspected.sprinklerSystem },
-        { label: 'Fire Extinguishers', checked: data.systemsInspected.fireExtinguishers },
-        { label: 'Emergency Lighting', checked: data.systemsInspected.emergencyLighting },
+        { label: 'Fire Alarm System', checked: data.systemsInspected.fireAlarmSystem, },
+        { label: 'Common Area Devices', checked: data.systemsInspected.commonAreaDevices, },
+        { label: 'In-suite Devices', checked: data.systemsInspected.inSuiteDevices, },
+        { label: 'Sprinkler System', checked: data.systemsInspected.sprinklerSystem, },
+        { label: 'Fire Extinguishers', checked: data.systemsInspected.fireExtinguishers, },
+        { label: 'Emergency Lighting', checked: data.systemsInspected.emergencyLighting, },
         { label: 'Hydrant', checked: data.systemsInspected.hydrant },
-        { label: 'Winterization', checked: data.systemsInspected.winterization },
-        { label: 'Generator (Electrical Power Supply)', checked: data.systemsInspected.generator },
+        { label: 'Winterization', checked: data.systemsInspected.winterization, },
+        { label: 'Generator (Electrical Power Supply)', checked: data.systemsInspected.generator, },
         { label: 'Backflow', checked: data.systemsInspected.backflow },
         { label: 'Monitoring', checked: data.systemsInspected.monitoring },
         { label: 'Smoke Control', checked: data.systemsInspected.smokeControl },
-        { label: 'Suppression Systems', checked: data.systemsInspected.suppressionSystems },
+        { label: 'Suppression Systems', checked: data.systemsInspected.suppressionSystems, },
         { label: 'Standpipe', checked: data.systemsInspected.standpipe },
         { label: 'Kitchen', checked: data.systemsInspected.kitchen },
       ];
@@ -386,7 +387,7 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
       const deficiencyRows = [
         { severity: 'Critical', count: criticalCount, color: '#dc2626' },
         { severity: 'Major', count: majorCount, color: '#ea580c' },
-        { severity: 'Minor', count: minorCount, color: '#ca8a04' }
+        { severity: 'Minor', count: minorCount, color: '#ca8a04' },
       ];
       
       let rowY = tableTop + rowHeight;
@@ -484,11 +485,11 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
       
       // Compliance checklist
       const complianceItems = [
-        { text: 'The entire fire alarm system has been inspected and tested in accordance with CAN/ULC-S536:2019, Inspection and Testing of Fire Alarm Systems.', yes: true, no: false },
-        { text: 'The fire alarm system is fully functional.', yes: data.systemFullyFunctional, no: !data.systemFullyFunctional },
-        { text: 'During the Annual Inspection and Test were any Deficiencies Identified? See Page 2, if applicable.', yes: data.deficienciesIdentified, no: !data.deficienciesIdentified },
-        { text: 'As of the following Date (M/D/Y) all identified Deficiencies have been corrected:', yes: false, no: false },
-        { text: 'During the Annual Inspection and Test were any Recommendations Identified? See Page 3, if applicable', yes: data.recommendationsIdentified, no: !data.recommendationsIdentified },
+        { text: 'The entire fire alarm system has been inspected and tested in accordance with CAN/ULC-S536:2019, Inspection and Testing of Fire Alarm Systems.', yes: true, no: false, },
+        { text: 'The fire alarm system is fully functional.', yes: data.systemFullyFunctional, no: !data.systemFullyFunctional, },
+        { text: 'During the Annual Inspection and Test were any Deficiencies Identified? See Page 2, if applicable.', yes: data.deficienciesIdentified, no: !data.deficienciesIdentified, },
+        { text: 'As of the following Date (M/D/Y) all identified Deficiencies have been corrected:', yes: false, no: false, },
+        { text: 'During the Annual Inspection and Test were any Recommendations Identified? See Page 3, if applicable', yes: data.recommendationsIdentified, no: !data.recommendationsIdentified, },
       ];
       
       complianceItems.forEach(item => {
@@ -588,7 +589,7 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
         currentY += 20;
         
         // Checklist items
-        section.items.forEach((item) => {
+        section.items.forEach(item => {
           // Estimate row height: at fontSize 8 with 360 px width, ~60 chars/line
           // Use a minimum of 20 px; trigger page break with 40 px safety margin
           const estimatedLines = Math.max(1, Math.ceil(item.description.length / 60));
@@ -605,7 +606,7 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
 
           // Draw description text first to get actual rendered height via doc.y
           doc.fontSize(8).font('Helvetica-Bold').text(item.id, 45, rowStartY + 5);
-          doc.font('Helvetica').text(item.description, 75, rowStartY + 5, { width: 360, lineGap: 3 });
+          doc.font('Helvetica').text(item.description, 75, rowStartY + 5, { width: 360, lineGap: 3, });
 
           // Actual row height based on rendered text (minimum 20 px)
           const actualRowHeight = Math.max(20, doc.y - rowStartY + 5);
@@ -637,7 +638,7 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
         doc.fontSize(9).font('Helvetica-Bold').text('COMMENTS', 45, currentY + 3);
         doc.rect(140, currentY, 432, 30).stroke('#000000');
         if (section.comments) {
-          doc.fontSize(8).font('Helvetica').text(section.comments, 145, currentY + 3, { width: 420, lineGap: 3 });
+          doc.fontSize(8).font('Helvetica').text(section.comments, 145, currentY + 3, { width: 420, lineGap: 3, });
         }
       });
       
@@ -686,7 +687,7 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
           
           const resultColor = device.result === 'PASS' ? '#10b981' : device.result === 'DEFICIENT' ? '#ef4444' : '#6b7280';
           doc.fillColor(resultColor).text(device.result, 395, currentY + 3);
-          doc.fillColor('#000000').text(device.notes || '', 495, currentY + 3, { width: 75, lineGap: 2 });
+          doc.fillColor('#000000').text(device.notes || '', 495, currentY + 3, { width: 75, lineGap: 2, });
           
           currentY += 14;
         });
@@ -796,7 +797,7 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
             doc.fillColor('#6b7280').text('N/A', 325, currentY + 3);
           }
           
-          doc.fillColor('#000000').text(light.comments || '', 425, currentY + 3, { width: 145, lineGap: 2 });
+          doc.fillColor('#000000').text(light.comments || '', 425, currentY + 3, { width: 145, lineGap: 2, });
           
           currentY += 14;
         });
@@ -843,7 +844,7 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
           
           doc.fontSize(8).font('Helvetica').text(deficiency.system, 45, currentY + 5);
           doc.text(deficiency.location, 195, currentY + 5);
-          doc.text(deficiency.description, 345, currentY + 5, { width: 220, lineGap: 3 });
+          doc.text(deficiency.description, 345, currentY + 5, { width: 220, lineGap: 3, });
           
           currentY += descHeight;
         });

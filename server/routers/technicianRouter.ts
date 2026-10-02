@@ -1,3 +1,4 @@
+import { getCanonicalFireAlarmChecklist } from "../canonicalFireAlarmReport";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, technicianProcedure, protectedProcedure } from "../_core/trpc";
@@ -32,11 +33,11 @@ export const technicianRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId;
-      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "No company context" });
+      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "No company context", });
 
       const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
       if (job.finalizedAt) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Job is finalized and cannot be modified" });
+        throw new TRPCError({ code: "FORBIDDEN", message: "Job is finalized and cannot be modified", });
       }
       if (job.status !== "in_progress") {
         throw new TRPCError({
@@ -44,6 +45,9 @@ export const technicianRouter = router({
           message: `Job must be in_progress to submit for QA (current status: ${job.status})`,
         });
       }
+
+      if (job.jobType === "annual")
+        await getCanonicalFireAlarmChecklist(job.id);
 
       // Find existing report for this job
       const existingReports = await db.getReportsByJob(input.jobId);

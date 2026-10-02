@@ -1,73 +1,101 @@
+import { assertDeviceForJob } from "../tenantGuards";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, technicianProcedure, officeProcedure } from "../_core/trpc";
+import {
+  router,
+  protectedProcedure,
+  technicianProcedure,
+  officeProcedure,
+} from "../_core/trpc";
 import * as db from "../db";
 import { withAudit, assertJobNotFinalized, assertJobCompany } from "../db";
 
 // Inspection Result router
 const inspectionResultRouter = router({
-  listByJob: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
-    await assertJobCompany(input.jobId, ctx.user.companyId!);
-    return db.getInspectionResultsByJob(input.jobId);
-  }),
+  listByJob: technicianProcedure
+    .input(z.object({ jobId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      return db.getInspectionResultsByJob(input.jobId);
+    }),
 
-  getByJobAndDevice: technicianProcedure.input(z.object({
-    jobId: z.number(),
-    deviceId: z.number()
-  })).query(async ({ input, ctx }) => {
-    await assertJobCompany(input.jobId, ctx.user.companyId!);
-    return db.getInspectionResultByJobAndDevice(input.jobId, input.deviceId);
-  }),
+  getByJobAndDevice: technicianProcedure
+    .input(
+      z.object({
+        jobId: z.number(),
+        deviceId: z.number(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
+      await assertDeviceForJob(input.deviceId, job);
+      return db.getInspectionResultByJobAndDevice(input.jobId, input.deviceId);
+    }),
 
-  upsert: technicianProcedure.input(z.object({
-    jobId: z.number(),
-    deviceId: z.number(),
-    result: z.enum(['pass', 'fail', 'na', 'not_tested']),
-    notes: z.string().optional(),
-  })).mutation(async ({ input, ctx }) => {
-    await assertJobCompany(input.jobId, ctx.user.companyId!);
-    return withAudit(ctx, 'inspectionResult.upsert', async (_tx) => {
-      await assertJobNotFinalized(input.jobId, _tx);
-      const data = {
-        ...input,
-        technicianId: ctx.user.id,
-        testedAt: new Date(),
-        syncedAt: new Date(),
-      };
-      return db.upsertInspectionResult(data);
-    });
-  }),
-
-  bulkMarkPass: technicianProcedure.input(z.object({
-    jobId: z.number(),
-    deviceIds: z.array(z.number()),
-    notes: z.string().optional(),
-  })).mutation(async ({ input, ctx }) => {
-    await assertJobCompany(input.jobId, ctx.user.companyId!);
-    return withAudit(ctx, 'inspectionResult.bulkMarkPass', async (_tx) => {
-      await assertJobNotFinalized(input.jobId, _tx);
-      const results = [];
-      for (const deviceId of input.deviceIds) {
+  upsert: technicianProcedure
+    .input(
+      z.object({
+        jobId: z.number(),
+        deviceId: z.number(),
+        result: z.enum(["pass", "fail", "na", "not_tested"]),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      return withAudit(ctx, "inspectionResult.upsert", async _tx => {
+        await assertJobNotFinalized(input.jobId, _tx);
+        const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
+        await assertDeviceForJob(input.deviceId, job);
         const data = {
-          jobId: input.jobId,
-          deviceId,
-          result: 'pass' as const,
-          notes: input.notes,
+          ...input,
           technicianId: ctx.user.id,
           testedAt: new Date(),
           syncedAt: new Date(),
         };
-        const saved = await db.upsertInspectionResult(data);
-        results.push(saved);
-      }
-      return { count: results.length, results };
-    });
-  }),
+        return db.upsertInspectionResult(data);
+      });
+    }),
 
-  getStats: technicianProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
-    await assertJobCompany(input.jobId, ctx.user.companyId!);
-    return db.getInspectionStats(input.jobId);
-  }),
+  bulkMarkPass: technicianProcedure
+    .input(
+      z.object({
+        jobId: z.number(),
+        deviceIds: z.array(z.number()),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      return withAudit(ctx, "inspectionResult.bulkMarkPass", async _tx => {
+        await assertJobNotFinalized(input.jobId, _tx);
+        const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
+        for (const deviceId of input.deviceIds)
+          await assertDeviceForJob(deviceId, job);
+        const results = [];
+        for (const deviceId of input.deviceIds) {
+          const data = {
+            jobId: input.jobId,
+            deviceId,
+            result: "pass" as const,
+            notes: input.notes,
+            technicianId: ctx.user.id,
+            testedAt: new Date(),
+            syncedAt: new Date(),
+          };
+          const saved = await db.upsertInspectionResult(data);
+          results.push(saved);
+        }
+        return { count: results.length, results };
+      });
+    }),
+
+  getStats: technicianProcedure
+    .input(z.object({ jobId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      return db.getInspectionStats(input.jobId);
+    }),
 
   // Returns the result for this device from the most recent completed job at the same site.
   // Used to pre-fill suggestions and detect regressions on DeviceTest.
@@ -75,12 +103,16 @@ const inspectionResultRouter = router({
     .input(z.object({ jobId: z.number(), deviceId: z.number() }))
     .query(async ({ input, ctx }) => {
       const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
+      await assertDeviceForJob(input.deviceId, job);
       if (!job.siteId) return null;
 
       const lastJob = await db.getLastCompletedJobForSite(job.siteId);
       if (!lastJob || lastJob.id === input.jobId) return null;
 
-      const result = await db.getInspectionResultByJobAndDevice(lastJob.id, input.deviceId);
+      const result = await db.getInspectionResultByJobAndDevice(
+        lastJob.id,
+        input.deviceId
+      );
       if (!result || result.result === "not_tested") return null;
 
       return {
@@ -93,105 +125,141 @@ const inspectionResultRouter = router({
     }),
 
   // Batch sync for offline data
-  syncBatch: technicianProcedure.input(z.object({
-    results: z.array(z.object({
-      jobId: z.number(),
-      deviceId: z.number(),
-      result: z.enum(['pass', 'fail', 'na', 'not_tested']),
-      notes: z.string().optional(),
-      testedAt: z.date().optional(),
-    }))
-  })).mutation(async ({ input, ctx }) => {
-    const jobIds = Array.from(new Set(input.results.map((r) => r.jobId)));
-    for (const jobId of jobIds) {
-      // Company + finalized scope only — intentionally NOT assignment-scoped, so
-      // a technician reassigned away mid-inspection can still sync work they
-      // already captured offline (no field-data loss). Do not add an
-      // isUserAssignedToJob gate here; offlineSyncSafeguards.test.ts locks this.
-      await assertJobCompany(jobId, ctx.user.companyId!);
-      await assertJobNotFinalized(jobId);
-    }
+  syncBatch: technicianProcedure
+    .input(
+      z.object({
+        results: z.array(
+          z.object({
+            jobId: z.number(),
+            deviceId: z.number(),
+            result: z.enum(["pass", "fail", "na", "not_tested"]),
+            notes: z.string().optional(),
+            testedAt: z
+              .union([
+                z.date(),
+                z.iso.datetime().transform(value => new Date(value)),
+              ])
+              .optional(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return withAudit(ctx, "inspectionResult.syncBatch", async _tx => {
+        const jobIds = Array.from(new Set(input.results.map(r => r.jobId)));
+        for (const jobId of jobIds.sort((a, b) => a - b)) {
+          // Company + finalized scope only — intentionally NOT assignment-scoped, so
+          // a technician reassigned away mid-inspection can still sync work they
+          // already captured offline (no field-data loss). Do not add an
+          // isUserAssignedToJob gate here; offlineSyncSafeguards.test.ts locks this.
+          const job = await assertJobCompany(jobId, ctx.user.companyId!);
+          await assertJobNotFinalized(jobId, _tx);
+          for (const result of input.results.filter(r => r.jobId === jobId))
+            await assertDeviceForJob(result.deviceId, job);
+        }
 
-    const synced = [];
-    for (const result of input.results) {
-      const data = {
-        ...result,
-        technicianId: ctx.user.id,
-        testedAt: result.testedAt || new Date(),
-        syncedAt: new Date(),
-      };
-      const saved = await db.upsertInspectionResult(data);
-      synced.push(saved);
+        const synced = [];
+        for (const result of input.results) {
+          const data = {
+            ...result,
+            technicianId: ctx.user.id,
+            testedAt: result.testedAt || new Date(),
+            syncedAt: new Date(),
+          };
+          const saved = await db.upsertInspectionResult(data);
+          synced.push(saved);
 
-      // Log sync
-      await db.createSyncLog({
-        userId: ctx.user.id,
-        entityType: 'inspection_result',
-        entityId: saved.id!,
-        action: 'create',
-        payload: data,
+          // Log sync
+          await db.createSyncLog({
+            userId: ctx.user.id,
+            entityType: "inspection_result",
+            entityId: saved.id!,
+            action: "create",
+            payload: data,
+          });
+        }
+        return { synced: synced.length };
       });
-    }
-    return { synced: synced.length };
-  }),
+    }),
 });
-
 
 // Checklist router
 const checklistRouter = router({
-  saveResponse: technicianProcedure.input(z.object({
-    jobId: z.number(),
-    sectionNumber: z.string(),
-    itemId: z.string(),
-    status: z.enum(['PASS', 'DEFICIENT', 'NA']),
-    comment: z.string().optional(),
-  })).mutation(async ({ input, ctx }) => {
-    await assertJobCompany(input.jobId, ctx.user.companyId!);
-    await assertJobNotFinalized(input.jobId);
-    await db.saveChecklistResponse(input);
-    return { success: true };
-  }),
+  saveResponse: technicianProcedure
+    .input(
+      z.object({
+        jobId: z.number(),
+        sectionNumber: z.string(),
+        itemId: z.string(),
+        status: z.enum(["PASS", "DEFICIENT", "NA"]),
+        comment: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      await assertJobNotFinalized(input.jobId);
+      await db.saveChecklistResponse(input);
+      return { success: true };
+    }),
 
-  bulkSaveResponses: technicianProcedure.input(z.object({
-    responses: z.array(z.object({
-      jobId: z.number(),
-      sectionNumber: z.string(),
-      itemId: z.string(),
-      status: z.enum(['PASS', 'DEFICIENT', 'NA']),
-      comment: z.string().optional(),
-    })),
-  })).mutation(async ({ input, ctx }) => {
-    const jobIds = Array.from(new Set(input.responses.map((r) => r.jobId)));
-    for (const jobId of jobIds) {
-      // Company + finalized scope only — NOT assignment-scoped (see syncBatch
-      // above), so a reassigned technician's captured offline work still syncs.
-      await assertJobCompany(jobId, ctx.user.companyId!);
-      await assertJobNotFinalized(jobId);
-    }
-    await db.bulkSaveChecklistResponses(input.responses);
-    return { success: true };
-  }),
+  bulkSaveResponses: technicianProcedure
+    .input(
+      z.object({
+        responses: z.array(
+          z.object({
+            jobId: z.number(),
+            sectionNumber: z.string(),
+            itemId: z.string(),
+            status: z.enum(["PASS", "DEFICIENT", "NA"]),
+            comment: z.string().optional(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const jobIds = Array.from(new Set(input.responses.map(r => r.jobId)));
+      for (const jobId of jobIds) {
+        // Company + finalized scope only — NOT assignment-scoped (see syncBatch
+        // above), so a reassigned technician's captured offline work still syncs.
+        await assertJobCompany(jobId, ctx.user.companyId!);
+        await assertJobNotFinalized(jobId);
+      }
+      await db.bulkSaveChecklistResponses(input.responses);
+      return { success: true };
+    }),
 
-  getByJob: protectedProcedure.input(z.object({ jobId: z.number() })).query(async ({ input, ctx }) => {
-    await assertJobCompany(input.jobId, ctx.user.companyId!);
-    return db.getChecklistResponsesByJob(input.jobId);
-  }),
+  getByJob: protectedProcedure
+    .input(z.object({ jobId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      return db.getChecklistResponsesByJob(input.jobId);
+    }),
 
-  getByJobAndItem: protectedProcedure.input(z.object({
-    jobId: z.number(),
-    sectionNumber: z.string(),
-    itemId: z.string(),
-  })).query(async ({ input, ctx }) => {
-    await assertJobCompany(input.jobId, ctx.user.companyId!);
-    return db.getChecklistResponseByJobAndItem(input.jobId, input.sectionNumber, input.itemId);
-  }),
+  getByJobAndItem: protectedProcedure
+    .input(
+      z.object({
+        jobId: z.number(),
+        sectionNumber: z.string(),
+        itemId: z.string(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      return db.getChecklistResponseByJobAndItem(
+        input.jobId,
+        input.sectionNumber,
+        input.itemId
+      );
+    }),
 
-  deleteByJob: officeProcedure.input(z.object({ jobId: z.number() })).mutation(async ({ input, ctx }) => {
-    await assertJobCompany(input.jobId, ctx.user.companyId!);
-    await assertJobNotFinalized(input.jobId);
-    await db.deleteChecklistResponsesByJob(input.jobId);
-    return { success: true };
-  }),
+  deleteByJob: officeProcedure
+    .input(z.object({ jobId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      await assertJobNotFinalized(input.jobId);
+      await db.deleteChecklistResponsesByJob(input.jobId);
+      return { success: true };
+    }),
 });
 
 export { inspectionResultRouter, checklistRouter };
