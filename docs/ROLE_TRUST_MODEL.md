@@ -3,8 +3,10 @@
 **Date:** 2026-07-03 · **Status:** active — admin cross-company bypass wired into the tenant guards
 
 Inspectra roles are `admin`, `office`, `technician`, `customer` (per-user, in `users.role`).
-Every user is bound to one `companyId` at login (`server/_core/oauth.ts`); customers
-are additionally bound to a `customerOrgId`. There is **no** company switcher,
+Staff are company-scoped (with the admin platform-operator exception); customers
+are scoped by `customerOrgId` and valid portal accounts can have `companyId: null`.
+A customer's own-organization reads must not require a company binding.
+There is **no** company switcher,
 impersonation, or separate superadmin account.
 
 ## Intended model
@@ -109,3 +111,13 @@ module can stay (harmless when nothing reads the actor).
 `FORBIDDEN` cross-company (incl. at guard-protected `invoice.get` and the
 `attachment`/`company` bypass sites), while `admin` is allowed through the same
 paths — proving the async-local bypass reaches the guards via `createCaller`.
+
+`server/companyAccess.test.ts` (PR-18) additionally covers fire-alarm system
+reads/writes, job-technician reads and office-only inspection summaries.
+Customer reads of systems and job technicians require an explicit non-null
+matching organization; a company match alone never admits another organization.
+Customers cannot insert or update fire-alarm systems. Office and technician
+access uses the parent company's guard, while platform admins retain
+cross-company access (including admins without a company binding).
+Technician access here is company-scoped, not assignment-scoped, so reassignment
+does not prevent captured offline system details from syncing.
