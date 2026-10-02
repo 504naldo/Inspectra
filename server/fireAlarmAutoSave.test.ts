@@ -5,11 +5,12 @@ import type { TrpcContext } from "./_core/context";
 // Mock the DB so tests don't need a real database connection
 vi.mock("./db", () => ({
   getDb: vi.fn(),
+  getSiteById: vi.fn(),
   assertJobCompany: vi.fn().mockResolvedValue(undefined),
   assertJobNotFinalized: vi.fn().mockResolvedValue(undefined),
 }));
 import * as db from "./db";
-import { createMockDb } from "./fireAlarmTestFixture";
+import { createMockDb, PARENT_SITE_FIXTURE } from "./fireAlarmTestFixture";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -20,7 +21,7 @@ function createAuthContext(): { ctx: TrpcContext } {
     email: "test@example.com",
     name: "Test User",
     loginMethod: "manus",
-    role: "admin",
+    role: "technician",
     companyId: 1,
     customerOrgId: null,
     createdAt: new Date(),
@@ -39,7 +40,9 @@ function createAuthContext(): { ctx: TrpcContext } {
 
 // Each test gets a fresh in-memory DB (no cross-test state)
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.mocked(db.getDb).mockResolvedValue(createMockDb() as any);
+  vi.mocked(db.getSiteById).mockImplementation(async id => PARENT_SITE_FIXTURE.find(site => site.id === id));
 });
 
 const BATTERY_SECTION = "Emergency Power Supply Test and Inspection";

@@ -195,7 +195,8 @@ const siteRouter = router({
 
   getLastInspectionSummary: officeProcedure
     .input(z.object({ siteId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await assertSiteCompany(input.siteId, ctx.user.companyId!);
       return db.getLastInspectionSummaryForSite(input.siteId);
     }),
 

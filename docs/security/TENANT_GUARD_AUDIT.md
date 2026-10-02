@@ -8,7 +8,7 @@ convention (the exact class of bug behind FAB-01, FAB-02, and FAB-09).
 
 - **Script:** `scripts/auditTenantGuards.ts`
 - **Run:** `pnpm security:tenant-audit` (advisory) · `pnpm security:tenant-audit:strict` (exit 1 on findings) · add `--json` for machine output
-- **CI:** runs advisory (non-blocking) in `.github/workflows/ci.yml`
+- **CI:** runs `security:tenant-audit:strict` as a required step in `.github/workflows/ci.yml` (no continue-on-error)
 
 ## What it is — and is NOT
 
@@ -40,7 +40,8 @@ All three must hold:
 `assert*Access` guard, a `get*ForCompany` getter, `requireOwned*`,
 `callerIsPlatformOperator`, or an inline `ctx.user.companyId` /
 `ctx.user.customerOrgId` comparison. The signal set is intentionally broad
-(false-negative-leaning) to keep the check low-noise and advisory.
+(false-negative-leaning) to keep the check low-noise. Strict mode changes the
+exit status on findings; it does not make the heuristic a security proof.
 
 ## The allowlist
 
@@ -61,14 +62,41 @@ scoped to the caller's tenant:
   `docs/PRODUCTION_READINESS.md`. Do **not** silence a real gap with an
   allowlist entry.
 
-## Current status (advisory)
+## Current status (strict CI)
 
-At introduction the check flags **8** procedures for triage and allowlists **4**
-reviewed exceptions. Because genuine candidates are still open (tracked as
-**PR-18** in the register), CI runs the audit **advisory (non-blocking)**. Once
-PR-18 is resolved — each candidate either fixed or explicitly allowlisted with a
-reason — flip the CI step to `security:tenant-audit:strict` so regressions fail
-the build.
+PR-18's four remaining procedures were fixed in `04f5257`, after the earlier
+jobAssignmentRouter fixes. The verified strict run scanned **60 router files**
+with **zero active findings** and **two unchanged reviewed exceptions**
+(`jobAssignmentRouter.listMyJobs`, `complianceRouter.finalizeJob`). No new
+allowlist entries or weaker audit signals were added. CI now runs strict mode
+so a newly flagged procedure fails the job. This is a feature-branch change;
+hosted CI and deployed behavior have not yet been verified.
+
+The four fixes authorize parent records before touching children:
+
+- `fireAlarm.getSystemBySite`: staff use `assertSiteCompany`; customers must
+  match the site's `customerOrgId` even when their `companyId` is null.
+- `fireAlarm.upsertSystem`: technician/office/admin only, with
+  `assertSiteCompany` before both insert and update paths.
+- `job.getJobTechnicians`: staff use `getJobForCompany`; customers must match
+  the job's `customerOrgId` without requiring a company binding.
+- `site.getLastInspectionSummary`: retains `officeProcedure` and adds
+  `assertSiteCompany` before querying the last inspection.
+
+The shared helpers preserve the platform-admin bypass. No assignment gates
+were added: reassigned technicians can still sync captured offline work.
+Missing parent records produce `NOT_FOUND`; an authorized existing site
+without a fire-alarm system returns `null`.
+
+`companyAccess.test.ts` adds **26 real-MySQL regressions**, including denied
+writes leaving data unchanged on insert/update, same-company technician
+access, customer organization isolation with/without a company binding,
+platform-admin access and missing parents. Existing fire-alarm setup/autosave
+mocks now provide realistic parent sites and exercise the real site guard.
+Focused validation passed **110 tests**; the full suite passed **1,167** with
+**14 existing skips**. Typecheck and build also passed. See the
+[readiness register](../PRODUCTION_READINESS.md) for the validation limits and
+remaining live checks.
 
 ## Extending it
 

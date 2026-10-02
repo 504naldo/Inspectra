@@ -42,12 +42,10 @@ jobs:
       - name: Type check
         run: pnpm run check
 
-      # Advisory: surfaces id-addressed router procedures with no visible tenant
-      # scope. Heuristic (not a proof) and currently non-blocking — it reports in
-      # the log but does not fail the build. Flip to `security:tenant-audit:strict`
-      # once the register-tracked candidates (PR-18) are resolved or allowlisted.
-      - name: Tenant-guard audit (advisory)
-        run: pnpm run security:tenant-audit
+      # Required heuristic check: PR-18's active findings are resolved. Keep
+      # authorization tests alongside this audit; a clean scan is not a proof.
+      - name: Tenant-guard audit (strict)
+        run: pnpm run security:tenant-audit:strict
 
       - name: Apply database schema
         run: npx drizzle-kit migrate
