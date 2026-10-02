@@ -22,6 +22,8 @@ export const ENV = {
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   s3Bucket: process.env.S3_BUCKET ?? "",
   resendApiKey: process.env.RESEND_API_KEY ?? "",
+  // Temporary safety pause: automation requires a deliberate opt-in.
+  emailAutomationEnabled: process.env.EMAIL_AUTOMATION_ENABLED === "true",
   notificationEmail: process.env.NOTIFICATION_EMAIL ?? "",
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
 

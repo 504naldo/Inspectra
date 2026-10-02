@@ -46,6 +46,28 @@ backfills. Never expose database credentials in logs, PRs, or docs.
 9. **Do not run destructive backfills automatically.** Backfills that mutate existing
    rows are applied manually, reviewed, and only after a backup.
 
+## Temporary email automation pause
+
+Automated email delivery is **off by default**. `EMAIL_AUTOMATION_ENABLED`
+must be exactly `true` at server startup to enable it; unset, `false` and other
+values keep it paused. Leave it unset or `false` while the safety pause is in
+effect. This gate applies even when Resend credentials, per-customer notification
+preferences and `REPORT_NOTIFICATIONS=true` are configured.
+
+Paused paths: job/schedule notifications, automatic customer portal invitations,
+customer report-ready emails, report-generated owner emails, and quote/report
+approval owner notifications. Business operations still complete; suppressed
+emails are dropped rather than queued for delivery when automation is restored.
+Explicit Send actions for Gmail reports, quotes, repair quotes, invoices and the
+admin owner-notification action remain available.
+
+The code gate must be deployed before it can stop automation in a running
+production instance. After deliberate approval to restore automation, set
+`EMAIL_AUTOMATION_ENABLED=true` and restart/redeploy; report-generated owner
+emails additionally require `REPORT_NOTIFICATIONS=true`. Keep credentials
+unchanged. Local regression tests mock every outbound request and do not send
+real email.
+
 ## Deployment mismatch detection
 
 - The startup runner logging is the current mismatch signal: a chronically-failing

@@ -2,12 +2,13 @@
  * emailService.ts
  * Transactional email functions for Inspectra.
  *
- * All customer-facing emails go through sendEmail() which uses Resend's REST API
- * and requires RESEND_API_KEY to be set.  Functions fail silently when the key
- * is absent so they are safe to call in all environments.
+ * Automated customer-facing emails go through sendEmail() which uses Resend's
+ * REST API. Automation is paused unless EMAIL_AUTOMATION_ENABLED=true, even
+ * when RESEND_API_KEY is configured. Suppressed emails are not queued for replay.
  *
  * Owner-notification emails (report generated → reports@ewandf.ca) use
- * notifyOwner() from _core/notification and are gated by REPORT_NOTIFICATIONS=true.
+ * notifyOwner() from _core/notification and additionally require REPORT_NOTIFICATIONS=true.
+ * Explicit user-initiated Send actions in other routers remain available.
  */
 import { notifyOwner } from "./_core/notification";
 import { ENV } from "./_core/env";
@@ -15,6 +16,7 @@ import { ENV } from "./_core/env";
 // ─── Internal helper ──────────────────────────────────────────────────────────
 
 async function sendEmail(to: string, subject: string, text: string): Promise<boolean> {
+  if (!ENV.emailAutomationEnabled) return false;
   if (!ENV.resendApiKey) {
     if (!ENV.isProduction) console.log("[email] RESEND_API_KEY not set, skipping:", subject);
     return false;
@@ -54,6 +56,7 @@ export interface ReportEmailOptions {
 }
 
 export async function sendReportEmail(opts: ReportEmailOptions): Promise<void> {
+  if (!ENV.emailAutomationEnabled) return;
   if (process.env.REPORT_NOTIFICATIONS !== "true") return;
 
   const title =
@@ -146,6 +149,7 @@ export async function sendQuoteApprovedNotification(opts: {
   approvedByName: string;
   approvedByEmail: string;
 }): Promise<void> {
+  if (!ENV.emailAutomationEnabled) return;
   const { quoteNumber, siteName, total, approvedByName, approvedByEmail } = opts;
   const title = `Quote Approved via Portal: ${siteName} (${quoteNumber})`;
   const content = [
@@ -173,6 +177,7 @@ export async function sendReportApprovedNotification(opts: {
   approvedByName: string;
   approvedByEmail: string;
 }): Promise<void> {
+  if (!ENV.emailAutomationEnabled) return;
   const { reportNumber, reportTitle, siteName, jobNumber, approvedByName, approvedByEmail } = opts;
   const title = `Report Approved by Customer: ${siteName} (${jobNumber})`;
   const content = [
