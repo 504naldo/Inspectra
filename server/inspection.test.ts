@@ -17,6 +17,9 @@ vi.mock("./db", () => {
     }),
     getJobsByTechnician: vi.fn(),
     getDevicesBySite: vi.fn(),
+    getDeviceById: vi
+      .fn()
+      .mockResolvedValue({ id: 1, siteId: 1, companyId: 1 }),
     getInspectionResultsByJob: vi.fn(),
     getInspectionResultByJobAndDevice: vi.fn(),
     upsertInspectionResult: vi.fn(),
@@ -98,8 +101,8 @@ describe("Job Router", () => {
 
   it("technician can list their assigned jobs", async () => {
     const mockJobs = [
-      { id: 1, title: "Annual Inspection", status: "scheduled", jobNumber: "JOB-123" },
-      { id: 2, title: "Service Call", status: "in_progress", jobNumber: "JOB-456" },
+      { id: 1, title: "Annual Inspection", status: "scheduled", jobNumber: "JOB-123", },
+      { id: 2, title: "Service Call", status: "in_progress", jobNumber: "JOB-456", },
     ];
     
     vi.mocked(db.getJobsByTechnician).mockResolvedValue(mockJobs as any);

@@ -130,7 +130,7 @@ export async function sendReportReadyEmail(opts: {
     `Job Number: ${jobNumber}`,
     ``,
     `View your report in the customer portal:`,
-    `${portalUrl}/reports`,
+    `${portalUrl.replace(/\/$/, "")}/customer/reports`,
     ``,
     `— Inspectra`,
   ].join("\n");
@@ -178,7 +178,7 @@ export async function sendReportApprovedNotification(opts: {
   approvedByEmail: string;
 }): Promise<void> {
   if (!ENV.emailAutomationEnabled) return;
-  const { reportNumber, reportTitle, siteName, jobNumber, approvedByName, approvedByEmail } = opts;
+  const { reportNumber, reportTitle, siteName, jobNumber, approvedByName, approvedByEmail, } = opts;
   const title = `Report Approved by Customer: ${siteName} (${jobNumber})`;
   const content = [
     `A customer has approved an inspection report in the portal.`,

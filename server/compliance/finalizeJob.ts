@@ -35,7 +35,7 @@ import {
 } from "../../shared/_core/errors";
 import {
   buildFinalizationPayload,
-  computeFinalizationHash,
+  computeFinalizationHash
 } from "./hash";
 
 export type FinalizeJobInput = {
@@ -75,10 +75,11 @@ export async function finalizeJob(
   const jobRows = await db
     .select()
     .from(schema.jobs)
-    .where(eq(schema.jobs.id, jobId));
+    .where(eq(schema.jobs.id, jobId))
+    .for("update");
 
   if (jobRows.length === 0) {
-    throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found` });
+    throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found`, });
   }
 
   const job = jobRows[0];
@@ -87,7 +88,7 @@ export async function finalizeJob(
   // ctx.user is guaranteed non-null by protectedProcedure + adminOrOfficeProcedure
   const user = ctx.user!;
 
-  if (job.companyId !== user.companyId) {
+  if (job.companyId !== user.companyId && user.role !== "admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   }
 
@@ -209,7 +210,7 @@ export async function finalizeJob(
     if (woRows.length > 0) {
       await db
         .update(schema.workOrders)
-        .set({ finalizedAt: now, finalizedById: user.id, status: "completed", completedAt: now })
+        .set({ finalizedAt: now, finalizedById: user.id, status: "completed", completedAt: now, })
         .where(eq(schema.workOrders.id, woRows[0].id));
     }
   } catch (woErr) {

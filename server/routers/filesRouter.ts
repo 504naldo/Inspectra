@@ -1,6 +1,10 @@
+import { assertAttachmentDestination } from "../attachmentAccess";
+import { storageGet } from "../storage";
 import { z } from "zod";
 import { callerIsPlatformOperator } from "../_core/actorContext";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure,
+  officeProcedure,
+  technicianProcedure, } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb, assertJobCompany } from "../db";
 import { attachments, devices, jobs, sites } from "../../drizzle/schema";
@@ -9,13 +13,13 @@ import * as XLSX from "xlsx";
 import fetch from "node-fetch";
 import crypto from "crypto";
 import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
-import { assertSiteCompany, assertEntityCompany, getAttachmentOwnerCompanyId } from "../tenantGuards";
+import { assertSiteCompany, assertEntityCompany, getAttachmentOwnerCompanyId, } from "../tenantGuards";
 import { assertPublicHttpUrl } from "../_core/ssrfGuard";
 import { safeXlsxRead } from "../_core/safeXlsxRead";
 
 export const filesRouter = router({
   // Upload file to S3 and return URL
-  uploadToS3: protectedProcedure
+  uploadToS3: technicianProcedure
     .input(
       z.object({
         fileName: z.string(),
@@ -29,7 +33,12 @@ export const filesRouter = router({
     .mutation(async ({ input, ctx }) => {
       // Use server-side companyId — never trust the client-supplied value.
       const companyId = ctx.user.companyId;
-      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "User has no company assignment" });
+      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "User has no company assignment", });
+
+      await assertAttachmentDestination(
+        { entityType: "job", entityId: input.jobId },
+        ctx.user,
+        true);
 
       const randomSuffix = Math.random().toString(36).substring(7);
       const fileKey = `${companyId}/jobs/${input.jobId}/${input.fileName}-${randomSuffix}`;
@@ -53,7 +62,7 @@ export const filesRouter = router({
     }),
 
   // List files for a job
-  listByJob: protectedProcedure
+  listByJob: technicianProcedure
     .input(z.object({ jobId: z.number() }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
@@ -65,7 +74,8 @@ export const filesRouter = router({
         .from(jobs)
         .where(eq(jobs.id, input.jobId));
 
-      if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
+      if (!job ||
+        ( job.companyId !== ctx.user.companyId && !callerIsPlatformOperator())) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Access denied." });
       }
 
@@ -84,10 +94,10 @@ export const filesRouter = router({
     }),
 
   // Create file attachment
-  create: protectedProcedure
+  create: technicianProcedure
     .input(
       z.object({
-        entityType: z.enum(["inspection_result", "deficiency", "repair", "device", "job", "site", "customer_org"]),
+        entityType: z.enum(["inspection_result", "deficiency", "repair", "device", "job", "site", "customer_org",]),
         entityId: z.number(),
         siteId: z.number().optional(),
         jobId: z.number().optional(),
@@ -100,17 +110,21 @@ export const filesRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId;
-      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "User has no company assignment" });
+      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "User has no company assignment", });
 
-      await assertEntityCompany(input.entityType, input.entityId, companyId);
-      if (input.siteId !== undefined) await assertSiteCompany(input.siteId, companyId);
-      if (input.jobId !== undefined) await assertJobCompany(input.jobId, companyId);
+      const parent =
+
+      await assertAttachmentDestination(input, ctx.user, true);
 
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable", });
 
       const [attachment] = await db.insert(attachments).values({
         ...input,
+        companyId: parent.companyId,
+        jobId: parent.jobId,
+        siteId: parent.siteId,
+        deviceId: parent.deviceId,
         uploadedById: ctx.user.id,
         uploadStatus: "completed",
         importStatus: "none",
@@ -120,14 +134,14 @@ export const filesRouter = router({
     }),
 
   // Preview Excel import
-  previewImportExcel: protectedProcedure
+  previewImportExcel: officeProcedure
     .input(z.object({ 
       fileId: z.number(),
-      sheetName: z.string().optional() 
+      sheetName: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable", });
 
       // Get file record
       const [file] = await db
@@ -137,18 +151,16 @@ export const filesRouter = router({
 
       if (!file) {
         throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
-      }
-
-      const ownerCompanyId = await getAttachmentOwnerCompanyId(file);
-      if (ownerCompanyId !== null && ownerCompanyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
-      }
+      } await assertAttachmentDestination(file, ctx.user);
 
       // Download file
-      await assertPublicHttpUrl(file.fileUrl);
-      const response = await fetch(file.fileUrl, { redirect: "error" });
+      const downloadUrl = file.fileKey
+        ? (await storageGet(file.fileKey)).url
+        : file.fileUrl;
+      await assertPublicHttpUrl(downloadUrl);
+      const response = await fetch(downloadUrl, { redirect: "error" });
       if (!response.ok) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to download file" });
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to download file", });
       }
 
       const buffer = await response.buffer();
@@ -162,7 +174,7 @@ export const filesRouter = router({
         }
         
         // Exclude sheets with pricing/labour keywords
-        const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend"];
+        const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend",];
         if (excludeKeywords.some(kw => lowerName.includes(kw))) {
           return { isDevice: false, reason: "Excluded by keyword" };
         }
@@ -173,11 +185,11 @@ export const filesRouter = router({
         const allText = first10Rows.flat().map(cell => safeToLower(cell)).join(" ");
         
         // Device sheet indicators
-        const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #"];
+        const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #",];
         const matchCount = deviceKeywords.filter(kw => allText.includes(kw)).length;
         
         if (matchCount >= 2) {
-          return { isDevice: true, reason: `Matched ${matchCount} device keywords` };
+          return { isDevice: true, reason: `Matched ${matchCount} device keywords`, };
         }
         
         return { isDevice: false, reason: "Not enough device keywords" };
@@ -194,9 +206,9 @@ export const filesRouter = router({
       let totalRows = 0;
       let hasSiteSheet = false;
       let sitePreview: any = null;
-      const availableSheets: Array<{ name: string; isDevice: boolean; reason: string; rowCount: number }> = [];
+      const availableSheets: Array<{ name: string; isDevice: boolean; reason: string; rowCount: number; }> = [];
 
-      workbook.SheetNames.forEach((sheetName) => {
+      workbook.SheetNames.forEach(sheetName => {
         const lowerName = safeToLower(sheetName);
         if (!lowerName) return;
         const sheet = workbook.Sheets[sheetName];
@@ -215,7 +227,7 @@ export const filesRouter = router({
         if (lowerName.includes("site") || lowerName.includes("building") || lowerName.includes("property") || lowerName.includes("info")) {
           hasSiteSheet = true;
           // Parse as key/value pairs for preview
-          const siteRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
+          const siteRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", }) as any[][];
           
           const extractValue = (targetKeys: string[]): string => {
             for (const row of siteRows) {
@@ -231,10 +243,10 @@ export const filesRouter = router({
           };
           
           sitePreview = {
-            name: extractValue(["site name", "building name", "property name", "name"]),
+            name: extractValue(["site name", "building name", "property name", "name",]),
             address: extractValue(["address", "street"]),
             city: extractValue(["city", "municipality"]),
-            contactName: extractValue(["contact name", "contact", "site contact"]),
+            contactName: extractValue(["contact name", "contact", "site contact",]),
             contactPhone: extractValue(["contact phone", "phone", "telephone"]),
           };
           return; // Skip adding to device categories
@@ -323,7 +335,7 @@ export const filesRouter = router({
     }),
 
   // Import Excel devices (idempotent)
-  importExcelDevices: protectedProcedure
+  importExcelDevices: officeProcedure
     .input(
       z.object({
         fileId: z.number(),
@@ -334,17 +346,23 @@ export const filesRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable", });
 
       if (!ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "User must belong to a company" });
+        throw new TRPCError({ code: "FORBIDDEN", message: "User must belong to a company", });
       }
 
       // Stamp created devices with the site's company (not ctx.user) so a
       // cross-company admin import attributes them to the target company.
       const targetSite = await assertSiteCompany(input.siteId, ctx.user.companyId);
       const targetCompanyId = targetSite.companyId;
+      const targetJob =
       await assertJobCompany(input.jobId, ctx.user.companyId);
+      if (targetJob.siteId !== targetSite.id)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Import job and site disagree",
+        });
 
       // Get file record
       const [file] = await db
@@ -354,18 +372,16 @@ export const filesRouter = router({
 
       if (!file) {
         throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
-      }
-
-      const ownerCompanyId = await getAttachmentOwnerCompanyId(file);
-      if (ownerCompanyId !== null && ownerCompanyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
-      }
+      } await assertAttachmentDestination(file, ctx.user);
 
       // Download file
-      await assertPublicHttpUrl(file.fileUrl);
-      const response = await fetch(file.fileUrl, { redirect: "error" });
+      const downloadUrl = file.fileKey
+        ? (await storageGet(file.fileKey)).url
+        : file.fileUrl;
+      await assertPublicHttpUrl(downloadUrl);
+      const response = await fetch(downloadUrl, { redirect: "error" });
       if (!response.ok) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to download file" });
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to download file", });
       }
 
       const buffer = await response.buffer();
@@ -402,7 +418,7 @@ export const filesRouter = router({
 
       // Helper to find location column
       const findLocationValue = (row: any): string | null => {
-        const locationKeys = ["location", "Location", "LOCATION", "loc", "Loc", "Device Location", "device location"];
+        const locationKeys = ["location", "Location", "LOCATION", "loc", "Loc", "Device Location", "device location",];
         for (const key of locationKeys) {
           if (row[key]) return String(row[key]).trim();
         }
@@ -411,7 +427,7 @@ export const filesRouter = router({
 
       // Helper to find description/label
       const findDescriptionValue = (row: any): string => {
-        const descKeys = ["description", "Description", "DESCRIPTION", "label", "Label", "type", "Type", "Type/Size", "type/size", "Device Type", "device type"];
+        const descKeys = ["description", "Description", "DESCRIPTION", "label", "Label", "type", "Type", "Type/Size", "type/size", "Device Type", "device type",];
         for (const key of descKeys) {
           if (row[key]) return String(row[key]).trim();
         }
@@ -420,7 +436,7 @@ export const filesRouter = router({
 
       // Helper to find external ref (tag/ID)
       const findExternalRef = (row: any): string | null => {
-        const refKeys = ["tag", "Tag", "TAG", "id", "ID", "identifier", "Identifier", "barcode", "Barcode", "Unit #", "unit #"];
+        const refKeys = ["tag", "Tag", "TAG", "id", "ID", "identifier", "Identifier", "barcode", "Barcode", "Unit #", "unit #",];
         for (const key of refKeys) {
           if (row[key]) return String(row[key]).trim();
         }
@@ -445,23 +461,23 @@ export const filesRouter = router({
       const siteSheetName = workbook.SheetNames.find(name => {
         const lower = safeToLower(name);
         if (!lower) return false;
-        return lower.includes("site") || lower.includes("building") || lower.includes("property") || lower.includes("info");
+        return ( lower.includes("site") || lower.includes("building") || lower.includes("property") || lower.includes("info"));
       });
       
       if (siteSheetName) {
         const siteSheet = workbook.Sheets[siteSheetName];
         // Parse as key/value pairs (header: 1 returns array of arrays)
-        const siteRows = XLSX.utils.sheet_to_json(siteSheet, { header: 1, defval: "" }) as any[][];
+        const siteRows = XLSX.utils.sheet_to_json(siteSheet, { header: 1, defval: "", }) as any[][];
         
         // Extract site fields
-        const siteName = extractValueFromKeyValue(siteRows, ["site name", "building name", "property name", "name"]);
-        const address = extractValueFromKeyValue(siteRows, ["address", "street"]);
-        const city = extractValueFromKeyValue(siteRows, ["city", "municipality"]);
-        const state = extractValueFromKeyValue(siteRows, ["state", "province", "region"]);
-        const postalCode = extractValueFromKeyValue(siteRows, ["postal", "zip", "postal code", "zip code"]);
-        const contactName = extractValueFromKeyValue(siteRows, ["contact name", "contact", "site contact"]);
-        const contactPhone = extractValueFromKeyValue(siteRows, ["contact phone", "phone", "telephone"]);
-        const notes = extractValueFromKeyValue(siteRows, ["notes", "comments", "remarks"]);
+        const siteName = extractValueFromKeyValue(siteRows, ["site name", "building name", "property name", "name",]);
+        const address = extractValueFromKeyValue(siteRows, ["address", "street",]);
+        const city = extractValueFromKeyValue(siteRows, ["city", "municipality",]);
+        const state = extractValueFromKeyValue(siteRows, ["state", "province", "region",]);
+        const postalCode = extractValueFromKeyValue(siteRows, ["postal", "zip", "postal code", "zip code",]);
+        const contactName = extractValueFromKeyValue(siteRows, ["contact name", "contact", "site contact",]);
+        const contactPhone = extractValueFromKeyValue(siteRows, ["contact phone", "phone", "telephone",]);
+        const notes = extractValueFromKeyValue(siteRows, ["notes", "comments", "remarks",]);
         
         // Update site record (only overwrite non-empty values)
         const siteUpdateData: any = {};
@@ -484,12 +500,12 @@ export const filesRouter = router({
       const isDeviceSheet = (sheetName: string, sheet: any): boolean => {
         const lowerName = safeToLower(sheetName);
         if (!lowerName) return false;
-        const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend"];
+        const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend",];
         if (excludeKeywords.some(kw => lowerName.includes(kw))) return false;
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
         const first10Rows = rows.slice(0, 10);
         const allText = first10Rows.flat().map(cell => safeToLower(cell)).join(" ");
-        const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #"];
+        const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #",];
         const matchCount = deviceKeywords.filter(kw => allText.includes(kw)).length;
         return matchCount >= 2;
       };
@@ -526,7 +542,8 @@ export const filesRouter = router({
         }
 
         const lowerName = safeToLower(sheetName);
-        let category: "FIRE_EXTINGUISHER" | "EMERGENCY_LIGHT" | "FIRE_ALARM_DEVICE" | "SMOKE_ALARM" | null = null;
+        let category:
+          | "FIRE_EXTINGUISHER" | "EMERGENCY_LIGHT" | "FIRE_ALARM_DEVICE" | "SMOKE_ALARM" | null = null;
         let counterKey: keyof typeof imported | null = null;
 
         if (lowerName.includes("exting")) {

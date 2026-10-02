@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique, uniqueIndex, decimal, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, date, tinyint, unique, uniqueIndex, decimal, index, } from "drizzle-orm/mysql-core";
 
 // ============================================
 // CORE USER TABLE (Extended from template)
@@ -25,9 +25,8 @@ export const users = mysqlTable("users", {
   googleAccessToken: text("googleAccessToken"),
   googleRefreshToken: text("googleRefreshToken"),
   googleTokenExpiry: timestamp("googleTokenExpiry"),
-  // sessionVersion column is live in the DB after migration 0044; not declared here
-  // so Drizzle's explicit SELECT list doesn't break pre-migration deploys.
-  // Use (user as any).sessionVersion at runtime.
+  // Declared so authentication reads the actual revocation counter (manual 0044).
+  sessionVersion: int("sessionVersion").default(1).notNull(),
   // Push notification tokens (Capacitor / FCM)
   pushToken: text("pushToken"),
   pushPlatform: varchar("pushPlatform", { length: 10 }), // "ios" | "android"
@@ -55,7 +54,7 @@ export const inspectionChecklistResponses = mysqlTable("inspection_checklist_res
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   // Defense-in-depth: denormalized company ownership (nullable, not backfilled for existing rows)
   companyId: int("companyId"),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("inspection_checklist_responses_companyId_idx").on(table.companyId),
   jobIdIdx: index("inspection_checklist_responses_jobId_idx").on(table.jobId),
 }));
@@ -97,7 +96,7 @@ export const customerOrgs = mysqlTable("customer_orgs", {
   notifyJobScheduled: tinyint("notifyJobScheduled").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("customer_orgs_companyId_idx").on(table.companyId),
 }));
 
@@ -184,7 +183,7 @@ export const sites = mysqlTable("sites", {
   keySignedOutBy: varchar("keySignedOutBy", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("sites_companyId_idx").on(table.companyId),
   customerOrgIdIdx: index("sites_customerOrgId_idx").on(table.customerOrgId),
 }));
@@ -217,7 +216,7 @@ export const devices = mysqlTable("devices", {
   siteId: int("siteId").notNull(),
   companyId: int("companyId").notNull(), // For multi-tenancy
   areaId: int("areaId"),
-  category: mysqlEnum("category", ["FIRE_EXTINGUISHER", "EMERGENCY_LIGHT", "FIRE_ALARM_DEVICE", "SMOKE_ALARM", "SPRINKLER", "BACKFLOW"]), // High-level grouping
+  category: mysqlEnum("category", ["FIRE_EXTINGUISHER", "EMERGENCY_LIGHT", "FIRE_ALARM_DEVICE", "SMOKE_ALARM", "SPRINKLER", "BACKFLOW",]), // High-level grouping
   deviceType: varchar("deviceType", { length: 100 }).notNull(), // e.g., "Smoke Detector", "Pull Station", "Horn/Strobe", "ABC Extinguisher", "Exit Sign"
   manufacturer: varchar("manufacturer", { length: 100 }),
   model: varchar("model", { length: 100 }),
@@ -234,7 +233,7 @@ export const devices = mysqlTable("devices", {
   notes: text("notes"),
   // Smoke alarm specific fields
   suiteNumber: varchar("suiteNumber", { length: 50 }), // Required for SMOKE_ALARM category
-  powerType: mysqlEnum("powerType", ["hardwired", "battery", "sealed", "unknown"]), // Power source type
+  powerType: mysqlEnum("powerType", ["hardwired", "battery", "sealed", "unknown",]), // Power source type
   testResult: mysqlEnum("testResult", ["pass", "fail", "no_access", "na"]), // Test result
   // Fire extinguisher maintenance dates
   mfgDate: varchar("mfgDate", { length: 20 }), // Manufacture date
@@ -253,15 +252,15 @@ export const devices = mysqlTable("devices", {
   isActive: boolean("isActive").default(true).notNull(),
   sortOrder: int("sortOrder"),
   // Asset lifecycle fields
-  lifecycleStatus: mysqlEnum("lifecycleStatus", ["active", "needs_service", "repair_required", "replacement_recommended", "replaced", "removed"]),
-  assetCondition: mysqlEnum("assetCondition", ["good", "fair", "poor", "failed", "unknown"]),
+  lifecycleStatus: mysqlEnum("lifecycleStatus", ["active", "needs_service", "repair_required", "replacement_recommended", "replaced", "removed",]),
+  assetCondition: mysqlEnum("assetCondition", ["good", "fair", "poor", "failed", "unknown",]),
   replacementRecommended: boolean("replacementRecommended").default(false),
   replacementRecommendedAt: timestamp("replacementRecommendedAt"),
   nextServiceDate: date("nextServiceDate"),
   serviceNotes: text("serviceNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("devices_companyId_idx").on(table.companyId),
   siteIdIdx: index("devices_siteId_idx").on(table.siteId),
 }));
@@ -284,8 +283,8 @@ export const jobs = mysqlTable("jobs", {
   jobNumber: varchar("jobNumber", { length: 50 }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
-  jobType: mysqlEnum("jobType", ["annual", "semi_annual", "quarterly", "monthly", "service_call", "repair"]).default("annual").notNull(),
-  status: mysqlEnum("status", ["pending", "scheduled", "in_progress", "completed", "cancelled"]).default("pending").notNull(),
+  jobType: mysqlEnum("jobType", ["annual", "semi_annual", "quarterly", "monthly", "service_call", "repair",]).default("annual").notNull(),
+  status: mysqlEnum("status", ["pending", "scheduled", "in_progress", "completed", "cancelled",]).default("pending").notNull(),
   priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium").notNull(),
   scheduledDate: timestamp("scheduledDate"),
   // Explicit scheduled start/end times. scheduledDate stays the "which day"
@@ -311,6 +310,8 @@ export const jobs = mysqlTable("jobs", {
   syncAssertedById: int("syncAssertedById"),
   // Google Calendar integration
   googleCalendarEventId: varchar("googleCalendarEventId", { length: 255 }),
+    googleCalendarOwnerId: int("googleCalendarOwnerId"),
+    googleCalendarId: varchar("googleCalendarId", { length: 255 }),
   // Customer service decline — recorded by office when customer refuses a visit
   customerDeclinedAt: timestamp("customerDeclinedAt"),
   customerDeclinedReason: text("customerDeclinedReason"),
@@ -323,7 +324,7 @@ export const jobs = mysqlTable("jobs", {
   techSignedAt: timestamp("tech_signed_at"),
   // Pre-fill audit: tracks which prior job's inspection_results were copied into this one
   copiedFromJobId: int("copied_from_job_id"),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("jobs_companyId_idx").on(table.companyId),
   siteIdIdx: index("jobs_siteId_idx").on(table.siteId),
   customerOrgIdIdx: index("jobs_customerOrgId_idx").on(table.customerOrgId),
@@ -345,7 +346,7 @@ export const jobAssignments = mysqlTable("job_assignments", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   // Defense-in-depth: denormalized company ownership (nullable, not backfilled for existing rows)
   companyId: int("companyId"),
-}, (table) => ({
+},table => ({
   // Prevent duplicate assignments
   uniqueJobUser: unique().on(table.jobId, table.userId),
   companyIdIdx: index("job_assignments_companyId_idx").on(table.companyId),
@@ -376,7 +377,7 @@ export const inspectionResults = mysqlTable("inspection_results", {
   carriedForward: tinyint("carried_forward").default(0).notNull(),
   // Defense-in-depth: denormalized company ownership (nullable, not backfilled for existing rows)
   companyId: int("companyId"),
-}, (table) => ({
+},table => ({
   jobIdIdx: index("inspection_results_jobId_idx").on(table.jobId),
   companyIdIdx: index("inspection_results_companyId_idx").on(table.companyId),
 }));
@@ -393,10 +394,10 @@ export const deficiencies = mysqlTable("deficiencies", {
   deviceId: int("deviceId"),
   inspectionResultId: int("inspectionResultId"),
   reportedById: int("reportedById").notNull(),
-  status: mysqlEnum("status", ["open", "in_progress", "resolved", "closed", "deferred", "quoted"]).default("open").notNull(),
-  severity: mysqlEnum("severity", ["critical", "major", "minor", "observation"]).default("major").notNull(),
+  status: mysqlEnum("status", ["open", "in_progress", "resolved", "closed", "deferred", "quoted",]).default("open").notNull(),
+  severity: mysqlEnum("severity", ["critical", "major", "minor", "observation",]).default("major").notNull(),
   // BUG-02 fix: added SMOKE_ALARM. BUG-03 fix: EMERGENCY_LIGHTING (was missing SMOKE_ALARM, now consistent with pdfGenerator)
-  systemCategory: mysqlEnum("systemCategory", ["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER"]),
+  systemCategory: mysqlEnum("systemCategory", ["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER",]),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   observedIssue: text("observedIssue"),
@@ -414,7 +415,7 @@ export const deficiencies = mysqlTable("deficiencies", {
   resolvedById: int("resolvedById"),
   resolutionNotes: text("resolutionNotes"),
   customerSignedOffAt: timestamp("customerSignedOffAt"),
-  customerSignedOffByName: varchar("customerSignedOffByName", { length: 255 }),
+  customerSignedOffByName: varchar("customerSignedOffByName", { length: 255, }),
   // Linked work order — set when a repair work order is created for this deficiency
   workOrderId: int("workOrderId"),
   // Offline-sync idempotency: the client's stable local id for a deficiency created
@@ -423,7 +424,7 @@ export const deficiencies = mysqlTable("deficiencies", {
   idempotencyKey: varchar("idempotencyKey", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   jobIdIdx: index("deficiencies_jobId_idx").on(table.jobId),
   idempotencyKeyIdx: index("deficiencies_idempotencyKey_idx").on(table.idempotencyKey),
 }));
@@ -438,7 +439,7 @@ export const repairs = mysqlTable("repairs", {
   id: int("id").autoincrement().primaryKey(),
   deficiencyId: int("deficiencyId").notNull(),
   technicianId: int("technicianId").notNull(),
-  status: mysqlEnum("status", ["pending", "in_progress", "completed", "parts_ordered"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "in_progress", "completed", "parts_ordered",]).default("pending").notNull(),
   description: text("description"),
   partsUsed: text("partsUsed"),
   laborHours: int("laborHours"),
@@ -446,7 +447,7 @@ export const repairs = mysqlTable("repairs", {
   aiRecommendations: json("aiRecommendations"), // Store AI-generated repair recommendations
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   deficiencyIdIdx: index("repairs_deficiencyId_idx").on(table.deficiencyId),
 }));
 
@@ -459,7 +460,7 @@ export type InsertRepair = typeof repairs.$inferInsert;
 export const attachments = mysqlTable("attachments", {
   id: int("id").autoincrement().primaryKey(),
   // Entity linking - can link to multiple entity types
-  entityType: mysqlEnum("entityType", ["inspection_result", "deficiency", "repair", "device", "job", "site", "customer_org"]).notNull(),
+  entityType: mysqlEnum("entityType", ["inspection_result", "deficiency", "repair", "device", "job", "site", "customer_org",]).notNull(),
   entityId: int("entityId").notNull(),
   // Additional optional links for cross-referencing
   siteId: int("siteId"),
@@ -481,11 +482,11 @@ export const attachments = mysqlTable("attachments", {
   isCustomerFacing: tinyint("isCustomerFacing").default(1).notNull(),
   sortOrder: int("sortOrder").default(0).notNull(),
   // Upload tracking
-  uploadStatus: mysqlEnum("uploadStatus", ["pending", "uploading", "completed", "failed"]).default("completed").notNull(),
+  uploadStatus: mysqlEnum("uploadStatus", ["pending", "uploading", "completed", "failed",]).default("completed").notNull(),
   uploadProgress: int("uploadProgress").default(100),
   retryCount: int("retryCount").default(0),
   // Excel import tracking
-  importStatus: mysqlEnum("importStatus", ["none", "previewed", "imported", "failed"]).default("none").notNull(),
+  importStatus: mysqlEnum("importStatus", ["none", "previewed", "imported", "failed",]).default("none").notNull(),
   importSummary: json("importSummary"), // { imported: {}, updated: {}, excluded: [] }
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -496,7 +497,7 @@ export const attachments = mysqlTable("attachments", {
   // after the server stored it); the server does find-or-create on this key so a
   // retry never duplicates the attachment or its storage object.
   idempotencyKey: varchar("idempotencyKey", { length: 64 }),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("attachments_companyId_idx").on(table.companyId),
   entityIdx: index("attachments_entity_idx").on(table.entityType, table.entityId),
   idempotencyKeyIdx: index("attachments_idempotencyKey_idx").on(table.idempotencyKey),
@@ -528,10 +529,10 @@ export const importLogs = mysqlTable("import_logs", {
   companyId: int("companyId").notNull(),
   siteId: int("siteId"),
   importedById: int("importedById").notNull(),
-  importType: mysqlEnum("importType", ["devices", "sites", "areas", "customers"]).notNull(),
+  importType: mysqlEnum("importType", ["devices", "sites", "areas", "customers",]).notNull(),
   fileName: varchar("fileName", { length: 255 }).notNull(),
   fileKey: varchar("fileKey", { length: 500 }), // S3 key for original file
-  status: mysqlEnum("status", ["pending", "validating", "importing", "completed", "failed", "partial"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "validating", "importing", "completed", "failed", "partial",]).default("pending").notNull(),
   // Column mapping stored as JSON
   columnMapping: json("columnMapping"),
   // Results
@@ -542,7 +543,7 @@ export const importLogs = mysqlTable("import_logs", {
   skippedCount: int("skippedCount").default(0),
   // Error details
   errors: json("errors"), // Array of { row, column, message }
-  duplicateHandling: mysqlEnum("duplicateHandling", ["skip", "update", "create_new"]).default("skip"),
+  duplicateHandling: mysqlEnum("duplicateHandling", ["skip", "update", "create_new",]).default("skip"),
   // Timing
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
@@ -559,7 +560,7 @@ export const importRowResults = mysqlTable("import_row_results", {
   id: int("id").autoincrement().primaryKey(),
   importLogId: int("importLogId").notNull(),
   rowNumber: int("rowNumber").notNull(),
-  status: mysqlEnum("status", ["success", "error", "duplicate", "skipped"]).notNull(),
+  status: mysqlEnum("status", ["success", "error", "duplicate", "skipped",]).notNull(),
   entityId: int("entityId"), // ID of created/updated entity
   originalData: json("originalData"), // Original row data
   errorMessage: text("errorMessage"),
@@ -581,10 +582,10 @@ export const uploadQueue = mysqlTable("upload_queue", {
   mimeType: varchar("mimeType", { length: 100 }),
   fileSize: int("fileSize"),
   // Target entity
-  entityType: mysqlEnum("entityType", ["inspection_result", "deficiency", "repair", "device", "job", "site", "customer_org"]).notNull(),
+  entityType: mysqlEnum("entityType", ["inspection_result", "deficiency", "repair", "device", "job", "site", "customer_org",]).notNull(),
   entityId: int("entityId").notNull(),
   // Upload status
-  status: mysqlEnum("status", ["queued", "uploading", "paused", "completed", "failed"]).default("queued").notNull(),
+  status: mysqlEnum("status", ["queued", "uploading", "paused", "completed", "failed",]).default("queued").notNull(),
   progress: int("progress").default(0), // 0-100
   retryCount: int("retryCount").default(0),
   maxRetries: int("maxRetries").default(3),
@@ -623,7 +624,7 @@ export const reports = mysqlTable("reports", {
   failCount: int("failCount"),
   deficiencyCount: int("deficiencyCount"),
   aiSummary: text("aiSummary"), // AI-generated summary
-  status: mysqlEnum("status", ["draft", "generated", "sent", "approved", "corrections_required", "archived"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "generated", "sent", "approved", "corrections_required", "archived",]).default("draft").notNull(),
   approvedAt: timestamp("approvedAt"),
   approvedById: int("approvedById"),
   qaNote: text("qaNote"), // QA reviewer note (corrections request, approval note, etc.)
@@ -691,7 +692,7 @@ export const fireAlarmSystems = mysqlTable("fire_alarm_systems", {
   siteId: int("siteId").notNull(),
   manufacturer: varchar("manufacturer", { length: 255 }),
   modelNumber: varchar("modelNumber", { length: 255 }),
-  operationType: mysqlEnum("operationType", ["single_stage", "two_stage", "other"]).default("single_stage"),
+  operationType: mysqlEnum("operationType", ["single_stage", "two_stage", "other",]).default("single_stage"),
   operationDescription: text("operationDescription"),
   connectedToMonitoring: boolean("connectedToMonitoring").default(false),
   monitoringCentreName: varchar("monitoringCentreName", { length: 255 }),
@@ -713,8 +714,8 @@ export const fireAlarmChecklistTemplates = mysqlTable("fire_alarm_checklist_temp
   sectionOrder: int("sectionOrder").notNull(),
   itemLetter: varchar("itemLetter", { length: 10 }), // A, B, C, etc.
   itemDescription: text("itemDescription").notNull(),
-  requirementType: mysqlEnum("requirementType", ["inspection", "test", "both"]).default("both"),
-  inputType: mysqlEnum("inputType", ["checkbox", "numeric", "text", "voltage", "current", "date", "time", "year"]).default("checkbox"),
+  requirementType: mysqlEnum("requirementType", ["inspection", "test", "both",]).default("both"),
+  inputType: mysqlEnum("inputType", ["checkbox", "numeric", "text", "voltage", "current", "date", "time", "year",]).default("checkbox"),
   numericLabel: varchar("numericLabel", { length: 100 }), // e.g., "Voltage:", "Current:", "Date:"
   numericUnit: varchar("numericUnit", { length: 50 }), // e.g., "V", "A", "A•h"
   isRequired: boolean("isRequired").default(true),
@@ -755,9 +756,9 @@ export const fireAlarmInspectionResults = mysqlTable("fire_alarm_inspection_resu
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   // --- Compliance Hardening: Item Snapshot + Credential Snapshot ---
-  itemSnapshot: json("itemSnapshot"),
+  itemSnapshot: json("itemSnapshot").notNull(),
   technicianCertificationSnapshot: json("technicianCertificationSnapshot"),
-}, (table) => ({
+},table => ({
   jobIdIdx: index("fire_alarm_inspection_results_jobId_idx").on(table.jobId),
 }));
 
@@ -787,7 +788,7 @@ export const fireAlarmAnnunciators = mysqlTable("fire_alarm_annunciators", {
   fireAlarmSystemId: int("fireAlarmSystemId").notNull(),
   location: varchar("location", { length: 255 }),
   identification: varchar("identification", { length: 255 }),
-  annunciatorType: mysqlEnum("annunciatorType", ["standard", "sequential_display", "remote_trouble"]).default("standard"),
+  annunciatorType: mysqlEnum("annunciatorType", ["standard", "sequential_display", "remote_trouble",]).default("standard"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -885,7 +886,7 @@ export const sprinklerChecklistItems = mysqlTable("sprinkler_checklist_items", {
   comment: text("comment"),
   
   // Deficiency trigger configuration
-  createsDeficiencyWhen: mysqlEnum("createsDeficiencyWhen", ["NO", "YES", "NEVER"]).default("NEVER"),
+  createsDeficiencyWhen: mysqlEnum("createsDeficiencyWhen", ["NO", "YES", "NEVER",]).default("NEVER"),
   
   // Special fields for specific questions
   numberValue: int("numberValue"), // For "Number of systems", etc.
@@ -939,7 +940,7 @@ export const auditLog = mysqlTable("audit_log", {
   id: int("id").autoincrement().primaryKey(),
   tableName: varchar("tableName", { length: 64 }).notNull(),
   recordId: int("recordId").notNull(),
-  action: mysqlEnum("action", ["insert", "update", "delete", "hash_mismatch_detected"]).notNull(),
+  action: mysqlEnum("action", ["insert", "update", "delete", "hash_mismatch_detected",]).notNull(),
   changedById: int("changedById"),
   changedAt: timestamp("changedAt").defaultNow().notNull(),
   previousValues: json("previousValues"),
@@ -1036,7 +1037,7 @@ export const fireAlarmAncillaryCircuits = mysqlTable("fire_alarm_ancillary_circu
   circuitDescription: varchar("circuitDescription", { length: 500 }),
   circuitType: varchar("circuitType", { length: 100 }),
   poweredBy: varchar("poweredBy", { length: 255 }),
-  operationConfirmed: mysqlEnum("operationConfirmed", ["yes", "no", "na"]).default("na"),
+  operationConfirmed: mysqlEnum("operationConfirmed", ["yes", "no", "na",]).default("na"),
   confirmationMethod: varchar("confirmationMethod", { length: 255 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1077,7 +1078,7 @@ export const quotes = mysqlTable("quotes", {
   customerOrgId: int("customerOrgId").notNull(),
   companyId: int("companyId").notNull(),
   lineItems: json("lineItems").$type<QuoteLineItem[]>().notNull(),
-  status: mysqlEnum("status", ["draft", "ready_to_send", "sent", "viewed", "partially_approved", "approved", "accepted", "declined", "expired", "converted_to_approved_work", "cancelled"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "ready_to_send", "sent", "viewed", "partially_approved", "approved", "accepted", "declined", "expired", "converted_to_approved_work", "cancelled",]).default("draft").notNull(),
   total: decimal("total", { precision: 10, scale: 2 }).notNull().default("0"),
   notes: text("notes"),
   // S3 URL for the generated PDF (set when the quote is sent)
@@ -1113,10 +1114,10 @@ export const quotes = mysqlTable("quotes", {
   viewedAt: timestamp("viewedAt"),
   approvedByName: varchar("approvedByName", { length: 255 }),
   approvedByEmail: varchar("approvedByEmail", { length: 320 }),
-  approvalSource: mysqlEnum("approvalSource", ["email", "phone", "signed_pdf", "in_person", "portal_later", "internal_entry"]),
+  approvalSource: mysqlEnum("approvalSource", ["email", "phone", "signed_pdf", "in_person", "portal_later", "internal_entry",]),
   createdById: int("createdById"),
   finalizedAt: timestamp("finalizedAt"),
-}, (table) => ({
+},table => ({
   jobIdIdx: index("quotes_jobId_idx").on(table.jobId),
 }));
 
@@ -1136,7 +1137,7 @@ export const serviceSchedules = mysqlTable("service_schedules", {
   customerOrgId: int("customerOrgId").notNull(),
   companyId: int("companyId").notNull(),
   serviceType: varchar("serviceType", { length: 100 }).notNull(),
-  frequency: mysqlEnum("frequency", ["monthly", "quarterly", "semi_annual", "annual", "other"]).notNull().default("annual"),
+  frequency: mysqlEnum("frequency", ["monthly", "quarterly", "semi_annual", "annual", "other",]).notNull().default("annual"),
   estimatedHours: decimal("estimatedHours", { precision: 5, scale: 2 }),
   requiredTechCount: int("requiredTechCount").default(1),
   requiredSystems: json("requiredSystems").$type<string[]>(),
@@ -1147,7 +1148,7 @@ export const serviceSchedules = mysqlTable("service_schedules", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   siteIdIdx: index("service_schedules_siteId_idx").on(table.siteId),
   companyIdIdx: index("service_schedules_companyId_idx").on(table.companyId),
 }));
@@ -1186,7 +1187,7 @@ export const monthlyServiceTracking = mysqlTable("monthly_service_tracking", {
   ]).default("not_scheduled").notNull(),
   linkedJobId: int("linkedJobId"),
   linkedCalendarEventId: varchar("linkedCalendarEventId", { length: 255 }),
-  reportStatus: mysqlEnum("reportStatus", ["none", "pending", "generated", "sent"]).default("none").notNull(),
+  reportStatus: mysqlEnum("reportStatus", ["none", "pending", "generated", "sent",]).default("none").notNull(),
   deficiencyCount: int("deficiencyCount").default(0),
   rescheduleReason: text("rescheduleReason"),
   notes: text("notes"),
@@ -1201,7 +1202,7 @@ export const monthlyServiceTracking = mysqlTable("monthly_service_tracking", {
   agreementSigned: boolean("agreementSigned"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   siteIdIdx: index("monthly_tracking_siteId_idx").on(table.siteId),
   companyIdIdx: index("monthly_tracking_companyId_idx").on(table.companyId),
   monthIdx: index("monthly_tracking_month_idx").on(table.trackingMonth),
@@ -1242,7 +1243,7 @@ export const repairLetterTracking = mysqlTable("repair_letter_tracking", {
   sourceImportId: int("sourceImportId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   siteIdIdx: index("repair_letter_siteId_idx").on(table.siteId),
   companyIdIdx: index("repair_letter_companyId_idx").on(table.companyId),
   periodIdx: index("repair_letter_period_idx").on(table.trackingPeriod),
@@ -1289,12 +1290,12 @@ export const aiReviews = mysqlTable("ai_reviews", {
   reviewType: varchar("reviewType", { length: 50 }).default("pre_publish").notNull(),
   status: varchar("status", { length: 50 }).default("completed").notNull(),
   summary: text("summary"),
-  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high", "critical"]).default("low"),
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high", "critical",]).default("low"),
   suggestedQaNote: text("suggestedQaNote"),
   findingsJson: json("findingsJson").$type<AiReviewFinding[]>(),
   suggestedActions: json("suggestedActions").$type<string[]>(),
   createdById: int("createdById"),
-}, (table) => ({
+},table => ({
   jobIdIdx: index("ai_reviews_jobId_idx").on(table.jobId),
 }));
 
@@ -1312,7 +1313,7 @@ export const partsCatalog = mysqlTable("parts_catalog", {
   productName: varchar("productName", { length: 255 }).notNull(),
   sku: varchar("sku", { length: 100 }),
   unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).notNull().default("0"),
-  defaultLabourHours: decimal("defaultLabourHours", { precision: 5, scale: 2 }).default("0"),
+  defaultLabourHours: decimal("defaultLabourHours", { precision: 5, scale: 2, }).default("0"),
   taxableGst: tinyint("taxableGst").default(1).notNull(),
   taxablePst: tinyint("taxablePst").default(1).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
@@ -1322,7 +1323,7 @@ export const partsCatalog = mysqlTable("parts_catalog", {
   sourceRow: int("sourceRow"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("parts_catalog_companyId_idx").on(table.companyId),
   uniqueCatProduct: uniqueIndex("parts_catalog_unique_cat_product").on(table.companyId, table.category, table.productName),
 }));
@@ -1342,33 +1343,33 @@ export const repairQuoteItems = mysqlTable("repair_quote_items", {
   deficiencyId: int("deficiencyId"),
   description: varchar("description", { length: 500 }).notNull(),
   repairNotes: text("repairNotes"),
-  systemType: mysqlEnum("systemType", ["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER", "BACKFLOW", "OTHER"]),
+  systemType: mysqlEnum("systemType", ["FIRE_ALARM", "SMOKE_ALARM", "FIRE_EXTINGUISHER", "EMERGENCY_LIGHTING", "SPRINKLER", "BACKFLOW", "OTHER",]),
   location: varchar("location", { length: 255 }),
   quantity: int("quantity").notNull().default(1),
   // Part snapshot — copied from parts_catalog at quote time; price never recalculates from live catalog
   partId: int("partId"),
   partDescription: varchar("partDescription", { length: 255 }),
-  partUnitPrice: decimal("partUnitPrice", { precision: 10, scale: 2 }).default("0"),
+  partUnitPrice: decimal("partUnitPrice", { precision: 10, scale: 2, }).default("0"),
   partTotal: decimal("partTotal", { precision: 10, scale: 2 }).default("0"),
   // Labour
   techHours: decimal("techHours", { precision: 6, scale: 2 }).default("0"),
   fitterHours: decimal("fitterHours", { precision: 6, scale: 2 }).default("0"),
-  techLabourRate: decimal("techLabourRate", { precision: 8, scale: 2 }).default("0"),
-  fitterLabourRate: decimal("fitterLabourRate", { precision: 8, scale: 2 }).default("0"),
+  techLabourRate: decimal("techLabourRate", { precision: 8, scale: 2, }).default("0"),
+  fitterLabourRate: decimal("fitterLabourRate", { precision: 8, scale: 2, }).default("0"),
   labourTotal: decimal("labourTotal", { precision: 10, scale: 2 }).default("0"),
   // Fees
   fuelCharge: decimal("fuelCharge", { precision: 8, scale: 2 }).default("0"),
-  backflowReportFee: decimal("backflowReportFee", { precision: 8, scale: 2 }).default("0"),
+  backflowReportFee: decimal("backflowReportFee", { precision: 8, scale: 2, }).default("0"),
   // Tax (computed at save time, GST 5% / PST 7%)
   gst: decimal("gst", { precision: 10, scale: 2 }).default("0"),
   pst: decimal("pst", { precision: 10, scale: 2 }).default("0"),
   total: decimal("total", { precision: 10, scale: 2 }).default("0"),
   sortOrder: int("sortOrder").default(0),
-  approvalStatus: mysqlEnum("approvalStatus", ["pending", "approved", "declined", "needs_review", "converted_to_approved_work"]).default("pending").notNull(),
+  approvalStatus: mysqlEnum("approvalStatus", ["pending", "approved", "declined", "needs_review", "converted_to_approved_work",]).default("pending").notNull(),
   customerNotes: text("customerNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   quoteIdIdx: index("repair_quote_items_quoteId_idx").on(table.quoteId),
 }));
 
@@ -1397,8 +1398,8 @@ export const workOrders = mysqlTable("work_orders", {
   assignedTechnicianIds: json("assignedTechnicianIds").$type<number[]>().notNull().default([]),
   workOrderNumber: varchar("workOrderNumber", { length: 50 }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
-  workType: mysqlEnum("workType", ["inspection", "repair", "service_call", "maintenance", "emergency"]).notNull().default("inspection"),
-  status: mysqlEnum("status", ["pending", "scheduled", "in_progress", "completed", "cancelled"]).notNull().default("pending"),
+  workType: mysqlEnum("workType", ["inspection", "repair", "service_call", "maintenance", "emergency",]).notNull().default("inspection"),
+  status: mysqlEnum("status", ["pending", "scheduled", "in_progress", "completed", "cancelled",]).notNull().default("pending"),
   priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).notNull().default("medium"),
   scheduledDate: timestamp("scheduledDate"),
   startedAt: timestamp("startedAt"),
@@ -1415,7 +1416,7 @@ export const workOrders = mysqlTable("work_orders", {
   finalizedById: int("finalizedById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   jobIdIdx: index("work_orders_jobId_idx").on(table.jobId),
   companyIdIdx: index("work_orders_companyId_idx").on(table.companyId),
 }));
@@ -1489,7 +1490,7 @@ export const approvedWork = mysqlTable("approved_work", {
   createdById: int("createdById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("approved_work_companyId_idx").on(table.companyId),
   siteIdIdx: index("approved_work_siteId_idx").on(table.siteId),
   statusIdx: index("approved_work_status_idx").on(table.status),
@@ -1545,14 +1546,14 @@ export const invoices = mysqlTable("invoices", {
   sageGlCode: varchar("sageGlCode", { length: 50 }),
   sageDepartment: varchar("sageDepartment", { length: 50 }),
   sageExportedAt: timestamp("sageExportedAt"),
-  sageExportStatus: mysqlEnum("sageExportStatus", ["pending", "exported", "error"]).default("pending"),
+  sageExportStatus: mysqlEnum("sageExportStatus", ["pending", "exported", "error",]).default("pending"),
   internalNotes: text("internalNotes"),
   clientNotes: text("clientNotes"),
   pdfUrl: text("pdfUrl"),
   createdById: int("createdById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("invoices_companyId_idx").on(table.companyId),
   statusIdx: index("invoices_status_idx").on(table.status),
   customerOrgIdIdx: index("invoices_customerOrgId_idx").on(table.customerOrgId),
@@ -1576,7 +1577,7 @@ export const invoiceLineItems = mysqlTable("invoice_line_items", {
   sageDepartment: varchar("sageDepartment", { length: 50 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   invoiceIdIdx: index("invoice_line_items_invoiceId_idx").on(table.invoiceId),
 }));
 
@@ -1630,7 +1631,7 @@ export const siteWorkSiteInfo = mysqlTable("site_work_site_info", {
   sourceUpdatedAt: timestamp("sourceUpdatedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   siteIdUnique: unique("site_work_site_info_siteId_unique").on(table.siteId),
   companyIdIdx: index("site_work_site_info_companyId_idx").on(table.companyId),
 }));
@@ -1654,7 +1655,7 @@ export const companyRolePermissions = mysqlTable("company_role_permissions", {
   updatedByUserId: int("updatedByUserId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   uniqueCompanyRolePermission: unique("company_role_permission_unique").on(table.companyId, table.role, table.permission),
   companyIdIdx: index("company_role_permissions_companyId_idx").on(table.companyId),
 }));
@@ -1672,7 +1673,7 @@ export const companySettings = mysqlTable("company_settings", {
   gstRate: decimal("gstRate", { precision: 5, scale: 4 }).notNull().default("0.0500"),
   pstRate: decimal("pstRate", { precision: 5, scale: 4 }).notNull().default("0.0700"),
   // Labour defaults
-  technicianLabourRate: decimal("technicianLabourRate", { precision: 8, scale: 2 }).notNull().default("75.00"),
+  technicianLabourRate: decimal("technicianLabourRate", { precision: 8, scale: 2, }).notNull().default("75.00"),
   fitterLabourRate: decimal("fitterLabourRate", { precision: 8, scale: 2 }).notNull().default("65.00"),
   defaultFuelCharge: decimal("defaultFuelCharge", { precision: 8, scale: 2 }).notNull().default("0.00"),
   quoteValidityDays: int("quoteValidityDays").notNull().default(30),
@@ -1691,7 +1692,7 @@ export const companySettings = mysqlTable("company_settings", {
   reportFooterText: text("reportFooterText"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdUnique: unique("company_settings_companyId_unique").on(table.companyId),
 }));
 
@@ -1718,7 +1719,7 @@ export const activityEvents = mysqlTable("activity_events", {
   newValue: text("newValue"),
   metadata: json("metadata"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("activity_events_companyId_idx").on(table.companyId),
   entityIdx: index("activity_events_entity_idx").on(table.entityType, table.entityId),
   createdAtIdx: index("activity_events_createdAt_idx").on(table.createdAt),
@@ -1731,7 +1732,7 @@ export type InsertActivityEvent = typeof activityEvents.$inferInsert;
 // NOTIFICATIONS (In-app operational alerts)
 // ============================================
 
-export const NOTIFICATION_SEVERITIES = ["info", "warning", "urgent", "critical"] as const;
+export const NOTIFICATION_SEVERITIES = ["info", "warning", "urgent", "critical",] as const;
 export type NotificationSeverity = (typeof NOTIFICATION_SEVERITIES)[number];
 
 export const NOTIFICATION_TYPES = [
@@ -1771,7 +1772,7 @@ export const notifications = mysqlTable("notifications", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   expiresAt: timestamp("expiresAt"),
   metadataJson: json("metadataJson"),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("notifications_companyId_idx").on(table.companyId),
   dedupeIdx: index("notifications_dedupe_idx").on(table.companyId, table.dedupeKey),
   unreadIdx: index("notifications_unread_idx").on(table.companyId, table.isRead, table.isDismissed),
@@ -1785,10 +1786,10 @@ export type InsertNotification = typeof notifications.$inferInsert;
 // Internal tracking of customer service contracts.
 // ============================================
 
-export const SERVICE_AGREEMENT_STATUSES = ["draft", "active", "expiring_soon", "expired", "cancelled"] as const;
+export const SERVICE_AGREEMENT_STATUSES = ["draft", "active", "expiring_soon", "expired", "cancelled",] as const;
 export type ServiceAgreementStatus = (typeof SERVICE_AGREEMENT_STATUSES)[number];
 
-export const SERVICE_AGREEMENT_BILLING_CYCLES = ["monthly", "quarterly", "semi_annual", "annual", "per_service", "custom"] as const;
+export const SERVICE_AGREEMENT_BILLING_CYCLES = ["monthly", "quarterly", "semi_annual", "annual", "per_service", "custom",] as const;
 export type ServiceAgreementBillingCycle = (typeof SERVICE_AGREEMENT_BILLING_CYCLES)[number];
 
 export const serviceAgreements = mysqlTable("service_agreements", {
@@ -1810,7 +1811,7 @@ export const serviceAgreements = mysqlTable("service_agreements", {
   createdById: int("createdById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("service_agreements_companyId_idx").on(table.companyId),
   customerOrgIdIdx: index("service_agreements_customerOrgId_idx").on(table.customerOrgId),
   statusIdx: index("service_agreements_status_idx").on(table.status),
@@ -1828,7 +1829,7 @@ export const agreementSites = mysqlTable("agreement_sites", {
   siteSpecificNotes: text("siteSpecificNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   agreementIdIdx: index("agreement_sites_agreementId_idx").on(table.agreementId),
   companyIdIdx: index("agreement_sites_companyId_idx").on(table.companyId),
   uniqueSiteAgreement: unique("agreement_sites_unique").on(table.agreementId, table.siteId),
@@ -1853,7 +1854,7 @@ export const LIFECYCLE_STATUSES = [
 ] as const;
 export type LifecycleStatus = (typeof LIFECYCLE_STATUSES)[number];
 
-export const ASSET_CONDITIONS = ["good", "fair", "poor", "failed", "unknown"] as const;
+export const ASSET_CONDITIONS = ["good", "fair", "poor", "failed", "unknown",] as const;
 export type AssetCondition = (typeof ASSET_CONDITIONS)[number];
 
 export const LIFECYCLE_EVENT_TYPES = [
@@ -1899,7 +1900,7 @@ export const assetLifecycleEvents = mysqlTable("asset_lifecycle_events", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   deviceIdIdx: index("asset_lifecycle_events_deviceId_idx").on(table.deviceId),
   companyIdIdx: index("asset_lifecycle_events_companyId_idx").on(table.companyId),
   siteIdIdx: index("asset_lifecycle_events_siteId_idx").on(table.siteId),
@@ -1934,7 +1935,7 @@ export const inventoryItems = mysqlTable("inventory_items", {
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("inventory_items_companyId_idx").on(table.companyId),
   categoryIdx: index("inventory_items_category_idx").on(table.companyId, table.category),
 }));
@@ -1955,7 +1956,7 @@ export const PARTS_REQUEST_STATUSES = [
 ] as const;
 export type PartsRequestStatus = (typeof PARTS_REQUEST_STATUSES)[number];
 
-export const PARTS_REQUEST_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export const PARTS_REQUEST_PRIORITIES = ["low", "medium", "high", "urgent",] as const;
 export type PartsRequestPriority = (typeof PARTS_REQUEST_PRIORITIES)[number];
 
 export const partsRequests = mysqlTable("parts_requests", {
@@ -1979,7 +1980,7 @@ export const partsRequests = mysqlTable("parts_requests", {
   approvedById: int("approvedById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("parts_requests_companyId_idx").on(table.companyId),
   statusIdx: index("parts_requests_status_idx").on(table.companyId, table.status),
   approvedWorkIdIdx: index("parts_requests_approvedWorkId_idx").on(table.approvedWorkId),
@@ -2020,7 +2021,7 @@ export const partsRequestItems = mysqlTable("parts_request_items", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   partsRequestIdIdx: index("parts_request_items_requestId_idx").on(table.partsRequestId),
   companyIdIdx: index("parts_request_items_companyId_idx").on(table.companyId),
 }));
@@ -2053,7 +2054,7 @@ export const inventoryTransactions = mysqlTable("inventory_transactions", {
   notes: text("notes"),
   performedById: int("performedById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => ({
+},table => ({
   inventoryItemIdIdx: index("inventory_transactions_itemId_idx").on(table.inventoryItemId),
   companyIdIdx: index("inventory_transactions_companyId_idx").on(table.companyId),
 }));
@@ -2076,7 +2077,7 @@ export const vendors = mysqlTable("vendors", {
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("vendors_companyId_idx").on(table.companyId),
 }));
 
@@ -2095,7 +2096,7 @@ export const PURCHASE_ORDER_STATUSES = [
 ] as const;
 export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
 
-export const PURCHASE_ORDER_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export const PURCHASE_ORDER_PRIORITIES = ["low", "medium", "high", "urgent",] as const;
 export type PurchaseOrderPriority = (typeof PURCHASE_ORDER_PRIORITIES)[number];
 
 export const purchaseOrders = mysqlTable("purchase_orders", {
@@ -2119,7 +2120,7 @@ export const purchaseOrders = mysqlTable("purchase_orders", {
   total: decimal("total", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("purchase_orders_companyId_idx").on(table.companyId),
   statusIdx: index("purchase_orders_status_idx").on(table.companyId, table.status),
   vendorIdIdx: index("purchase_orders_vendorId_idx").on(table.vendorId),
@@ -2145,7 +2146,7 @@ export const purchaseOrderItems = mysqlTable("purchase_order_items", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   purchaseOrderIdIdx: index("po_items_purchaseOrderId_idx").on(table.purchaseOrderId),
   companyIdIdx: index("po_items_companyId_idx").on(table.companyId),
 }));
@@ -2188,7 +2189,7 @@ export const timeEntries = mysqlTable("time_entries", {
   approvedAt: timestamp("approvedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("time_entries_companyId_idx").on(table.companyId),
   userIdIdx: index("time_entries_userId_idx").on(table.userId),
   jobIdIdx: index("time_entries_jobId_idx").on(table.jobId),
@@ -2248,7 +2249,7 @@ export const payrollTimeEntries = mysqlTable("payroll_time_entries", {
   exportedById: int("exportedById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("payroll_te_companyId_idx").on(table.companyId),
   userIdIdx: index("payroll_te_userId_idx").on(table.userId),
   entryDateIdx: index("payroll_te_entryDate_idx").on(table.entryDate),
@@ -2293,7 +2294,7 @@ export const employeeAvailabilityBlocks = mysqlTable("employee_availability_bloc
   reviewedAt: timestamp("reviewedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("avail_companyId_idx").on(table.companyId),
   userIdIdx: index("avail_userId_idx").on(table.userId),
   startDateIdx: index("avail_startDate_idx").on(table.startDate),
@@ -2323,7 +2324,7 @@ export const SETUP_STEP_KEYS = [
 ] as const;
 export type SetupStepKey = (typeof SETUP_STEP_KEYS)[number];
 
-export const SETUP_STEP_STATUSES = ["not_started", "in_progress", "completed", "skipped"] as const;
+export const SETUP_STEP_STATUSES = ["not_started", "in_progress", "completed", "skipped",] as const;
 export type SetupStepStatus = (typeof SETUP_STEP_STATUSES)[number];
 
 export const setupProgress = mysqlTable("setup_progress", {
@@ -2336,7 +2337,7 @@ export const setupProgress = mysqlTable("setup_progress", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyStepUnique: unique("setup_progress_company_step_unique").on(table.companyId, table.stepKey),
   companyIdIdx: index("setup_progress_companyId_idx").on(table.companyId),
 }));
@@ -2368,7 +2369,7 @@ export const TEMPLATE_RESPONSE_TYPES = [
 ] as const;
 export type TemplateResponseType = (typeof TEMPLATE_RESPONSE_TYPES)[number];
 
-export const TEMPLATE_FREQUENCIES = ["monthly", "quarterly", "semi_annual", "annual", "other"] as const;
+export const TEMPLATE_FREQUENCIES = ["monthly", "quarterly", "semi_annual", "annual", "other",] as const;
 export type TemplateFrequency = (typeof TEMPLATE_FREQUENCIES)[number];
 
 export const inspectionTemplates = mysqlTable("inspection_templates", {
@@ -2385,7 +2386,7 @@ export const inspectionTemplates = mysqlTable("inspection_templates", {
   createdById: int("createdById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("it_companyId_idx").on(table.companyId),
   companySystemIdx: index("it_company_system_idx").on(table.companyId, table.systemType),
 }));
@@ -2402,7 +2403,7 @@ export const inspectionTemplateSections = mysqlTable("inspection_template_sectio
   isRequired: tinyint("isRequired").notNull().default(1),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   templateIdIdx: index("its_templateId_idx").on(table.templateId),
   companyIdIdx: index("its_companyId_idx").on(table.companyId),
 }));
@@ -2425,7 +2426,7 @@ export const inspectionTemplateItems = mysqlTable("inspection_template_items", {
   codeReference: varchar("codeReference", { length: 200 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   templateIdIdx: index("iti_templateId_idx").on(table.templateId),
   sectionIdIdx: index("iti_sectionId_idx").on(table.sectionId),
   companyIdIdx: index("iti_companyId_idx").on(table.companyId),
@@ -2444,7 +2445,7 @@ export const inspectionTemplateAssignments = mysqlTable("inspection_template_ass
   isActive: tinyint("isActive").notNull().default(1),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   templateIdIdx: index("ita_templateId_idx").on(table.templateId),
   companyIdIdx: index("ita_companyId_idx").on(table.companyId),
 }));
@@ -2466,7 +2467,7 @@ export const inspectionTemplateResponses = mysqlTable("inspection_template_respo
   answeredAt: timestamp("answeredAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   jobItemUnique: unique("itr_job_item_unique").on(table.jobId, table.itemId),
   jobIdIdx: index("itr_jobId_idx").on(table.jobId),
   templateIdIdx: index("itr_templateId_idx").on(table.templateId),
@@ -2483,15 +2484,15 @@ export const FEEDBACK_TYPES = [
   'bug', 'feature_request', 'confusing_workflow', 'data_issue',
   'report_output_issue', 'mobile_issue', 'performance_issue', 'other',
 ] as const;
-export type FeedbackType = typeof FEEDBACK_TYPES[number];
+export type FeedbackType = ( typeof FEEDBACK_TYPES)[number];
 
 export const FEEDBACK_STATUSES = [
   'new', 'reviewed', 'in_progress', 'resolved', 'closed', 'wont_fix',
 ] as const;
-export type FeedbackStatus = typeof FEEDBACK_STATUSES[number];
+export type FeedbackStatus = ( typeof FEEDBACK_STATUSES)[number];
 
 export const FEEDBACK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
-export type FeedbackPriority = typeof FEEDBACK_PRIORITIES[number];
+export type FeedbackPriority = ( typeof FEEDBACK_PRIORITIES)[number];
 
 export const feedbackItems = mysqlTable("feedback_items", {
   id: int("id").autoincrement().primaryKey(),
@@ -2514,7 +2515,7 @@ export const feedbackItems = mysqlTable("feedback_items", {
   resolvedById: int("resolvedById"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdIdx: index("fi_companyId_idx").on(table.companyId),
   submittedByIdx: index("fi_submittedBy_idx").on(table.submittedById),
   statusIdx: index("fi_status_idx").on(table.companyId, table.status),
@@ -2539,10 +2540,10 @@ export const CONTACT_ROLES = [
   "tenant_contact",
   "other",
 ] as const;
-export type ContactRole = typeof CONTACT_ROLES[number];
+export type ContactRole = ( typeof CONTACT_ROLES)[number];
 
-export const CONTACT_PREFERRED_METHODS = ["email", "phone", "mobile", "none", "other"] as const;
-export type ContactPreferredMethod = typeof CONTACT_PREFERRED_METHODS[number];
+export const CONTACT_PREFERRED_METHODS = ["email", "phone", "mobile", "none", "other",] as const;
+export type ContactPreferredMethod = ( typeof CONTACT_PREFERRED_METHODS)[number];
 
 export const customerContacts = mysqlTable("customer_contacts", {
   id: int("id").autoincrement().primaryKey(),
@@ -2568,7 +2569,7 @@ export const customerContacts = mysqlTable("customer_contacts", {
   isActive: tinyint("isActive").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdx: index("cc_companyId_idx").on(table.companyId),
   customerOrgIdx: index("cc_customerOrgId_idx").on(table.customerOrgId),
   siteIdx: index("cc_siteId_idx").on(table.siteId),
@@ -2588,12 +2589,12 @@ export type InsertCustomerContact = typeof customerContacts.$inferInsert;
 // reads them and references them by id via knowledge_fact_citations.
 // ============================================
 
-export const KNOWLEDGE_SUBJECT_TYPES = ["site", "site_system", "equipment_model"] as const;
-export const KNOWLEDGE_FACT_SOURCE_TYPES = ["manufacturer_doc", "code_requirement", "company_procedure", "technician_observation", "ai_inference"] as const;
-export const KNOWLEDGE_FACT_STATUSES = ["draft", "reviewed", "verified", "rejected", "stale"] as const;
-export const KNOWLEDGE_CITATION_SOURCE_TYPES = ["knowledge_source_document", "report", "job", "device", "deficiency", "attachment", "manual_entry"] as const;
-export const KNOWLEDGE_DOCUMENT_TYPES = ["inspection_report", "equipment_manual", "code_document", "company_procedure", "voice_note", "other"] as const;
-export const KNOWLEDGE_EXTRACTION_STATUSES = ["uploaded", "extracting", "classifying", "ready", "failed"] as const;
+export const KNOWLEDGE_SUBJECT_TYPES = ["site", "site_system", "equipment_model",] as const;
+export const KNOWLEDGE_FACT_SOURCE_TYPES = ["manufacturer_doc", "code_requirement", "company_procedure", "technician_observation", "ai_inference",] as const;
+export const KNOWLEDGE_FACT_STATUSES = ["draft", "reviewed", "verified", "rejected", "stale",] as const;
+export const KNOWLEDGE_CITATION_SOURCE_TYPES = ["knowledge_source_document", "report", "job", "device", "deficiency", "attachment", "manual_entry",] as const;
+export const KNOWLEDGE_DOCUMENT_TYPES = ["inspection_report", "equipment_manual", "code_document", "company_procedure", "voice_note", "other",] as const;
+export const KNOWLEDGE_EXTRACTION_STATUSES = ["uploaded", "extracting", "classifying", "ready", "failed",] as const;
 
 // Company-scoped lookup of a manufacturer + model pair (equipment-model pages, Phase 3).
 export const equipmentModels = mysqlTable("equipment_models", {
@@ -2604,7 +2605,7 @@ export const equipmentModels = mysqlTable("equipment_models", {
   deviceType: varchar("deviceType", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdx: index("equipment_models_companyId_idx").on(table.companyId),
   lookupIdx: uniqueIndex("equipment_models_lookup_idx").on(table.companyId, table.manufacturer, table.model),
 }));
@@ -2625,7 +2626,7 @@ export const knowledgePages = mysqlTable("knowledge_pages", {
   createdById: int("createdById").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdx: index("knowledge_pages_companyId_idx").on(table.companyId),
   siteIdx: index("knowledge_pages_siteId_idx").on(table.siteId),
 }));
@@ -2656,7 +2657,7 @@ export const knowledgeFacts = mysqlTable("knowledge_facts", {
   createdById: int("createdById").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdx: index("knowledge_facts_companyId_idx").on(table.companyId),
   pageIdx: index("knowledge_facts_pageId_idx").on(table.pageId),
   statusIdx: index("knowledge_facts_status_idx").on(table.pageId, table.status),
@@ -2677,7 +2678,7 @@ export const knowledgeFactCitations = mysqlTable("knowledge_fact_citations", {
   excerpt: text("excerpt"),
   locationRef: varchar("locationRef", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => ({
+},table => ({
   factIdx: index("knowledge_fact_citations_factId_idx").on(table.factId),
   companyIdx: index("knowledge_fact_citations_companyId_idx").on(table.companyId),
 }));
@@ -2706,7 +2707,7 @@ export const knowledgeSourceDocuments = mysqlTable("knowledge_source_documents",
   uploadedById: int("uploadedById").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
+},table => ({
   companyIdx: index("knowledge_source_documents_companyId_idx").on(table.companyId),
   siteIdx: index("knowledge_source_documents_siteId_idx").on(table.siteId),
 }));
@@ -2725,10 +2726,55 @@ export const knowledgeQuestions = mysqlTable("knowledge_questions", {
   citedFactIds: json("citedFactIds").$type<number[]>(),
   modelUsed: varchar("modelUsed", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => ({
+},table => ({
   pageIdx: index("knowledge_questions_pageId_idx").on(table.pageId),
   companyIdx: index("knowledge_questions_companyId_idx").on(table.companyId),
 }));
 
 export type KnowledgeQuestion = typeof knowledgeQuestions.$inferSelect;
 export type InsertKnowledgeQuestion = typeof knowledgeQuestions.$inferInsert;
+
+// Idempotent payment receipts. The invoice row lock serializes receipt insertion
+// and cumulative totals; request IDs identify retries of the same receipt.
+export const invoicePayments = mysqlTable(
+  "invoice_payments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    invoiceId: int("invoiceId").notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    result: json("result").notNull(),
+    recordedById: int("recordedById").notNull(),
+    recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+  },
+  table => ({
+    receiptKey: uniqueIndex("invoice_payment_request_unique").on(
+      table.invoiceId,
+      table.requestId
+    ),
+  })
+);
+
+// Provider acceptance is recorded separately from application delivery status.
+export const emailOutbox = mysqlTable(
+  "email_outbox",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    companyId: int("companyId").notNull(),
+    userId: int("userId").notNull(),
+    entityType: varchar("entityType", { length: 32 }).notNull(),
+    entityId: int("entityId").notNull(),
+    provider: varchar("provider", { length: 32 }).notNull(),
+    payloadHash: varchar("payloadHash", { length: 64 }).notNull(),
+    status: mysqlEnum("status", ["sending", "accepted", "rejected", "unknown"])
+      .notNull()
+      .default("sending"),
+    providerMessageId: varchar("providerMessageId", { length: 255 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    requestKey: uniqueIndex("email_outbox_request_unique").on(table.requestId),
+  })
+);

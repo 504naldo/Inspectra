@@ -1,6 +1,7 @@
+import { toPublicUser } from "../publicUser";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, officeProcedure, technicianProcedure, adminProcedure } from "../_core/trpc";
+import { router, protectedProcedure, officeProcedure, technicianProcedure, adminProcedure, } from "../_core/trpc";
 
 import * as db from "../db";
 import { callerIsPlatformOperator } from "../_core/actorContext";
@@ -9,7 +10,9 @@ import { callerIsPlatformOperator } from "../_core/actorContext";
 const userRouter = router({
   list: adminProcedure.input(z.object({ companyId: z.number().optional() })).query(async ({ input, ctx }) => {
     // Fall back to the caller's own company — never return all-company data to a non-super-admin.
-    return db.getAllUsers(input.companyId ?? ctx.user.companyId ?? undefined);
+    return (
+        await db.getAllUsers(input.companyId ?? ctx.user.companyId ?? undefined)
+      ).map(toPublicUser);
   }),
   
   listTechnicians: officeProcedure.input(z.object({ companyId: z.number() })).query(async ({ input, ctx }) => {
@@ -17,7 +20,8 @@ const userRouter = router({
       throw new TRPCError({ code: "FORBIDDEN" });
     }
     const users = await db.getAllUsers(input.companyId);
-    return users.filter((u: any) => ['technician', 'admin', 'office'].includes(u.role) && u.isActive === 1);
+    return users.filter((u: any) => ['technician', 'admin', 'office'].includes(u.role) && u.isActive === 1)
+        .map(toPublicUser);
   }),
   
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
@@ -27,7 +31,7 @@ const userRouter = router({
     if (target.id !== ctx.user.id && target.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
       throw new TRPCError({ code: "FORBIDDEN" });
     }
-    return target;
+    return toPublicUser( target);
   }),
 
   updateRole: adminProcedure.input(z.object({
@@ -39,7 +43,8 @@ const userRouter = router({
     // The target user must already belong to the admin's company; the role is
     // always applied within the admin's own company (never another tenant).
     const target = await db.getUserById(input.userId);
-    if (!target || target.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
+    if (!target ||
+        ( target.companyId !== ctx.user.companyId && !callerIsPlatformOperator())) {
       throw new TRPCError({ code: "FORBIDDEN" });
     }
     await db.updateUserRole(input.userId, input.role, ctx.user.companyId ?? undefined, input.customerOrgId);
@@ -58,7 +63,7 @@ const dashboardRouter = router({
 
   getRecentJobs: officeProcedure.input(z.object({
     companyId: z.number(),
-    limit: z.number().optional()
+    limit: z.number().optional(),
   })).query(async ({ input, ctx }) => {
     if (input.companyId !== ctx.user.companyId) {
       throw new TRPCError({ code: "FORBIDDEN" });
@@ -84,7 +89,8 @@ const syncRouter = router({
     const job = await db.getJobById(input.jobId);
     // Enforce company ownership: a technician must not pull another company's job
     // packet by guessing an id. Return null (same as not-found) so existence isn't revealed.
-    if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) return null;
+    if (!job ||
+        ( job.companyId !== ctx.user.companyId && !callerIsPlatformOperator())) return null;
 
     const site = await db.getSiteById(job.siteId);
     const areas = site ? await db.getAreasBySite(site.id) : [];
@@ -99,7 +105,7 @@ const syncRouter = router({
       devices,
       existingResults,
       deficiencies,
-      downloadedAt: new Date()
+      downloadedAt: new Date(),
     };
   }),
 });

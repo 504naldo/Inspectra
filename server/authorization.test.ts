@@ -9,7 +9,7 @@
  * site → job → deficiency → invoice) so tests assert same-company-allow vs
  * cross-company-forbid without duplicating setup.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import * as db from "./db";
 import * as guards from "./tenantGuards";
@@ -19,9 +19,9 @@ import type { TrpcContext } from "./_core/context";
 
 function ctxFor(role: string, companyId: number, opts: { userId?: number; customerOrgId?: number } = {}): TrpcContext {
   return { user: { id: opts.userId ?? 1, openId: "o", email: "o@e.com", name: "O", role, companyId,
-      customerOrgId: opts.customerOrgId ?? null, createdAt: new Date(), updatedAt: new Date() },
+      customerOrgId: opts.customerOrgId ?? null, createdAt: new Date(), updatedAt: new Date(), },
     req: { headers: {}, ip: "127.0.0.1" }, res: { setHeader(){}, clearCookie(){} },
-    requestId: "t", ip: "127.0.0.1", userAgent: "v" } as unknown as TrpcContext;
+    requestId: "t", ip: "127.0.0.1", userAgent: "v", } as unknown as TrpcContext;
 }
 
 async function expectCode(p: Promise<unknown>, code: string) {
@@ -30,11 +30,11 @@ async function expectCode(p: Promise<unknown>, code: string) {
 
 type Tenant = Awaited<ReturnType<typeof setupCompany>>;
 async function setupCompany(tag: string) {
-  const company = await db.createCompany({ name: `Co ${tag}`, email: `${tag}@e.com` });
-  const org = await db.createCustomerOrg({ companyId: company.id, name: `Org ${tag}` });
-  const site = await db.createSite({ companyId: company.id, customerOrgId: org.id, name: `Site ${tag}` });
-  const job = await db.createJob({ companyId: company.id, siteId: site.id, customerOrgId: org.id, jobNumber: `J-${tag}`, title: `Job ${tag}` } as any);
-  const def = await db.createDeficiency({ jobId: job.id, reportedById: 1, title: `Def ${tag}` } as any);
+  const company = await db.createCompany({ name: `Co ${tag}`, email: `${tag}@e.com`, });
+  const org = await db.createCustomerOrg({ companyId: company.id, name: `Org ${tag}`, });
+  const site = await db.createSite({ companyId: company.id, customerOrgId: org.id, name: `Site ${tag}`, });
+  const job = await db.createJob({ companyId: company.id, siteId: site.id, customerOrgId: org.id, jobNumber: `J-${tag}`, title: `Job ${tag}`, } as any);
+  const def = await db.createDeficiency({ jobId: job.id, reportedById: 1, title: `Def ${tag}`, } as any);
   const caller = appRouter.createCaller(ctxFor("office", company.id));
   const inv = await caller.invoice.create({ taxRate: 0 });
   return { company, org, site, job, def, inv, caller };
@@ -75,7 +75,8 @@ describe("Cross-tenant authorization", () => {
     });
     it("other-company office cannot read or mutate the invoice", async () => {
       await expectCode(B.caller.invoice.get({ id: A.inv.id }), "FORBIDDEN");
-      await expectCode(B.caller.invoice.markPaid({ id: A.inv.id, amountPaid: 100 }), "FORBIDDEN");
+      await expectCode(B.caller.invoice.markPaid({ id: A.inv.id, amountPaid: 100,
+          requestId: crypto.randomUUID(), }), "FORBIDDEN");
     });
     it("a client-supplied company id cannot widen scope (list is scoped to ctx)", async () => {
       // invoice.list takes no companyId from the client; it derives scope from ctx.
@@ -90,11 +91,11 @@ describe("Cross-tenant authorization", () => {
   // fires through the router so a later refactor can't silently drop the check.
   describe("scoped-getter adoption (router paths)", () => {
     it("job.listBySite: cross-company site is FORBIDDEN (assertSiteCompany)", async () => {
-      expect((await A.caller.job.listBySite({ siteId: A.site.id }))).toBeDefined();
+      expect(await A.caller.job.listBySite({ siteId: A.site.id })).toBeDefined();
       await expectCode(B.caller.job.listBySite({ siteId: A.site.id }), "FORBIDDEN");
     });
     it("quote.listByJob: cross-company job is FORBIDDEN (getJobForCompany)", async () => {
-      expect((await A.caller.quote.listByJob({ jobId: A.job.id }))).toBeDefined();
+      expect(await A.caller.quote.listByJob({ jobId: A.job.id })).toBeDefined();
       await expectCode(B.caller.quote.listByJob({ jobId: A.job.id }), "FORBIDDEN");
     });
     it("invoice.get: cross-company invoice is FORBIDDEN (getInvoiceForCompany)", async () => {
@@ -125,16 +126,16 @@ describe("Cross-tenant authorization", () => {
       await expectCode(B.caller.import.getErrors({ importLogId: log.id }), "FORBIDDEN");
     });
     it("import.list ignores a client-supplied companyId (scoped to ctx)", async () => {
-      await db.createImportLog({ companyId: A.company.id, siteId: A.site.id, importedById: 1, importType: "devices", fileName: "a2.xlsx", status: "completed" } as any);
+      await db.createImportLog({ companyId: A.company.id, siteId: A.site.id, importedById: 1, importType: "devices", fileName: "a2.xlsx", status: "completed", } as any);
       // B asks for A's logs by passing A's companyId — must get only its own (none of A's).
       const asB = await B.caller.import.list({ companyId: A.company.id });
       expect(asB.some((l: any) => l.companyId === A.company.id)).toBe(false);
     });
     it("import.listBySite / validate / execute reject a foreign site", async () => {
       await expectCode(B.caller.import.listBySite({ siteId: A.site.id }), "FORBIDDEN");
-      const args = { companyId: B.company.id, siteId: A.site.id, importType: "site" as const, fileName: "x", fileData: "", sheetName: "s", columnMapping: {} };
+      const args = { companyId: B.company.id, siteId: A.site.id, importType: "site" as const, fileName: "x", fileData: "", sheetName: "s", columnMapping: {}, };
       await expectCode(B.caller.import.validate({ ...args }), "FORBIDDEN");
-      await expectCode(B.caller.import.execute({ ...args, duplicateHandling: "skip" as const }), "FORBIDDEN");
+      await expectCode(B.caller.import.execute({ ...args, duplicateHandling: "skip" as const, }), "FORBIDDEN");
     });
   });
 
@@ -178,8 +179,8 @@ describe("Cross-tenant authorization", () => {
       // The section must be stamped with A's companyId (the template's), not B's.
       const adminA = appRouter.createCaller(ctxFor("admin", A.company.id));
       const adminB = appRouter.createCaller(ctxFor("admin", B.company.id));
-      const tpl = await adminA.inspectionTemplate.create({ name: "WA", systemType: "general" });
-      const sec = await adminB.inspectionTemplate.addSection({ templateId: tpl.id, title: "S" });
+      const tpl = await adminA.inspectionTemplate.create({ name: "WA", systemType: "general", });
+      const sec = await adminB.inspectionTemplate.addSection({ templateId: tpl.id, title: "S", });
       const drizzle = (await db.getDb())!;
       const [row] = await drizzle
         .select({ companyId: inspectionTemplateSections.companyId })
@@ -196,7 +197,7 @@ describe("Cross-tenant authorization", () => {
   describe("secondary surfaces (file tags, upload queue)", () => {
     it("fileTag.list/create ignore a client companyId; delete is company-scoped (FAB-01)", async () => {
       // A creates a tag; the returned row is stamped with A's company.
-      const tag = await A.caller.fileTag.create({ companyId: A.company.id, name: `tag-${Date.now()}` });
+      const tag = await A.caller.fileTag.create({ companyId: A.company.id, name: `tag-${Date.now()}`, });
       expect((tag as any).companyId).toBe(A.company.id);
 
       // B cannot read A's tags by passing A's companyId, nor create under A, nor delete A's tag.
@@ -205,7 +206,7 @@ describe("Cross-tenant authorization", () => {
       await expectCode(B.caller.fileTag.delete({ id: (tag as any).id }), "FORBIDDEN");
 
       // A can still manage its own tag.
-      expect(await A.caller.fileTag.delete({ id: (tag as any).id })).toEqual({ success: true });
+      expect(await A.caller.fileTag.delete({ id: (tag as any).id })).toEqual({ success: true, });
     });
 
     it("customer portal: reads only their own org's reports, cross-org is FORBIDDEN + customer-safe", async () => {
@@ -220,7 +221,7 @@ describe("Cross-tenant authorization", () => {
       } as any);
 
       // A customer scoped to company A's customer org.
-      const custA = appRouter.createCaller(ctxFor("customer", A.company.id, { userId: 10, customerOrgId: A.org.id }));
+      const custA = appRouter.createCaller(ctxFor("customer", A.company.id, { userId: 10, customerOrgId: A.org.id, }));
 
       // Own report: readable, and customer-safe (internal aiSummary stripped).
       const own = await custA.report.get({ id: aReport.id });
@@ -250,13 +251,13 @@ describe("Cross-tenant authorization", () => {
       // Non-owner is forbidden from flipping status, retrying, or removing — and
       // from stamping a foreign fileKey.
       await expectCode(
-        attackerCaller.uploadQueue.updateStatus({ id: item.id, status: "completed", fileKey: "evil/key", fileUrl: "https://evil/x" }),
-        "FORBIDDEN",
+        attackerCaller.uploadQueue.updateStatus({ id: item.id, status: "completed", fileKey: "evil/key", fileUrl: "https://evil/x", }),
+        "FORBIDDEN"
       );
       await expectCode(attackerCaller.uploadQueue.retry({ id: item.id }), "FORBIDDEN");
       await expectCode(attackerCaller.uploadQueue.remove({ id: item.id }), "FORBIDDEN");
       // Owner can update their own item.
-      expect(await ownerCaller.uploadQueue.updateStatus({ id: item.id, status: "uploading" })).toEqual({ success: true });
+      expect(await ownerCaller.uploadQueue.updateStatus({ id: item.id, status: "uploading", })).toEqual({ success: true });
     });
 
     it("fireAlarmForm: cross-company technician cannot read/write/delete another company's form (FAB-09)", async () => {
@@ -264,9 +265,9 @@ describe("Cross-tenant authorization", () => {
       const techB = appRouter.createCaller(ctxFor("technician", B.company.id, { userId: 21 }));
 
       // A's technician seeds header + attendance + circuit rows on A's job.
-      await techA.fireAlarmForm.upsertHeader({ jobId: A.job.id, systemManufacturer: "Acme" });
-      const attRow = await techA.fireAlarmForm.upsertAttendanceRow({ jobId: A.job.id, techName: "A Tech" });
-      const circRow = await techA.fireAlarmForm.upsertAncillaryCircuit({ jobId: A.job.id, circuitDescription: "Elevator recall" });
+      await techA.fireAlarmForm.upsertHeader({ jobId: A.job.id, systemManufacturer: "Acme", });
+      const attRow = await techA.fireAlarmForm.upsertAttendanceRow({ jobId: A.job.id, techName: "A Tech", });
+      const circRow = await techA.fireAlarmForm.upsertAncillaryCircuit({ jobId: A.job.id, circuitDescription: "Elevator recall", });
 
       // B's technician cannot read A's form data by passing A's jobId.
       await expectCode(techB.fireAlarmForm.getHeader({ jobId: A.job.id }), "FORBIDDEN");
@@ -274,8 +275,8 @@ describe("Cross-tenant authorization", () => {
       await expectCode(techB.fireAlarmForm.getAncillaryCircuits({ jobId: A.job.id }), "FORBIDDEN");
 
       // B cannot write to A's job, nor hijack A's rows by id.
-      await expectCode(techB.fireAlarmForm.upsertHeader({ jobId: A.job.id, systemManufacturer: "Evil" }), "FORBIDDEN");
-      await expectCode(techB.fireAlarmForm.upsertAttendanceRow({ id: attRow.id, jobId: B.job.id, techName: "Evil" }), "NOT_FOUND");
+      await expectCode(techB.fireAlarmForm.upsertHeader({ jobId: A.job.id, systemManufacturer: "Evil", }), "FORBIDDEN");
+      await expectCode(techB.fireAlarmForm.upsertAttendanceRow({ id: attRow.id, jobId: B.job.id, techName: "Evil", }), "NOT_FOUND");
       await expectCode(techB.fireAlarmForm.deleteAttendanceRow({ id: attRow.id }), "FORBIDDEN");
       await expectCode(techB.fireAlarmForm.deleteAncillaryCircuit({ id: circRow.id }), "FORBIDDEN");
 
@@ -293,8 +294,8 @@ describe("Cross-tenant authorization", () => {
       const techA = appRouter.createCaller(ctxFor("technician", A.company.id, { userId: 31 }));
 
       // Admin (platform operator) may update ANOTHER company by id — by design.
-      expect(await adminCaller.company.update({ id: B.company.id, phone: "555-0100" })).toEqual({ success: true });
-      expect((await db.getCompanyById(B.company.id) as any)?.phone).toBe("555-0100");
+      expect(await adminCaller.company.update({ id: B.company.id, phone: "555-0100", })).toEqual({ success: true });
+      expect(((await db.getCompanyById(B.company.id)) as any)?.phone).toBe("555-0100");
 
       // Admin may enumerate all companies.
       expect(Array.isArray(await adminCaller.company.list())).toBe(true);
@@ -329,16 +330,16 @@ describe("jobAssignmentRouter — cross-tenant hardening (PR-18)", () => {
 
   // ── Write mutations: office in B must not touch A's job ────────────────────
   it("office cannot setJobAssignments on another company's job", async () => {
-    await expectCode(B.caller.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techBId], leadId: techBId }), "FORBIDDEN");
+    await expectCode(B.caller.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techBId], leadId: techBId, }), "FORBIDDEN");
   });
   it("office cannot addJobAssignments on another company's job", async () => {
-    await expectCode(B.caller.jobAssignment.addJobAssignments({ jobId: A.job.id, technicianIds: [techBId] }), "FORBIDDEN");
+    await expectCode(B.caller.jobAssignment.addJobAssignments({ jobId: A.job.id, technicianIds: [techBId], }), "FORBIDDEN");
   });
   it("office cannot removeJobAssignment on another company's job", async () => {
-    await expectCode(B.caller.jobAssignment.removeJobAssignment({ jobId: A.job.id, technicianId: techAId }), "FORBIDDEN");
+    await expectCode(B.caller.jobAssignment.removeJobAssignment({ jobId: A.job.id, technicianId: techAId, }), "FORBIDDEN");
   });
   it("office cannot bulkAssignJobs including another company's job", async () => {
-    await expectCode(B.caller.jobAssignment.bulkAssignJobs({ jobIds: [A.job.id], technicianIds: [techBId], leadId: techBId }), "FORBIDDEN");
+    await expectCode(B.caller.jobAssignment.bulkAssignJobs({ jobIds: [A.job.id], technicianIds: [techBId], leadId: techBId, }), "FORBIDDEN");
   });
 
   // ── Read queries: office in B must not pass A's companyId ──────────────────
@@ -349,33 +350,38 @@ describe("jobAssignmentRouter — cross-tenant hardening (PR-18)", () => {
     await expectCode(B.caller.jobAssignment.listTechnicians({ companyId: A.company.id }), "FORBIDDEN");
   });
   it("office cannot listDispatch for another company", async () => {
-    await expectCode(B.caller.jobAssignment.listDispatch({ companyId: A.company.id, startDate: "2026-01-01", endDate: "2026-12-31" }), "FORBIDDEN");
+    await expectCode(B.caller.jobAssignment.listDispatch({ companyId: A.company.id, startDate: "2026-01-01", endDate: "2026-12-31", }), "FORBIDDEN");
   });
 
   // ── Assignee tenant-scoping: no assigning a foreign technician ─────────────
   it("office cannot assign a technician from another company to its own job", async () => {
-    await expectCode(A.caller.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techBId], leadId: techBId }), "BAD_REQUEST");
+    await expectCode(A.caller.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techBId], leadId: techBId, }), "BAD_REQUEST");
   });
 
   // ── Positive: office scoped to its own company still works ─────────────────
   it("office can list technicians for its own company", async () => {
-    const techs = await A.caller.jobAssignment.listTechnicians({ companyId: A.company.id });
+    const techs = await A.caller.jobAssignment.listTechnicians({ companyId: A.company.id, });
     expect(techs.some((t: any) => t.id === techAId)).toBe(true);
   });
   it("office can assign its own company's technician to its own job", async () => {
-    const res = await A.caller.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techAId], leadId: techAId });
+    const res = await A.caller.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techAId], leadId: techAId, });
     expect(res).toMatchObject({ success: true, count: 1 });
   });
 
   // ── Admin platform operator: cross-company preserved (model unchanged) ─────
   it("admin (platform operator) may list another company's technicians", async () => {
     const admin = appRouter.createCaller(ctxFor("admin", B.company.id));
-    const techs = await admin.jobAssignment.listTechnicians({ companyId: A.company.id });
+    const techs = await admin.jobAssignment.listTechnicians({ companyId: A.company.id, });
     expect(techs.some((t: any) => t.id === techAId)).toBe(true);
   });
   it("admin (platform operator) may assign across companies (techs scoped to the job's company)", async () => {
     const admin = appRouter.createCaller(ctxFor("admin", B.company.id));
-    const res = await admin.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techAId], leadId: techAId });
+    const res = await admin.jobAssignment.setJobAssignments({ jobId: A.job.id, technicianIds: [techAId], leadId: techAId, });
     expect(res).toMatchObject({ success: true });
   });
 });
+
+vi.mock("./storage", () => ({
+  storageGet: vi.fn(async key => ({ url: `https://fixture.test/${key}` })),
+  storageGetDownload: vi.fn(),
+}));

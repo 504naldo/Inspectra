@@ -1,13 +1,18 @@
+import {
+  fireAlarmDraftKey,
+  pendingFireAlarmDraftCount,
+} from "@/lib/pendingSaves";
+import { mutationQueue } from "@/lib/mutationQueue";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { MobileDetailSkeleton } from "@/components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
-import { pendingSyncItemCount, isQaSubmitBlocked, pendingSyncCountsForJob } from "@/lib/qaPreflight";
+import { pendingSyncItemCount, isQaSubmitBlocked, pendingSyncCountsForJob, } from "@/lib/qaPreflight";
 import { usePendingFireAlarmResults } from "@/hooks/usePendingFireAlarmResults";
 import { usePendingSmokeAlarmTests } from "@/hooks/usePendingSmokeAlarmTests";
 import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
@@ -23,8 +28,8 @@ import { EmergencyLightGrid } from "@/components/inspection/EmergencyLightGrid";
 import { FireAlarmChecklist } from "@/components/inspection/FireAlarmChecklist";
 import { SmokeAlarmGrid } from "@/components/inspection/SmokeAlarmGrid";
 import { SignaturePad } from "@/components/SignaturePad";
-import { isSmokeAlarm, categorizeDevice, isFireAlarmGridDevice } from "@shared/deviceCategories";
-import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending } from "@shared/deviceHelpers";
+import { isSmokeAlarm, categorizeDevice, isFireAlarmGridDevice, } from "@shared/deviceCategories";
+import { sortByWalkOrderThenLocation, sortBySuiteNumberDescending, } from "@shared/deviceHelpers";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -72,7 +77,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
-import { getDeficiencyStatusLabel, getDeficiencyStatusBadgeClass } from "@/lib/statusLabels";
+import { getDeficiencyStatusLabel, getDeficiencyStatusBadgeClass, } from "@/lib/statusLabels";
 
 // ─── Template inspection cards ─────────────────────────────────────────────────
 
@@ -102,7 +107,9 @@ function TemplateInspectionCards({
                   {t.name}
                 </h3>
                 {t.description && (
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{t.description}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {t.description}
+                  </p>
                 )}
               </div>
               <Button
@@ -126,9 +133,16 @@ interface JobDetailsProps {
 }
 
 export default function JobDetails({ jobId }: JobDetailsProps) {
+  const { data: user } = trpc.auth.me.useQuery();
+  const [, refreshDraftCounts] = useState(0);
+  useEffect(() => {
+    const changed = () => refreshDraftCounts(count => count + 1);
+    window.addEventListener("inspectra:field-drafts", changed);
+    return () => window.removeEventListener("inspectra:field-drafts", changed);
+  }, []);
   const [location, setLocation] = useLocation();
-  const { isOnline, getCachedJobData, syncStatus, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses } = useOfflineStorage();
-  const { status: packetStatus, cachedAt: packetCachedAt, packet, isCaching, preload, refresh: refreshPacket, remove: removePacket, checkStale } = useOfflineJobPacket(jobId);
+  const { isOnline, getCachedJobData, syncStatus, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses, } = useOfflineStorage();
+  const { status: packetStatus, cachedAt: packetCachedAt, packet, isCaching, preload, refresh: refreshPacket, remove: removePacket, checkStale, } = useOfflineJobPacket(jobId);
   const [openGridSection, setOpenGridSection] = useState<string | null>(null);
   const [showFullSummary, setShowFullSummary] = useState(false);
   const [woTechNotes, setWoTechNotes] = useState("");
@@ -137,7 +151,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   const [woEditMode, setWoEditMode] = useState(false);
 
   const toggleGridSection = (section: string) => {
-    setOpenGridSection((prev) => (prev === section ? null : section));
+    setOpenGridSection(prev => (prev === section ? null : section));
   };
 
   // Get category filter from URL search params
@@ -171,7 +185,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   } : null;
 
   // Fall back to cached data only when the query actually errors (not just when browser thinks offline)
-  const cachedData = (error && !data) ? (packetAsJobData || getCachedJobData(jobId)) : null;
+  const cachedData =error && !data ?packetAsJobData || getCachedJobData(jobId) : null;
   const jobData = data || cachedData;
   const isUsingOfflineCache = !data && !!cachedData;
 
@@ -180,7 +194,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       toast.success('Job started');
       refetch();
     },
-    onError: () => toast.error('Failed to start job')
+    onError: () => toast.error('Failed to start job'),
   });
 
   const completeJob = trpc.job.complete.useMutation({
@@ -188,7 +202,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       toast.success('Job completed');
       refetch();
     },
-    onError: (err) => toast.error(err.message || 'Failed to complete job')
+    onError:err => toast.error(err.message || 'Failed to complete job'),
   });
 
   // Signature capture state
@@ -203,7 +217,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       completeJob.mutate({ id: jobId });
       setSigDialogOpen(false);
     },
-    onError: (err) => toast.error(err.message || 'Failed to save signatures'),
+    onError:err => toast.error(err.message || 'Failed to save signatures'),
   });
 
   function openSignatureDialog() {
@@ -240,17 +254,17 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       setWoEditMode(false);
       refetchWorkOrder();
     },
-    onError: (err) => toast.error(err.message || "Failed to update work order"),
+    onError:err => toast.error(err.message || "Failed to update work order"),
   });
 
   const importAssets = trpc.assetImport.importAssetsFromExcel.useMutation({
-    onSuccess: (result) => {
+    onSuccess:result => {
       toast.success(result.message);
       refetch();
     },
-    onError: (error) => {
+    onError:error => {
       toast.error(error.message || 'Failed to import assets');
-    }
+    },
   });
 
   // Work Site Info — for field access details
@@ -262,7 +276,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   // Site contacts (field-safe: site_contact, emergency_contact, isSiteAccessContact only)
   const { data: siteContacts = [] } = trpc.contact.getSiteContactsForTechnician.useQuery(
     { siteId: data?.site?.id ?? 0 },
-    { enabled: !!data?.site?.id, retry: 1 },
+    { enabled: !!data?.site?.id, retry: 1 }
   );
 
   // Parts requests
@@ -275,7 +289,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   const { data: jobPartsRequests = [], refetch: refetchPartsRequests } = trpc.inventory.getRequestsForJob.useQuery(
     { jobId },
-    { enabled: true, retry: 1 },
+    { enabled: true, retry: 1 }
   );
 
   const createPartsRequestMut = trpc.inventory.createPartsRequest.useMutation({
@@ -289,7 +303,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       setPartsNotes("");
       setPartsNeededBy("");
     },
-    onError: (e) => toast.error(e.message || "Failed to submit parts request"),
+    onError:e => toast.error(e.message || "Failed to submit parts request"),
   });
 
   // Time tracking
@@ -311,7 +325,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
 
   const { data: myTimeEntries = [], refetch: refetchTimeEntries } = trpc.timeTracking.listMine.useQuery(
     { jobId },
-    { enabled: true, retry: 1 },
+    { enabled: true, retry: 1 }
   );
 
   const createTimeMut = trpc.timeTracking.create.useMutation({
@@ -323,12 +337,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       setTimeDescription("");
       setTimeDate(new Date().toISOString().slice(0, 10));
     },
-    onError: (e) => toast.error(e.message || "Failed to save time entry"),
+    onError:e => toast.error(e.message || "Failed to save time entry"),
   });
 
   const submitTimeMut = trpc.timeTracking.submit.useMutation({
     onSuccess: () => { toast.success("Time entry submitted for approval."); refetchTimeEntries(); },
-    onError: (e) => toast.error(e.message),
+    onError:e => toast.error(e.message),
   });
 
   useEffect(() => {
@@ -405,11 +419,19 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           fireAlarmResults: pendingFireAlarmResults,
           smokeTests: pendingSmokeTests,
         },
-        jobId,
+        jobId
       ),
     // syncStatus is the reactive signal that offline stores changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [jobId, syncStatus, pendingFireAlarmResults, pendingSmokeTests, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses],
+    [jobId, syncStatus, pendingFireAlarmResults, pendingSmokeTests, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses,]
+  );
+  jobSyncCounts.pendingLegacyRequests =
+    mutationQueue.count() +
+    (user?.id
+      ? pendingFireAlarmDraftCount(
+          fireAlarmDraftKey(user.id, user.companyId, jobId)
+        )
+      : 0
   );
   const pendingSyncCount = pendingSyncItemCount(jobSyncCounts);
   const { data: templateCompleteness } = trpc.inspectionTemplate.getCompletenessForJob.useQuery(
@@ -422,7 +444,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       setQaDialogOpen(false);
       refetch();
     },
-    onError: (err) => toast.error(err.message || 'Failed to submit for QA'),
+    onError:err => toast.error(err.message || 'Failed to submit for QA'),
   });
 
   if (isLoading && !cachedData && !packetAsJobData) {
@@ -447,7 +469,10 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <>
               <CloudOff className="mx-auto h-10 w-10 text-muted-foreground" />
               <p className="font-semibold">Not available offline</p>
-              <p className="text-sm text-muted-foreground">This job is not cached. Connect to the internet to load it, or preload it next time you are online.</p>
+              <p className="text-sm text-muted-foreground">
+                This job is not cached. Connect to the internet to load it, or
+                preload it next time you are online.
+              </p>
             </>
           ) : (
             <p className="text-muted-foreground">Job not found</p>
@@ -497,7 +522,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   // Smoke alarms are sorted by suite number descending (highest to lowest)
   const sortedSmokeAlarms = sortBySuiteNumberDescending(smokeAlarms).map((d: any) => ({
     ...d,
-    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
+    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result,
   }));
   const sortedFireAlarmDevices = sortByWalkOrderThenLocation(fireAlarmDevices).map((d: any) => {
     const ir = inspectionResults?.find((r: any) => r.deviceId === d.id);
@@ -505,11 +530,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   });
   const sortedExtinguishers = sortByWalkOrderThenLocation(extinguishers).map((d: any) => ({
     ...d,
-    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
+    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result,
   }));
   const sortedEmergencyLights = sortByWalkOrderThenLocation(emergencyLights).map((d: any) => ({
     ...d,
-    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result
+    result: inspectionResults?.find((r: any) => r.deviceId === d.id)?.result,
   }));
 
   const getSmokeAlarmStats = () => {
@@ -521,7 +546,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       const device = devices?.find((dev: any) => dev.id === d.deviceId);
       return device && isSmokeAlarm(device);
     }).length || 0;
-    return { tested: tested.length, total: smokeAlarms.length, deficiencies: defCount };
+    return { tested: tested.length, total: smokeAlarms.length, deficiencies: defCount, };
   };
 
   const getFireAlarmStats = () => {
@@ -533,7 +558,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       const device = devices?.find((dev: any) => dev.id === d.deviceId);
       return device && isFireAlarmGridDevice(device);
     }).length || 0;
-    return { tested: tested.length, total: fireAlarmDevices.length, deficiencies: defCount };
+    return { tested: tested.length, total: fireAlarmDevices.length, deficiencies: defCount, };
   };
 
   const getExtinguisherStats = () => {
@@ -545,7 +570,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       const device = devices?.find((dev: any) => dev.id === d.deviceId);
       return device && categorizeDevice(device) === 'extinguisher';
     }).length || 0;
-    return { tested: tested.length, total: extinguishers.length, deficiencies: defCount };
+    return { tested: tested.length, total: extinguishers.length, deficiencies: defCount, };
   };
 
   const getEmergencyLightStats = () => {
@@ -557,7 +582,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       const device = devices?.find((dev: any) => dev.id === d.deviceId);
       return device && categorizeDevice(device) === 'emergency';
     }).length || 0;
-    return { tested: tested.length, total: emergencyLights.length, deficiencies: defCount };
+    return { tested: tested.length, total: emergencyLights.length, deficiencies: defCount, };
   };
 
   const smokeStats = getSmokeAlarmStats();
@@ -576,8 +601,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </Button>
           </Link>
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-base sm:text-lg safe-text">{job.title}</h1>
-            <p className="text-xs text-muted-foreground safe-text">{job.jobNumber}</p>
+            <h1 className="font-bold text-base sm:text-lg safe-text">
+              {job.title}
+            </h1>
+            <p className="text-xs text-muted-foreground safe-text">
+              {job.jobNumber}
+            </p>
           </div>
           <FieldCopilotPanel jobId={jobId} isOnline={isOnline} jobStatus={job.status} />
           <PageHelpButton size="icon" routeKey="tech_job_detail" />
@@ -599,13 +628,18 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
           <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 flex items-start gap-2">
             <CloudOff className="h-4 w-4 text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
             <div className="text-sm text-amber-800 dark:text-amber-300">
-              <span className="font-semibold">Offline mode</span> — showing cached data.
+              <span className="font-semibold">Offline mode</span> — showing
+              cached data.
               {packetCachedAt && (
                 <span className="ml-1 text-amber-700 dark:text-amber-400">
-                  Cached {new Date(packetCachedAt).toLocaleDateString([], { month: "short", day: "numeric" })}.
+                  Cached{" "}
+                  {new Date(packetCachedAt).toLocaleDateString([], { month: "short", day: "numeric", })}
+                  .
                 </span>
               )}
-              <span className="ml-1">Inspection results may not reflect the latest synced data.</span>
+              <span className="ml-1">
+                Inspection results may not reflect the latest synced data.
+              </span>
             </div>
           </div>
         )}
@@ -618,7 +652,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 <Building2 className="h-5 w-5 text-primary" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold">{site?.name || 'Unknown Site'}</h3>
+                <h3 className="font-semibold">
+                  {site?.name || 'Unknown Site'}
+                </h3>
                 {site?.address && (
                   <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                     <MapPin className="h-3 w-3" />
@@ -690,61 +726,102 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
         {/* Work Site Info — field access details */}
         {wsi && (wsi.accessNotes || wsi.keyLocation || wsi.keyNumber || wsi.lockboxCode || wsi.fireAlarmPanelLocation || wsi.monitoringCompany || wsi.sprinklerNotes || wsi.emergencyLightingNotes) && (
           <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">
-            <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
-                <Info className="h-4 w-4" /> Site Field Info
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-2 space-y-2 text-sm">
-              {wsi.accessNotes && (
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
+                  <Info className="h-4 w-4" /> Site Field Info
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-2 space-y-2 text-sm">
+                {wsi.accessNotes && (
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Access Notes</p>
-                  <p className="text-foreground whitespace-pre-line">{wsi.accessNotes}</p>
-                </div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
+                      Access Notes
+                    </p>
+                    <p className="text-foreground whitespace-pre-line">
+                      {wsi.accessNotes}
+                    </p>
+                  </div>
               )}
-              {(wsi.keyLocation || wsi.keyNumber || wsi.lockboxCode) && (
+                {(wsi.keyLocation || wsi.keyNumber || wsi.lockboxCode) && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-2.5 space-y-1">
-                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
-                    <Key className="h-3 w-3" /> Key / Access
-                  </p>
-                  {wsi.keyNumber && <p className="text-amber-900 dark:text-amber-200"><span className="font-medium">Key #:</span> {wsi.keyNumber}</p>}
-                  {wsi.keyLocation && <p className="text-amber-900 dark:text-amber-200"><span className="font-medium">Location:</span> {wsi.keyLocation}</p>}
-                  {wsi.lockboxCode && <p className="text-amber-900 dark:text-amber-200"><span className="font-medium">Lockbox:</span> {wsi.lockboxCode}</p>}
-                </div>
+                    <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
+                      <Key className="h-3 w-3" /> Key / Access
+                    </p>
+                    {wsi.keyNumber && ( <p className="text-amber-900 dark:text-amber-200">
+                        <span className="font-medium">Key #:</span>{" "}
+                        {wsi.keyNumber}
+                      </p>
+                    )}
+                    {wsi.keyLocation && ( <p className="text-amber-900 dark:text-amber-200">
+                        <span className="font-medium">Location:</span>{" "}
+                        {wsi.keyLocation}
+                      </p>
+                    )}
+                    {wsi.lockboxCode && ( <p className="text-amber-900 dark:text-amber-200">
+                        <span className="font-medium">Lockbox:</span>{" "}
+                        {wsi.lockboxCode}
+                      </p>
+                    )}
+                  </div>
               )}
-              {wsi.fireAlarmPanelLocation && (
+                {wsi.fireAlarmPanelLocation && (
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Fire Alarm Panel</p>
-                  <p className="text-foreground">{wsi.fireAlarmPanelLocation}
-                    {wsi.annunciatorLocation && <span className="text-muted-foreground"> · Annunciator: {wsi.annunciatorLocation}</span>}
-                  </p>
-                </div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
+                      Fire Alarm Panel
+                    </p>
+                    <p className="text-foreground">
+                      {wsi.fireAlarmPanelLocation}
+                      {wsi.annunciatorLocation && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · Annunciator: {wsi.annunciatorLocation}
+                        </span>
+                      )}
+                    </p>
+                  </div>
               )}
-              {wsi.monitoringCompany && (
+                {wsi.monitoringCompany && (
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5 flex items-center gap-1">
-                    <Radio className="h-3 w-3" /> Monitoring
-                  </p>
-                  <p className="text-foreground">{wsi.monitoringCompany}
-                    {wsi.monitoringPhone && <span className="text-muted-foreground"> · {wsi.monitoringPhone}</span>}
-                    {wsi.monitoringAccount && <span className="text-muted-foreground"> · Acct: {wsi.monitoringAccount}</span>}
-                  </p>
-                </div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5 flex items-center gap-1">
+                      <Radio className="h-3 w-3" /> Monitoring
+                    </p>
+                    <p className="text-foreground">
+                      {wsi.monitoringCompany}
+                      {wsi.monitoringPhone && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {wsi.monitoringPhone}
+                        </span>
+                      )}
+                      {wsi.monitoringAccount && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · Acct: {wsi.monitoringAccount}
+                        </span>
+                      )}
+                    </p>
+                  </div>
               )}
-              {wsi.sprinklerNotes && (
+                {wsi.sprinklerNotes && (
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Sprinkler Notes</p>
-                  <p className="text-foreground">{wsi.sprinklerNotes}</p>
-                </div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
+                      Sprinkler Notes
+                    </p>
+                    <p className="text-foreground">{wsi.sprinklerNotes}</p>
+                  </div>
               )}
-              {wsi.emergencyLightingNotes && (
+                {wsi.emergencyLightingNotes && (
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Emergency Lighting Notes</p>
-                  <p className="text-foreground">{wsi.emergencyLightingNotes}</p>
-                </div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
+                      Emergency Lighting Notes
+                    </p>
+                    <p className="text-foreground">
+                      {wsi.emergencyLightingNotes}
+                    </p>
+                  </div>
               )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
         )}
 
         {/* Site Contacts */}
@@ -756,22 +833,29 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 pt-2 space-y-3">
-              {siteContacts.map((c) => (
+              {siteContacts.map(c => (
                 <div key={c.id} className="flex items-start justify-between gap-2 text-sm">
                   <div className="min-w-0">
                     <p className="font-medium">{c.name}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{c.role.replace(/_/g, " ")}</p>
-                    {c.notes && <p className="text-xs text-muted-foreground mt-0.5 italic">{c.notes}</p>}
+                    <p className="text-xs text-muted-foreground capitalize">
+                      {c.role.replace(/_/g, " ")}
+                    </p>
+                    {c.notes && ( <p className="text-xs text-muted-foreground mt-0.5 italic">
+                        {c.notes}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right shrink-0 space-y-0.5">
                     {c.phone && (
                       <a href={`tel:${c.phone}`} className="text-xs text-blue-600 flex items-center gap-1 justify-end hover:underline">
-                        <Phone className="h-3 w-3" />{c.phone}
+                        <Phone className="h-3 w-3" />
+                        {c.phone}
                       </a>
                     )}
                     {c.mobile && (
                       <a href={`tel:${c.mobile}`} className="text-xs text-blue-600 flex items-center gap-1 justify-end hover:underline">
-                        <Phone className="h-3 w-3" />{c.mobile}
+                        <Phone className="h-3 w-3" />
+                        {c.mobile}
                       </a>
                     )}
                   </div>
@@ -791,41 +875,57 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   <p className="text-sm font-medium">Offline Readiness</p>
                   {packetStatus === "cached" && packetCachedAt && (
                     <p className="text-xs text-muted-foreground">
-                      Cached {new Date(packetCachedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      Cached{" "}
+                      {new Date(packetCachedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", })}
                     </p>
                   )}
                   {packetStatus === "stale" && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">Packet may be outdated — refresh before heading out</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      Packet may be outdated — refresh before heading out
+                    </p>
                   )}
                   {packetStatus === "failed" && (
-                    <p className="text-xs text-red-600 dark:text-red-400">Last cache attempt failed</p>
+                    <p className="text-xs text-red-600 dark:text-red-400">
+                      Last cache attempt failed
+                    </p>
                   )}
                 </div>
               </div>
               <div className="shrink-0">
                 {packetStatus === "not_cached" && (
-                  <Badge variant="outline" className="text-xs text-muted-foreground">Not Cached</Badge>
+                  <Badge variant="outline" className="text-xs text-muted-foreground">
+                    Not Cached
+                  </Badge>
                 )}
                 {packetStatus === "caching" && (
                   <Badge className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" />Caching…
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Caching…
                   </Badge>
                 )}
                 {packetStatus === "cached" && (
-                  <Badge className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Offline Ready</Badge>
+                  <Badge className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                    Offline Ready
+                  </Badge>
                 )}
                 {packetStatus === "stale" && (
-                  <Badge className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Stale</Badge>
+                  <Badge className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    Stale
+                  </Badge>
                 )}
                 {packetStatus === "failed" && (
-                  <Badge className="text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Failed</Badge>
+                  <Badge className="text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                    Failed
+                  </Badge>
                 )}
               </div>
             </div>
             {packet && (
               <div className="mt-3 pt-3 border-t text-xs text-muted-foreground flex gap-4 flex-wrap">
                 <span>{packet.devices?.length ?? 0} devices</span>
-                <span>{(packet.deficiencies?.length ?? 0)} open deficiencies</span>
+                <span>
+                  {packet.deficiencies?.length ?? 0} open deficiencies
+                </span>
                 {packet.workSiteInfo && <span>Site info included</span>}
               </div>
             )}
@@ -866,7 +966,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 </div>
                 <div>
                   <CardTitle className="text-base">Smoke Alarms</CardTitle>
-                  <p className="text-sm text-muted-foreground">CAN/ULC-S552 Inspection &amp; Testing</p>
+                  <p className="text-sm text-muted-foreground">
+                    CAN/ULC-S552 Inspection &amp; Testing
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -909,8 +1011,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   <AlertTriangle className="h-5 w-5 text-[var(--warning)]" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Fire Alarm Devices</CardTitle>
-                  <p className="text-sm text-muted-foreground">Pull stations, heat detectors, horns, strobes</p>
+                  <CardTitle className="text-base">
+                    Fire Alarm Devices
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Pull stations, heat detectors, horns, strobes
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -953,8 +1059,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   <FireExtinguisher className="h-5 w-5 text-destructive" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Fire Extinguishers</CardTitle>
-                  <p className="text-sm text-muted-foreground">Portable fire extinguishing equipment</p>
+                  <CardTitle className="text-base">
+                    Fire Extinguishers
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Portable fire extinguishing equipment
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -998,7 +1108,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 </div>
                 <div>
                   <CardTitle className="text-base">Emergency Lights</CardTitle>
-                  <p className="text-sm text-muted-foreground">Emergency and exit lighting</p>
+                  <p className="text-sm text-muted-foreground">
+                    Emergency and exit lighting
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -1054,7 +1166,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   variant="ghost"
                   size="sm"
                   className="text-purple-700 dark:text-purple-300 h-7 text-xs"
-                  onClick={(e) => {
+                  onClick={e => {
                     e.stopPropagation();
                     setLocation(`/tech/jobs/${jobId}/fire-alarm`);
                   }}
@@ -1122,7 +1234,10 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   </div>
                   <div>
                     <CardTitle className="text-base">Work Order</CardTitle>
-                    <p className="text-sm text-muted-foreground">{workOrder.workOrderNumber} · {workOrder.status.replace(/_/g, " ")}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {workOrder.workOrderNumber} ·{" "}
+                      {workOrder.status.replace(/_/g, " ")}
+                    </p>
                   </div>
                 </div>
                 {openGridSection === "workorder" ? (
@@ -1137,16 +1252,24 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 {/* Read-only info */}
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Work Type</p>
-                    <p className="mt-0.5 capitalize">{workOrder.workType.replace(/_/g, " ")}</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Work Type
+                    </p>
+                    <p className="mt-0.5 capitalize">
+                      {workOrder.workType.replace(/_/g, " ")}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Priority</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Priority
+                    </p>
                     <p className="mt-0.5 capitalize">{workOrder.priority}</p>
                   </div>
                   {workOrder.estimatedHours && (
                     <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Est. Hours</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Est. Hours
+                      </p>
                       <p className="mt-0.5 flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                         {parseFloat(workOrder.estimatedHours).toFixed(1)} h
@@ -1155,8 +1278,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   )}
                   {workOrder.officeNotes && (
                     <div className="col-span-2">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Office Notes</p>
-                      <p className="mt-0.5 text-sm whitespace-pre-line">{workOrder.officeNotes}</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Office Notes
+                      </p>
+                      <p className="mt-0.5 text-sm whitespace-pre-line">
+                        {workOrder.officeNotes}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1167,31 +1294,37 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                     {woEditMode ? (
                       <div className="space-y-3 border-t pt-3">
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tech Notes</label>
+                          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Tech Notes
+                          </label>
                           <Textarea
                             value={woTechNotes}
-                            onChange={(e) => setWoTechNotes(e.target.value)}
+                            onChange={e => setWoTechNotes(e.target.value)}
                             placeholder="Notes from the field..."
                             rows={3}
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Actual Hours</label>
+                          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Actual Hours
+                          </label>
                           <input
                             type="number"
                             min="0"
                             step="0.5"
                             value={woActualHours}
-                            onChange={(e) => setWoActualHours(e.target.value)}
+                            onChange={e => setWoActualHours(e.target.value)}
                             placeholder="e.g. 2.5"
                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Completion Summary</label>
+                          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Completion Summary
+                          </label>
                           <Textarea
                             value={woCompletionSummary}
-                            onChange={(e) => setWoCompletionSummary(e.target.value)}
+                            onChange={e => setWoCompletionSummary(e.target.value)}
                             placeholder="Summary of work completed..."
                             rows={2}
                           />
@@ -1210,9 +1343,15 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                             }
                           >
                             {woTechUpdateMutation.isPending ? (
-                              <><div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />Saving…</>
+                              <>
+                                <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
+                                Saving…
+                              </>
                             ) : (
-                              <><Save className="h-4 w-4 mr-1.5" />Save</>
+                              <>
+                                <Save className="h-4 w-4 mr-1.5" />
+                                Save
+                              </>
                             )}
                           </Button>
                           <Button size="sm" variant="outline" onClick={() => setWoEditMode(false)}>
@@ -1224,13 +1363,19 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                       <div className="border-t pt-3 space-y-2">
                         {workOrder.techNotes && (
                           <div>
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tech Notes</p>
-                            <p className="mt-0.5 text-sm whitespace-pre-line">{workOrder.techNotes}</p>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                              Tech Notes
+                            </p>
+                            <p className="mt-0.5 text-sm whitespace-pre-line">
+                              {workOrder.techNotes}
+                            </p>
                           </div>
                         )}
                         {workOrder.actualHours && (
                           <div>
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Actual Hours</p>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                              Actual Hours
+                            </p>
                             <p className="mt-0.5 flex items-center gap-1 text-sm">
                               <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                               {parseFloat(workOrder.actualHours).toFixed(1)} h
@@ -1239,8 +1384,12 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                         )}
                         {workOrder.completionSummary && (
                           <div>
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Completion Summary</p>
-                            <p className="mt-0.5 text-sm whitespace-pre-line">{workOrder.completionSummary}</p>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                              Completion Summary
+                            </p>
+                            <p className="mt-0.5 text-sm whitespace-pre-line">
+                              {workOrder.completionSummary}
+                            </p>
                           </div>
                         )}
                         <Button
@@ -1284,31 +1433,37 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             {showPartsForm && (
               <div className="border rounded-lg p-3 mb-4 space-y-3 bg-muted/20">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Part description *</label>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Part description *
+                  </label>
                   <input
                     className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background"
                     placeholder="e.g. Smoke detector replacement unit"
                     value={partsDesc}
-                    onChange={(e) => setPartsDesc(e.target.value)}
+                    onChange={e => setPartsDesc(e.target.value)}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">Quantity</label>
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Quantity
+                    </label>
                     <input
                       type="number"
                       min="1"
                       className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background"
                       value={partsQty}
-                      onChange={(e) => setPartsQty(e.target.value)}
+                      onChange={e => setPartsQty(e.target.value)}
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">Priority</label>
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Priority
+                    </label>
                     <select
                       className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background"
                       value={partsPriority}
-                      onChange={(e) => setPartsPriority(e.target.value as any)}
+                      onChange={e => setPartsPriority(e.target.value as any)}
                     >
                       <option value="low">Low</option>
                       <option value="medium">Medium</option>
@@ -1318,22 +1473,26 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Needed by (optional)</label>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Needed by (optional)
+                  </label>
                   <input
                     type="date"
                     className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background"
                     value={partsNeededBy}
-                    onChange={(e) => setPartsNeededBy(e.target.value)}
+                    onChange={e => setPartsNeededBy(e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Notes (optional)</label>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Notes (optional)
+                  </label>
                   <textarea
                     className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-background resize-none"
                     rows={2}
                     placeholder="Any additional details"
                     value={partsNotes}
-                    onChange={(e) => setPartsNotes(e.target.value)}
+                    onChange={e => setPartsNotes(e.target.value)}
                   />
                 </div>
                 <div className="flex gap-2">
@@ -1346,26 +1505,32 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                         priority: partsPriority,
                         notes: partsNotes.trim() || undefined,
                         neededByDate: partsNeededBy || undefined,
-                        items: [{ description: partsDesc.trim(), quantityRequested: parseInt(partsQty) || 1 }],
+                        items: [{ description: partsDesc.trim(), quantityRequested: parseInt(partsQty) || 1, },],
                       })
                     }
                   >
                     Submit Request
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setShowPartsForm(false)}>Cancel</Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowPartsForm(false)}>
+                    Cancel
+                  </Button>
                 </div>
               </div>
             )}
 
             {(jobPartsRequests as any[]).length === 0 && !showPartsForm && (
-              <p className="text-center text-muted-foreground py-6 text-sm">No parts requests for this job.</p>
+              <p className="text-center text-muted-foreground py-6 text-sm">
+                No parts requests for this job.
+              </p>
             )}
 
             <div className="space-y-2">
               {(jobPartsRequests as any[]).map((req: any) => (
                 <div key={req.id} className="border rounded-lg p-3 text-sm">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono text-xs font-semibold">{req.requestNumber}</span>
+                    <span className="font-mono text-xs font-semibold">
+                      {req.requestNumber}
+                    </span>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${
                       req.status === "issued" || req.status === "received" ? "bg-green-100 text-green-700" :
                       req.status === "approved" || req.status === "ordered" ? "bg-blue-100 text-blue-700" :
@@ -1381,8 +1546,11 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                       <AlertTriangle className="h-3 w-3" /> Urgent
                     </span>
                   )}
-                  {req.notes && <p className="text-xs text-muted-foreground">{req.notes}</p>}
-                  <p className="text-xs text-muted-foreground mt-1">{String(req.createdAt).slice(0, 10)}</p>
+                  {req.notes && ( <p className="text-xs text-muted-foreground">{req.notes}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {String(req.createdAt).slice(0, 10)}
+                  </p>
                 </div>
               ))}
             </div>
@@ -1413,7 +1581,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                     <div className="text-2xl font-mono font-bold tabular-nums text-primary">
                       {fmtTimer(timerElapsed)}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">Timer running…</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Timer running…
+                    </div>
                   </div>
                   <Button size="sm" variant="destructive" className="h-9" onClick={stopTimer}>
                     <StopCircle className="h-4 w-4 mr-1.5" /> Stop
@@ -1421,7 +1591,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 </>
               ) : (
                 <>
-                  <div className="text-sm text-muted-foreground">Track time automatically</div>
+                  <div className="text-sm text-muted-foreground">
+                    Track time automatically
+                  </div>
                   <Button size="sm" variant="outline" className="h-9" onClick={startTimer}>
                     <Timer className="h-4 w-4 mr-1.5" /> Start Timer
                   </Button>
@@ -1432,7 +1604,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             {/* Manual entry form */}
             {showTimeForm && (
               <div className="border rounded-lg p-3 space-y-3 bg-card">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Log Time Entry</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Log Time Entry
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <Label className="text-xs">Duration (minutes)</Label>
@@ -1443,7 +1617,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                       className="mt-1 h-8 text-sm"
                       placeholder="e.g. 90"
                       value={timeDurationMinutes}
-                      onChange={(e) => setTimeDurationMinutes(e.target.value)}
+                      onChange={e => setTimeDurationMinutes(e.target.value)}
                     />
                   </div>
                   <div>
@@ -1452,14 +1626,16 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                       type="date"
                       className="mt-1 h-8 text-sm"
                       value={timeDate}
-                      onChange={(e) => setTimeDate(e.target.value)}
+                      onChange={e => setTimeDate(e.target.value)}
                     />
                   </div>
                 </div>
                 <div>
                   <Label className="text-xs">Labour Type</Label>
                   <Select value={timeLabourType} onValueChange={setTimeLabourType}>
-                    <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="mt-1 h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="inspection">Inspection</SelectItem>
                       <SelectItem value="repair">Repair</SelectItem>
@@ -1478,7 +1654,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                     rows={2}
                     placeholder="What did you work on?"
                     value={timeDescription}
-                    onChange={(e) => setTimeDescription(e.target.value)}
+                    onChange={e => setTimeDescription(e.target.value)}
                   />
                 </div>
                 <div className="flex gap-2">
@@ -1511,22 +1687,32 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             {/* Today's entries */}
             {(myTimeEntries as any[]).length > 0 && (
               <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">My Entries — This Job</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  My Entries — This Job
+                </p>
                 {(myTimeEntries as any[]).map((entry: any) => (
                   <div key={entry.id} className="flex items-center justify-between rounded border bg-muted/20 px-3 py-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 text-xs">
-                        <span className="font-semibold tabular-nums">{fmtEntryDuration(entry.durationMinutes)}</span>
-                        <span className="text-muted-foreground">{entry.labourType.replace("_", " ")}</span>
+                        <span className="font-semibold tabular-nums">
+                          {fmtEntryDuration(entry.durationMinutes)}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {entry.labourType.replace("_", " ")}
+                        </span>
                         <span className={`px-1.5 py-0.5 rounded-full text-xs ${
                           entry.status === "approved" ? "bg-green-100 text-green-700" :
                           entry.status === "submitted" ? "bg-yellow-100 text-yellow-700" :
                           entry.status === "rejected" ? "bg-red-100 text-red-600" :
                           "bg-muted text-muted-foreground"
-                        }`}>{entry.status}</span>
+                        }`}>
+                          {entry.status}
+                        </span>
                       </div>
                       {entry.description && (
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{entry.description}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          {entry.description}
+                        </p>
                       )}
                     </div>
                     {entry.status === "draft" && (
@@ -1546,7 +1732,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             )}
 
             {(myTimeEntries as any[]).length === 0 && !showTimeForm && !timerRunning && (
-              <p className="text-center text-xs text-muted-foreground py-2">No time entries for this job yet.</p>
+              <p className="text-center text-xs text-muted-foreground py-2">
+                  No time entries for this job yet.
+                </p>
             )}
           </CardContent>
         </Card>
@@ -1573,27 +1761,27 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               <div className="space-y-2">
                 {deficiencies?.map((def: any) => (
                 <Link key={def.id} href={`/tech/deficiency/${def.id}`}>
-                  <Card className="inspection-card">
-                    <CardContent className="flex items-center justify-between p-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                    <Card className="inspection-card">
+                      <CardContent className="flex items-center justify-between p-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                             def.severity === 'critical' ? 'bg-destructive text-destructive-foreground' :
                             def.severity === 'major' ? 'bg-warning text-warning-foreground' :
                             'bg-muted text-muted-foreground'
                           }`}>
-                            {def.severity}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getDeficiencyStatusBadgeClass(def.status)}`}>
-                            {getDeficiencyStatusLabel(def.status)}
-                          </span>
+                              {def.severity}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getDeficiencyStatusBadgeClass(def.status)}`}>
+                              {getDeficiencyStatusLabel(def.status)}
+                            </span>
+                          </div>
+                          <p className="font-medium truncate">{def.title}</p>
                         </div>
-                        <p className="font-medium truncate">{def.title}</p>
-                      </div>
-                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                    </CardContent>
-                  </Card>
-                </Link>
+                        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                      </CardContent>
+                    </Card>
+                  </Link>
                 ))}
               </div>
             )}
@@ -1614,17 +1802,34 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               {/* Site Notes Banner */}
               {siteNotes && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3">
-                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide mb-1">Site Notes</p>
-                  <p className="text-sm text-amber-900 dark:text-amber-200">{siteNotes}</p>
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide mb-1">
+                    Site Notes
+                  </p>
+                  <p className="text-sm text-amber-900 dark:text-amber-200">
+                    {siteNotes}
+                  </p>
                 </div>
               )}
               {/* Key Info Banner */}
               {((site as any)?.keyNumber || (site as any)?.keyLocation) && (
                 <div className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning)]/5 p-3">
-                  <p className="text-xs font-semibold text-[var(--warning)] uppercase tracking-wide mb-1">Key Information</p>
-                  {(site as any).keyNumber && <p className="text-sm text-foreground"><span className="font-medium">Key #:</span> {(site as any).keyNumber}</p>}
-                  {(site as any).keyLocation && <p className="text-sm text-foreground"><span className="font-medium">Location:</span> {(site as any).keyLocation}</p>}
-                  {(site as any).keySignedOutBy && <p className="text-sm text-[var(--warning)] font-medium">Currently signed out by: {(site as any).keySignedOutBy}</p>}
+                  <p className="text-xs font-semibold text-[var(--warning)] uppercase tracking-wide mb-1">
+                    Key Information
+                  </p>
+                  {(site as any).keyNumber && ( <p className="text-sm text-foreground">
+                      <span className="font-medium">Key #:</span>{" "}
+                      {(site as any).keyNumber}
+                    </p>
+                  )}
+                  {(site as any).keyLocation && ( <p className="text-sm text-foreground">
+                      <span className="font-medium">Location:</span>{" "}
+                      {(site as any).keyLocation}
+                    </p>
+                  )}
+                  {(site as any).keySignedOutBy && ( <p className="text-sm text-[var(--warning)] font-medium">
+                      Currently signed out by: {(site as any).keySignedOutBy}
+                    </p>
+                  )}
                 </div>
               )}
               <Button 
@@ -1633,7 +1838,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                 disabled={startJob.isPending || !isOnline}
               >
                 <Play className="h-5 w-5 mr-2" />
-                {(((site as any)?.notes) || (site as any)?.keyNumber || (site as any)?.keyLocation) ? 'Acknowledged — Start Inspection' : 'Start Inspection'}
+                {(site as any)?.notes || (site as any)?.keyNumber || (site as any)?.keyLocation ? 'Acknowledged — Start Inspection' : 'Start Inspection'}
               </Button>
             </div>
           ) : job.status === 'in_progress' ? (
@@ -1666,7 +1871,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       </div>
 
       {/* Submit for QA dialog */}
-      <Dialog open={qaDialogOpen} onOpenChange={(open) => { if (!submitForQA.isPending) { setQaDialogOpen(open); if (!open) setQaOverride(false); } }}>
+      <Dialog open={qaDialogOpen} onOpenChange={open => { if (!submitForQA.isPending) { setQaDialogOpen(open); if (!open) setQaOverride(false); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1674,7 +1879,10 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2 text-sm">
-            <p>This will notify the office that <strong>{job?.title}</strong> is ready for report generation and QA review.</p>
+            <p>
+              This will notify the office that <strong>{job?.title}</strong> is
+              ready for report generation and QA review.
+            </p>
             <div className="rounded-lg bg-muted p-3 space-y-1">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Devices tested</span>
@@ -1684,11 +1892,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               </div>
               {templateCompleteness && templateCompleteness.templateCount > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Checklist items</span>
-                  <span className={`font-medium ${templateCompleteness.answered < templateCompleteness.totalRequired ? "text-amber-600" : "text-emerald-600"}`}>
-                    {templateCompleteness.answered} / {templateCompleteness.totalRequired}
-                  </span>
-                </div>
+                    <span className="text-muted-foreground">
+                      Checklist items
+                    </span>
+                    <span className={`font-medium ${templateCompleteness.answered < templateCompleteness.totalRequired ? "text-amber-600" : "text-emerald-600"}`}>
+                      {templateCompleteness.answered} /{" "}
+                      {templateCompleteness.totalRequired}
+                    </span>
+                  </div>
               )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Deficiencies</span>
@@ -1696,44 +1907,84 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               </div>
               {testedCount < totalDevices && (
                 <p className="text-amber-600 text-xs pt-1">
-                  ⚠ {totalDevices - testedCount} device{totalDevices - testedCount !== 1 ? "s" : ""} not yet tested.
+                  ⚠ {totalDevices - testedCount} device
+                  {totalDevices - testedCount !== 1 ? "s" : ""} not yet tested.
                 </p>
               )}
               {templateCompleteness && templateCompleteness.templateCount > 0 && templateCompleteness.answered < templateCompleteness.totalRequired && (
                 <p className="text-amber-600 text-xs">
-                  ⚠ {templateCompleteness.totalRequired - templateCompleteness.answered} required checklist item{templateCompleteness.totalRequired - templateCompleteness.answered !== 1 ? "s" : ""} unanswered.
-                </p>
+                    ⚠{" "}
+                    {templateCompleteness.totalRequired - templateCompleteness.answered}{" "}
+                    required checklist item
+                    {templateCompleteness.totalRequired - templateCompleteness.answered !== 1 ? "s" : ""}{" "}
+                    unanswered.
+                  </p>
               )}
             </div>
             {pendingSyncCount > 0 && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
                 <p className="text-amber-800 dark:text-amber-300 font-medium text-xs">
-                  ⚠ {pendingSyncCount} item{pendingSyncCount !== 1 ? "s" : ""} not yet synced
+                  ⚠ {pendingSyncCount} item{pendingSyncCount !== 1 ? "s" : ""}{" "}
+                  not yet synced
                 </p>
                 <ul className="text-amber-700 dark:text-amber-400 text-xs list-disc pl-4 space-y-0.5">
-                  {jobSyncCounts.pendingResults > 0 && <li>{jobSyncCounts.pendingResults} device test result{jobSyncCounts.pendingResults !== 1 ? "s" : ""}</li>}
-                  {jobSyncCounts.pendingDeficiencies > 0 && <li>{jobSyncCounts.pendingDeficiencies} deficienc{jobSyncCounts.pendingDeficiencies !== 1 ? "ies" : "y"}</li>}
-                  {(jobSyncCounts.pendingChecklistResponses ?? 0) > 0 && <li>{jobSyncCounts.pendingChecklistResponses} checklist response{jobSyncCounts.pendingChecklistResponses !== 1 ? "s" : ""}</li>}
-                  {(jobSyncCounts.pendingTemplateResponses ?? 0) > 0 && <li>{jobSyncCounts.pendingTemplateResponses} template response{jobSyncCounts.pendingTemplateResponses !== 1 ? "s" : ""}</li>}
-                  {(jobSyncCounts.pendingFireAlarmResults ?? 0) > 0 && <li>{jobSyncCounts.pendingFireAlarmResults} fire-alarm result{jobSyncCounts.pendingFireAlarmResults !== 1 ? "s" : ""}</li>}
-                  {(jobSyncCounts.pendingSmokeTests ?? 0) > 0 && <li>{jobSyncCounts.pendingSmokeTests} smoke-alarm test{jobSyncCounts.pendingSmokeTests !== 1 ? "s" : ""}</li>}
+                  {jobSyncCounts.pendingResults > 0 && ( <li>
+                      {jobSyncCounts.pendingResults} device test result
+                      {jobSyncCounts.pendingResults !== 1 ? "s" : ""}
+                    </li>
+                  )}
+                  {jobSyncCounts.pendingDeficiencies > 0 && ( <li>
+                      {jobSyncCounts.pendingDeficiencies} deficienc
+                      {jobSyncCounts.pendingDeficiencies !== 1 ? "ies" : "y"}
+                    </li>
+                  )}
+                  {(jobSyncCounts.pendingChecklistResponses ?? 0) > 0 && ( <li>
+                      {jobSyncCounts.pendingChecklistResponses} checklist
+                      response
+                      {jobSyncCounts.pendingChecklistResponses !== 1 ? "s" : ""}
+                    </li>
+                  )}
+                  {(jobSyncCounts.pendingTemplateResponses ?? 0) > 0 && ( <li>
+                      {jobSyncCounts.pendingTemplateResponses} template response
+                      {jobSyncCounts.pendingTemplateResponses !== 1 ? "s" : ""}
+                    </li>
+                  )}
+                  {(jobSyncCounts.pendingFireAlarmResults ?? 0) > 0 && ( <li>
+                      {jobSyncCounts.pendingFireAlarmResults} fire-alarm result
+                      {jobSyncCounts.pendingFireAlarmResults !== 1 ? "s" : ""}
+                    </li>
+                  )}
+                  {(jobSyncCounts.pendingSmokeTests ?? 0) > 0 && ( <li>
+                      {jobSyncCounts.pendingSmokeTests} smoke-alarm test
+                      {jobSyncCounts.pendingSmokeTests !== 1 ? "s" : ""}
+                    </li>
+                  )}
                 </ul>
                 <p className="text-amber-700 dark:text-amber-400 text-xs">
-                  These are stored on this device only. Sync first so the report includes them.
+                  These are stored on this device only. Sync first so the report
+                  includes them.
                 </p>
                 <Link href="/tech/sync" className="text-xs underline text-amber-800 dark:text-amber-300 font-medium">
                   Go to Sync →
                 </Link>
                 <label className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300 cursor-pointer pt-1">
-                  <input type="checkbox" checked={qaOverride} onChange={(e) => setQaOverride(e.target.checked)} className="mt-0.5 rounded" />
-                  <span>Submit anyway — I understand these unsynced items may be missing from the report.</span>
+                  <input type="checkbox" checked={qaOverride} onChange={e => setQaOverride(e.target.checked)} className="mt-0.5 rounded" />
+                  <span>
+                    Submit anyway — I understand these unsynced items may be
+                    missing from the report.
+                  </span>
                 </label>
               </div>
             )}
-            <p className="text-muted-foreground text-xs">The job will remain in progress. You can still make changes after submitting.</p>
+            <p className="text-muted-foreground text-xs">
+              The job will remain in progress. You can still make changes after
+              submitting.
+            </p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setQaDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setQaDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button
               onClick={() => submitForQA.mutate({ jobId })}
               disabled={submitForQA.isPending || isQaSubmitBlocked(jobSyncCounts, qaOverride)}
@@ -1746,7 +1997,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
       </Dialog>
 
       {/* Signature capture dialog */}
-      <Dialog open={sigDialogOpen} onOpenChange={(open) => { if (!saveSignatures.isPending) setSigDialogOpen(open); }}>
+      <Dialog open={sigDialogOpen} onOpenChange={open => { if (!saveSignatures.isPending) setSigDialogOpen(open); }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Sign Off on Completion</DialogTitle>
@@ -1759,7 +2010,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
             <SignaturePad
               label="Your signature"
               height={200}
-              onConfirm={(dataUrl) => setTechSigUrl(dataUrl)}
+              onConfirm={dataUrl => setTechSigUrl(dataUrl)}
               onClear={() => setTechSigUrl(null)}
             />
 
@@ -1767,7 +2018,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               <Switch
                 id="contact-signing"
                 checked={contactSigningEnabled}
-                onCheckedChange={(checked) => {
+                onCheckedChange={checked => {
                   setContactSigningEnabled(checked);
                   if (!checked) {
                     setContactSigName("");
@@ -1790,13 +2041,13 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                     id="contact-sig-name"
                     placeholder="e.g. Jane Smith"
                     value={contactSigName}
-                    onChange={(e) => setContactSigName(e.target.value)}
+                    onChange={e => setContactSigName(e.target.value)}
                   />
                 </div>
                 <SignaturePad
                   label="Site contact's signature"
                   height={200}
-                  onConfirm={(dataUrl) => setContactSigUrl(dataUrl)}
+                  onConfirm={dataUrl => setContactSigUrl(dataUrl)}
                   onClear={() => setContactSigUrl(null)}
                 />
               </div>

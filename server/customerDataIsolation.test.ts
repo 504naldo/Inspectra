@@ -13,10 +13,18 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+import { TRPCError } from "@trpc/server";
 
 vi.mock("./db", () => ({
   getDb: vi.fn(),
   getJobById: vi.fn(),
+  assertJobCompany: vi.fn(async (id: number, companyId: number) => {
+    const row = await db.getJobById(id);
+    if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+    if (companyId !== 0 && row.companyId !== companyId)
+      throw new TRPCError({ code: "FORBIDDEN" });
+    return row;
+  }),
   getCustomerOrgById: vi.fn(),
   getReportById: vi.fn(),
   getReportsByJob: vi.fn(),
@@ -109,8 +117,8 @@ const REPAIR_ROW = {
 };
 
 const ATTACHMENT_ROWS = [
-  { id: 1, entityType: "deficiency", entityId: 20, isCustomerFacing: 1, fileName: "after.jpg" },
-  { id: 2, entityType: "deficiency", entityId: 20, isCustomerFacing: 0, fileName: "internal-note.jpg" },
+  { id: 1, entityType: "deficiency", entityId: 20, isCustomerFacing: 1, fileName: "after.jpg", },
+  { id: 2, entityType: "deficiency", entityId: 20, isCustomerFacing: 0, fileName: "internal-note.jpg", },
 ];
 
 beforeEach(() => {
@@ -141,7 +149,7 @@ describe("Customer data isolation — report.get", () => {
 
     const result = await caller.report.get({ id: 10 });
 
-    expect(result).toMatchObject({ aiSummary: REPORT_ROW.aiSummary, qaNote: REPORT_ROW.qaNote });
+    expect(result).toMatchObject({ aiSummary: REPORT_ROW.aiSummary, qaNote: REPORT_ROW.qaNote, });
   });
 });
 
@@ -163,7 +171,7 @@ describe("Customer data isolation — report.listByJob", () => {
 
 describe("Customer data isolation — report.listByCustomerOrg", () => {
   it("strips aiSummary/qaNote for a customer caller", async () => {
-    vi.mocked(db.getReportsByCustomerOrg).mockResolvedValue([REPORT_ROW] as any);
+    vi.mocked(db.getReportsByCustomerOrg).mockResolvedValue([REPORT_ROW,] as any);
 
     const ctx = makeUserCtx("customer", null, 5);
     const caller = appRouter.createCaller(ctx);
@@ -175,7 +183,7 @@ describe("Customer data isolation — report.listByCustomerOrg", () => {
   });
 
   it("rejects a non-customer caller requesting a customer org from another company", async () => {
-    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 5, companyId: 2 } as any);
+    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 5, companyId: 2, } as any);
 
     const ctx = makeUserCtx("office", 1);
     const caller = appRouter.createCaller(ctx);
@@ -202,7 +210,7 @@ describe("Customer data isolation — deficiency.get", () => {
 
     expect(result!.deficiency).not.toHaveProperty("estimatedCost");
     expect(result!.deficiency).not.toHaveProperty("resolutionNotes");
-    expect(result!.deficiency).toMatchObject({ customerExplanation: DEFICIENCY_ROW.customerExplanation });
+    expect(result!.deficiency).toMatchObject({ customerExplanation: DEFICIENCY_ROW.customerExplanation, });
 
     expect(result!.repairs[0]).not.toHaveProperty("aiRecommendations");
 
@@ -221,27 +229,27 @@ describe("Customer data isolation — deficiency.get", () => {
 
     const result = await caller.deficiency.get({ id: 20 });
 
-    expect(result!.deficiency).toMatchObject({ estimatedCost: DEFICIENCY_ROW.estimatedCost });
-    expect(result!.repairs[0]).toMatchObject({ aiRecommendations: REPAIR_ROW.aiRecommendations });
+    expect(result!.deficiency).toMatchObject({ estimatedCost: DEFICIENCY_ROW.estimatedCost, });
+    expect(result!.repairs[0]).toMatchObject({ aiRecommendations: REPAIR_ROW.aiRecommendations, });
     expect(result!.attachments).toHaveLength(2);
   });
 });
 
 describe("Customer data isolation — deficiency.listByCustomerOrg", () => {
   it("strips estimatedCost/resolutionNotes for a customer caller", async () => {
-    vi.mocked(db.getDeficienciesByCustomerOrg).mockResolvedValue([DEFICIENCY_ROW] as any);
+    vi.mocked(db.getDeficienciesByCustomerOrg).mockResolvedValue([DEFICIENCY_ROW,] as any);
 
     const ctx = makeUserCtx("customer", null, 5);
     const caller = appRouter.createCaller(ctx);
 
-    const result = await caller.deficiency.listByCustomerOrg({ customerOrgId: 5 });
+    const result = await caller.deficiency.listByCustomerOrg({ customerOrgId: 5, });
 
     expect(result[0]).not.toHaveProperty("estimatedCost");
     expect(result[0]).not.toHaveProperty("resolutionNotes");
   });
 
   it("rejects a non-customer caller requesting a customer org from another company", async () => {
-    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 5, companyId: 2 } as any);
+    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 5, companyId: 2, } as any);
 
     const ctx = makeUserCtx("technician", 1);
     const caller = appRouter.createCaller(ctx);
@@ -253,3 +261,8 @@ describe("Customer data isolation — deficiency.listByCustomerOrg", () => {
     expect(db.getDeficienciesByCustomerOrg).not.toHaveBeenCalled();
   });
 });
+
+vi.mock("./storage", () => ({
+  storageGet: vi.fn(async key => ({ url: `https://fixture.test/${key}` })),
+  storageGetDownload: vi.fn(),
+}));

@@ -103,3 +103,22 @@ remaining live checks.
 - New identifier conventions → add to `ID_TOKENS`.
 - New approved guard/getter names → add to `SCOPING_SIGNALS`.
 - Reviewed exceptions → add to `ALLOWLIST` with a reason.
+
+## Uploaded audit verification — 2026-10-02
+
+On `codex/audit-remediation`, strict mode again passed: **60 router files,
+zero active findings, two reviewed exceptions**. The finalization exception now
+explicitly records its documented platform-admin bypass. The shared
+`assertAttachmentDestination` signal was added after reviewing its canonical
+parent/company/customer and finalized-write checks; no new allowlist entry was
+added. CI strict mode remains required.
+
+PR-18 is already merged via PR 16 (`7c4e5df`), rather than awaiting its original
+feature-branch review. Current remediation base is `87a23db`. Final focused tests
+passed **186**, and the full suite passed **1,225** with **14 existing skips**
+on Node 22.23.3 and disposable MySQL. Tests include null-company customers,
+actual child/ancestor consistency, admin bypass, missing parents, unchanged
+denied writes, and reassigned technician offline sync. The clean heuristic does
+not establish that all import, multipart, concurrency or external-provider paths
+are verified; outstanding acceptance work is recorded in the
+[readiness register](../PRODUCTION_READINESS.md#uploaded-audit-remediation--2026-10-02-draft-branch).

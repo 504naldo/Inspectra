@@ -1,3 +1,4 @@
+import { verifyAuditRequiredSchema } from "../requiredSchema";
 import cors from "cors";
 import express from "express";
 import type { ErrorRequestHandler } from "express";
@@ -24,10 +25,10 @@ import { buildHealthPayload } from "./health";
  * and component-library inline styles come from origins not known at build time.
  */
 function buildCspDirectives() {
-  const scriptSrc = ["'self'", "https://maps.googleapis.com", "https://maps.gstatic.com"];
+  const scriptSrc = ["'self'", "https://maps.googleapis.com", "https://maps.gstatic.com",];
   const connectSrc = ["'self'", "https://maps.googleapis.com"];
 
-  for (const envVar of [process.env.VITE_ANALYTICS_ENDPOINT, process.env.S3_ENDPOINT]) {
+  for (const envVar of [process.env.VITE_ANALYTICS_ENDPOINT, process.env.S3_ENDPOINT,]) {
     if (!envVar) continue;
     try {
       connectSrc.push(new URL(envVar).origin);
@@ -83,6 +84,7 @@ async function startServer() {
 
   // Run pending database migrations before starting the server
   await runMigrations();
+  if (process.env.DATABASE_URL) await verifyAuditRequiredSchema();
 
   const app = express();
   app.set("trust proxy", 1);
@@ -121,7 +123,7 @@ async function startServer() {
     max: 20,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: "Too many authentication attempts, please try again later" },
+    message: { error: "Too many authentication attempts, please try again later", },
   });
 
   const uploadLimiter = rateLimit({
@@ -213,7 +215,7 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
+startServer().catch(err => {
   console.error(err);
   process.exit(1);
 });

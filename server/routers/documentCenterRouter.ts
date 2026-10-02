@@ -1,3 +1,4 @@
+import { resolveDocumentUrl } from "../documentUrl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
@@ -14,7 +15,7 @@ async function getRawDb() {
   return db.getDb ? db.getDb() : null;
 }
 
-const DOC_TYPES = ["all", "report", "attachment", "quote", "knowledge_base"] as const;
+const DOC_TYPES = ["all", "report", "attachment", "quote", "knowledge_base",] as const;
 
 type DocItem = {
   id: string;
@@ -45,7 +46,7 @@ export const documentCenterRouter = router({
       const companyId = ctx.user.companyId!;
       const rawDb = await getRawDb();
 
-      const emptyCounts = { all: 0, report: 0, attachment: 0, quote: 0, knowledge_base: 0 };
+      const emptyCounts = { all: 0, report: 0, attachment: 0, quote: 0, knowledge_base: 0, };
       if (!rawDb) return { items: [], counts: emptyCounts };
 
       const sp = input.search ? `%${input.search}%` : null;
@@ -53,23 +54,24 @@ export const documentCenterRouter = router({
 
       // Get all company job IDs (shared scoping)
       const companyJobRows = await rawDb
-        .select({ id: jobs.id, jobNumber: jobs.jobNumber, siteId: jobs.siteId, customerOrgId: jobs.customerOrgId })
+        .select({ id: jobs.id, jobNumber: jobs.jobNumber, siteId: jobs.siteId, customerOrgId: jobs.customerOrgId, })
         .from(jobs)
         .where(eq(jobs.companyId, companyId));
-      const companyJobIds = companyJobRows.map((j) => j.id);
+      const companyJobIds = companyJobRows.map(j => j.id);
 
       // Get all company site IDs (for site-scoped attachments)
       const companySiteRows = await rawDb
-        .select({ id: sites.id, name: sites.name, customerOrgId: sites.customerOrgId })
+        .select({ id: sites.id, name: sites.name, customerOrgId: sites.customerOrgId, })
         .from(sites)
         .where(eq(sites.companyId, companyId));
-      const companySiteIds = companySiteRows.map((s) => s.id);
+      const companySiteIds = companySiteRows.map(s => s.id);
 
       const items: DocItem[] = [];
 
       // ── 1. Reports ─────────────────────────────────────────────────────────
       if ((docType === "all" || docType === "report") && companyJobIds.length > 0) {
-        const baseWhere = and(inArray(reports.jobId, companyJobIds), isNotNull(reports.fileUrl));
+        const baseWhere = and(inArray(reports.jobId, companyJobIds),
+          or(isNotNull(reports.fileKey), isNotNull(reports.fileUrl)));
         const where = sp
           ? and(baseWhere, or(like(reports.title, sp), like(reports.reportNumber, sp)))
           : baseWhere;
@@ -80,6 +82,7 @@ export const documentCenterRouter = router({
             title: reports.title,
             reportNumber: reports.reportNumber,
             fileUrl: reports.fileUrl,
+            fileKey: reports.fileKey,
             status: reports.status,
             createdAt: reports.createdAt,
             jobId: jobs.id,
@@ -101,7 +104,7 @@ export const documentCenterRouter = router({
             docType: "report",
             title: r.title,
             fileName: `${r.reportNumber}.pdf`,
-            fileUrl: r.fileUrl ?? null,
+            fileUrl: await resolveDocumentUrl( r),
             mimeType: "application/pdf",
             fileSize: null,
             siteName: r.siteName ?? null,
@@ -124,7 +127,7 @@ export const documentCenterRouter = router({
         if (hasJobIds || hasSiteIds) {
           const scopeWhere = or(
             hasJobIds ? inArray(attachments.jobId, companyJobIds) : undefined,
-            hasSiteIds ? inArray(attachments.siteId, companySiteIds) : undefined,
+            hasSiteIds ? inArray(attachments.siteId, companySiteIds) : undefined
           );
           const where = sp ? and(scopeWhere, like(attachments.fileName, sp)) : scopeWhere;
 
@@ -147,8 +150,8 @@ export const documentCenterRouter = router({
             .limit(limit);
 
           // Build quick lookup maps for context
-          const jobMap = new Map(companyJobRows.map((j) => [j.id, j]));
-          const siteMap = new Map(companySiteRows.map((s) => [s.id, s]));
+          const jobMap = new Map(companyJobRows.map(j => [j.id, j]));
+          const siteMap = new Map(companySiteRows.map(s => [s.id, s]));
 
           for (const r of rows) {
             const jobInfo = r.jobId ? jobMap.get(r.jobId) : null;
@@ -171,7 +174,7 @@ export const documentCenterRouter = router({
               entityType: r.entityType,
               status: null,
               date: r.createdAt,
-              href: r.jobId ? `/admin/jobs/${r.jobId}` : (r.siteId ? `/admin/sites/${r.siteId}/files` : `/admin/documents`),
+              href: r.jobId ? `/admin/jobs/${r.jobId}` :r.siteId ? `/admin/sites/${r.siteId}/files` : `/admin/documents`,
             });
           }
         }
@@ -204,7 +207,7 @@ export const documentCenterRouter = router({
           .limit(limit);
 
         // Build job number map for quotes
-        const quoteJobIds = Array.from(new Set(rows.map((r) => r.jobId).filter((id): id is number => id != null)));
+        const quoteJobIds = Array.from(new Set(rows.map(r => r.jobId).filter((id): id is number => id != null)));
         const jobNumMap = new Map<number, string>();
         if (quoteJobIds.length > 0) {
           const qjRows = await rawDb.select({ id: jobs.id, jobNumber: jobs.jobNumber }).from(jobs).where(inArray(jobs.id, quoteJobIds));
@@ -238,7 +241,7 @@ export const documentCenterRouter = router({
         const baseWhere = and(
           eq(knowledgeBase.companyId, companyId),
           isNotNull(knowledgeBase.fileUrl),
-          eq(knowledgeBase.isActive, true), // deactivated (removed) docs drop out of the center
+          eq(knowledgeBase.isActive, true) // deactivated (removed) docs drop out of the center
         );
         const where = sp
           ? and(baseWhere, like(knowledgeBase.title, sp))
@@ -284,10 +287,10 @@ export const documentCenterRouter = router({
 
       const counts = {
         all: items.length,
-        report: items.filter((i) => i.docType === "report").length,
-        attachment: items.filter((i) => i.docType === "attachment").length,
-        quote: items.filter((i) => i.docType === "quote").length,
-        knowledge_base: items.filter((i) => i.docType === "knowledge_base").length,
+        report: items.filter(i => i.docType === "report").length,
+        attachment: items.filter(i => i.docType === "attachment").length,
+        quote: items.filter(i => i.docType === "quote").length,
+        knowledge_base: items.filter(i => i.docType === "knowledge_base").length,
       };
 
       return { items: limited, counts };
@@ -338,7 +341,7 @@ export const documentCenterRouter = router({
 
       // knowledge_base: soft-delete (deactivate) — reversible from the Knowledge Base page.
       const kb = await db.getKnowledgeBaseById(id);
-      if (!kb || kb.companyId !== companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!kb || ( kb.companyId !== companyId && !callerIsPlatformOperator())) throw new TRPCError({ code: "NOT_FOUND" });
       await db.updateKnowledgeBaseEntry(id, { isActive: false });
       void logActivity({
         ctx, entityType: "knowledge_base", entityId: id, eventType: "knowledge_base.deactivated",

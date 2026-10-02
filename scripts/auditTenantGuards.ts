@@ -77,6 +77,7 @@ const ID_TOKENS = [
 // or the platform-operator bypass all count.
 const SCOPING_SIGNALS: RegExp[] = [
   /assert\w*Company\b/,              // assertJobCompany, assertSiteCompany, assertDeviceCompany, assertCustomerOrgCompany, …
+  /assertAttachmentDestination\b/, // canonical attachment parent plus company/org/link checks
   /assert\w*Access\b/,               // assertDeficiencyAccess, assertAttachmentAccess, …
   /get\w+ForCompany\b/,              // getJobForCompany, getSiteForCompany, …
   /requireOwned\w*/,                 // requireOwnedQueueItem, requireOwned…
@@ -106,7 +107,7 @@ const ALLOWLIST: Record<string, string> = {
   // Reviewed 2026-07-21 (commit of this pass). Scoping is real but not visible
   // to the regex.
   "server/routers/complianceRouter.ts::finalizeJob":
-    "delegates to compliance/finalizeJob.ts, which enforces job.companyId === ctx.user.companyId before finalizing",
+    "delegates to compliance/finalizeJob.ts, which enforces job company ownership with the documented platform-admin bypass before finalizing",
   "server/jobAssignmentRouter.ts::listMyJobs":
     "self-scoped: returns only the caller's own assignments (WHERE jobAssignments.userId = ctx.user.id)",
   // listJobsWithAssignees / listDispatch previously relied on this allowlist for
@@ -141,7 +142,7 @@ function safeIsDir(p: string): boolean {
 
 const procStartRe = new RegExp(
   `(^|\\n)\\s*([A-Za-z0-9_]+)\\s*:\\s*(${SCOPED_PROCEDURES.join("|")})\\b`,
-  "g",
+  "g"
 );
 
 function auditFile(absFile: string): Finding[] {
@@ -163,10 +164,10 @@ function auditFile(absFile: string): Finding[] {
     const block = src.slice(cur.index, end);
     const line = src.slice(0, cur.index).split("\n").length;
 
-    const ids = ID_TOKENS.filter((t) => new RegExp(`\\b${t}\\b`).test(block));
+    const ids = ID_TOKENS.filter(t => new RegExp(`\\b${t}\\b`).test(block));
     if (ids.length === 0) continue; // no record id → not our concern
 
-    const scoped = SCOPING_SIGNALS.some((re) => re.test(block));
+    const scoped = SCOPING_SIGNALS.some(re => re.test(block));
     if (scoped) continue; // shows a scoping signal → clear
 
     const key = `${rel}::${cur.name}`;
@@ -196,8 +197,8 @@ function main() {
   const all: Finding[] = [];
   for (const f of files) all.push(...auditFile(f));
 
-  const active = all.filter((f) => !f.allowlisted);
-  const allowlisted = all.filter((f) => f.allowlisted);
+  const active = all.filter(f => !f.allowlisted);
+  const allowlisted = all.filter(f => f.allowlisted);
 
   if (asJson) {
     console.log(JSON.stringify({ scannedFiles: files.length, active, allowlisted }, null, 2));
@@ -223,7 +224,7 @@ function main() {
     console.log(
       `\nThis is a lint-grade heuristic, not a security proof. A clean run means ` +
       `"nothing obvious", not "verified safe". Review flags by hand; record ` +
-      `decisions in the ALLOWLIST (with a reason) or in docs/PRODUCTION_READINESS.md.`,
+      `decisions in the ALLOWLIST (with a reason) or in docs/PRODUCTION_READINESS.md.`
     );
   }
 

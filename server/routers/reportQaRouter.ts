@@ -1,3 +1,4 @@
+import { resolveDocumentUrl } from "../documentUrl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc";
@@ -14,10 +15,10 @@ async function getRawDb() {
   return db.getDb ? db.getDb() : null;
 }
 
-const QA_FILTER_VALUES = ["all", "generated", "corrections_required", "approved", "sent", "archived", "field_complete"] as const;
+const QA_FILTER_VALUES = ["all", "generated", "corrections_required", "approved", "sent", "archived", "field_complete",] as const;
 type QaFilter = (typeof QA_FILTER_VALUES)[number];
 
-const REPORT_STATUSES = ["generated", "corrections_required", "approved", "sent", "archived"] as const;
+const REPORT_STATUSES = ["generated", "corrections_required", "approved", "sent", "archived",] as const;
 
 export const reportQaRouter = router({
 
@@ -41,7 +42,7 @@ export const reportQaRouter = router({
         .select({ id: jobs.id })
         .from(jobs)
         .where(eq(jobs.companyId, companyId));
-      const companyJobIds = companyJobRows.map((j) => j.id);
+      const companyJobIds = companyJobRows.map(j => j.id);
       if (companyJobIds.length === 0) return { items: [], counts: emptyCounts };
 
       // 2. Status counts for tab badges
@@ -63,19 +64,18 @@ export const reportQaRouter = router({
         .from(deficiencies)
         .where(and(
           inArray(deficiencies.jobId, companyJobIds),
-          inArray(deficiencies.status, ["open", "in_progress"]),
+          inArray(deficiencies.status, ["open", "in_progress"])
         ))
         .groupBy(deficiencies.jobId);
-      const openDefMap = new Map<number, number>(openDefRows.map((r) => [r.jobId, Number(r.cnt)]));
+      const openDefMap = new Map<number, number>(openDefRows.map(r => [r.jobId, Number(r.cnt)]));
 
       // 4. "Field complete" — completed jobs with no report at all
-      let fieldCompleteItems: ReturnType<typeof makeFieldCompleteItem>[] = [];
-      if (input.filter === "field_complete" || input.filter === "all") {
+      let fieldCompleteItems: ReturnType<typeof makeFieldCompleteItem>[] = []; {
         const reportedJobRows = await rawDb
           .select({ jobId: reports.jobId })
           .from(reports)
           .where(inArray(reports.jobId, companyJobIds));
-        const reportedJobIdSet = new Set(reportedJobRows.map((r) => r.jobId));
+        const reportedJobIdSet = new Set(reportedJobRows.map(r => r.jobId));
 
         const completedJobRows = await rawDb
           .select({
@@ -91,12 +91,11 @@ export const reportQaRouter = router({
           .leftJoin(sites, eq(jobs.siteId, sites.id))
           .leftJoin(customerOrgs, eq(jobs.customerOrgId, customerOrgs.id))
           .where(and(eq(jobs.companyId, companyId), eq(jobs.status, "completed")))
-          .orderBy(desc(jobs.completedAt))
-          .limit(50);
+          .orderBy(desc(jobs.completedAt));
 
         fieldCompleteItems = completedJobRows
-          .filter((j) => !reportedJobIdSet.has(j.id))
-          .map((j) => makeFieldCompleteItem(j, openDefMap));
+          .filter(j => !reportedJobIdSet.has(j.id))
+          .map(j => makeFieldCompleteItem(j, openDefMap));
 
         counts.field_complete = fieldCompleteItems.length;
       }
@@ -105,7 +104,7 @@ export const reportQaRouter = router({
       let reportItems: ReturnType<typeof makeReportItem>[] = [];
       if (input.filter !== "field_complete") {
         const statusWhere = (REPORT_STATUSES as readonly string[]).includes(input.filter)
-          ? eq(reports.status, input.filter as typeof REPORT_STATUSES[number])
+          ? eq(reports.status, input.filter as ( typeof REPORT_STATUSES)[number])
           : undefined;
 
         const rows = await rawDb
@@ -124,6 +123,7 @@ export const reportQaRouter = router({
             reportStatus: reports.status,
             deficiencyCount: reports.deficiencyCount,
             fileUrl: reports.fileUrl,
+            fileKey: reports.fileKey,
             qaNote: reports.qaNote,
             approvedAt: reports.approvedAt,
           })
@@ -134,18 +134,23 @@ export const reportQaRouter = router({
           .where(
             statusWhere
               ? and(inArray(reports.jobId, companyJobIds), statusWhere)
-              : inArray(reports.jobId, companyJobIds),
+              : inArray(reports.jobId, companyJobIds)
           )
           .orderBy(desc(reports.updatedAt))
           .limit(input.limit);
 
-        reportItems = rows.map((r) => makeReportItem(r, openDefMap));
+        reportItems = await Promise.all( rows.map(async r =>
+            makeReportItem(
+              { ...r, fileUrl: await resolveDocumentUrl(r) }, openDefMap
+            )));
       }
 
       // 6. Resolve technician names (fetch only unique IDs)
-      const allItems = [...reportItems, ...fieldCompleteItems];
+      const allItems = [...reportItems, ...(input.filter === "field_complete" || input.filter === "all"
+          ?fieldCompleteItems.slice(0, input.limit)
+          : []),];
       const techIds = Array.from(new Set(
-        allItems.map((i) => i.technicianId).filter((id): id is number => id != null),
+        allItems.map(i => i.technicianId).filter((id): id is number => id != null)
       ));
       const techMap = new Map<number, string>();
       for (const id of techIds) {
@@ -153,7 +158,7 @@ export const reportQaRouter = router({
         if (u?.name) techMap.set(id, u.name);
       }
 
-      const items = allItems.map((item) => ({
+      const items = allItems.map(item => ({
         ...item,
         technicianName: item.technicianId != null ? (techMap.get(item.technicianId) ?? null) : null,
         technicianId: undefined,
@@ -219,7 +224,7 @@ export const reportQaRouter = router({
       const report = await db.getReportById(input.reportId);
       if (!report) throw new TRPCError({ code: "NOT_FOUND" });
       await assertCompanyOwns(report.jobId, ctx.user.companyId!);
-      await db.updateReport(input.reportId, { status: "corrections_required", qaNote: input.note });
+      await db.updateReport(input.reportId, { status: "corrections_required", qaNote: input.note, });
       void logActivity({
         ctx, entityType: "report", entityId: input.reportId,
         eventType: "report.corrections_requested",
@@ -333,7 +338,7 @@ function makeReportItem(
     qaNote: string | null | undefined;
     approvedAt: Date | null | undefined;
   },
-  openDefMap: Map<number, number>,
+  openDefMap: Map<number, number>
 ) {
   return {
     reportId: r.reportId,
@@ -370,7 +375,7 @@ function makeFieldCompleteItem(
     leadTechnicianId: number | null | undefined;
     completedAt: Date | null | undefined;
   },
-  openDefMap: Map<number, number>,
+  openDefMap: Map<number, number>
 ) {
   return {
     reportId: null as number | null,

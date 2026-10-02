@@ -64,7 +64,7 @@ describe("PR-10 capability matrix (office-held per-company actions)", () => {
 
     it("office keeps its normal AR actions (create / markPaid)", async () => {
       const inv = await office.invoice.create({ taxRate: 0 });
-      await expect(office.invoice.markPaid({ id: inv.id, amountPaid: 100 })).resolves.toBeTruthy();
+      await expect(office.invoice.markPaid({ id: inv.id, amountPaid: 100, requestId: crypto.randomUUID() })).resolves.toBeTruthy();
     });
   });
 

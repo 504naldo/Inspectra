@@ -20,7 +20,7 @@ export const userRouter = router({
     .query(async ({ input }) => {
       const { companyId, search, role, isActive } = input;
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available', });
       
       let conditions = [eq(users.companyId, companyId)];
       
@@ -78,9 +78,9 @@ export const userRouter = router({
       onCallUntil: z.string().optional().nullable(), // ISO datetime string, or null to clear
     }))
     .mutation(async ({ input, ctx }) => {
-      const { userId, name, role, isActive, certNumber, certificationLevel, certExpiry, customerOrgId, isOnCall, onCallUntil } = input;
+      const { userId, name, role, isActive, certNumber, certificationLevel, certExpiry, customerOrgId, isOnCall, onCallUntil, } = input;
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available', });
       
       // Get user to verify they're in the same company
       const [user] = await db
@@ -94,7 +94,7 @@ export const userRouter = router({
       }
       
       if (user.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot update users from other companies' });
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot update users from other companies', });
       }
       
       // Build update object
@@ -113,18 +113,16 @@ export const userRouter = router({
       if (onCallUntil !== undefined) updates.onCallUntil = onCallUntil ? new Date(onCallUntil) : null;
 
       if (Object.keys(updates).length === 0) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No updates provided' });
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No updates provided', });
       }
+
+      if (isActive === false)
+        updates.sessionVersion = sql`${users.sessionVersion} + 1`;
 
       await db
         .update(users)
         .set(updates)
         .where(eq(users.id, userId));
-
-      // Instantly revoke all active sessions when an account is deactivated.
-      if (isActive === false) {
-        await incrementUserSessionVersion(userId);
-      }
 
       return { success: true };
     }),
@@ -141,7 +139,7 @@ export const userRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available', });
 
       // Prevent duplicate emails
       const existing = await db.select({ id: users.id })
@@ -149,7 +147,7 @@ export const userRouter = router({
         .where(eq(users.email, input.email))
         .limit(1);
       if (existing.length > 0) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'A user with this email already exists' });
+        throw new TRPCError({ code: 'CONFLICT', message: 'A user with this email already exists', });
       }
 
       const placeholderOpenId = `pending_${randomUUID()}`;
@@ -180,16 +178,16 @@ export const userRouter = router({
     .input(z.object({ userId: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available', });
 
       if (input.userId === ctx.user.id) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot delete your own account' });
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot delete your own account', });
       }
 
       const [target] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
       if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
       if (target.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete users from another company' });
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete users from another company', });
       }
 
       // Remove job assignments
@@ -210,10 +208,10 @@ export const userRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { keepUserId, deleteUserId } = input;
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available', });
       
       if (keepUserId === deleteUserId) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot merge user with itself' });
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot merge user with itself', });
       }
       
       // Get both users to verify they're in the same company
@@ -230,11 +228,11 @@ export const userRouter = router({
         .limit(1);
       
       if (!keepUser || !deleteUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'One or both users not found' });
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'One or both users not found', });
       }
       
       if (keepUser.companyId !== ctx.user.companyId || deleteUser.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot merge users from other companies' });
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot merge users from other companies', });
       }
       
       // Update foreign keys to point to keepUserId

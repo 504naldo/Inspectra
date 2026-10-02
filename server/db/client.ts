@@ -7,13 +7,20 @@
 
 import { drizzle } from "drizzle-orm/mysql2";
 import * as schema from "../../drizzle/schema";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 /** The connected Drizzle database type. */
 export type Db = ReturnType<typeof drizzle>;
 
 let _db: Db | null = null;
+const transactionContext = new AsyncLocalStorage<Db>();
+export function runWithDb<T>(db: Db, fn: () => Promise<T>): Promise<T> {
+  return transactionContext.run(db, fn);
+}
 
 export async function getDb() {
+  const transaction = transactionContext.getStore();
+  if (transaction) return transaction;
   if (!_db && process.env.DATABASE_URL) {
     try {
       _db = drizzle(process.env.DATABASE_URL, { schema, mode: "default" });

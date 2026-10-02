@@ -401,7 +401,7 @@ function Router() {
         </Route>
         <Route path="/admin/qa/:jobId">
           {params => withNumericParams(params, ["jobId"], ids => (
-            <ProtectedRoute allowedRoles={["admin"]}>
+            <ProtectedRoute allowedRoles={["admin", "office"]}>
               <AdminQACheck jobId={ids.jobId} />
             </ProtectedRoute>
           ))}

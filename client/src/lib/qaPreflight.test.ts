@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { pendingSyncItemCount, isQaSubmitBlocked, countUnsyncedForJob, pendingSyncCountsForJob } from "./qaPreflight";
+import { pendingSyncItemCount, isQaSubmitBlocked, countUnsyncedForJob, pendingSyncCountsForJob, } from "./qaPreflight";
 
 describe("QA submit preflight", () => {
   it("counts all pending critical types", () => {
-    expect(pendingSyncItemCount({ pendingResults: 2, pendingDeficiencies: 1, pendingChecklistResponses: 3, pendingTemplateResponses: 4 })).toBe(10);
+    expect(pendingSyncItemCount({ pendingResults: 2, pendingDeficiencies: 1, pendingChecklistResponses: 3, pendingTemplateResponses: 4, })).toBe(10);
     expect(pendingSyncItemCount({ pendingResults: 0, pendingDeficiencies: 0 })).toBe(0);
     // optional counts default to 0
     expect(pendingSyncItemCount({ pendingResults: 1, pendingDeficiencies: 0 })).toBe(1);
@@ -15,8 +15,8 @@ describe("QA submit preflight", () => {
 
   it("blocks when there is unsynced data and no override", () => {
     expect(isQaSubmitBlocked({ pendingResults: 0, pendingDeficiencies: 1 }, false)).toBe(true);
-    expect(isQaSubmitBlocked({ pendingResults: 0, pendingDeficiencies: 0, pendingChecklistResponses: 2 }, false)).toBe(true);
-    expect(isQaSubmitBlocked({ pendingResults: 0, pendingDeficiencies: 0, pendingTemplateResponses: 1 }, false)).toBe(true);
+    expect(isQaSubmitBlocked({ pendingResults: 0, pendingDeficiencies: 0, pendingChecklistResponses: 2, }, false)).toBe(true);
+    expect(isQaSubmitBlocked({ pendingResults: 0, pendingDeficiencies: 0, pendingTemplateResponses: 1, }, false)).toBe(true);
   });
 
   it("allows submission when the technician explicitly overrides", () => {
@@ -39,17 +39,17 @@ describe("Per-job scoping", () => {
 
   it("pendingSyncCountsForJob isolates each job's stores", () => {
     const stores = {
-      results: [{ jobId: 1, synced: false }, { jobId: 2, synced: false }],
-      deficiencies: [{ jobId: 1, synced: false }, { jobId: 1, synced: false }],
+      results: [{ jobId: 1, synced: false }, { jobId: 2, synced: false },],
+      deficiencies: [{ jobId: 1, synced: false }, { jobId: 1, synced: false },],
       checklistResponses: [{ jobId: 2, synced: false }],
       templateResponses: [{ jobId: 1, synced: true }],
     };
     const job1 = pendingSyncCountsForJob(stores, 1);
-    expect(job1).toEqual({ pendingResults: 1, pendingDeficiencies: 2, pendingChecklistResponses: 0, pendingTemplateResponses: 0, pendingFireAlarmResults: 0, pendingSmokeTests: 0 });
+    expect(job1).toEqual({ pendingResults: 1, pendingDeficiencies: 2, pendingChecklistResponses: 0, pendingTemplateResponses: 0, pendingFireAlarmResults: 0, pendingSmokeTests: 0, });
     expect(pendingSyncItemCount(job1)).toBe(3);
 
     const job2 = pendingSyncCountsForJob(stores, 2);
-    expect(job2).toEqual({ pendingResults: 1, pendingDeficiencies: 0, pendingChecklistResponses: 1, pendingTemplateResponses: 0, pendingFireAlarmResults: 0, pendingSmokeTests: 0 });
+    expect(job2).toEqual({ pendingResults: 1, pendingDeficiencies: 0, pendingChecklistResponses: 1, pendingTemplateResponses: 0, pendingFireAlarmResults: 0, pendingSmokeTests: 0, });
   });
 
   it("job A's submit is not blocked by job B's unsynced data", () => {
@@ -90,9 +90,18 @@ describe("Fire-alarm & smoke queues (IndexedDB) count toward the preflight", () 
           { jobId: 1, synced: true }, // already synced
         ],
       },
-      1,
+      1
     );
     expect(counts.pendingFireAlarmResults).toBe(2);
     expect(counts.pendingSmokeTests).toBe(1);
   });
+});
+
+it("legacy unscoped POST batches block QA even if the user checks override", () => {
+  expect(
+    isQaSubmitBlocked(
+      { pendingResults: 0, pendingDeficiencies: 0, pendingLegacyRequests: 1 },
+      true
+    )
+  ).toBe(true);
 });

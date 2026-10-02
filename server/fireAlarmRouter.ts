@@ -1,9 +1,10 @@
 import { router, protectedProcedure, technicianProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { getDb, getSiteById, assertJobCompany, assertJobNotFinalized } from "./db";
+import { getDb, getSiteById, assertJobCompany, assertJobNotFinalized,
+  withAudit, } from "./db";
 import { assertSiteCompany } from "./tenantGuards";
-import { fireAlarmSystems, fireAlarmChecklistTemplates, fireAlarmInspectionResults } from "../drizzle/schema";
+import { fireAlarmSystems, fireAlarmChecklistTemplates, fireAlarmInspectionResults, } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 
 /**
@@ -52,7 +53,7 @@ export async function populateJobFireAlarmChecklist(jobId: number, siteId: numbe
 
   if (templates.length === 0) return;
 
-  const rows = templates.map((item) => ({
+  const rows = templates.map(item => ({
     jobId,
     fireAlarmSystemId,
     checklistItemId: item.id,
@@ -121,7 +122,7 @@ export const fireAlarmRouter = router({
       .orderBy(fireAlarmChecklistTemplates.sectionOrder, fireAlarmChecklistTemplates.id);
 
     const sections: Record<string, any> = {};
-    items.forEach((item) => {
+    items.forEach(item => {
       const sectionKey = `${item.sectionOrder}-${item.sectionName}`;
       if (!sections[sectionKey]) {
         sections[sectionKey] = {
@@ -162,9 +163,9 @@ export const fireAlarmRouter = router({
           .where(eq(fireAlarmInspectionResults.jobId, input.jobId)),
       ]);
 
-      const byItemId = new Map(jobResults.map((r) => [r.checklistItemId, r]));
+      const byItemId = new Map(jobResults.map(r => [r.checklistItemId, r]));
 
-      return templates.map((item) => {
+      return templates.map(item => {
         const r = byItemId.get(item.id);
         return {
           id: item.id,
@@ -178,10 +179,12 @@ export const fireAlarmRouter = router({
           isRequired: item.isRequired,
           hasSubItems: ((item as any).hasSubItems ?? false) as boolean,
           subItems: ((item as any).subItems ?? null) as string[] | null,
-          notApplicableNote: ((item as any).notApplicableNote ?? null) as string | null,
+          notApplicableNote: ((item as any).notApplicableNote ?? null) as
+            | string | null,
           headerFields: ((item as any).headerFields ?? null) as string[] | null,
           resultId: r?.id ?? null,
-          result: (r?.result ?? "not_tested") as "pass" | "fail" | "na" | "not_tested",
+          result: (r?.result ?? "not_tested") as
+            | "pass" | "fail" | "na" | "not_tested",
           numericValue: r?.numericValueRaw ?? null,
           textValue: r?.textValue ?? null,
           notes: r?.notes ?? null,
@@ -191,7 +194,7 @@ export const fireAlarmRouter = router({
     }),
 
   // Get inspection results for a job (raw, backward compat)
-  getInspectionResults: protectedProcedure
+  getInspectionResults: technicianProcedure
     .input(z.object({ jobId: z.number() }))
     .query(async ({ input, ctx }) => {
       await assertJobCompany(input.jobId, ctx.user.companyId!);
@@ -205,7 +208,7 @@ export const fireAlarmRouter = router({
     }),
 
   // Save inspection result
-  saveInspectionResult: protectedProcedure
+  saveInspectionResult: technicianProcedure
     .input(
       z.object({
         jobId: z.number(),
@@ -217,14 +220,48 @@ export const fireAlarmRouter = router({
         textValue: z.string().optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "fireAlarm.saveInspectionResult", async () => {
       // Company + finalized scope only — NOT assignment-scoped, so a reassigned
       // technician's captured offline fire-alarm results still sync (no
       // field-data loss). Locked by offlineSyncSafeguards.test.ts.
+        const job =
       await assertJobCompany(input.jobId, ctx.user.companyId!);
       await assertJobNotFinalized(input.jobId);
       const database = await getDb();
       if (!database) throw new Error("Database not available");
+
+        const [system] = await database
+          .select()
+          .from(fireAlarmSystems)
+          .where(eq(fireAlarmSystems.id, input.fireAlarmSystemId))
+          .limit(1);
+        if (!system)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Fire alarm system not found",
+          });
+        if (system.siteId !== job.siteId)
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "System does not belong to the job site",
+          });
+        const [item] = await database
+          .select()
+          .from(fireAlarmChecklistTemplates)
+          .where(eq(fireAlarmChecklistTemplates.id, input.checklistItemId))
+          .limit(1);
+        if (!item)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Checklist item not found",
+          });
+        const credentialSnapshot = {
+          name: ctx.user.name,
+          certNumber: ctx.user.certNumber,
+          certificationLevel: ctx.user.certificationLevel,
+          certExpiry: ctx.user.certExpiry,
+        };
 
       const existing = await database
         .select()
@@ -248,6 +285,8 @@ export const fireAlarmRouter = router({
         await database
           .update(fireAlarmInspectionResults)
           .set({
+              itemSnapshot: existing[0].itemSnapshot ?? item,
+              technicianCertificationSnapshot: credentialSnapshot,
             result: input.result,
             notes: input.notes || null,
             numericValue: numericValueDecimal,
@@ -262,6 +301,8 @@ export const fireAlarmRouter = router({
         return { success: true, id: existing[0].id };
       } else {
         const result = await database.insert(fireAlarmInspectionResults).values({
+              itemSnapshot: item,
+              technicianCertificationSnapshot: credentialSnapshot,
           jobId: input.jobId,
           fireAlarmSystemId: input.fireAlarmSystemId,
           checklistItemId: input.checklistItemId,
@@ -276,7 +317,7 @@ export const fireAlarmRouter = router({
 
         return { success: true, id: Number((result as any)[0].insertId) };
       }
-    }),
+    })),
 
   // Create or update fire alarm system
   upsertSystem: technicianProcedure

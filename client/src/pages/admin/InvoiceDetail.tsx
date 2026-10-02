@@ -48,7 +48,7 @@ import {
   AlertTriangle,
   Eye,
 } from "lucide-react";
-import { INVOICE_STATUSES, type InvoiceStatus } from "../../../../drizzle/schema";
+import { INVOICE_STATUSES, type InvoiceStatus, } from "../../../../drizzle/schema";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -81,7 +81,7 @@ function AddLineItemDialog({
   invoiceId,
   onClose,
   onAdded,
-}: { invoiceId: number; onClose: () => void; onAdded: () => void }) {
+}: { invoiceId: number; onClose: () => void; onAdded: () => void; }) {
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("0");
@@ -93,22 +93,26 @@ function AddLineItemDialog({
   });
 
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Add Line Item</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Add Line Item</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label>Description <span className="text-destructive">*</span></Label>
-            <Input className="mt-1" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Line item description" />
+            <Label>
+              Description <span className="text-destructive">*</span>
+            </Label>
+            <Input className="mt-1" value={description} onChange={e => setDescription(e.target.value)} placeholder="Line item description" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Quantity</Label>
-              <Input className="mt-1" type="number" min="0" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+              <Input className="mt-1" type="number" min="0" step="0.01" value={quantity} onChange={e => setQuantity(e.target.value)} />
             </div>
             <div>
               <Label>Unit Price</Label>
-              <Input className="mt-1" type="number" min="0" step="0.01" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
+              <Input className="mt-1" type="number" min="0" step="0.01" value={unitPrice} onChange={e => setUnitPrice(e.target.value)} />
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -116,14 +120,18 @@ function AddLineItemDialog({
               type="checkbox"
               id="taxable"
               checked={taxable}
-              onChange={(e) => setTaxable(e.target.checked)}
+              onChange={e => setTaxable(e.target.checked)}
               className="rounded"
             />
-            <Label htmlFor="taxable" className="cursor-pointer">Taxable</Label>
+            <Label htmlFor="taxable" className="cursor-pointer">
+              Taxable
+            </Label>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={addItem.isPending}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={addItem.isPending}>
+            Cancel
+          </Button>
           <Button
             onClick={() => addItem.mutate({
               invoiceId,
@@ -134,7 +142,8 @@ function AddLineItemDialog({
             })}
             disabled={addItem.isPending || !description.trim()}
           >
-            {addItem.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {addItem.isPending && ( <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
             Add Item
           </Button>
         </DialogFooter>
@@ -146,18 +155,20 @@ function AddLineItemDialog({
 function BillingContactSuggestion({
   customerOrgId,
   onSelect,
-}: { customerOrgId?: number; onSelect: (name: string, email: string) => void }) {
+}: { customerOrgId?: number; onSelect: (name: string, email: string) => void; }) {
   const { data } = trpc.contact.getRecipientsForWorkflow.useQuery(
     { customerOrgId, workflowType: "invoice" },
-    { enabled: !!customerOrgId },
+    { enabled: !!customerOrgId }
   );
-  const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? [])].filter((c) => c.email);
+  const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? []),].filter(c => c.email);
   if (suggestions.length === 0) return null;
   return (
     <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 p-2.5 space-y-1.5">
-      <p className="text-xs font-semibold text-green-800 dark:text-green-300 uppercase tracking-wide">Billing contacts</p>
+      <p className="text-xs font-semibold text-green-800 dark:text-green-300 uppercase tracking-wide">
+        Billing contacts
+      </p>
       <div className="flex flex-wrap gap-1.5">
-        {suggestions.map((c) => (
+        {suggestions.map(c => (
           <button
             key={c.id}
             type="button"
@@ -177,7 +188,7 @@ function EditHeaderDialog({
   invoice,
   onClose,
   onSaved,
-}: { invoice: any; onClose: () => void; onSaved: () => void }) {
+}: { invoice: any; onClose: () => void; onSaved: () => void; }) {
   const [form, setForm] = useState({
     billToName: invoice.billToName ?? "",
     billToEmail: invoice.billToEmail ?? "",
@@ -193,24 +204,28 @@ function EditHeaderDialog({
   });
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
+    setForm(f => ({ ...f, [k]: e.target.value }));
 
   const update = trpc.invoice.update.useMutation({
     onSuccess: () => { toast.success("Invoice updated"); onSaved(); onClose(); },
-    onError: (e) => toast.error(e.message),
+    onError:e => toast.error(e.message),
   });
 
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Edit Invoice Header</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Edit Invoice Header</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4 py-1">
           <div className="space-y-3">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bill To</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Bill To
+            </p>
             <div className="grid grid-cols-1 gap-3">
               <BillingContactSuggestion
                 customerOrgId={invoice.customerOrgId}
-                onSelect={(name, email) => setForm((f) => ({ ...f, billToName: f.billToName || name, billToEmail: email }))}
+                onSelect={(name, email) => setForm(f => ({ ...f, billToName: f.billToName || name, billToEmail: email, }))}
               />
               <div>
                 <Label>Name</Label>
@@ -241,7 +256,9 @@ function EditHeaderDialog({
             </div>
           </div>
           <div className="space-y-3 pt-2 border-t">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dates</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Dates
+            </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Invoice Date</Label>
@@ -254,7 +271,9 @@ function EditHeaderDialog({
             </div>
           </div>
           <div className="space-y-3 pt-2 border-t">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sage / Accounting</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Sage / Accounting
+            </p>
             <div className="grid grid-cols-1 gap-3">
               <div>
                 <Label>Customer Code</Label>
@@ -274,7 +293,9 @@ function EditHeaderDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={update.isPending}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={update.isPending}>
+            Cancel
+          </Button>
           <Button
             onClick={() => update.mutate({
               id: invoice.id,
@@ -292,7 +313,8 @@ function EditHeaderDialog({
             })}
             disabled={update.isPending}
           >
-            {update.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {update.isPending && ( <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
             Save Changes
           </Button>
         </DialogFooter>
@@ -305,33 +327,40 @@ function MarkPaidDialog({
   invoice,
   onClose,
   onPaid,
-}: { invoice: any; onClose: () => void; onPaid: () => void }) {
+}: { invoice: any; onClose: () => void; onPaid: () => void; }) {
   const [amount, setAmount] = useState(String(parseFloat(String(invoice.balanceDue ?? invoice.total ?? "0")).toFixed(2)));
   const [paidAt, setPaidAt] = useState(new Date().toISOString().split("T")[0]);
 
+  const [paymentRequestId] = useState(() => crypto.randomUUID());
   const markPaid = trpc.invoice.markPaid.useMutation({
     onSuccess: () => { toast.success("Payment recorded"); onPaid(); onClose(); },
     onError: () => toast.error("Failed to record payment"),
   });
 
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-xs">
-        <DialogHeader><DialogTitle>Record Payment</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Record Payment</DialogTitle>
+        </DialogHeader>
         <div className="space-y-3">
           <div>
             <Label>Amount Paid</Label>
-            <Input className="mt-1" type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <Input className="mt-1" type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
           </div>
           <div>
             <Label>Payment Date</Label>
-            <Input className="mt-1" type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+            <Input className="mt-1" type="date" value={paidAt} onChange={e => setPaidAt(e.target.value)} />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={markPaid.isPending}>Cancel</Button>
-          <Button onClick={() => markPaid.mutate({ id: invoice.id, amountPaid: parseFloat(amount), paidAt })} disabled={markPaid.isPending || !amount || parseFloat(amount) <= 0}>
-            {markPaid.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          <Button variant="outline" onClick={onClose} disabled={markPaid.isPending}>
+            Cancel
+          </Button>
+          <Button onClick={() => markPaid.mutate({ id: invoice.id,
+                requestId: paymentRequestId, amountPaid: parseFloat(amount), paidAt, })} disabled={markPaid.isPending || !amount || parseFloat(amount) <= 0}>
+            {markPaid.isPending && ( <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
             Record Payment
           </Button>
         </DialogFooter>
@@ -351,15 +380,15 @@ function SendInvoiceDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  invoice: { id: number; customerOrgId?: number | null; siteId?: number | null; billToEmail?: string | null };
+  invoice: { id: number; customerOrgId?: number | null; siteId?: number | null; billToEmail?: string | null; };
   onSend: (to: string[]) => void;
   isPending: boolean;
 }) {
   const { data } = trpc.contact.getRecipientsForWorkflow.useQuery(
-    { customerOrgId: invoice.customerOrgId ?? undefined, siteId: invoice.siteId ?? undefined, workflowType: "invoice" },
-    { enabled: open && !!(invoice.customerOrgId || invoice.siteId) },
+    { customerOrgId: invoice.customerOrgId ?? undefined, siteId: invoice.siteId ?? undefined, workflowType: "invoice", },
+    { enabled: open && !!(invoice.customerOrgId || invoice.siteId) }
   );
-  const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? [])].filter((c) => c.email);
+  const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? []),].filter(c => c.email);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [extra, setExtra] = useState("");
 
@@ -367,7 +396,7 @@ function SendInvoiceDialog({
     if (!open) { setSelected(new Set()); setExtra(""); return; }
     const initial = new Set<string>();
     if (suggestions.length > 0) {
-      suggestions.forEach((c) => initial.add(c.email!));
+      suggestions.forEach(c => initial.add(c.email!));
     } else if (invoice.billToEmail) {
       initial.add(invoice.billToEmail);
     }
@@ -375,9 +404,9 @@ function SendInvoiceDialog({
   }, [open, suggestions.length]);
 
   const toggle = (email: string) =>
-    setSelected((prev) => { const s = new Set(prev); s.has(email) ? s.delete(email) : s.add(email); return s; });
+    setSelected(prev => { const s = new Set(prev); s.has(email) ? s.delete(email) : s.add(email); return s; });
 
-  const extraEmails = extra.split(/[\s,;]+/).map((s) => s.trim()).filter((s) => s.includes("@") && s.includes("."));
+  const extraEmails = extra.split(/[\s,;]+/).map(s => s.trim()).filter(s => s.includes("@") && s.includes("."));
   const allTo = [...Array.from(selected), ...extraEmails];
 
   return (
@@ -394,14 +423,17 @@ function SendInvoiceDialog({
         <div className="space-y-4 py-2">
           {(data?.warnings ?? []).map((w, i) => (
             <div key={i} className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />{w}
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              {w}
             </div>
           ))}
           {suggestions.length > 0 ? (
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground uppercase tracking-wide">Recipients from contact list</Label>
+              <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                Recipients from contact list
+              </Label>
               <div className="rounded-md border divide-y">
-                {suggestions.map((c) => (
+                {suggestions.map(c => (
                   <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted cursor-pointer">
                     <input
                       type="checkbox"
@@ -411,10 +443,14 @@ function SendInvoiceDialog({
                     />
                     <span className="flex-1 min-w-0">
                       <span className="text-sm font-medium">{c.name}</span>
-                      <span className="text-xs text-muted-foreground ml-1.5 truncate">{c.email}</span>
+                      <span className="text-xs text-muted-foreground ml-1.5 truncate">
+                        {c.email}
+                      </span>
                     </span>
-                    {(data?.recommended ?? []).some((r) => r.id === c.id) && (
-                      <span className="text-xs bg-violet-100 text-violet-700 rounded-full px-1.5 py-0.5">flagged</span>
+                    {(data?.recommended ?? []).some(r => r.id === c.id) && (
+                      <span className="text-xs bg-violet-100 text-violet-700 rounded-full px-1.5 py-0.5">
+                        flagged
+                      </span>
                     )}
                   </label>
                 ))}
@@ -422,7 +458,9 @@ function SendInvoiceDialog({
             </div>
           ) : invoice.billToEmail ? (
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground uppercase tracking-wide">Bill-to email</Label>
+              <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                Bill-to email
+              </Label>
               <label className="flex items-center gap-2.5 rounded-md border px-3 py-2 hover:bg-muted cursor-pointer">
                 <input
                   type="checkbox"
@@ -434,27 +472,35 @@ function SendInvoiceDialog({
               </label>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No contacts found. Enter an email below.</p>
+            <p className="text-sm text-muted-foreground">
+              No contacts found. Enter an email below.
+            </p>
           )}
           <div className="space-y-1">
             <Label className="text-xs">Additional recipients</Label>
             <Input
               placeholder="extra@example.com"
               value={extra}
-              onChange={(e) => setExtra(e.target.value)}
+              onChange={e => setExtra(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">Separate multiple with commas or spaces.</p>
+            <p className="text-xs text-muted-foreground">
+              Separate multiple with commas or spaces.
+            </p>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
           <Button
             size="sm"
             disabled={allTo.length === 0 || isPending}
             onClick={() => onSend(allTo)}
             className="gap-1.5"
           >
-            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            {isPending ? ( <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : ( <Send className="h-3.5 w-3.5" />
+            )}
             Send to {allTo.length} recipient{allTo.length !== 1 ? "s" : ""}
           </Button>
         </DialogFooter>
@@ -465,7 +511,7 @@ function SendInvoiceDialog({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-interface Props { id: number }
+interface Props { id: number; }
 
 export default function InvoiceDetail({ id }: Props) {
   const [, navigate] = useLocation();
@@ -488,17 +534,17 @@ export default function InvoiceDetail({ id }: Props) {
   const [aiSubject, setAiSubject] = useState("");
   const [aiBody, setAiBody] = useState("");
   const aiDraft = trpc.aiAssistant.draftCustomerMessage.useMutation({
-    onSuccess: (d) => { setAiSubject(d.subject); setAiBody(d.body); setAiOpen(true); },
-    onError: (e) => toast.error(e.message || "AI request failed"),
+    onSuccess:d => { setAiSubject(d.subject); setAiBody(d.body); setAiOpen(true); },
+    onError:e => toast.error(e.message || "AI request failed"),
   });
 
-  const { data: invoice, isLoading, error } = trpc.invoice.get.useQuery({ id }, { enabled: !!id });
+  const { data: invoice, isLoading, error, } = trpc.invoice.get.useQuery({ id }, { enabled: !!id });
 
   const invalidate = () => utils.invoice.get.invalidate({ id });
 
   const updateStatus = trpc.invoice.updateStatus.useMutation({
     onSuccess: () => { toast.success("Status updated"); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError:e => toast.error(e.message),
   });
 
   const removeItem = trpc.invoice.removeLineItem.useMutation({
@@ -513,26 +559,28 @@ export default function InvoiceDetail({ id }: Props) {
 
   const voidInvoice = trpc.invoice.void.useMutation({
     onSuccess: () => { toast.success("Invoice voided"); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError:e => toast.error(e.message),
   });
+
+  const [sendRequestId, setSendRequestId] = useState(() => crypto.randomUUID());
 
   const sendMut = trpc.invoice.send.useMutation({
     onSuccess: () => { toast.success("Invoice sent to customer"); setSendOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError:e => toast.error(e.message),
   });
 
   const generatePdf = trpc.invoice.generatePdf.useMutation({
     onSuccess: ({ pdfUrl }) => { invalidate(); window.open(pdfUrl, "_blank", "noopener"); },
-    onError: (e) => toast.error(e.message || "PDF generation failed"),
+    onError:e => toast.error(e.message || "PDF generation failed"),
   });
 
   const markExportedToSage = trpc.invoice.markExportedToSage.useMutation({
     onSuccess: () => { toast.success("Marked as exported to Sage"); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError:e => toast.error(e.message),
   });
 
   const exportSage = trpc.invoice.exportSage.useMutation({
-    onSuccess: (data) => {
+    onSuccess:data => {
       const blob = new Blob([data.csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -543,7 +591,7 @@ export default function InvoiceDetail({ id }: Props) {
       toast.success(`Exported ${data.count} invoice(s) to CSV`);
       invalidate();
     },
-    onError: (e) => toast.error(e.message || "Sage export failed"),
+    onError:e => toast.error(e.message || "Sage export failed"),
   });
 
   if (isLoading) {
@@ -632,9 +680,11 @@ export default function InvoiceDetail({ id }: Props) {
                 size="sm"
                 className="gap-1.5 text-primary border-primary/30 hover:bg-primary/10"
                 disabled={aiDraft.isPending}
-                onClick={() => aiDraft.mutate({ type: "invoice", entityId: invoice.id, tone: "professional" })}
+                onClick={() => aiDraft.mutate({ type: "invoice", entityId: invoice.id, tone: "professional", })}
               >
-                {aiDraft.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />}
+                {aiDraft.isPending ? ( <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : ( <Bot className="h-3.5 w-3.5" />
+                )}
                 Draft Note
               </Button>
               {invoice.pdfUrl ? (
@@ -654,14 +704,18 @@ export default function InvoiceDetail({ id }: Props) {
                   onClick={() => generatePdf.mutate({ id: invoice.id })}
                   disabled={generatePdf.isPending}
                 >
-                  {generatePdf.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  {generatePdf.isPending ? ( <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : ( <Download className="h-3.5 w-3.5" />
+                  )}
                   {generatePdf.isPending ? "Generating…" : "Generate PDF"}
                 </Button>
               )}
               {!isLocked && (invoice.status === "draft" || invoice.status === "sent") && (
-                <Button size="sm" className="gap-1.5" onClick={() => setSendOpen(true)}>
-                  <Send className="h-3.5 w-3.5" /> Send Invoice
-                </Button>
+                <Button size="sm" className="gap-1.5" onClick={() => {
+                      setSendRequestId(crypto.randomUUID()); setSendOpen(true);
+                    }}>
+                    <Send className="h-3.5 w-3.5" /> Send Invoice
+                  </Button>
               )}
               {!isLocked && invoice.status === "draft" && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-muted-foreground" onClick={() => updateStatus.mutate({ id: invoice.id, status: "sent" })} disabled={updateStatus.isPending}>
@@ -669,9 +723,9 @@ export default function InvoiceDetail({ id }: Props) {
                 </Button>
               )}
               {!isLocked && (invoice.status === "sent" || invoice.status === "viewed") && (
-                <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "approved" })} disabled={updateStatus.isPending}>
-                  Mark Approved
-                </Button>
+                <Button size="sm" onClick={() => updateStatus.mutate({ id: invoice.id, status: "approved", })} disabled={updateStatus.isPending}>
+                    Mark Approved
+                  </Button>
               )}
               {!isVoid && !isPaid && !isSageExported && (
                 <Button size="sm" variant="outline" onClick={() => setShowMarkPaid(true)}>
@@ -698,7 +752,9 @@ export default function InvoiceDetail({ id }: Props) {
                   disabled={markExportedToSage.isPending}
                   title="Mark as already exported to Sage without re-downloading"
                 >
-                  {markExportedToSage.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5 mr-1" />}
+                  {markExportedToSage.isPending ? ( <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  ) : ( <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                  )}
                   Mark Exported
                 </Button>
               )}
@@ -725,7 +781,9 @@ export default function InvoiceDetail({ id }: Props) {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2"><Building2 className="h-4 w-4" /> Bill To</span>
+                <span className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4" /> Bill To
+                </span>
                 {!isLocked && (
                   <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setShowEditHeader(true)}>
                     <Edit className="h-3 w-3 mr-1" /> Edit
@@ -734,13 +792,22 @@ export default function InvoiceDetail({ id }: Props) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1 text-sm">
-              <p className="font-medium">{invoice.billToName ?? invoice.customerOrg?.name ?? "—"}</p>
-              {invoice.billToEmail && <p className="text-muted-foreground">{invoice.billToEmail}</p>}
-              {invoice.billToAddress && <p className="text-muted-foreground">{invoice.billToAddress}</p>}
-              {(invoice.billToCity || invoice.billToPostalCode) && (
-                <p className="text-muted-foreground">{[invoice.billToCity, invoice.billToState, invoice.billToPostalCode].filter(Boolean).join(", ")}</p>
+              <p className="font-medium">
+                {invoice.billToName ?? invoice.customerOrg?.name ?? "—"}
+              </p>
+              {invoice.billToEmail && ( <p className="text-muted-foreground">{invoice.billToEmail}</p>
               )}
-              {invoice.site?.name && <p className="text-muted-foreground mt-2">Site: {invoice.site.name}</p>}
+              {invoice.billToAddress && ( <p className="text-muted-foreground">{invoice.billToAddress}</p>
+              )}
+              {(invoice.billToCity || invoice.billToPostalCode) && (
+                <p className="text-muted-foreground">
+                  {[invoice.billToCity, invoice.billToState, invoice.billToPostalCode,].filter(Boolean).join(", ")}
+                </p>
+              )}
+              {invoice.site?.name && ( <p className="text-muted-foreground mt-2">
+                  Site: {invoice.site.name}
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -752,10 +819,20 @@ export default function InvoiceDetail({ id }: Props) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <InvRow label="Invoice Date">{invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString() : "—"}</InvRow>
-              <InvRow label="Due Date">{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}</InvRow>
-              {invoice.sentAt && <InvRow label="Sent At">{new Date(invoice.sentAt).toLocaleDateString()}</InvRow>}
-              {invoice.paidAt && <InvRow label="Paid At">{new Date(invoice.paidAt).toLocaleDateString()}</InvRow>}
+              <InvRow label="Invoice Date">
+                {invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString() : "—"}
+              </InvRow>
+              <InvRow label="Due Date">
+                {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}
+              </InvRow>
+              {invoice.sentAt && ( <InvRow label="Sent At">
+                  {new Date(invoice.sentAt).toLocaleDateString()}
+                </InvRow>
+              )}
+              {invoice.paidAt && ( <InvRow label="Paid At">
+                  {new Date(invoice.paidAt).toLocaleDateString()}
+                </InvRow>
+              )}
               {invoice.pdfUrl && (
                 <InvRow label="PDF">
                   <a href={invoice.pdfUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
@@ -763,11 +840,18 @@ export default function InvoiceDetail({ id }: Props) {
                   </a>
                 </InvRow>
               )}
-              {invoice.sageCustomerCode && <InvRow label="Sage Customer">{invoice.sageCustomerCode}</InvRow>}
-              {invoice.sageGlCode && <InvRow label="GL Code">{invoice.sageGlCode}</InvRow>}
-              {invoice.sageDepartment && <InvRow label="Department">{invoice.sageDepartment}</InvRow>}
+              {invoice.sageCustomerCode && ( <InvRow label="Sage Customer">
+                  {invoice.sageCustomerCode}
+                </InvRow>
+              )}
+              {invoice.sageGlCode && ( <InvRow label="GL Code">{invoice.sageGlCode}</InvRow>
+              )}
+              {invoice.sageDepartment && ( <InvRow label="Department">{invoice.sageDepartment}</InvRow>
+              )}
               {invoice.sageExportedAt && (
-                <InvRow label="Sage Exported">{new Date(invoice.sageExportedAt).toLocaleDateString()}</InvRow>
+                <InvRow label="Sage Exported">
+                  {new Date(invoice.sageExportedAt).toLocaleDateString()}
+                </InvRow>
               )}
             </CardContent>
           </Card>
@@ -787,7 +871,9 @@ export default function InvoiceDetail({ id }: Props) {
           </CardHeader>
           <CardContent>
             {lineItems.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No line items yet.</p>
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No line items yet.
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -809,7 +895,7 @@ export default function InvoiceDetail({ id }: Props) {
                             <td className="py-2 pr-3">
                               <Input
                                 value={editDesc}
-                                onChange={(e) => setEditDesc(e.target.value)}
+                                onChange={e => setEditDesc(e.target.value)}
                                 className="h-7 text-xs"
                               />
                             </td>
@@ -817,7 +903,7 @@ export default function InvoiceDetail({ id }: Props) {
                               <Input
                                 type="number"
                                 value={editQty}
-                                onChange={(e) => setEditQty(e.target.value)}
+                                onChange={e => setEditQty(e.target.value)}
                                 className="h-7 text-xs text-right w-16"
                               />
                             </td>
@@ -825,7 +911,7 @@ export default function InvoiceDetail({ id }: Props) {
                               <Input
                                 type="number"
                                 value={editPrice}
-                                onChange={(e) => setEditPrice(e.target.value)}
+                                onChange={e => setEditPrice(e.target.value)}
                                 className="h-7 text-xs text-right w-24"
                               />
                             </td>
@@ -858,9 +944,15 @@ export default function InvoiceDetail({ id }: Props) {
                         ) : (
                           <>
                             <td className="py-2 pr-3">{item.description}</td>
-                            <td className="py-2 px-3 text-right">{parseFloat(String(item.quantity ?? "1"))}</td>
-                            <td className="py-2 px-3 text-right">{fmt(item.unitPrice)}</td>
-                            <td className="py-2 px-3 text-right font-medium">{fmt(item.total)}</td>
+                            <td className="py-2 px-3 text-right">
+                              {parseFloat(String(item.quantity ?? "1"))}
+                            </td>
+                            <td className="py-2 px-3 text-right">
+                              {fmt(item.unitPrice)}
+                            </td>
+                            <td className="py-2 px-3 text-right font-medium">
+                              {fmt(item.total)}
+                            </td>
                             <td className="py-2 px-3 text-center text-xs text-muted-foreground">
                               {item.taxable ? "✓" : "—"}
                             </td>
@@ -886,7 +978,7 @@ export default function InvoiceDetail({ id }: Props) {
                                     className="h-6 w-6 p-0 text-destructive hover:text-destructive"
                                     onClick={() => {
                                       if (confirm("Remove this line item?")) {
-                                        removeItem.mutate({ id: item.id, invoiceId: invoice.id });
+                                        removeItem.mutate({ id: item.id, invoiceId: invoice.id, });
                                       }
                                     }}
                                     disabled={removeItem.isPending}
@@ -913,7 +1005,11 @@ export default function InvoiceDetail({ id }: Props) {
               </div>
               {parseFloat(String(invoice.taxAmount ?? "0")) > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tax ({(parseFloat(String(invoice.taxRate ?? "0")) * 100).toFixed(0)}%)</span>
+                  <span className="text-muted-foreground">
+                    Tax (
+                    {(parseFloat(String(invoice.taxRate ?? "0")) * 100).toFixed(0)}
+                    %)
+                  </span>
                   <span>{fmt(invoice.taxAmount)}</span>
                 </div>
               )}
@@ -925,7 +1021,9 @@ export default function InvoiceDetail({ id }: Props) {
                 <>
                   <div className="flex justify-between text-muted-foreground">
                     <span>Amount Paid</span>
-                    <span className="text-green-600">– {fmt(invoice.amountPaid)}</span>
+                    <span className="text-green-600">
+                      – {fmt(invoice.amountPaid)}
+                    </span>
                   </div>
                   <div className="flex justify-between font-semibold">
                     <span>Balance Due</span>
@@ -957,7 +1055,9 @@ export default function InvoiceDetail({ id }: Props) {
         {/* Notes */}
         {(invoice.internalNotes || invoice.clientNotes) && (
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-base">Notes</CardTitle></CardHeader>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Notes</CardTitle>
+            </CardHeader>
             <CardContent className="space-y-3 text-sm">
               {invoice.internalNotes && (
                 <div>
@@ -1014,17 +1114,23 @@ export default function InvoiceDetail({ id }: Props) {
             <DialogTitle className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-primary" /> AI Draft — Invoice Note
             </DialogTitle>
-            <DialogDescription>Review before sending. AI suggestions are drafts only.</DialogDescription>
+            <DialogDescription>
+              Review before sending. AI suggestions are drafts only.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {aiSubject && (
               <div>
-                <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">Subject</p>
+                <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">
+                  Subject
+                </p>
                 <p className="text-sm font-medium">{aiSubject}</p>
               </div>
             )}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">Body</p>
+              <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">
+                Body
+              </p>
               <div className="whitespace-pre-wrap text-sm max-h-60 overflow-y-auto border rounded-md p-3 bg-muted/30">
                 {aiBody}
               </div>
@@ -1042,7 +1148,9 @@ export default function InvoiceDetail({ id }: Props) {
             >
               <Copy className="h-3.5 w-3.5 mr-1" /> Copy
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setAiOpen(false)}>Close</Button>
+            <Button variant="ghost" size="sm" onClick={() => setAiOpen(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1050,9 +1158,9 @@ export default function InvoiceDetail({ id }: Props) {
       <SendInvoiceDialog
         open={sendOpen}
         onOpenChange={setSendOpen}
-        invoice={{ id: invoice.id, customerOrgId: invoice.customerOrgId, siteId: invoice.siteId, billToEmail: invoice.billToEmail }}
+        invoice={{ id: invoice.id, customerOrgId: invoice.customerOrgId, siteId: invoice.siteId, billToEmail: invoice.billToEmail, }}
         isPending={sendMut.isPending}
-        onSend={(to) => sendMut.mutate({ id: invoice.id, to })}
+        onSend={to => sendMut.mutate({ id: invoice.id, requestId: sendRequestId, to })}
       />
     </AdminLayout>
   );
@@ -1060,7 +1168,7 @@ export default function InvoiceDetail({ id }: Props) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function InvRow({ label, children }: { label: string; children: React.ReactNode }) {
+function InvRow({ label, children, }: { label: string; children: React.ReactNode; }) {
   return (
     <div className="flex items-start justify-between gap-2">
       <span className="text-muted-foreground shrink-0">{label}</span>
@@ -1069,7 +1177,7 @@ function InvRow({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
-function LinkedRecord({ label, href, text }: { label: string; href: string | null; text: string | null }) {
+function LinkedRecord({ label, href, text, }: { label: string; href: string | null; text: string | null; }) {
   return (
     <div>
       <p className="text-xs text-muted-foreground mb-1">{label}</p>
