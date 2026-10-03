@@ -16,7 +16,7 @@ it('retains identity and exact partial payment after lost response, navigation a
 it('coalesces repeated clicks, persists before sending, and retries the same identity if receipt absent',async()=>{
  const disk=storage(), op=new PaymentOperation('a',disk), input={id:2,amountPaid:25};
  let finish!:(x:any)=>void;const send=vi.fn(p=>new Promise(resolve=>{expect(op.pending()).toEqual(p);finish=resolve}));
- const first=op.submit(input,send), second=op.submit(input,send);await Promise.resolve();expect(send).toHaveBeenCalledTimes(1);finish({success:true});await Promise.all([first,second]);await op.beginNext(async()=>({success:true}));
+ const first=op.submit(input,send), second=op.submit(input,send);await vi.waitFor(()=>expect(send).toHaveBeenCalledTimes(1));finish({success:true});await Promise.all([first,second]);await op.beginNext(async()=>({success:true}));
  await expect(op.submit(input,async()=>{throw Error('offline')})).rejects.toThrow();const id=op.pending()!.requestId;
  expect(await new PaymentOperation('a',disk).reconcile(async()=>null)).toBeNull();
  await op.submit(input,async p=>{expect(p.requestId).toBe(id);return {success:true}});
@@ -47,4 +47,16 @@ it('concurrent instances retain the same acknowledged identity until an explicit
  await expect(a.beginNext(async()=>null)).rejects.toThrow(/reconciled/);
  await a.beginNext(async()=>({amountPaid:40}));await a.submit({id:1,amountPaid:60},async p=>{sent.push(p.requestId);return {amountPaid:100}});expect(new Set(sent).size).toBe(2);
  }finally{vi.unstubAllGlobals()}
+});
+it('waits for a strict durable commit before dispatch and restores the ID after volatile cache loss',async()=>{
+ const disk=storage(), durable=storage();let commit!:(v:void)=>void;
+ const journal={getItem:async(k:string)=>durable.getItem(k),removeItem:async(k:string)=>durable.removeItem(k),setItem:async(k:string,v:string)=>{await new Promise<void>(r=>{commit=r});durable.setItem(k,v)}};
+ const op=new PaymentOperation('a',disk,journal),send=vi.fn(async()=>{throw Error('lost response')});const result=op.submit({id:1,amountPaid:40},send);
+ await Promise.resolve();await Promise.resolve();expect(send).not.toHaveBeenCalled();commit();await expect(result).rejects.toThrow();const id=op.pending()!.requestId;disk.removeItem('a');
+ const reopened=new PaymentOperation('a',disk,{...journal,setItem:async(k,v)=>durable.setItem(k,v)});await reopened.restore();expect(reopened.pending()?.requestId).toBe(id);expect(await reopened.reconcile(async()=>({amountPaid:40}))).toEqual({amountPaid:40});
+});
+it('durable-journal failure blocks network dispatch and preserves legacy operation identity',async()=>{
+ const disk=storage(),send=vi.fn(),saved={id:1,requestId:crypto.randomUUID(),amountPaid:40};disk.setItem('a',JSON.stringify(saved));
+ const journal={getItem:async()=>null,removeItem:async()=>{},setItem:async()=>{throw Error('disk unavailable')}};
+ await expect(new PaymentOperation('a',disk,journal).submit(saved,send)).rejects.toThrow('disk unavailable');expect(send).not.toHaveBeenCalled();expect(JSON.parse(disk.getItem('a')!)).toEqual(saved);
 });

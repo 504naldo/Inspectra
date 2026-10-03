@@ -119,16 +119,36 @@ prerequisites.
 
 ## Payment recovery UI
 
-Operation payloads persist under validated account/company/invoice identity before
-sending. Browser Web Locks coordinate tabs; unsupported browsers fail closed.
+Operation payloads commit to strict IndexedDB transactions under validated
+account/company/invoice identity before sending; localStorage is only a cache.
+Legacy cached identities are migrated without creating a new operation. Browser Web Locks coordinate tabs; unsupported browsers fail closed.
 Success retains the acknowledged ID. Reopening checks the durable server receipt.
 “Start another payment” is a deliberate, receipt-checked transition for a **separate
 amount actually received**. Never clear a pending local record or invent a new
 UUID to bypass an uncertain result. Corrupt/quota-blocked storage requires office
-reconciliation and preserved evidence. Browser/Android refresh/navigation, storage
-and native Web Locks acceptance still require device validation.
+reconciliation and preserved evidence. Desktop Chromium refresh, process termination/reopen and simultaneous tabs have
+passed against real MySQL. Android/native storage and Web Locks still require
+device validation.
 
 ## Validation evidence
 
 See the single [readiness register](../PRODUCTION_READINESS.md#pr-18-release-safety-follow-up--2026-10-03)
 for passed, failed/resolved, skipped and unrun checks and independent review.
+
+## Repeat isolated browser and backup checks
+
+After building, use Node 22 and an explicitly disposable loopback database URL:
+
+```sh
+DATABASE_URL=mysql://root@127.0.0.1:3306/inspectra_disposable node scripts/checkPaymentBrowser.mjs
+DATABASE_URL=mysql://root@127.0.0.1:3306/inspectra_disposable node scripts/checkPaymentRestore.mjs
+```
+
+The scripts create and drop their own uniquely named databases; the URL selects
+the local MySQL server, not production. Browser checks require Chromium
+(`CHROMIUM_BIN` may select it), intercept external requests, use fake session
+credentials and leave automatic email disabled. Restore checks require the local
+`inspectra-onboarding-mysql` Docker container and MySQL native dump/restore tools.
+They preserve all four trigger definitions and expose the post-backup payment
+gap before replaying a known synthetic receipt exactly once. This is a synthetic
+rehearsal, not a certified production backup, PITR or accounting reconciliation.

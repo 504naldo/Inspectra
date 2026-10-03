@@ -1,3 +1,4 @@
+import { createPaymentJournal } from "@/lib/paymentJournal";
 import { PaymentOperation } from "@/lib/paymentOperation";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -338,7 +339,7 @@ function MarkPaidDialogForUser({ invoice, onClose, onPaid, accountId, companyId 
   const [paidAt, setPaidAt] = useState(new Date().toISOString().split("T")[0]);
 
   const [operation] = useState(() => new PaymentOperation(
-    `inspectra:payment:${accountId}:${companyId}:${invoice.id}`, localStorage));
+    `inspectra:payment:${accountId}:${companyId}:${invoice.id}`, localStorage, createPaymentJournal()));
   const [reconciling, setReconciling] = useState(true);
   const [pending, setPending] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -347,12 +348,13 @@ function MarkPaidDialogForUser({ invoice, onClose, onPaid, accountId, companyId 
   const markPaid = trpc.invoice.markPaid.useMutation();
   useEffect(() => {
     let active = true;
-    let saved;
-    try { saved = operation.pending(); } catch { setRecoveryError("Saved payment is unreadable. Preserve it and ask the office to reconcile; do not create another payment."); return; }
-    if (saved) { setAmount(String(saved.amountPaid)); setPaidAt(saved.paidAt ?? ""); setPending(true); }
-    operation.reconcile(input => utils.invoice.paymentReceipt.fetch({ id: input.id, requestId: input.requestId }))
-      .then(receipt => { if (active && receipt) { toast.success("Previous payment confirmed"); setConfirmed(true); onPaid(); } })
-      .catch(() => { if (active) toast.error("Payment outcome could not be checked. Retry the saved operation only."); })
+    operation.restore().then(() => {
+      if (!active) return null;
+      const saved = operation.pending();
+      if (saved) { setAmount(String(saved.amountPaid)); setPaidAt(saved.paidAt ?? ""); setPending(true); }
+      return operation.reconcile(input => utils.invoice.paymentReceipt.fetch({ id: input.id, requestId: input.requestId }));
+    }).then(receipt => { if (active && receipt) { toast.success("Previous payment confirmed"); setConfirmed(true); onPaid(); } })
+      .catch(() => { if (active) setRecoveryError("Payment journal could not be recovered. Preserve it and ask the office to reconcile before another payment."); })
       .finally(() => { if (active) setReconciling(false); });
     return () => { active = false; };
   }, [operation]);
