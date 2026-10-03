@@ -1,7 +1,7 @@
 import { sendEmailOnce, EmailProviderRejected } from "../emailOutbox";
 import { toCustomerSafeInvoice } from "../customerDto";
 import { invoices, invoicePayments } from "../../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure, customerProcedure } from "../_core/trpc";
@@ -352,6 +352,17 @@ export const invoiceRouter = router({
       return { success: true };
     })),
 
+  paymentReceipt: officeProcedure
+    .input(z.object({ id: z.number().int().positive(), requestId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      await getInvoiceForCompany(input.id, ctx.user.companyId!);
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [receipt] = await database.select().from(invoicePayments).where(and(
+        eq(invoicePayments.invoiceId, input.id), eq(invoicePayments.requestId, input.requestId)));
+      return receipt?.result ?? null;
+    }),
+
   markPaid: officeProcedure
     .input(z.object({
       id: z.number(),
@@ -367,6 +378,8 @@ export const invoiceRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       return db.withAudit(ctx, "invoice.markPaid", async tx => {
+        await tx.execute(sql`SET @inspectra_payment_protocol = 2`);
+        try {
         const [locked] = await tx
           .select()
           .from(invoices)
@@ -386,7 +399,8 @@ export const invoiceRouter = router({
         if (receipt) {
           if (
             Math.round(Number(receipt.amount) * 100) !==
-            Math.round(input.amountPaid * 100)
+            Math.round(input.amountPaid * 100) ||
+            ((receipt.result as any).operationPaidAt ?? null) !== (input.paidAt ?? null)
           )
             throw new TRPCError({
               code: "CONFLICT",
@@ -413,17 +427,10 @@ export const invoiceRouter = router({
           Math.round(input.amountPaid * 100);
       const fullyPaid = paidCents >= totalCents;
       const response = {
-          success: true, status: fullyPaid ? "paid" : "partial",
+          success: true, operationPaidAt: input.paidAt ?? null, status: fullyPaid ? "paid" : "partial",
           total: totalCents / 100,
           amountPaid: paidCents / 100, balanceDue: Math.max(0, totalCents - paidCents) / 100,
         };
-        await tx.update(invoices).set( {
-        amountPaid: response.amountPaid.toFixed(2),
-        balanceDue: response.balanceDue.toFixed(2),
-        status: response.status as "paid" | "partial",
-        paidAt: fullyPaid ?input.paidAt ? new Date(input.paidAt) : new Date() : null,
-      })
-          .where(eq(invoices.id, input.id));
         await tx
           .insert (invoicePayments)
           .values({
@@ -432,7 +439,16 @@ export const invoiceRouter = router({
             amount:input.amountPaid.toFixed(2),
             result : response,
             recordedById: ctx.user.id, });
-      return response; });
+        await tx.update(invoices).set( {
+        amountPaid: response.amountPaid.toFixed(2),
+        balanceDue: response.balanceDue.toFixed(2),
+        status: response.status as "paid" | "partial",
+        paidAt: fullyPaid ?input.paidAt ? new Date(input.paidAt) : new Date() : null,
+      })
+          .where(eq(invoices.id, input.id));
+      return response;
+        } finally { await tx.execute(sql`SET @inspectra_payment_protocol = NULL`); }
+      });
     }),
 
   void: officeProcedure

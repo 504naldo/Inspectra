@@ -24,6 +24,7 @@
 
 import { eq, isNull, and } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { getCanonicalFireAlarmChecklist } from "../canonicalFireAlarmReport";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import * as schema from "../../drizzle/schema";
 import type { TrpcContext } from "../_core/context";
@@ -184,6 +185,8 @@ export async function finalizeJob(
 
   // 6. Build finalization payload and compute hash
   const payload = await buildFinalizationPayload(jobId, db);
+  if (job.jobType === "annual" && payload.fireAlarmInspectionResults.length)
+    await getCanonicalFireAlarmChecklist(jobId);
   const finalizationHash = computeFinalizationHash(payload);
 
   // 7. Write finalization fields + status transition

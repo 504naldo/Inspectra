@@ -11,8 +11,8 @@ backfills. Never expose database credentials in logs, PRs, or docs.
 - **Two migration histories (intentional — see `CLAUDE.md`):**
   - `drizzle/*.sql` + journal: generated from `drizzle/schema.ts`; CI runs
     `npx drizzle-kit migrate` against a fresh `mysql:8`.
-  - `drizzle/migrations/*.sql`: hand-numbered, applied to **production** by the
-    startup migration runner (`server/runMigrations.ts`), tracked in
+  - `drizzle/migrations/*.sql`: hand-numbered, applied only through explicitly reviewed
+    maintenance (`server/runMigrations.ts` with `apply: true`), tracked in
     `__schema_migrations`. The runner ignores `ER_DUP_FIELDNAME`/`ER_DUP_KEYNAME`,
     so additive statements are idempotent. Manual migrations must be plain MySQL
     DDL (no MariaDB `IF NOT EXISTS` on `ADD COLUMN/INDEX`; no `AFTER <col>` that
@@ -29,20 +29,21 @@ backfills. Never expose database credentials in logs, PRs, or docs.
 3. **Test in development/staging.** Apply migrations to a disposable MySQL 8
    (`drizzle-kit migrate` for the journal; run the manual files through a runner-like
    path) and run `pnpm test`.
-4. **Apply production migration.** For additive manual migrations, the startup runner
-   applies them on deploy. For anything destructive or high-risk, apply **manually**
-   and deliberately (out of band) — never let it run automatically.
+4. **Apply production migration.** Only a separately authorized maintenance operator applies reviewed
+   files under the required write freeze. Startup is read-only and refuses pending
+   manual migrations; journal startup verifies required schema and guards. See
+   [PR18_RELEASE_SAFETY.md](PR18_RELEASE_SAFETY.md) before any migration.
 5. **Verify schema version.** Confirm the expected files appear in
    `__schema_migrations` and that boot logs show `[Migrations] Applied: …` with no
    repeating failures.
 6. **Deploy the application.** Push to `main` (or trigger redeploy).
 7. **Smoke test.** `GET /health` → 200; exercise the manual smoke checklist
    (auth redirect, one tenant-scoped read, invoice mark-paid guard, a customer PDF).
-8. **Rollback procedure.** If a deploy regresses: redeploy the previous good commit
-   on Railway (app rollback is immediate). For schema: additive migrations are
-   forward-safe and generally need no rollback; for a destructive change, restore
-   from the step-1 backup — coordinate downtime. Document rollback notes in the PR
-   for any high-risk migration.
+8. **Rollback procedure.** If a deploy regresses, freeze writes and verify exact-version
+   compatibility before changing an image. Previous images are **not** assumed safe
+   against migrated payment data. Prefer compatible forward recovery, retaining
+   receipts and guards. Old-version recovery requires a verified full restore and
+   reconciliation of all post-backup operations; see [PR18_RELEASE_SAFETY.md](PR18_RELEASE_SAFETY.md).
 9. **Do not run destructive backfills automatically.** Backfills that mutate existing
    rows are applied manually, reviewed, and only after a backup.
 
@@ -74,8 +75,9 @@ real email.
   `[Migrations] Failed to apply …` line means application code expects schema the DB
   lacks. Treat repeated failures as a release blocker (this was the root cause of the
   parts-import 500s — see `PRODUCTION_READINESS.md` PR-09).
-- Recommended follow-up: a lightweight startup check that compares expected vs
-  applied migration set and emits a clear warning when they diverge.
+- Startup now fails closed on pending manual history, missing required columns
+  and absent protocol-v2 payment guards. Never let a warning substitute for a
+  successful schema/ledger preflight.
 
 ## Backup checklist (pre-migration)
 

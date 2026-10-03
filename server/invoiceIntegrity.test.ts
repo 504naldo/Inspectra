@@ -99,11 +99,12 @@ describe("Invoice integrity — markPaid + terminal states", () => {
         requestId: crypto.randomUUID(), })).rejects.toThrow();
   });
 
-  it("atomic guard prevents a double-apply race (db.markInvoicePaidIfEligible)", async () => {
+  it("atomic receipt prevents a double-apply race and obsolete direct writers fail closed", async () => {
     const id = await makeInvoice(100);
-    const first = await db.markInvoicePaidIfEligible(id, companyId, { amountPaid: "100", balanceDue: "0", status: "paid", paidAt: new Date(), });
-    const second = await db.markInvoicePaidIfEligible(id, companyId, { amountPaid: "100", balanceDue: "0", status: "paid", paidAt: new Date(), });
-    expect(first).toBe(true);
-    expect(second).toBe(false); // already paid → zero rows matched
+    await expect(db.markInvoicePaidIfEligible(id, companyId, { amountPaid: "100", balanceDue: "0", status: "paid", paidAt: new Date(), })).rejects.toThrow();
+    const input = { id, amountPaid: 100, requestId: crypto.randomUUID() };
+    const replies = await Promise.all([caller.invoice.markPaid(input), caller.invoice.markPaid(input)]);
+    expect(replies.map(reply => reply.amountPaid)).toEqual([100, 100]);
+    expect(await db.getInvoiceById(id)).toMatchObject({ amountPaid: "100.00", balanceDue: "0.00" });
   });
 });

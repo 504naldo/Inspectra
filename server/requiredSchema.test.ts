@@ -9,8 +9,10 @@ beforeEach(() => {
   execute.mockResolvedValue([[], []]);
 });
 it("checks required authentication, capture, schedule, receipt and outbox columns", async () => {
+  for (let i = 0; i < 6; i++) execute.mockResolvedValueOnce([[], []]);
+  execute.mockResolvedValueOnce([[{ guardCount: 4 }], []]);
   await verifyAuditRequiredSchema();
-  expect(execute).toHaveBeenCalledTimes(6);
+  expect(execute).toHaveBeenCalledTimes(7);
 });
 it("missing required migrations fail closed before serving requests", async () => {
   execute.mockRejectedValueOnce(new Error("Unknown column sessionVersion"));
@@ -25,4 +27,8 @@ it("unreviewed legacy snapshots are a release blocker", async () => {
   await expect(verifyAuditRequiredSchema()).rejects.toThrow(
     /Legacy fire-alarm snapshots/
   );
+});
+
+it("missing payment protocol guards block startup", async () => {
+  await expect(verifyAuditRequiredSchema()).rejects.toThrow(/protocol v2 migration guards/);
 });

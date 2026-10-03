@@ -146,3 +146,44 @@ for the separate production migration history and requires the existing 0014
 snapshot and 0044 session-version DDL to be verified. Neither was executed in
 production. Never reconstruct historical inspection answers or credentials from
 current templates; legacy remediation requires reviewed source evidence.
+
+## PR #18 release-safety follow-up — 2026-10-03
+
+Starting local/remote PR head verified: `cb03dde696002746e865a0daffdcc5b21be7ef73`,
+branch `codex/audit-remediation`, draft. Existing hosted CI passed on that exact
+head: [run 36978115178](https://github.com/504naldo/Inspectra/actions/runs/36978115178).
+The follow-up below is local until branch-publication safety is established.
+No real emails, production SQL, credentials or settings were changed.
+
+| Item | Acceptance criteria and reproduction | Implemented evidence | Status / release gap |
+|---|---|---|---|
+| 1 Payment retries | One received payment changes totals once despite repeated clicks, concurrent requests, lost COMMIT response, refresh/navigation/reopening; a different operation requires reconciliation | Existing same-ID server transaction already passed. Reopening formerly discarded the dialog-only UUID. Persistent account/company/invoice operation now retains exact amount/date/ID even after acknowledgement; Web Locks serialize tabs; explicit receipt-checked “Start another payment” transition; server validates immutable amount/date; lost-response test + 8 simultaneous retries produce one receipt | Code/regressions passed; real browser/native interruption and Web Locks acceptance unrun; unsupported browsers fail closed |
+| 2 Historical reports | Finalized questions, answers, requirement flags and standard versions survive changed/added/removed templates; incomplete historical evidence is flagged | Prior canonical getter joined current required-question IDs. Finalized regeneration now reads captures only; active completeness remains guarded. Capture includes requirements/version/provenance; canonical validation and sealing reject unproven legacy captures. PDF text regression verifies original wording, version, answer notes and exclusion of today's questions | Code/PDF regressions passed; representative historical PDFs and reviewed source-evidence conversion unrun |
+| 3 Migration safety | Fresh install and selected historical upgrade preserve counts, paid totals, tenant owners and exact captures; failures stop later migrations; repeated/interrupted runs recover without fabrication | Unsafe 0011 join reproduced in a rolled-back synthetic fixture transaction. Startup is read-only; explicit runner refuses unsafe backfills/constraints and fails fast. Fresh journal 0037 and selected manual 0086/0087 tested; partial DDL recovery and repeated execution preserve invariants | Synthetic fixture verification passed. No authorized sanitized restored database is available: **full historical release validation remains incomplete** |
+| 4 Rollback | Older payment writers fail closed; history cannot be altered/deleted; forward recovery preserves totals; rollback boundaries documented | Protocol-v2 triggers require a transactional writer marker and durable matching receipt, protect balance/status/date, reject receipt UPDATE/DELETE; obsolete writer attempts fail. Compatible server retry then next payment preserves ledger/totals. Required startup checks reject absent guards | Guard/forward-recovery tests passed. Restorable full backup/PITR and historical production recovery rehearsal unrun; old-image rollback is not approved |
+
+Independent review identified six blockers (acknowledgement races, unresolved
+account identity/corrupt storage, active completeness, provenance before sealing,
+missing startup guards, incomplete database financial-state guards). All were
+addressed; final reviewer reported no remaining blocking defect in reviewed code
+and independently ran **6/6 payment-operation tests**. This is code/test review,
+not live browser, production-data or release approval.
+
+| Status | Final applicable local check | Evidence |
+|---|---|---|
+| PASSED | Focused affected suites | 17 files / **173 tests**, no skips; final full run also includes the added receipt/update rollback test |
+| PASSED | Full tests | 117 files / **1,240 tests**; zero failures |
+| SKIPPED | Existing optional/disabled tests | 4 files / **14 tests**: 11 S3, 2 Phase-2, 1 auto-mapping |
+| PASSED | Typecheck, production build, built-server smoke | Node 22.23.3 / pnpm 10.4.1; smoke health/UI with no DB or provider credentials |
+| PASSED | Strict tenant audit | 60 router files / zero active findings / two reviewed exceptions; CI remains required |
+| PASSED | PDF regression | Generated PDF extracted using Poppler; original questions/version/notes retained after template mutation and removal |
+| PASSED | Migration checks | Fresh journal install/startup; synthetic historical tenants/payments/null and trusted captures; no auto-backfill; interrupted selected manual DDL and corrected retry |
+| FAILED, RESOLVED | Intermediate checks | CREATE TRIGGER needed query rather than prepared execute; obsolete direct-payment test updated to require rejection plus real concurrent receipt checks. Final runs passed |
+| UNRUN / NOT CONFIGURED | Lint | No lint script or ESLint configuration exists; `git diff --check` passed, but is not a lint substitute |
+| UNRUN | Historical release evidence | Sanitized restored DB, full backup/PITR restoration, representative original historical PDFs, browser/Android interruptions and live integrations |
+| BLOCKED | Publication / exact-final hosted CI | GitHub webhook read denied (403); no Railway read identity. No deployment recorded for branch/starting head and latest production deployment is main `87a23db`, but actual branch/preview trigger settings cannot be established. Await explicit confirmation before pushing; starting-head CI is not follow-up CI |
+
+Migration and rollback procedure: [release-safety runbook](runbooks/PR18_RELEASE_SAFETY.md).
+The earlier F01–F23 register still contains other draft release blockers;
+this follow-up does not close them or authorize a merge. Automation stays
+default-off; effective live EMAIL_AUTOMATION_ENABLED remains unverified.

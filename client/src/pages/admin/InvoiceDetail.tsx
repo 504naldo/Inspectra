@@ -1,3 +1,4 @@
+import { PaymentOperation } from "@/lib/paymentOperation";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AdminLayout from "@/components/AdminLayout";
@@ -328,14 +329,47 @@ function MarkPaidDialog({
   onClose,
   onPaid,
 }: { invoice: any; onClose: () => void; onPaid: () => void; }) {
+  const { user } = useAuth();
+  if (!user || !Number.isInteger(user.id) || (user.companyId == null && user.role !== "admin")) return <Dialog open onOpenChange={onClose}><DialogContent>Sign in before recording a payment.</DialogContent></Dialog>;
+  return <MarkPaidDialogForUser key={`${user.id}:${user.companyId}:${invoice.id}`} invoice={invoice} onClose={onClose} onPaid={onPaid} accountId={user.id} companyId={user.companyId} />;
+}
+function MarkPaidDialogForUser({ invoice, onClose, onPaid, accountId, companyId }: { invoice: any; onClose: () => void; onPaid: () => void; accountId: number; companyId: number | null }) {
   const [amount, setAmount] = useState(String(parseFloat(String(invoice.balanceDue ?? invoice.total ?? "0")).toFixed(2)));
   const [paidAt, setPaidAt] = useState(new Date().toISOString().split("T")[0]);
 
-  const [paymentRequestId] = useState(() => crypto.randomUUID());
-  const markPaid = trpc.invoice.markPaid.useMutation({
-    onSuccess: () => { toast.success("Payment recorded"); onPaid(); onClose(); },
-    onError: () => toast.error("Failed to record payment"),
-  });
+  const [operation] = useState(() => new PaymentOperation(
+    `inspectra:payment:${accountId}:${companyId}:${invoice.id}`, localStorage));
+  const [reconciling, setReconciling] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [recoveryError, setRecoveryError] = useState("");
+  const utils = trpc.useUtils();
+  const markPaid = trpc.invoice.markPaid.useMutation();
+  useEffect(() => {
+    let active = true;
+    let saved;
+    try { saved = operation.pending(); } catch { setRecoveryError("Saved payment is unreadable. Preserve it and ask the office to reconcile; do not create another payment."); return; }
+    if (saved) { setAmount(String(saved.amountPaid)); setPaidAt(saved.paidAt ?? ""); setPending(true); }
+    operation.reconcile(input => utils.invoice.paymentReceipt.fetch({ id: input.id, requestId: input.requestId }))
+      .then(receipt => { if (active && receipt) { toast.success("Previous payment confirmed"); setConfirmed(true); onPaid(); } })
+      .catch(() => { if (active) toast.error("Payment outcome could not be checked. Retry the saved operation only."); })
+      .finally(() => { if (active) setReconciling(false); });
+    return () => { active = false; };
+  }, [operation]);
+  const beginNext = async () => {
+    setReconciling(true);
+    try {
+      await operation.beginNext(input => utils.invoice.paymentReceipt.fetch({ id: input.id, requestId: input.requestId }));
+      setConfirmed(false); setPending(false);
+    } catch { setRecoveryError("Previous payment must be reconciled before another operation."); }
+    finally { setReconciling(false); }
+  };
+  const submit = async () => {
+    try {
+      await operation.submit({ id: invoice.id, amountPaid: parseFloat(amount), paidAt }, input => markPaid.mutateAsync(input));
+      toast.success("Payment recorded"); onPaid(); onClose();
+    } catch { setPending(true); toast.error("Payment outcome uncertain. Reopen to reconcile or retry this same payment."); }
+  };
 
   return (
     <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
@@ -343,25 +377,26 @@ function MarkPaidDialog({
         <DialogHeader>
           <DialogTitle>Record Payment</DialogTitle>
         </DialogHeader>
+        {recoveryError && <p role="alert">{recoveryError}</p>}
+        {confirmed && <p>Previous payment confirmed. Start another payment only for a separate amount actually received.</p>}
         <div className="space-y-3">
           <div>
             <Label>Amount Paid</Label>
-            <Input className="mt-1" type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
+            <Input className="mt-1" type="number" min="0" step="0.01" value={amount} disabled={pending || reconciling} onChange={e => setAmount(e.target.value)} />
           </div>
           <div>
             <Label>Payment Date</Label>
-            <Input className="mt-1" type="date" value={paidAt} onChange={e => setPaidAt(e.target.value)} />
+            <Input className="mt-1" type="date" value={paidAt} disabled={pending || reconciling} onChange={e => setPaidAt(e.target.value)} />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={markPaid.isPending}>
             Cancel
           </Button>
-          <Button onClick={() => markPaid.mutate({ id: invoice.id,
-                requestId: paymentRequestId, amountPaid: parseFloat(amount), paidAt, })} disabled={markPaid.isPending || !amount || parseFloat(amount) <= 0}>
+          <Button onClick={confirmed ? beginNext : submit} disabled={recoveryError !== "" || reconciling || markPaid.isPending || !amount || parseFloat(amount) <= 0}>
             {markPaid.isPending && ( <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             )}
-            Record Payment
+            {confirmed ? "Start another payment" : "Record Payment"}
           </Button>
         </DialogFooter>
       </DialogContent>

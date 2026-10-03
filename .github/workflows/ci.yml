@@ -39,6 +39,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install PDF text regression tool
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
       - name: Type check
         run: pnpm run check
 

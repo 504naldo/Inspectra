@@ -19,4 +19,9 @@ export async function verifyAuditRequiredSchema() {
     throw new Error(
       "Legacy fire-alarm snapshots need reviewed remediation before release"
     );
+  const [guards] = await database.execute(sql`SELECT COUNT(*) AS guardCount
+    FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME IN
+    ('inspectra_payment_insert_v2', 'inspectra_payment_no_update', 'inspectra_payment_no_delete', 'inspectra_invoice_payment_v2')`);
+  if (Number((guards as unknown as { guardCount: number }[])[0]?.guardCount) !== 4)
+    throw new Error("Payment protocol v2 migration guards are required before startup");
 }

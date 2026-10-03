@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import {
   fireAlarmInspectionResults,
+  jobs,
   fireAlarmChecklistTemplates,
   type FireAlarmInspectionResult,
 } from "../drizzle/schema";
@@ -28,6 +29,9 @@ export function buildCanonicalFireAlarmChecklist(
       inputType?: string;
       numericLabel?: string;
       numericUnit?: string;
+      requirementType?: string;
+      standardVersion?: string;
+      isRequired?: boolean;
     } | null;
     if (!item?.sectionName || !item.itemDescription)
       throw new TRPCError({
@@ -59,7 +63,7 @@ export function buildCanonicalFireAlarmChecklist(
     const section = sections.get(key)!;
     section.items.push({
       id: item.itemLetter ?? String(row.checklistItemId),
-      description: `${item.itemDescription}${evidence ? ` — Recorded: ${evidence}${item.numericUnit ? ` ${item.numericUnit}` : ""}` : ""}`,
+      description: `${item.itemDescription}${item.standardVersion ? ` [${item.requirementType ?? "requirement unknown"}; standard ${item.standardVersion}; ${item.isRequired === true ? "required" : item.isRequired === false ? "optional" : "requirement unknown"}]` : ""}${evidence ? ` — Recorded: ${evidence}${item.numericUnit ? ` ${item.numericUnit}` : ""}` : ""}`,
       result: recordedOnly
         ? "RECORDED"
         : row.result === "pass"
@@ -93,16 +97,25 @@ export async function getCanonicalFireAlarmChecklist(jobId: number) {
     .select()
     .from(fireAlarmInspectionResults)
     .where(eq(fireAlarmInspectionResults.jobId, jobId));
-  const required = await database
+  const [job] = await database
     .select()
-    .from(fireAlarmChecklistTemplates)
-    .where(eq(fireAlarmChecklistTemplates.isActive, true));
-  const captured = new Set(rows.map(row => row.checklistItemId));
-  if (required.some(item => item.isRequired && !captured.has(item.id)))
+    .from(jobs)
+    .where(eq(jobs.id, jobId));
+  if (!job) throw new TRPCError({ code: "NOT_FOUND" });
+  if (!job.finalizedAt) {
+    const required = await database.select().from(fireAlarmChecklistTemplates).where(eq(fireAlarmChecklistTemplates.isActive, true));
+    const captured = new Set(rows.map(row => row.checklistItemId));
+    if (required.some(item => item.isRequired && !captured.has(item.id)))
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Fire alarm checklist item(s) incomplete: required questions have no capture" });
+  }
+  if (rows.some(row => {
+    const item = row.itemSnapshot as Record<string, unknown> | null;
+    return !item || item.captureProvenance !== "captured" || typeof item.isRequired !== "boolean" || !item.requirementType || !item.standardVersion;
+  }))
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message:
-        "Fire alarm checklist item(s) incomplete: required questions have no capture",
+        "Historical requirements/version cannot be reconstructed reliably; reviewed original evidence is required",
     });
   return buildCanonicalFireAlarmChecklist(rows);
 }

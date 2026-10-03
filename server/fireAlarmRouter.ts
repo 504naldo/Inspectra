@@ -59,12 +59,15 @@ export async function populateJobFireAlarmChecklist(jobId: number, siteId: numbe
     checklistItemId: item.id,
     result: "not_tested" as const,
     itemSnapshot: {
+      captureProvenance: "captured",
       id: item.id,
       sectionName: item.sectionName,
       sectionOrder: item.sectionOrder,
       itemLetter: item.itemLetter,
       itemDescription: item.itemDescription,
       inputType: item.inputType,
+      requirementType: item.requirementType,
+      isRequired: item.isRequired,
       numericLabel: item.numericLabel,
       numericUnit: item.numericUnit,
       hasSubItems: (item as any).hasSubItems ?? false,
@@ -285,7 +288,7 @@ export const fireAlarmRouter = router({
         await database
           .update(fireAlarmInspectionResults)
           .set({
-              itemSnapshot: existing[0].itemSnapshot ?? item,
+              itemSnapshot: existing[0].itemSnapshot,
               technicianCertificationSnapshot: credentialSnapshot,
             result: input.result,
             notes: input.notes || null,
@@ -301,7 +304,7 @@ export const fireAlarmRouter = router({
         return { success: true, id: existing[0].id };
       } else {
         const result = await database.insert(fireAlarmInspectionResults).values({
-              itemSnapshot: item,
+              itemSnapshot: { ...item, captureProvenance: "captured" },
               technicianCertificationSnapshot: credentialSnapshot,
           jobId: input.jobId,
           fireAlarmSystemId: input.fireAlarmSystemId,
