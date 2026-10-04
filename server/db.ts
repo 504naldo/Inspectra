@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, sql, inArray, like, or, isNull, isNotNull, lt, lte, ne, gt } from "drizzle-orm";
+import { eq, and, desc, asc, sql, inArray, like, or, isNull, isNotNull, lt, lte, ne, gt, } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import * as schema from "../drizzle/schema";
@@ -66,7 +66,7 @@ import { ENV } from './_core/env';
 // `import { … } from "../db"` / `import * as db from "../db"` call site is
 // unchanged. getDb and getJobById are ALSO imported locally because functions
 // still defined in this file call them at runtime.
-import { getDb } from "./db/client";
+import { getDb, runWithDb } from "./db/client";
 import { getJobById } from "./db/jobs";
 export { getDb };
 export * from "./db/jobs";
@@ -95,7 +95,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       const pendingByEmail = await getUserByEmail(user.email);
       if (pendingByEmail && pendingByEmail.openId.startsWith('pending_')) {
         await db!.update(users)
-          .set({ openId: user.openId, name: user.name ?? pendingByEmail.name, lastSignedIn: new Date() })
+          .set({ openId: user.openId, name: user.name ?? pendingByEmail.name, lastSignedIn: new Date(), })
           .where(eq(users.id, pendingByEmail.id));
         return; // Record claimed — don't create a new one
       }
@@ -125,7 +125,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     // Handle companyId
     if (user.companyId !== undefined) {
       values.companyId = user.companyId;
-      updateSet.companyId = user.companyId;
+      // Login may provision a new account, never transfer an established one.
     }
     
     // Handle role assignment.
@@ -204,7 +204,7 @@ export async function getOnCallTechnicians(companyId: number) {
       eq(users.isOnCall, 1),
       eq(users.isActive, 1),
       inArray(users.role, ["technician", "admin", "office"]),
-      or(isNull(users.onCallUntil), gt(users.onCallUntil, new Date())),
+      or(isNull(users.onCallUntil), gt(users.onCallUntil, new Date()))
     ));
 }
 
@@ -228,28 +228,16 @@ export async function updateUser(userId: number, data: Partial<InsertUser>) {
 
 export async function incrementUserSessionVersion(userId: number): Promise<void> {
   const db = await getDb();
-  if (!db) return;
-  // `sessionVersion` is added by manual migration 0044 and is deliberately NOT
-  // declared in the Drizzle schema (see the comment near the `users` table in
-  // drizzle/schema.ts). That means Drizzle's `.set({ sessionVersion })` silently
-  // strips the unknown key, producing an invalid empty `UPDATE users SET WHERE …`
-  // — broken in production and a hard parse error in CI. Use raw SQL so the bump
-  // actually applies in production where the column exists.
-  //
-  // This is best-effort defense-in-depth: the caller has already cleared the
-  // session cookie, so a failed bump must not turn logout into a 500. We swallow
-  // and log any error — most importantly the "Unknown column" raised on fresh
-  // CI/test databases, whose journal omits manual migration 0044 (and where
-  // server-side session invalidation is irrelevant anyway). Note the underlying
-  // mysql2 error is wrapped by Drizzle, so its code/message live on `err.cause`;
-  // swallowing here avoids brittle cause-chain sniffing.
-  try {
-    await db.execute(
-      sql`UPDATE \`users\` SET \`sessionVersion\` = COALESCE(\`sessionVersion\`, 1) + 1 WHERE \`id\` = ${userId}`
+  if (!db)
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Session revocation unavailable",
+    });
+    await db.update(users)
+    .set({ sessionVersion:
+      sql`${users.sessionVersion} + 1` })
+    .where(eq(users.id,userId)
     );
-  } catch (err) {
-    console.warn("[incrementUserSessionVersion] best-effort session bump failed:", err);
-  }
 }
 
 // ============================================
@@ -316,11 +304,11 @@ export async function deleteCustomerOrg(id: number): Promise<{ blocked: false } 
 
   const [jobCount] = await db.select({ count: sql<number>`count(*)` }).from(jobs).where(eq(jobs.customerOrgId, id));
   if (Number(jobCount?.count ?? 0) > 0) {
-    return { blocked: true, reason: `This customer has ${jobCount.count} job(s). Remove or reassign them first.` };
+    return { blocked: true, reason: `This customer has ${jobCount.count} job(s). Remove or reassign them first.`, };
   }
   const [siteCount] = await db.select({ count: sql<number>`count(*)` }).from(sites).where(eq(sites.customerOrgId, id));
   if (Number(siteCount?.count ?? 0) > 0) {
-    return { blocked: true, reason: `This customer has ${siteCount.count} site(s). Remove or reassign them first.` };
+    return { blocked: true, reason: `This customer has ${siteCount.count} site(s). Remove or reassign them first.`, };
   }
 
   await db.delete(customerOrgs).where(eq(customerOrgs.id, id));
@@ -377,7 +365,7 @@ export async function getSiteById(id: number) {
         phone: site.contactPhone || '',
         email: '',
         role: 'Primary Contact',
-      }],
+      },],
       monitoring: {
         company: '',
         accountNumber: '',
@@ -402,7 +390,7 @@ export async function deleteSite(id: number): Promise<{ blocked: false } | { blo
   if (!db) throw new Error("Database not available");
   const [jobCount] = await db.select({ count: sql<number>`count(*)` }).from(jobs).where(eq(jobs.siteId, id));
   if (Number(jobCount?.count ?? 0) > 0) {
-    return { blocked: true, reason: `This site has ${jobCount.count} job(s). Remove or reassign them first.` };
+    return { blocked: true, reason: `This site has ${jobCount.count} job(s). Remove or reassign them first.`, };
   }
   await db.delete(sites).where(eq(sites.id, id));
   return { blocked: false };
@@ -416,7 +404,7 @@ export async function getSitesMissingCoordinates(companyId: number) {
   return db.select().from(sites).where(and(
     eq(sites.companyId, companyId),
     isNull(sites.latitude),
-    or(isNotNull(sites.address), isNotNull(sites.city)),
+    or(isNotNull(sites.address), isNotNull(sites.city))
   ));
 }
 
@@ -691,7 +679,7 @@ export async function getNextWalkOrder(jobId: number): Promise<number> {
 export async function bulkUpsertInspectionResults(
   jobId: number,
   deviceIds: number[],
-  shared: { result: 'pass' | 'fail' | 'na' | 'not_tested'; notes?: string; technicianId: number }
+  shared: { result: 'pass' | 'fail' | 'na' | 'not_tested'; notes?: string; technicianId: number; }
 ): Promise<{ count: number }> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -710,7 +698,7 @@ export async function bulkUpsertInspectionResults(
       )
     );
 
-  const existingByDevice = new Map(existing.map((r) => [r.deviceId, r]));
+  const existingByDevice = new Map(existing.map(r => [r.deviceId, r]));
 
   // 2. Get current max walkOrder once (not per-device)
   let nextWalkOrder = await getNextWalkOrder(jobId);
@@ -737,7 +725,7 @@ export async function bulkUpsertInspectionResults(
 
     if (row) {
       // Preserve existing walkOrder
-      toUpdate.push({ id: row.id, data: { ...common, walkOrder: row.walkOrder ?? undefined } });
+      toUpdate.push({ id: row.id, data: { ...common, walkOrder: row.walkOrder ?? undefined }, });
     } else {
       const walkOrder = shared.result !== 'not_tested' ? nextWalkOrder++ : undefined;
       toInsert.push({ ...common, walkOrder, companyId });
@@ -785,7 +773,7 @@ export async function getInspectionStats(jobId: number) {
   
   const results = await db.select({
     result: inspectionResults.result,
-    count: sql<number>`count(*)`
+    count: sql<number>`count(*)`,
   }).from(inspectionResults).where(eq(inspectionResults.jobId, jobId)).groupBy(inspectionResults.result);
   
   const stats = { total: 0, pass: 0, fail: 0, na: 0, notTested: 0 };
@@ -1081,12 +1069,12 @@ export async function getRelevantKnowledgeContext(
   companyId: number,
   query: string,
   opts: { mode?: string; systemType?: string; limit?: number } = {}
-): Promise<Array<{ id: number; title: string; category: string; systemType: string | null; excerpt: string }>> {
+): Promise<Array<{ id: number; title: string; category: string; systemType: string | null; excerpt: string; }>> {
   const db = await getDb();
   if (!db) return [];
 
   const limit = opts.limit ?? 3;
-  const visibilities = (opts as any).visibilities ?? ["admin_office", "ai_only"];
+  const visibilities = (opts as any).visibilities ?? ["admin_office", "ai_only",];
 
   const conditions = [
     eq(knowledgeBase.companyId, companyId),
@@ -1150,12 +1138,12 @@ export async function getSyncLogsByUser(userId: number, limit = 50) {
 // ============================================
 export async function getDashboardStats(companyId: number) {
   const db = await getDb();
-  if (!db) return { totalJobs: 0, activeJobs: 0, completedJobs: 0, openDeficiencies: 0, totalDevices: 0, totalSites: 0, openApprovedWork: 0, approvedWorkAwaitingSchedule: 0 };
+  if (!db) return { totalJobs: 0, activeJobs: 0, completedJobs: 0, openDeficiencies: 0, totalDevices: 0, totalSites: 0, openApprovedWork: 0, approvedWorkAwaitingSchedule: 0, };
 
   const [jobStats] = await db.select({
     total: sql<number>`count(*)`,
     active: sql<number>`sum(case when status in ('pending', 'scheduled', 'in_progress') then 1 else 0 end)`,
-    completed: sql<number>`sum(case when status = 'completed' then 1 else 0 end)`
+    completed: sql<number>`sum(case when status = 'completed' then 1 else 0 end)`,
   }).from(jobs).where(eq(jobs.companyId, companyId));
 
   const [siteCount] = await db.select({ count: sql<number>`count(*)` }).from(sites).where(eq(sites.companyId, companyId));
@@ -1235,7 +1223,7 @@ export async function getAttachmentById(id: number) {
 export async function getAttachmentByIdempotencyKey(
   idempotencyKey: string,
   entityType: string,
-  entityId: number,
+  entityId: number
 ) {
   const db = await getDb();
   if (!db) return undefined;
@@ -1245,7 +1233,7 @@ export async function getAttachmentByIdempotencyKey(
     .where(and(
       eq(attachments.idempotencyKey, idempotencyKey),
       eq(attachments.entityType, entityType as any),
-      eq(attachments.entityId, entityId),
+      eq(attachments.entityId, entityId)
     ))
     .limit(1);
   return result[0];
@@ -1257,13 +1245,13 @@ export async function createBulkAttachments(dataList: InsertAttachment[]) {
   if (dataList.length === 0) return [];
   const resolvedList = await Promise.all(dataList.map(resolveAttachmentCompanyId));
   const result = await db.insert(attachments).values(resolvedList);
-  return resolvedList.map((data, index) => ({ id: Number(result[0].insertId) + index, ...data }));
+  return resolvedList.map((data, index) => ({ id: Number(result[0].insertId) + index, ...data, }));
 }
 
 // ============================================
 // FILE TAG QUERIES
 // ============================================
-import { fileTags, InsertFileTag, FileTag, importLogs, InsertImportLog, ImportLog, importRowResults, InsertImportRowResult, ImportRowResult, uploadQueue, InsertUploadQueueItem, UploadQueueItem } from "../drizzle/schema";
+import { fileTags, InsertFileTag, FileTag, importLogs, InsertImportLog, ImportLog, importRowResults, InsertImportRowResult, ImportRowResult, uploadQueue, InsertUploadQueueItem, UploadQueueItem, } from "../drizzle/schema";
 
 export async function createFileTag(data: InsertFileTag) {
   const db = await getDb();
@@ -1615,15 +1603,16 @@ export async function assertJobNotFinalized(
   jobId: number,
   db?: ReturnType<typeof drizzle>
 ): Promise<void> {
-  const resolvedDb = db ?? await getDb();
-  if (!resolvedDb) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  const resolvedDb = db ?? ( await getDb());
+  if (!resolvedDb) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable", });
   const rows = await resolvedDb
     .select({ finalizedAt: schema.jobs.finalizedAt })
     .from(schema.jobs)
-    .where(eq(schema.jobs.id, jobId));
+    .where(eq(schema.jobs.id, jobId))
+    .for("update");
 
   if (rows.length === 0) {
-    throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found` });
+    throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found`, });
   }
 
   if (rows[0].finalizedAt !== null) {
@@ -1644,7 +1633,7 @@ export async function assertJobNotFinalized(
  */
 export async function assertJobCompany(jobId: number, companyId: number) {
   const job = await getJobById(jobId);
-  if (!job) throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found` });
+  if (!job) throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found`, });
   // `admin` is a cross-company platform operator (docs/ROLE_TRUST_MODEL.md).
   if (job.companyId !== companyId && !callerIsPlatformOperator()) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
@@ -1693,9 +1682,9 @@ export async function withAudit<T>(
     // Set audit session variables
     await connection.execute("SET @audit_actor = ?", [ctx.user.id]);
     await connection.execute("SET @audit_procedure = ?", [procedureName]);
-    await connection.execute("SET @audit_request_id = ?", [ctx.requestId]);
-    await connection.execute("SET @audit_ip = ?", [ctx.ipAddress]);
-    await connection.execute("SET @audit_user_agent = ?", [ctx.userAgent]);
+    await connection.execute("SET @audit_request_id = ?", [ctx.requestId ?? null,]);
+    await connection.execute("SET @audit_ip = ?", [ctx.ipAddress ?? null]);
+    await connection.execute("SET @audit_user_agent = ?", [ctx.userAgent ?? null,]);
 
     // Begin transaction
     await connection.beginTransaction();
@@ -1707,7 +1696,7 @@ export async function withAudit<T>(
 
     let result: T;
     try {
-      result = await fn(txDb);
+      result = await runWithDb(txDb, () => fn(txDb));
       await connection.commit();
     } catch (err) {
       await connection.rollback();
@@ -1787,7 +1776,7 @@ export async function getQuotesByCustomerOrg(customerOrgId: number) {
     .leftJoin(jobs, eq(quotes.jobId, jobs.id))
     .where(and(
       eq(quotes.customerOrgId, customerOrgId),
-      inArray(quotes.status as any, ['sent', 'viewed', 'accepted', 'declined', 'expired', 'approved', 'partially_approved', 'converted_to_approved_work']),
+      inArray(quotes.status as any, ['sent', 'viewed', 'accepted', 'declined', 'expired', 'approved', 'partially_approved', 'converted_to_approved_work',])
     ))
     .orderBy(desc(quotes.createdAt));
 }
@@ -1801,7 +1790,7 @@ export async function updateQuote(id: number, data: Partial<InsertQuote>) {
 // ============================================
 // PARTS CATALOG QUERIES
 // ============================================
-import { partsCatalog, InsertPartsCatalogItem, PartsCatalogItem, repairQuoteItems, InsertRepairQuoteItem, RepairQuoteItem } from "../drizzle/schema";
+import { partsCatalog, InsertPartsCatalogItem, PartsCatalogItem, repairQuoteItems, InsertRepairQuoteItem, RepairQuoteItem, } from "../drizzle/schema";
 
 export async function createPartsCatalogItem(data: InsertPartsCatalogItem): Promise<PartsCatalogItem> {
   const db = await getDb();
@@ -1834,7 +1823,7 @@ export async function updatePartsCatalogItem(id: number, data: Partial<InsertPar
 export async function searchPartsCatalogByKeywords(
   companyId: number,
   keywords: string[],
-  limit = 10,
+  limit = 10
 ): Promise<PartsCatalogItem[]> {
   const db = await getDb();
   if (!db || !keywords.length) return [];
@@ -1844,14 +1833,14 @@ export async function searchPartsCatalogByKeywords(
     or(
       like(partsCatalog.productName, `%${kw}%`),
       like(partsCatalog.category, `%${kw}%`),
-      like(partsCatalog.description, `%${kw}%`),
+      like(partsCatalog.description, `%${kw}%`)
     )
   );
   return db.select().from(partsCatalog)
     .where(and(
       eq(partsCatalog.companyId, companyId),
       eq(partsCatalog.isActive, true),
-      or(...conditions),
+      or(...conditions)
     ))
     .orderBy(asc(partsCatalog.category), asc(partsCatalog.productName))
     .limit(limit);
@@ -1942,7 +1931,7 @@ export async function updateServiceSchedule(id: number, data: Partial<InsertServ
 export async function updateServiceScheduleCompletion(
   id: number,
   lastCompletedAt: Date,
-  nextDueAt: Date,
+  nextDueAt: Date
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1953,7 +1942,7 @@ export async function updateServiceScheduleCompletion(
 
 export async function getServiceSchedulesDueSoon(
   companyId: number,
-  daysAhead: number = 90,
+  daysAhead: number = 90
 ): Promise<ServiceSchedule[]> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1965,9 +1954,9 @@ export async function getServiceSchedulesDueSoon(
       eq(serviceSchedules.active, true),
       or(
         isNull(serviceSchedules.nextDueAt),
-        lte(serviceSchedules.nextDueAt, cutoff),
-      ),
-    ),
+        lte(serviceSchedules.nextDueAt, cutoff)
+      )
+    )
   ).orderBy(asc(serviceSchedules.nextDueAt));
 }
 
@@ -2014,7 +2003,7 @@ export async function getMonthlyTrackingBySite(siteId: number, trackingMonth?: s
 
 export async function getMonthlyTrackingByScheduleAndMonth(
   serviceScheduleId: number,
-  trackingMonth: string,
+  trackingMonth: string
 ): Promise<MonthlyServiceTracking | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -2023,7 +2012,7 @@ export async function getMonthlyTrackingByScheduleAndMonth(
     .from(monthlyServiceTracking)
     .where(and(
       eq(monthlyServiceTracking.serviceScheduleId, serviceScheduleId),
-      eq(monthlyServiceTracking.trackingMonth, trackingMonth),
+      eq(monthlyServiceTracking.trackingMonth, trackingMonth)
     ))
     .limit(1);
   return result[0];
@@ -2152,7 +2141,7 @@ export async function getAiReviewsByJobScoped(jobId: number, companyId: number, 
     .where(and(
       eq(aiReviews.jobId, jobId),
       eq(aiReviews.companyId as any, companyId),
-      reviewType ? eq(aiReviews.reviewType as any, reviewType) : undefined,
+      reviewType ? eq(aiReviews.reviewType as any, reviewType) : undefined
     ))
     .orderBy(desc(aiReviews.createdAt))
     .limit(10);
@@ -2226,13 +2215,13 @@ export async function deleteJobCascade(jobId: number): Promise<void> {
 
   // Delete derivative inspection/data rows that only make sense in the context of this job.
   const jobDeficiencies = await db.select({ id: deficiencies.id }).from(deficiencies).where(eq(deficiencies.jobId, jobId));
-  const deficiencyIds = jobDeficiencies.map((d) => d.id);
+  const deficiencyIds = jobDeficiencies.map(d => d.id);
   if (deficiencyIds.length) {
     await db.delete(repairs).where(inArray(repairs.deficiencyId, deficiencyIds));
   }
 
   const jobSprinklerInspections = await db.select({ id: schema.sprinklerInspections.id }).from(schema.sprinklerInspections).where(eq(schema.sprinklerInspections.jobId, jobId));
-  const sprinklerInspectionIds = jobSprinklerInspections.map((i) => i.id);
+  const sprinklerInspectionIds = jobSprinklerInspections.map(i => i.id);
   if (sprinklerInspectionIds.length) {
     await db.delete(schema.sprinklerSystems).where(inArray(schema.sprinklerSystems.inspectionId, sprinklerInspectionIds));
     await db.delete(schema.sprinklerChecklistItems).where(inArray(schema.sprinklerChecklistItems.inspectionId, sprinklerInspectionIds));
@@ -2345,7 +2334,7 @@ export async function getInvoicesByCustomerOrg(customerOrgId: number): Promise<I
   const db = await getDb();
   if (!db) return [];
   return db.select().from(invoices)
-    .where(and(eq(invoices.customerOrgId, customerOrgId), inArray(invoices.status, ["sent", "viewed", "approved", "paid", "partial", "overdue"] as Invoice["status"][])))
+    .where(and(eq(invoices.customerOrgId, customerOrgId), inArray(invoices.status, ["sent", "viewed", "approved", "paid", "partial", "overdue",] as Invoice["status"][])))
     .orderBy(desc(invoices.createdAt));
 }
 
@@ -2373,7 +2362,7 @@ export async function updateInvoice(id: number, data: Partial<InsertInvoice>): P
 export async function markInvoicePaidIfEligible(
   id: number,
   companyId: number,
-  fields: { amountPaid: string; balanceDue: string; status: string; paidAt: Date | null },
+  fields: { amountPaid: string; balanceDue: string; status: string; paidAt: Date | null; }
 ): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
@@ -2387,7 +2376,7 @@ export async function markInvoicePaidIfEligible(
     eq(invoices.companyId, companyId),
     ne(invoices.status, "paid"),
     ne(invoices.status, "void"),
-    or(isNull(invoices.sageExportStatus), ne(invoices.sageExportStatus, "exported")),
+    or(isNull(invoices.sageExportStatus), ne(invoices.sageExportStatus, "exported"))
   ));
   const affected = Number((result as any)?.[0]?.affectedRows ?? 0);
   return affected > 0;
@@ -2410,16 +2399,38 @@ export async function createInvoiceLineItem(data: InsertInvoiceLineItem): Promis
   return row[0];
 }
 
-export async function updateInvoiceLineItem(id: number, data: Partial<InsertInvoiceLineItem>): Promise<void> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(invoiceLineItems).set(data).where(eq(invoiceLineItems.id, id));
+export async function getInvoiceLineItemById(id: number) {
+  const database = await getDb();
+  if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+  return (
+    await database
+      .select()
+      .from(invoiceLineItems)
+      .where(eq(invoiceLineItems.id, id))
+      .limit(1)
+  )[0];
 }
 
-export async function deleteInvoiceLineItem(id: number): Promise<void> {
+export async function updateInvoiceLineItem(id: number, data: Partial<InsertInvoiceLineItem>,
+  invoiceId?: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(invoiceLineItems).where(eq(invoiceLineItems.id, id));
+  await db.update(invoiceLineItems).set(data).where(
+      and(eq(invoiceLineItems.id, id),
+        invoiceId == null
+          ? undefined
+          : eq(invoiceLineItems.invoiceId, invoiceId)));
+}
+
+export async function deleteInvoiceLineItem(id: number,
+  invoiceId?: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(invoiceLineItems).where(
+      and(eq(invoiceLineItems.id, id),
+        invoiceId == null
+          ? undefined
+          : eq(invoiceLineItems.invoiceId, invoiceId)));
 }
 
 export async function recalculateInvoiceTotals(invoiceId: number): Promise<void> {
@@ -2431,7 +2442,7 @@ export async function recalculateInvoiceTotals(invoiceId: number): Promise<void>
   const subtotal = items.reduce((sum, item) => sum + parseFloat(String(item.total ?? "0")), 0);
   const taxRate = parseFloat(String(inv.taxRate ?? "0"));
   const taxableSubtotal = items
-    .filter((i) => i.taxable)
+    .filter(i => i.taxable)
     .reduce((sum, i) => sum + parseFloat(String(i.total ?? "0")), 0);
   const taxAmount = taxableSubtotal * taxRate;
   const total = subtotal + taxAmount;
@@ -2515,14 +2526,14 @@ export async function getOperationsSummary(companyId: number) {
 
   // ── Sites ─────────────────────────────────────────────────────────────────
   const allSites = await db
-    .select({ id: sites.id, name: sites.name, buildingId: sites.buildingId, fileNumber: sites.fileNumber, customerOrgId: sites.customerOrgId })
+    .select({ id: sites.id, name: sites.name, buildingId: sites.buildingId, fileNumber: sites.fileNumber, customerOrgId: sites.customerOrgId, })
     .from(sites)
     .where(eq(sites.companyId, companyId));
   const siteMap = new Map(allSites.map(s => [s.id, s]));
 
   // ── Jobs ──────────────────────────────────────────────────────────────────
   const allJobs = await db
-    .select({ id: jobs.id, title: jobs.title, jobNumber: jobs.jobNumber, siteId: jobs.siteId, status: jobs.status, priority: jobs.priority, scheduledDate: jobs.scheduledDate, completedAt: jobs.completedAt })
+    .select({ id: jobs.id, title: jobs.title, jobNumber: jobs.jobNumber, siteId: jobs.siteId, status: jobs.status, priority: jobs.priority, scheduledDate: jobs.scheduledDate, completedAt: jobs.completedAt, })
     .from(jobs)
     .where(eq(jobs.companyId, companyId));
 
@@ -2566,7 +2577,7 @@ export async function getOperationsSummary(companyId: number) {
 
   // ── Deficiencies ──────────────────────────────────────────────────────────
   let openDefCount = 0;
-  let topDeficiencies: { id: number; title: string; severity: string; status: string; jobId: number; createdAt: Date }[] = [];
+  let topDeficiencies: { id: number; title: string; severity: string; status: string; jobId: number; createdAt: Date; }[] = [];
   if (companyJobIds.length > 0) {
     const [dc] = await db
       .select({ count: sql<number>`count(*)` })
@@ -2575,7 +2586,7 @@ export async function getOperationsSummary(companyId: number) {
     openDefCount = Number(dc?.count ?? 0);
 
     topDeficiencies = await db
-      .select({ id: deficiencies.id, title: deficiencies.title, severity: deficiencies.severity, status: deficiencies.status, jobId: deficiencies.jobId, createdAt: deficiencies.createdAt })
+      .select({ id: deficiencies.id, title: deficiencies.title, severity: deficiencies.severity, status: deficiencies.status, jobId: deficiencies.jobId, createdAt: deficiencies.createdAt, })
       .from(deficiencies)
       .where(and(inArray(deficiencies.jobId, companyJobIds), inArray(deficiencies.status, ['open', 'in_progress'])))
       .orderBy(desc(deficiencies.createdAt))
@@ -2584,7 +2595,7 @@ export async function getOperationsSummary(companyId: number) {
 
   // ── Approved Work ─────────────────────────────────────────────────────────
   const awRecords = await db
-    .select({ id: approvedWork.id, status: approvedWork.status, approvedScope: approvedWork.approvedScope, siteId: approvedWork.siteId, createdAt: approvedWork.createdAt })
+    .select({ id: approvedWork.id, status: approvedWork.status, approvedScope: approvedWork.approvedScope, siteId: approvedWork.siteId, createdAt: approvedWork.createdAt, })
     .from(approvedWork)
     .where(eq(approvedWork.companyId, companyId));
 
@@ -2598,18 +2609,18 @@ export async function getOperationsSummary(companyId: number) {
 
   // ── Repair Quotes ─────────────────────────────────────────────────────────
   const repairQuotesList = await db
-    .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, siteId: quotes.siteId, status: quotes.status, total: quotes.total, createdAt: quotes.createdAt })
+    .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, siteId: quotes.siteId, status: quotes.status, total: quotes.total, createdAt: quotes.createdAt, })
     .from(quotes)
     .where(and(eq(quotes.companyId, companyId), eq(quotes.quoteType, 'repair'), inArray(quotes.status, ['draft', 'sent'])))
     .limit(8);
 
   // ── Invoices ──────────────────────────────────────────────────────────────
   const invoiceRecords = await db
-    .select({ status: invoices.status, sageExportStatus: invoices.sageExportStatus })
+    .select({ status: invoices.status, sageExportStatus: invoices.sageExportStatus, })
     .from(invoices)
     .where(eq(invoices.companyId, companyId));
 
-  const invoiceSummary = { draft: 0, sent: 0, approved: 0, paid: 0, partial: 0, overdue: 0, void: 0 };
+  const invoiceSummary = { draft: 0, sent: 0, approved: 0, paid: 0, partial: 0, overdue: 0, void: 0, };
   let invoicesReadyForExport = 0;
   for (const inv of invoiceRecords) {
     const k = inv.status as keyof typeof invoiceSummary;
@@ -2625,12 +2636,12 @@ export async function getOperationsSummary(companyId: number) {
   // ── Attention Queue ───────────────────────────────────────────────────────
   const attentionQueue: AttentionQueueItem[] = [];
 
-  const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, observation: 3 };
+  const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, observation: 3, };
 
   for (const j of overdueJobsList.slice(0, 6)) {
     const sched = j.scheduledDate ? new Date(j.scheduledDate) : null;
     const ageInDays = sched ? Math.floor((now.getTime() - sched.getTime()) / 86_400_000) : 0;
-    attentionQueue.push({ type: 'overdue_job', id: j.id, title: j.title, siteName: siteMap.get(j.siteId)?.name ?? null, ageInDays, dueDate: sched?.toISOString() ?? null, severity: null, priority: j.priority, status: j.status, link: `/admin/jobs/${j.id}` });
+    attentionQueue.push({ type: 'overdue_job', id: j.id, title: j.title, siteName: siteMap.get(j.siteId)?.name ?? null, ageInDays, dueDate: sched?.toISOString() ?? null, severity: null, priority: j.priority, status: j.status, link: `/admin/jobs/${j.id}`, });
   }
 
   const sortedDefs = [...topDeficiencies].sort((a, b) => (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9));
@@ -2638,21 +2649,21 @@ export async function getOperationsSummary(companyId: number) {
     const jobInfo = allJobs.find(j => j.id === d.jobId);
     const site = jobInfo ? siteMap.get(jobInfo.siteId) : undefined;
     const ageInDays = Math.floor((now.getTime() - new Date(d.createdAt).getTime()) / 86_400_000);
-    attentionQueue.push({ type: 'deficiency', id: d.id, title: d.title, siteName: site?.name ?? null, ageInDays, dueDate: null, severity: d.severity, priority: null, status: d.status, link: `/admin/jobs/${d.jobId}` });
+    attentionQueue.push({ type: 'deficiency', id: d.id, title: d.title, siteName: site?.name ?? null, ageInDays, dueDate: null, severity: d.severity, priority: null, status: d.status, link: `/admin/jobs/${d.jobId}`, });
   }
 
   for (const aw of awReadyList) {
     const site = aw.siteId ? siteMap.get(aw.siteId) : undefined;
     const ageInDays = Math.floor((now.getTime() - new Date(aw.createdAt).getTime()) / 86_400_000);
     const title = aw.approvedScope ? aw.approvedScope.slice(0, 60) : `Approved Work #${aw.id}`;
-    attentionQueue.push({ type: 'approved_work', id: aw.id, title, siteName: site?.name ?? null, ageInDays, dueDate: null, severity: null, priority: null, status: aw.status, link: `/admin/approved-work/${aw.id}` });
+    attentionQueue.push({ type: 'approved_work', id: aw.id, title, siteName: site?.name ?? null, ageInDays, dueDate: null, severity: null, priority: null, status: aw.status, link: `/admin/approved-work/${aw.id}`, });
   }
 
   for (const q of repairQuotesList) {
     const site = q.siteId ? siteMap.get(q.siteId) : undefined;
     const ageInDays = Math.floor((now.getTime() - new Date(q.createdAt).getTime()) / 86_400_000);
     const title = q.quoteNumber ? `Quote ${q.quoteNumber}` : `Repair Quote #${q.id}`;
-    attentionQueue.push({ type: 'repair_quote', id: q.id, title, siteName: site?.name ?? null, ageInDays, dueDate: null, severity: null, priority: null, status: q.status, link: `/admin/repair-quotes/${q.id}` });
+    attentionQueue.push({ type: 'repair_quote', id: q.id, title, siteName: site?.name ?? null, ageInDays, dueDate: null, severity: null, priority: null, status: q.status, link: `/admin/repair-quotes/${q.id}`, });
   }
 
   return {
@@ -2671,7 +2682,7 @@ export async function getOperationsSummary(companyId: number) {
     todaySchedule,
     approvedWorkByStatus: awByStatus,
     invoiceSummary,
-    dataQuality: { sitesMissingBuildingId, sitesMissingFileNumber, sitesMissingCustomerOrg },
+    dataQuality: { sitesMissingBuildingId, sitesMissingFileNumber, sitesMissingCustomerOrg, },
     totalSites: allSites.length,
     totalJobs: allJobs.length,
   };
@@ -2704,11 +2715,11 @@ const DEFAULT_COMPANY_SETTINGS = {
 
 export async function getCompanySettings(companyId: number): Promise<CompanySettings & { _isDefault?: boolean }> {
   const db = await getDb();
-  if (!db) return { id: 0, companyId, ...DEFAULT_COMPANY_SETTINGS, createdAt: new Date(), updatedAt: new Date(), _isDefault: true };
+  if (!db) return { id: 0, companyId, ...DEFAULT_COMPANY_SETTINGS, createdAt: new Date(), updatedAt: new Date(), _isDefault: true, };
 
   const [row] = await db.select().from(companySettings).where(eq(companySettings.companyId, companyId)).limit(1);
   if (row) return row;
-  return { id: 0, companyId, ...DEFAULT_COMPANY_SETTINGS, createdAt: new Date(), updatedAt: new Date(), _isDefault: true };
+  return { id: 0, companyId, ...DEFAULT_COMPANY_SETTINGS, createdAt: new Date(), updatedAt: new Date(), _isDefault: true, };
 }
 
 export async function upsertCompanySettings(companyId: number, data: Partial<Omit<InsertCompanySettings, "id" | "companyId" | "createdAt" | "updatedAt">>): Promise<void> {
@@ -2726,7 +2737,7 @@ export async function getActivityEventsForEntity(
   companyId: number,
   entityType: string,
   entityId: number,
-  limit: number,
+  limit: number
 ): Promise<ActivityEvent[]> {
   const db = await getDb();
   if (!db) return [];
@@ -2736,7 +2747,7 @@ export async function getActivityEventsForEntity(
     .where(and(
       eq(activityEvents.companyId, companyId),
       eq(activityEvents.entityType, entityType),
-      eq(activityEvents.entityId, entityId),
+      eq(activityEvents.entityId, entityId)
     ))
     .orderBy(desc(activityEvents.createdAt))
     .limit(limit);
@@ -2745,11 +2756,11 @@ export async function getActivityEventsForEntity(
 export async function getRecentActivityByCompany(
   companyId: number,
   limit: number,
-  entityType?: string,
+  entityType?: string
 ): Promise<ActivityEvent[]> {
   const db = await getDb();
   if (!db) return [];
-  const conditions: ReturnType<typeof eq>[] = [eq(activityEvents.companyId, companyId)];
+  const conditions: ReturnType<typeof eq>[] = [eq(activityEvents.companyId, companyId),];
   if (entityType) conditions.push(eq(activityEvents.entityType, entityType));
   return db
     .select()
@@ -2810,7 +2821,7 @@ export async function getUnreadNotificationCount(companyId: number, userId?: num
 export async function markNotificationRead(id: number, companyId: number, userId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const conditions = [eq(notifications.id, id), eq(notifications.companyId, companyId)];
+  const conditions = [eq(notifications.id, id), eq(notifications.companyId, companyId),];
   if (userId !== undefined) conditions.push(eq(notifications.userId, userId));
   await db
     .update(notifications)
@@ -2821,7 +2832,7 @@ export async function markNotificationRead(id: number, companyId: number, userId
 export async function markAllNotificationsRead(companyId: number, userId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const conditions = [eq(notifications.companyId, companyId), eq(notifications.isRead, 0)];
+  const conditions = [eq(notifications.companyId, companyId), eq(notifications.isRead, 0),];
   if (userId !== undefined) conditions.push(eq(notifications.userId, userId));
   await db
     .update(notifications)
@@ -2832,7 +2843,7 @@ export async function markAllNotificationsRead(companyId: number, userId?: numbe
 export async function dismissNotification(id: number, companyId: number, userId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const conditions = [eq(notifications.id, id), eq(notifications.companyId, companyId)];
+  const conditions = [eq(notifications.id, id), eq(notifications.companyId, companyId),];
   if (userId !== undefined) conditions.push(eq(notifications.userId, userId));
   await db
     .update(notifications)
@@ -2855,7 +2866,7 @@ export async function hasUndismissedNotification(companyId: number, dedupeKey: s
     .where(and(
       eq(notifications.companyId, companyId),
       eq(notifications.dedupeKey, dedupeKey),
-      eq(notifications.isDismissed, 0),
+      eq(notifications.isDismissed, 0)
     ))
     .limit(1);
   return !!row;
@@ -2873,18 +2884,18 @@ export async function getServiceAgreementsByCustomerOrg(customerOrgId: number): 
     .from(serviceAgreements)
     .where(and(
       eq(serviceAgreements.customerOrgId, customerOrgId),
-      inArray(serviceAgreements.status, ["active", "expiring_soon", "expired"] as ServiceAgreement["status"][]),
+      inArray(serviceAgreements.status, ["active", "expiring_soon", "expired",] as ServiceAgreement["status"][])
     ))
     .orderBy(desc(serviceAgreements.startDate));
 }
 
 export async function getServiceAgreementsByCompany(
   companyId: number,
-  status?: string,
+  status?: string
 ): Promise<ServiceAgreement[]> {
   const db = await getDb();
   if (!db) return [];
-  const conditions: ReturnType<typeof eq>[] = [eq(serviceAgreements.companyId, companyId)];
+  const conditions: ReturnType<typeof eq>[] = [eq(serviceAgreements.companyId, companyId),];
   if (status) conditions.push(eq(serviceAgreements.status, status as any));
   return db
     .select()
@@ -2913,7 +2924,7 @@ export async function createServiceAgreement(data: InsertServiceAgreement): Prom
 
 export async function updateServiceAgreement(
   id: number,
-  data: Partial<InsertServiceAgreement>,
+  data: Partial<InsertServiceAgreement>
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -2950,7 +2961,7 @@ export async function createAgreementSite(data: InsertAgreementSite): Promise<nu
 
 export async function updateAgreementSite(
   id: number,
-  data: Partial<InsertAgreementSite>,
+  data: Partial<InsertAgreementSite>
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -2967,7 +2978,7 @@ export async function deleteAgreementSite(id: number, companyId: number): Promis
 
 export async function getExpiringSoonAgreements(
   companyId: number,
-  daysAhead: number,
+  daysAhead: number
 ): Promise<ServiceAgreement[]> {
   const db = await getDb();
   if (!db) return [];
@@ -2980,15 +2991,15 @@ export async function getExpiringSoonAgreements(
     .where(and(
       eq(serviceAgreements.companyId, companyId),
       inArray(serviceAgreements.status, ["active", "expiring_soon"]),
-      lte(serviceAgreements.endDate as any, futureStr),
+      lte(serviceAgreements.endDate as any, futureStr)
     ))
     .orderBy(asc(serviceAgreements.endDate));
 }
 
 export async function getActiveAgreementForSite(
   siteId: number,
-  companyId: number,
-): Promise<{ agreement: ServiceAgreement; agreementSite: AgreementSite } | null> {
+  companyId: number
+): Promise<{ agreement: ServiceAgreement; agreementSite: AgreementSite; } | null> {
   const db = await getDb();
   if (!db) return null;
   const siteRows = await db
@@ -2996,21 +3007,21 @@ export async function getActiveAgreementForSite(
     .from(agreementSites)
     .where(and(
       eq(agreementSites.siteId, siteId),
-      eq(agreementSites.companyId, companyId),
+      eq(agreementSites.companyId, companyId)
     ));
   if (!siteRows.length) return null;
-  const agreementIds = siteRows.map((s) => s.agreementId);
+  const agreementIds = siteRows.map(s => s.agreementId);
   const [agreement] = await db
     .select()
     .from(serviceAgreements)
     .where(and(
       inArray(serviceAgreements.id, agreementIds),
-      inArray(serviceAgreements.status, ["active", "expiring_soon"]),
+      inArray(serviceAgreements.status, ["active", "expiring_soon"])
     ))
     .orderBy(desc(serviceAgreements.createdAt))
     .limit(1);
   if (!agreement) return null;
-  const agreementSite = siteRows.find((s) => s.agreementId === agreement.id)!;
+  const agreementSite = siteRows.find(s => s.agreementId === agreement.id)!;
   return { agreement, agreementSite };
 }
 
@@ -3037,7 +3048,7 @@ export async function getOpenDeficienciesByDeviceIds(deviceIds: number[]) {
     .from(deficiencies)
     .where(and(
       inArray(deficiencies.deviceId, deviceIds),
-      inArray(deficiencies.status, ["open", "in_progress"]),
+      inArray(deficiencies.status, ["open", "in_progress"])
     ));
 }
 
@@ -3082,7 +3093,7 @@ export async function getInspectionResultsByDevice(deviceId: number) {
     .innerJoin(jobs, eq(inspectionResults.jobId, jobs.id))
     .where(and(
       eq(inspectionResults.deviceId, deviceId),
-      ne(inspectionResults.result, "not_tested"),
+      ne(inspectionResults.result, "not_tested")
     ))
     .orderBy(desc(inspectionResults.testedAt));
 }
@@ -3106,7 +3117,7 @@ export async function createLifecycleEvent(data: InsertAssetLifecycleEvent): Pro
 
 export async function getRecentLifecycleEventsByCompany(
   companyId: number,
-  limit = 50,
+  limit = 50
 ): Promise<AssetLifecycleEvent[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3124,13 +3135,13 @@ export async function getRecentLifecycleEventsByCompany(
 
 export async function getInventoryItemsByCompany(
   companyId: number,
-  includeInactive = false,
+  includeInactive = false
 ): Promise<InventoryItem[]> {
   const db = await getDb();
   if (!db) return [];
   const conditions = includeInactive
     ? [eq(inventoryItems.companyId, companyId)]
-    : [eq(inventoryItems.companyId, companyId), eq(inventoryItems.isActive, true)];
+    : [eq(inventoryItems.companyId, companyId), eq(inventoryItems.isActive, true),];
   return db
     .select()
     .from(inventoryItems)
@@ -3154,7 +3165,7 @@ export async function createInventoryItem(data: InsertInventoryItem): Promise<nu
 
 export async function updateInventoryItem(
   id: number,
-  data: Partial<InsertInventoryItem>,
+  data: Partial<InsertInventoryItem>
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -3169,9 +3180,9 @@ export async function getLowStockInventoryItems(companyId: number): Promise<Inve
     .from(inventoryItems)
     .where(and(
       eq(inventoryItems.companyId, companyId),
-      eq(inventoryItems.isActive, true),
+      eq(inventoryItems.isActive, true)
     ));
-  return rows.filter((item) => item.quantityOnHand <= item.reorderPoint);
+  return rows.filter(item => item.quantityOnHand <= item.reorderPoint);
 }
 
 // ============================================
@@ -3179,7 +3190,7 @@ export async function getLowStockInventoryItems(companyId: number): Promise<Inve
 // ============================================
 
 export async function createInventoryTransaction(
-  data: InsertInventoryTransaction,
+  data: InsertInventoryTransaction
 ): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -3188,7 +3199,7 @@ export async function createInventoryTransaction(
 }
 
 export async function getInventoryTransactionsByItem(
-  inventoryItemId: number,
+  inventoryItemId: number
 ): Promise<InventoryTransaction[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3212,7 +3223,7 @@ export async function generateRequestNumber(companyId: number): Promise<string> 
     .from(partsRequests)
     .where(and(
       eq(partsRequests.companyId, companyId),
-      like(partsRequests.requestNumber, `PR-${year}-%`),
+      like(partsRequests.requestNumber, `PR-${year}-%`)
     ))
     .orderBy(desc(partsRequests.id))
     .limit(1);
@@ -3222,7 +3233,7 @@ export async function generateRequestNumber(companyId: number): Promise<string> 
     .from(partsRequests)
     .where(and(
       eq(partsRequests.companyId, companyId),
-      like(partsRequests.requestNumber, `PR-${year}-%`),
+      like(partsRequests.requestNumber, `PR-${year}-%`)
     ));
   const count = Number(counter[0]?.cnt ?? 0) + 1;
   return `PR-${year}-${String(count).padStart(4, "0")}`;
@@ -3230,7 +3241,7 @@ export async function generateRequestNumber(companyId: number): Promise<string> 
 
 export async function getPartsRequestsByCompany(
   companyId: number,
-  status?: PartsRequest["status"],
+  status?: PartsRequest["status"]
 ): Promise<PartsRequest[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3260,7 +3271,7 @@ export async function createPartsRequest(data: InsertPartsRequest): Promise<numb
 
 export async function updatePartsRequest(
   id: number,
-  data: Partial<InsertPartsRequest>,
+  data: Partial<InsertPartsRequest>
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -3268,7 +3279,7 @@ export async function updatePartsRequest(
 }
 
 export async function getPartsRequestsByApprovedWork(
-  approvedWorkId: number,
+  approvedWorkId: number
 ): Promise<PartsRequest[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3280,7 +3291,7 @@ export async function getPartsRequestsByApprovedWork(
 }
 
 export async function getPartsRequestsByWorkOrder(
-  workOrderId: number,
+  workOrderId: number
 ): Promise<PartsRequest[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3306,7 +3317,7 @@ export async function getPartsRequestsByJob(jobId: number): Promise<PartsRequest
 // ============================================
 
 export async function getPartsRequestItemsByRequest(
-  partsRequestId: number,
+  partsRequestId: number
 ): Promise<PartsRequestItem[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3328,7 +3339,7 @@ export async function getPartsRequestItemById(id: number): Promise<PartsRequestI
 }
 
 export async function createPartsRequestItem(
-  data: InsertPartsRequestItem,
+  data: InsertPartsRequestItem
 ): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -3338,7 +3349,7 @@ export async function createPartsRequestItem(
 
 export async function updatePartsRequestItem(
   id: number,
-  data: Partial<InsertPartsRequestItem>,
+  data: Partial<InsertPartsRequestItem>
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -3357,7 +3368,7 @@ export async function deletePartsRequestItem(id: number): Promise<void> {
 
 export async function getVendorsByCompany(
   companyId: number,
-  includeInactive = false,
+  includeInactive = false
 ): Promise<Vendor[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3402,8 +3413,8 @@ export async function generatePONumber(companyId: number): Promise<string> {
     .where(
       and(
         eq(purchaseOrders.companyId, companyId),
-        like(purchaseOrders.poNumber, `${prefix}%`),
-      ),
+        like(purchaseOrders.poNumber, `${prefix}%`)
+      )
     );
   const count = Number(rows[0]?.count ?? 0) + 1;
   return `${prefix}${String(count).padStart(4, "0")}`;
@@ -3411,12 +3422,12 @@ export async function generatePONumber(companyId: number): Promise<string> {
 
 export async function getPurchaseOrdersByCompany(
   companyId: number,
-  status?: PurchaseOrder["status"],
+  status?: PurchaseOrder["status"]
 ): Promise<PurchaseOrder[]> {
   const db = await getDb();
   if (!db) return [];
   const conditions = status
-    ? [eq(purchaseOrders.companyId, companyId), eq(purchaseOrders.status, status)]
+    ? [eq(purchaseOrders.companyId, companyId), eq(purchaseOrders.status, status),]
     : [eq(purchaseOrders.companyId, companyId)];
   return db
     .select()
@@ -3433,7 +3444,7 @@ export async function getPurchaseOrderById(id: number): Promise<PurchaseOrder | 
 }
 
 export async function getPurchaseOrderByPartsRequest(
-  partsRequestId: number,
+  partsRequestId: number
 ): Promise<PurchaseOrder | null> {
   const db = await getDb();
   if (!db) return null;
@@ -3454,7 +3465,7 @@ export async function createPurchaseOrder(data: InsertPurchaseOrder): Promise<nu
 
 export async function updatePurchaseOrder(
   id: number,
-  data: Partial<InsertPurchaseOrder>,
+  data: Partial<InsertPurchaseOrder>
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -3462,7 +3473,7 @@ export async function updatePurchaseOrder(
 }
 
 export async function getPurchaseOrderItemsByPO(
-  purchaseOrderId: number,
+  purchaseOrderId: number
 ): Promise<PurchaseOrderItem[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3492,7 +3503,7 @@ export async function createPurchaseOrderItem(data: InsertPurchaseOrderItem): Pr
 
 export async function updatePurchaseOrderItem(
   id: number,
-  data: Partial<InsertPurchaseOrderItem>,
+  data: Partial<InsertPurchaseOrderItem>
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -3508,7 +3519,7 @@ export async function deletePurchaseOrderItem(id: number): Promise<void> {
 export async function recalculatePOTotals(
   poId: number,
   tax: number,
-  shipping: number,
+  shipping: number
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -3525,7 +3536,7 @@ export async function recalculatePOTotals(
 
 export async function getTimeEntriesByCompany(
   companyId: number,
-  filters?: { status?: string; userId?: number; jobId?: number; workOrderId?: number; approvedWorkId?: number; from?: string; to?: string },
+  filters?: { status?: string; userId?: number; jobId?: number; workOrderId?: number; approvedWorkId?: number; from?: string; to?: string; }
 ): Promise<TimeEntry[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3543,11 +3554,11 @@ export async function getTimeEntriesByCompany(
 export async function getTimeEntriesByUser(
   userId: number,
   companyId: number,
-  filters?: { jobId?: number; from?: string; to?: string; status?: string },
+  filters?: { jobId?: number; from?: string; to?: string; status?: string }
 ): Promise<TimeEntry[]> {
   const db = await getDb();
   if (!db) return [];
-  const conditions = [eq(timeEntries.userId, userId), eq(timeEntries.companyId, companyId)];
+  const conditions = [eq(timeEntries.userId, userId), eq(timeEntries.companyId, companyId),];
   if (filters?.jobId) conditions.push(eq(timeEntries.jobId, filters.jobId));
   if (filters?.status) conditions.push(eq(timeEntries.status, filters.status as any));
   if (filters?.from) conditions.push(sql`${timeEntries.entryDate} >= ${filters.from}`);
@@ -3584,15 +3595,15 @@ export async function deleteTimeEntry(id: number): Promise<void> {
 export async function getTimesheetSummary(
   companyId: number,
   weekStart: string,
-  weekEnd: string,
-): Promise<{ submittedMinutes: number; approvedMinutes: number; pendingCount: number; rejectedCount: number }> {
+  weekEnd: string
+): Promise<{ submittedMinutes: number; approvedMinutes: number; pendingCount: number; rejectedCount: number; }> {
   const db = await getDb();
-  if (!db) return { submittedMinutes: 0, approvedMinutes: 0, pendingCount: 0, rejectedCount: 0 };
+  if (!db) return { submittedMinutes: 0, approvedMinutes: 0, pendingCount: 0, rejectedCount: 0, };
   const rows = await db.select().from(timeEntries).where(
     and(
       eq(timeEntries.companyId, companyId),
       sql`${timeEntries.entryDate} >= ${weekStart}`,
-      sql`${timeEntries.entryDate} <= ${weekEnd}`,
+      sql`${timeEntries.entryDate} <= ${weekEnd}`
     )
   );
   let submittedMinutes = 0;
@@ -3611,7 +3622,7 @@ export async function getTimesheetSummary(
 
 export async function getPayrollEntriesByCompany(
   companyId: number,
-  filters?: { status?: string; userId?: number; workType?: string; from?: string; to?: string },
+  filters?: { status?: string; userId?: number; workType?: string; from?: string; to?: string; }
 ): Promise<PayrollTimeEntry[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3629,7 +3640,7 @@ export async function getPayrollEntriesByCompany(
 export async function getPayrollEntriesByUser(
   userId: number,
   companyId: number,
-  filters?: { from?: string; to?: string; status?: string },
+  filters?: { from?: string; to?: string; status?: string }
 ): Promise<PayrollTimeEntry[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3674,15 +3685,15 @@ export async function bulkUpdatePayrollEntries(ids: number[], data: Partial<Inse
 export async function getPayrollSummary(
   companyId: number,
   from: string,
-  to: string,
-): Promise<{ submittedMinutes: number; approvedMinutes: number; pendingCount: number; exportedMinutes: number; uniqueEmployees: number }> {
+  to: string
+): Promise<{ submittedMinutes: number; approvedMinutes: number; pendingCount: number; exportedMinutes: number; uniqueEmployees: number; }> {
   const db = await getDb();
-  if (!db) return { submittedMinutes: 0, approvedMinutes: 0, pendingCount: 0, exportedMinutes: 0, uniqueEmployees: 0 };
+  if (!db) return { submittedMinutes: 0, approvedMinutes: 0, pendingCount: 0, exportedMinutes: 0, uniqueEmployees: 0, };
   const rows = await db.select().from(payrollTimeEntries).where(
     and(
       eq(payrollTimeEntries.companyId, companyId),
       sql`${payrollTimeEntries.entryDate} >= ${from}`,
-      sql`${payrollTimeEntries.entryDate} <= ${to}`,
+      sql`${payrollTimeEntries.entryDate} <= ${to}`
     )
   );
   let submittedMinutes = 0;
@@ -3696,7 +3707,7 @@ export async function getPayrollSummary(
     if (row.status === "approved") approvedMinutes += row.totalMinutes;
     if (row.status === "exported" || row.status === "locked") exportedMinutes += row.totalMinutes;
   }
-  return { submittedMinutes, approvedMinutes, pendingCount, exportedMinutes, uniqueEmployees: employeeIds.size };
+  return { submittedMinutes, approvedMinutes, pendingCount, exportedMinutes, uniqueEmployees: employeeIds.size, };
 }
 
 export async function deletePayrollEntry(id: number): Promise<void> {
@@ -3707,7 +3718,7 @@ export async function deletePayrollEntry(id: number): Promise<void> {
 
 export async function getPayrollExportData(
   companyId: number,
-  filters?: { from?: string; to?: string; userId?: number; status?: string },
+  filters?: { from?: string; to?: string; userId?: number; status?: string }
 ): Promise<PayrollTimeEntry[]> {
   const db = await getDb();
   if (!db) return [];
@@ -3724,7 +3735,7 @@ export async function getPayrollExportData(
 export async function getPayrollReviewSummary(
   companyId: number,
   from: string,
-  to: string,
+  to: string
 ): Promise<{
   pendingCount: number; pendingMinutes: number;
   approvedCount: number; approvedMinutes: number; exportReadyCount: number;
@@ -3734,13 +3745,13 @@ export async function getPayrollReviewSummary(
   uniqueEmployees: number;
 }> {
   const db = await getDb();
-  const zero = { pendingCount: 0, pendingMinutes: 0, approvedCount: 0, approvedMinutes: 0, exportReadyCount: 0, rejectedCount: 0, draftCount: 0, exportedCount: 0, exportedMinutes: 0, totalMinutes: 0, totalRegularMinutes: 0, totalOvertimeMinutes: 0, uniqueEmployees: 0 };
+  const zero = { pendingCount: 0, pendingMinutes: 0, approvedCount: 0, approvedMinutes: 0, exportReadyCount: 0, rejectedCount: 0, draftCount: 0, exportedCount: 0, exportedMinutes: 0, totalMinutes: 0, totalRegularMinutes: 0, totalOvertimeMinutes: 0, uniqueEmployees: 0, };
   if (!db) return zero;
   const rows = await db.select().from(payrollTimeEntries).where(
     and(
       eq(payrollTimeEntries.companyId, companyId),
       sql`${payrollTimeEntries.entryDate} >= ${from}`,
-      sql`${payrollTimeEntries.entryDate} <= ${to}`,
+      sql`${payrollTimeEntries.entryDate} <= ${to}`
     )
   );
   const result = { ...zero };
@@ -3749,7 +3760,7 @@ export async function getPayrollReviewSummary(
     employeeIds.add(row.userId);
     result.totalMinutes += row.totalMinutes;
     result.totalRegularMinutes += row.regularMinutes;
-    result.totalOvertimeMinutes += (row.overtimeMinutes ?? 0);
+    result.totalOvertimeMinutes +=row.overtimeMinutes ?? 0;
     if (row.status === "submitted") { result.pendingCount++; result.pendingMinutes += row.totalMinutes; }
     if (row.status === "approved") { result.approvedCount++; result.approvedMinutes += row.totalMinutes; result.exportReadyCount++; }
     if (row.status === "rejected") result.rejectedCount++;
@@ -3788,7 +3799,7 @@ export async function getEquipmentModelById(id: number): Promise<EquipmentModel 
 export async function findEquipmentModel(
   companyId: number,
   manufacturer: string,
-  model: string,
+  model: string
 ): Promise<EquipmentModel | null> {
   const db = await getDb();
   if (!db) return null;
@@ -3796,7 +3807,7 @@ export async function findEquipmentModel(
     .where(and(
       eq(equipmentModels.companyId, companyId),
       eq(equipmentModels.manufacturer, manufacturer),
-      eq(equipmentModels.model, model),
+      eq(equipmentModels.model, model)
     ))
     .limit(1);
   return rows[0] ?? null;
@@ -3812,14 +3823,14 @@ export async function listEquipmentModels(companyId: number): Promise<EquipmentM
 
 export async function listKnowledgePagesByEquipmentModel(
   companyId: number,
-  equipmentModelId: number,
+  equipmentModelId: number
 ): Promise<KnowledgePage[]> {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(knowledgePages)
     .where(and(
       eq(knowledgePages.companyId, companyId),
-      eq(knowledgePages.equipmentModelId, equipmentModelId),
+      eq(knowledgePages.equipmentModelId, equipmentModelId)
     ))
     .orderBy(desc(knowledgePages.updatedAt));
 }
@@ -4014,7 +4025,7 @@ export async function getRolePermissionOverrides(companyId: number): Promise<Per
     })
     .from(schema.companyRolePermissions)
     .where(eq(schema.companyRolePermissions.companyId, companyId));
-  return rows.map((r) => ({
+  return rows.map(r => ({
     role: r.role as PermissionOverride["role"],
     permission: r.permission as PermissionOverride["permission"],
     allowed: r.allowed === 1,
@@ -4041,7 +4052,7 @@ export async function setRolePermissionOverride(input: {
       updatedByUserId: input.updatedByUserId ?? null,
     })
     .onDuplicateKeyUpdate({
-      set: { allowed: input.allowed ? 1 : 0, updatedByUserId: input.updatedByUserId ?? null, updatedAt: new Date() },
+      set: { allowed: input.allowed ? 1 : 0, updatedByUserId: input.updatedByUserId ?? null, updatedAt: new Date(), },
     });
 }
 
@@ -4049,7 +4060,7 @@ export async function setRolePermissionOverride(input: {
 export async function clearRolePermissionOverride(
   companyId: number,
   role: "office" | "technician" | "customer",
-  permission: string,
+  permission: string
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -4058,6 +4069,6 @@ export async function clearRolePermissionOverride(
     .where(and(
       eq(schema.companyRolePermissions.companyId, companyId),
       eq(schema.companyRolePermissions.role, role),
-      eq(schema.companyRolePermissions.permission, permission),
+      eq(schema.companyRolePermissions.permission, permission)
     ));
 }

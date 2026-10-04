@@ -116,7 +116,7 @@ beforeEach(() => {
 
 describe("Cross-tenant job ownership — checklistRouter.saveResponse", () => {
   it("rejects a job belonging to another company with FORBIDDEN", async () => {
-    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 2, finalizedAt: null } as any);
+    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 2, finalizedAt: null, } as any);
 
     const ctx = makeUserCtx(1); // caller is in company 1, job belongs to company 2
     const caller = appRouter.createCaller(ctx);
@@ -169,7 +169,7 @@ describe("Cross-tenant job ownership — checklistRouter.bulkSaveResponses", () 
 
     await expect(
       caller.checklist.bulkSaveResponses({
-        responses: [{ jobId: 1, sectionNumber: "1", itemId: "1a", status: "PASS" }],
+        responses: [{ jobId: 1, sectionNumber: "1", itemId: "1a", status: "PASS" },],
       })
     ).rejects.toThrow();
 
@@ -179,7 +179,7 @@ describe("Cross-tenant job ownership — checklistRouter.bulkSaveResponses", () 
 
 describe("Cross-tenant job ownership — fireAlarmRouter.saveInspectionResult", () => {
   it("rejects a job belonging to another company with FORBIDDEN", async () => {
-    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 2, finalizedAt: null } as any);
+    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 2, finalizedAt: null, } as any);
 
     const ctx = makeUserCtx(1);
     const caller = appRouter.createCaller(ctx);
@@ -199,8 +199,8 @@ describe("Cross-tenant job ownership — fireAlarmRouter.saveInspectionResult", 
 
 describe("Cross-tenant job ownership — sprinklerRouter.updateInspection", () => {
   it("rejects an inspection whose parent job belongs to another company with FORBIDDEN", async () => {
-    vi.mocked(sprinklerDb.getSprinklerInspectionById).mockResolvedValue({ id: 1, jobId: 1 } as any);
-    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 2, finalizedAt: null } as any);
+    vi.mocked(sprinklerDb.getSprinklerInspectionById).mockResolvedValue({ id: 1, jobId: 1, } as any);
+    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 2, finalizedAt: null, } as any);
 
     const ctx = makeUserCtx(1);
     const caller = appRouter.createCaller(ctx);
@@ -230,13 +230,13 @@ describe("Cross-tenant job ownership — complianceRouter.finalizeJob (function-
         selectCalls++;
         return {
           from: () => ({
-            where: () => Promise.resolve([jobRow]),
+            where: () => ({ for: () => Promise.resolve([jobRow]) }),
           }),
         };
       },
     } as any;
 
-    const ctx = makeUserCtx(1, "admin");
+    const ctx = makeUserCtx(1, "office");
 
     await expect(
       finalizeJob({ jobId: 1, clientAssertsSynced: true }, ctx, fakeDb)
@@ -250,7 +250,7 @@ describe("Cross-tenant job ownership — complianceRouter.finalizeJob (function-
 
 describe("Cross-tenant job ownership — deviceRouter.update", () => {
   it("rejects a device belonging to another company with FORBIDDEN", async () => {
-    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 2 } as any);
+    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 2, } as any);
 
     const ctx = makeUserCtx(1, "office");
     const caller = appRouter.createCaller(ctx);
@@ -283,8 +283,17 @@ describe("Cross-tenant job ownership — deviceRouter.reorder", () => {
 
 describe("Cross-tenant job ownership — attachmentRouter.update", () => {
   it("rejects an attachment whose parent job belongs to another company with FORBIDDEN", async () => {
-    vi.mocked(db.getAttachmentById).mockResolvedValue({ id: 1, jobId: 5, siteId: null, deviceId: null } as any);
-    vi.mocked(db.getJobById).mockResolvedValue({ id: 5, companyId: 2 } as any);
+    vi.mocked(db.getAttachmentById).mockResolvedValue({ id: 1,
+      entityType: "job",
+      entityId: 5, jobId: 5, siteId: 5, deviceId: null, } as any);
+    vi.mocked(db.getJobById).mockResolvedValue({ id: 5, companyId: 2,
+      customerOrgId: 2,
+      siteId: 5,
+    } as any);
+    vi.mocked(db.getSiteById).mockResolvedValue({
+      id: 5,
+      companyId: 2,
+      customerOrgId: 2, } as any);
 
     const ctx = makeUserCtx(1, "office");
     const caller = appRouter.createCaller(ctx);
@@ -299,7 +308,9 @@ describe("Cross-tenant job ownership — attachmentRouter.update", () => {
 
 describe("Cross-tenant job ownership — attachmentRouter.delete", () => {
   it("rejects an attachment whose parent site belongs to another company with FORBIDDEN", async () => {
-    vi.mocked(db.getAttachmentById).mockResolvedValue({ id: 1, jobId: null, siteId: 5, deviceId: null } as any);
+    vi.mocked(db.getAttachmentById).mockResolvedValue({ id: 1,
+      entityType: "site",
+      entityId: 5, jobId: null, siteId: 5, deviceId: null, } as any);
     vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 2 } as any);
 
     const ctx = makeUserCtx(1);
@@ -307,7 +318,7 @@ describe("Cross-tenant job ownership — attachmentRouter.delete", () => {
 
     await expect(
       caller.attachment.delete({ id: 1 })
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    ).rejects.toMatchObject({ code: "FORBIDDEN", });
 
     expect(db.deleteAttachment).not.toHaveBeenCalled();
   });
@@ -315,7 +326,7 @@ describe("Cross-tenant job ownership — attachmentRouter.delete", () => {
 
 describe("Cross-tenant job ownership — attachmentRouter.listByEntity", () => {
   it("rejects a device entityId belonging to another company with FORBIDDEN", async () => {
-    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 2 } as any);
+    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 2, } as any);
 
     const ctx = makeUserCtx(1);
     const caller = appRouter.createCaller(ctx);
@@ -330,7 +341,7 @@ describe("Cross-tenant job ownership — attachmentRouter.listByEntity", () => {
 
 describe("Cross-tenant data injection — attachmentRouter.upload", () => {
   it("rejects a siteId belonging to another company with FORBIDDEN, even when the entity itself is owned by the caller", async () => {
-    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 1 } as any);
+    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 1, } as any);
     vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 2 } as any);
 
     const ctx = makeUserCtx(1);
@@ -369,7 +380,7 @@ describe("Cross-tenant job ownership — uploadQueueRouter.complete", () => {
     const caller = appRouter.createCaller(ctx);
 
     await expect(
-      caller.uploadQueue.complete({ id: 1, fileKey: "key", fileUrl: "https://example.com/key" })
+      caller.uploadQueue.complete({ id: 1, fileKey: "key", fileUrl: "https://example.com/key", })
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     expect(db.createAttachment).not.toHaveBeenCalled();
@@ -415,7 +426,7 @@ describe("Cross-tenant job ownership — filesRouter.importExcelDevices", () => 
 
 describe("Cross-tenant job ownership — customerOrgRouter.update", () => {
   it("rejects a customer org belonging to another company with FORBIDDEN", async () => {
-    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 1, companyId: 2 } as any);
+    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 1, companyId: 2, } as any);
 
     const ctx = makeUserCtx(1, "office");
     const caller = appRouter.createCaller(ctx);
@@ -430,14 +441,14 @@ describe("Cross-tenant job ownership — customerOrgRouter.update", () => {
 
 describe("Cross-tenant job ownership — customerOrgRouter.delete", () => {
   it("rejects a customer org belonging to another company with FORBIDDEN", async () => {
-    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 1, companyId: 2 } as any);
+    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 1, companyId: 2, } as any);
 
     const ctx = makeUserCtx(1, "office");
     const caller = appRouter.createCaller(ctx);
 
     await expect(
       caller.customerOrg.delete({ id: 1 })
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    ).rejects.toMatchObject({ code: "FORBIDDEN", });
 
     expect(db.deleteCustomerOrg).not.toHaveBeenCalled();
   });
@@ -445,12 +456,12 @@ describe("Cross-tenant job ownership — customerOrgRouter.delete", () => {
 
 describe("Cross-tenant job ownership — customerOrgRouter.get", () => {
   it("rejects a customer org belonging to another company with FORBIDDEN for a non-customer caller", async () => {
-    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 1, companyId: 2 } as any);
+    vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 1, companyId: 2, } as any);
 
     const ctx = makeUserCtx(1); // technician in company 1
     const caller = appRouter.createCaller(ctx);
 
-    await expect(caller.customerOrg.get({ id: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.customerOrg.get({ id: 1 })).rejects.toMatchObject({ code: "FORBIDDEN", });
   });
 });
 

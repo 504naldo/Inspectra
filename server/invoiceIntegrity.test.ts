@@ -10,8 +10,8 @@ import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
 function ctxFor(role: string, companyId: number): TrpcContext {
-  return { user: { id: 1, openId: "o", email: "o@e.com", name: "O", role, companyId, createdAt: new Date(), updatedAt: new Date() },
-    req: { headers: {}, ip: "127.0.0.1" }, res: { setHeader(){}, clearCookie(){} }, requestId: "t", ip: "127.0.0.1", userAgent: "v" } as unknown as TrpcContext;
+  return { user: { id: 1, openId: "o", email: "o@e.com", name: "O", role, companyId, createdAt: new Date(), updatedAt: new Date(), },
+    req: { headers: {}, ip: "127.0.0.1" }, res: { setHeader(){}, clearCookie(){} }, requestId: "t", ip: "127.0.0.1", userAgent: "v", } as unknown as TrpcContext;
 }
 
 describe("Invoice integrity — markPaid + terminal states", () => {
@@ -29,13 +29,14 @@ describe("Invoice integrity — markPaid + terminal states", () => {
   // Create a draft invoice with one non-taxable line item of `lineTotal`.
   async function makeInvoice(lineTotal: number): Promise<number> {
     const inv = await caller.invoice.create({ taxRate: 0 });
-    await caller.invoice.addLineItem({ invoiceId: inv.id, description: "Work", quantity: 1, unitPrice: lineTotal, taxable: false });
+    await caller.invoice.addLineItem({ invoiceId: inv.id, description: "Work", quantity: 1, unitPrice: lineTotal, taxable: false, });
     return inv.id;
   }
 
   it("marks paid in full using freshly recalculated totals", async () => {
     const id = await makeInvoice(100);
-    const res = await caller.invoice.markPaid({ id, amountPaid: 100 });
+    const res = await caller.invoice.markPaid({ id, amountPaid: 100,
+      requestId: crypto.randomUUID(), });
     expect(res.status).toBe("paid");
     expect(res.total).toBe(100);
     expect(res.balanceDue).toBe(0);
@@ -47,8 +48,9 @@ describe("Invoice integrity — markPaid + terminal states", () => {
   it("recalculates from line items (a stale total cannot be used to mark paid)", async () => {
     const id = await makeInvoice(100);
     // Total grows to 150 after another line item; paying 100 must be partial, not paid.
-    await caller.invoice.addLineItem({ invoiceId: id, description: "Extra", quantity: 1, unitPrice: 50, taxable: false });
-    const res = await caller.invoice.markPaid({ id, amountPaid: 100 });
+    await caller.invoice.addLineItem({ invoiceId: id, description: "Extra", quantity: 1, unitPrice: 50, taxable: false, });
+    const res = await caller.invoice.markPaid({ id, amountPaid: 100,
+      requestId: crypto.randomUUID(), });
     expect(res.total).toBe(150);
     expect(res.status).toBe("partial");
     expect(res.balanceDue).toBe(50);
@@ -56,45 +58,53 @@ describe("Invoice integrity — markPaid + terminal states", () => {
 
   it("records a partial payment", async () => {
     const id = await makeInvoice(200);
-    const res = await caller.invoice.markPaid({ id, amountPaid: 50 });
+    const res = await caller.invoice.markPaid({ id, amountPaid: 50,
+      requestId: crypto.randomUUID(), });
     expect(res.status).toBe("partial");
     expect(res.balanceDue).toBe(150);
   });
 
   it("rejects paying an already-paid invoice", async () => {
     const id = await makeInvoice(100);
-    await caller.invoice.markPaid({ id, amountPaid: 100 });
-    await expect(caller.invoice.markPaid({ id, amountPaid: 100 })).rejects.toThrow(/already fully paid/i);
+    await caller.invoice.markPaid({ id, amountPaid: 100,
+      requestId: crypto.randomUUID(), });
+    await expect(caller.invoice.markPaid({ id, amountPaid: 100,
+        requestId: crypto.randomUUID(), })).rejects.toThrow(/already fully paid/i);
   });
 
   it("blocks line-item edits once paid (terminal lock)", async () => {
     const id = await makeInvoice(100);
-    await caller.invoice.markPaid({ id, amountPaid: 100 });
-    await expect(caller.invoice.addLineItem({ invoiceId: id, description: "late", quantity: 1, unitPrice: 5, taxable: false })).rejects.toThrow();
+    await caller.invoice.markPaid({ id, amountPaid: 100,
+      requestId: crypto.randomUUID(), });
+    await expect(caller.invoice.addLineItem({ invoiceId: id, description: "late", quantity: 1, unitPrice: 5, taxable: false, })).rejects.toThrow();
   });
 
   it("rejects paying a voided invoice", async () => {
     const id = await makeInvoice(100);
     await caller.invoice.void({ id });
-    await expect(caller.invoice.markPaid({ id, amountPaid: 100 })).rejects.toThrow(/voided/i);
+    await expect(caller.invoice.markPaid({ id, amountPaid: 100,
+        requestId: crypto.randomUUID(), })).rejects.toThrow(/voided/i);
   });
 
   it("rejects paying a Sage-exported invoice", async () => {
     const id = await makeInvoice(100);
     await caller.invoice.exportSage({ ids: [id] });
-    await expect(caller.invoice.markPaid({ id, amountPaid: 100 })).rejects.toThrow(/exported/i);
+    await expect(caller.invoice.markPaid({ id, amountPaid: 100,
+        requestId: crypto.randomUUID(), })).rejects.toThrow(/exported/i);
   });
 
   it("forbids marking another company's invoice paid", async () => {
     const id = await makeInvoice(100);
-    await expect(otherCaller.invoice.markPaid({ id, amountPaid: 100 })).rejects.toThrow();
+    await expect(otherCaller.invoice.markPaid({ id, amountPaid: 100,
+        requestId: crypto.randomUUID(), })).rejects.toThrow();
   });
 
-  it("atomic guard prevents a double-apply race (db.markInvoicePaidIfEligible)", async () => {
+  it("atomic receipt prevents a double-apply race and obsolete direct writers fail closed", async () => {
     const id = await makeInvoice(100);
-    const first = await db.markInvoicePaidIfEligible(id, companyId, { amountPaid: "100", balanceDue: "0", status: "paid", paidAt: new Date() });
-    const second = await db.markInvoicePaidIfEligible(id, companyId, { amountPaid: "100", balanceDue: "0", status: "paid", paidAt: new Date() });
-    expect(first).toBe(true);
-    expect(second).toBe(false); // already paid → zero rows matched
+    await expect(db.markInvoicePaidIfEligible(id, companyId, { amountPaid: "100", balanceDue: "0", status: "paid", paidAt: new Date(), })).rejects.toThrow();
+    const input = { id, amountPaid: 100, requestId: crypto.randomUUID() };
+    const replies = await Promise.all([caller.invoice.markPaid(input), caller.invoice.markPaid(input)]);
+    expect(replies.map(reply => reply.amountPaid)).toEqual([100, 100]);
+    expect(await db.getInvoiceById(id)).toMatchObject({ amountPaid: "100.00", balanceDue: "0.00" });
   });
 });

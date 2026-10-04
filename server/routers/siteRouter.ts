@@ -1,6 +1,8 @@
+import { toCustomerSafeSite } from "../customerDto";
+import { assertCustomerOrgAccess } from "../tenantGuards";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, officeProcedure, technicianProcedure } from "../_core/trpc";
+import { router, protectedProcedure, officeProcedure, technicianProcedure, } from "../_core/trpc";
 import { geocodeAddress } from "../_core/map";
 import * as db from "../db";
 import { assertSiteCompany, assertCustomerOrgCompany } from "../tenantGuards";
@@ -8,7 +10,7 @@ import type { SiteSummary } from "../../drizzle/schema";
 
 // Joins the address fields into a single string for geocoding; skips empty parts
 // so a site with only a city still resolves to a usable (if coarse) location.
-function formatAddressForGeocoding(parts: { address?: string | null; city?: string | null; state?: string | null; postalCode?: string | null }): string {
+function formatAddressForGeocoding(parts: { address?: string | null; city?: string | null; state?: string | null; postalCode?: string | null; }): string {
   return [parts.address, parts.city, parts.state, parts.postalCode].filter((s): s is string => !!s?.trim()).join(", ");
 }
 
@@ -22,10 +24,11 @@ const siteRouter = router({
   }),
   
   listByCustomerOrg: protectedProcedure.input(z.object({ customerOrgId: z.number() })).query(async ({ input, ctx }) => {
-    if (ctx.user.role === 'customer' && ctx.user.customerOrgId !== input.customerOrgId) {
-      throw new TRPCError({ code: 'FORBIDDEN' });
-    }
-    return db.getSitesByCustomerOrg(input.customerOrgId);
+      await assertCustomerOrgAccess (input.customerOrgId,ctx.user);
+      const sites = await db.getSitesByCustomerOrg(input.customerOrgId);
+      return ctx.user.role === "customer"
+        ? sites.map(toCustomerSafeSite)
+        : sites;
   }),
   
   get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
@@ -39,7 +42,7 @@ const siteRouter = router({
     } else if (ctx.user.companyId !== site.companyId) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
     }
-    return site;
+    return ctx.user.role === "customer" ? toCustomerSafeSite(site) : site;
   }),
   
   create: officeProcedure.input(z.object({
@@ -81,7 +84,7 @@ const siteRouter = router({
         phone: input.contactPhone || '',
         email: input.contactEmail || '',
         role: 'Primary Contact',
-      }],
+      },],
       monitoring: {
         company: '',
         accountNumber: '',
@@ -161,7 +164,7 @@ const siteRouter = router({
         phone: data.contactPhone ?? existingSite.contactPhone ?? '',
         email: data.contactEmail ?? '',
         role: 'Primary Contact',
-      }],
+      },],
       monitoring: existingSite.summary?.monitoring || {
         company: '',
         accountNumber: '',
@@ -173,7 +176,7 @@ const siteRouter = router({
     
     // Re-geocode only when an address field actually changed — keeps edits to
     // unrelated fields (notes, key tracking, etc.) from costing an API call.
-    let coordsUpdate: { latitude?: string | null; longitude?: string | null } = {};
+    let coordsUpdate: { latitude?: string | null; longitude?: string | null; } = {};
     if (data.address !== undefined || data.city !== undefined || data.state !== undefined || data.postalCode !== undefined) {
       const coords = await geocodeAddress(formatAddressForGeocoding({
         address: data.address ?? existingSite.address,
@@ -181,7 +184,7 @@ const siteRouter = router({
         state: data.state ?? existingSite.state,
         postalCode: data.postalCode ?? existingSite.postalCode,
       }));
-      coordsUpdate = { latitude: coords ? String(coords.lat) : null, longitude: coords ? String(coords.lng) : null };
+      coordsUpdate = { latitude: coords ? String(coords.lat) : null, longitude: coords ? String(coords.lng) : null, };
     }
 
     await db.updateSite(id, {
@@ -239,10 +242,10 @@ const siteRouter = router({
 
     const merged: SiteSummary = {
       ...existingSite.summary,
-      building: { ...existingSite.summary?.building, ...input.summary.building },
+      building: { ...existingSite.summary?.building, ...input.summary.building, },
       billing: { ...existingSite.summary?.billing, ...input.summary.billing },
-      monitoring: { ...existingSite.summary?.monitoring, ...input.summary.monitoring },
-      estimates: { ...existingSite.summary?.estimates, ...input.summary.estimates },
+      monitoring: { ...existingSite.summary?.monitoring, ...input.summary.monitoring, },
+      estimates: { ...existingSite.summary?.estimates, ...input.summary.estimates, },
       contacts: input.summary.contacts ?? existingSite.summary?.contacts,
     };
 
@@ -260,7 +263,7 @@ const siteRouter = router({
 
     const merged: SiteSummary = {
       ...existingSite.summary,
-      estimates: { ...existingSite.summary?.estimates, servicingHours: input.servicingHours },
+      estimates: { ...existingSite.summary?.estimates, servicingHours: input.servicingHours, },
     };
 
     await db.updateSite(input.id, { summary: merged });
@@ -289,7 +292,7 @@ const siteRouter = router({
       for (const site of candidates) {
         const coords = await geocodeAddress(formatAddressForGeocoding(site));
         if (coords) {
-          await db.updateSite(site.id, { latitude: String(coords.lat), longitude: String(coords.lng) });
+          await db.updateSite(site.id, { latitude: String(coords.lat), longitude: String(coords.lng), });
           geocoded++;
         } else {
           skipped++;

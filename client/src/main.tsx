@@ -7,13 +7,12 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
-import { mutationQueue } from "@/lib/mutationQueue";
 import "./index.css";
 
 // Vite fires this when a <link rel="modulepreload"> chunk fails to load — the
 // classic "app was redeployed while a tab was open" case. Reload once (guarded
 // against a loop) to pull the fresh index.html + chunk graph.
-window.addEventListener("vite:preloadError", (event) => {
+window.addEventListener("vite:preloadError",event => {
   const KEY = "chunk-reload:preload";
   try {
     if (sessionStorage.getItem(KEY)) return; // already reloaded once this tab
@@ -25,19 +24,12 @@ window.addEventListener("vite:preloadError", (event) => {
   window.location.reload();
 });
 
-// Retry mutations up to 2 times for transient network failures (when online)
+// Never globally retry non-idempotent sends, payments or finalization.
 const queryClient = new QueryClient({
   defaultOptions: {
     mutations: {
-      retry: (failureCount, error) => {
-        // Don't retry if offline — the queue handles that
-        if (!navigator.onLine) return false;
-        // Don't retry auth errors
-        if (error instanceof TRPCClientError && error.message === UNAUTHED_ERR_MSG) return false;
-        return failureCount < 2;
-      },
-      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
-    },
+      retry: false
+      }
   },
 });
 
@@ -65,20 +57,6 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
-// Build a fake tRPC batch success response (null data for N procedures in the batch)
-function fakeSuccessResponse(url: string): Response {
-  const path = (url as string).split("?")[0];
-  const segment = path.split("/api/trpc/")[1] ?? "";
-  const count = segment ? segment.split(",").length : 1;
-  const payload = JSON.stringify(
-    Array.from({ length: count }, () => ({ result: { data: { json: null } } }))
-  );
-  return new Response(payload, {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
@@ -88,11 +66,11 @@ const trpcClient = trpc.createClient({
         const isPost = !init?.method || init.method === "POST";
         const isTrpcMutation = isPost && typeof input === "string" && input.includes("/api/trpc");
 
-        // When offline, queue the request and return a fake success so the UI
-        // doesn't show an error. The queue is flushed when connectivity returns.
+        // Field workflows own typed durable queues. Never fabricate success.
         if (!navigator.onLine && isTrpcMutation) {
-          mutationQueue.add(input as string, (init?.body as string) ?? "");
-          return Promise.resolve(fakeSuccessResponse(input as string));
+          return Promise.reject(
+            new Error(
+              "This action needs a connection. Your input has not been submitted."));
         }
 
         return globalThis.fetch(input, {
@@ -118,11 +96,11 @@ if ("serviceWorker" in navigator) {
     const swPath = import.meta.env.DEV ? "/dev-dist/sw.js" : "/sw.js";
     navigator.serviceWorker
       .register(swPath, { type: "module" })
-      .then((registration) => {
+      .then(registration => {
         console.log("[PWA] Service Worker registered:", registration.scope);
         setInterval(() => registration.update(), 60 * 60 * 1000);
       })
-      .catch((error) => {
+      .catch(error => {
         console.error("[PWA] Service Worker registration failed:", error);
       });
   });

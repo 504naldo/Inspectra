@@ -1,4 +1,4 @@
-import { COOKIE_NAME, OAUTH_STATE_COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { COOKIE_NAME, OAUTH_STATE_COOKIE_NAME, ONE_YEAR_MS, } from "@shared/const";
 import type { Express, Request, Response } from "express";
 import * as db from "../db";
 import { getSessionCookieOptions, parseCookies } from "./cookies";
@@ -50,7 +50,8 @@ export function isSafeReturnRoute(route: string): boolean {
  * A forged callback URL (login CSRF) won't carry the victim's matching cookie.
  */
 export function isOAuthNonceValid(cookieNonce: string | undefined, stateNonce: string | undefined): boolean {
-  return Boolean(cookieNonce) && Boolean(stateNonce) && cookieNonce === stateNonce;
+  return ( Boolean(cookieNonce) && Boolean(stateNonce) && cookieNonce === stateNonce
+  );
 }
 
 /** Google's `email_verified` must be true whenever an email is present before it's trusted for role/identity. */
@@ -113,7 +114,7 @@ function renderLoginErrorPage(title: string, message: string): string {
 }
 
 /** Determine role and activation status from email using environment config */
-function resolveRoleFromEmail(email: string): { role: 'admin' | 'office' | 'technician' | 'customer'; isActive: number } {
+function resolveRoleFromEmail(email: string): { role: 'admin' | 'office' | 'technician' | 'customer'; isActive: number; } {
   const normalized = email.toLowerCase();
 
   // Check admin list from ADMIN_EMAILS env var
@@ -149,7 +150,7 @@ export function registerOAuthRoutes(app: Express) {
     if (!code) {
       // Logged unconditionally (including production) since this is the exact
       // failure mode reported on mobile Chrome — no code/state ever reaches us.
-      console.error('[OAuth] Missing required code parameter', { userAgent, hasState: Boolean(state) });
+      console.error('[OAuth] Missing required code parameter', { userAgent, hasState: Boolean(state), });
       
       // Return user-friendly HTML error page
       res.status(400).send(`
@@ -219,27 +220,33 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      // Determine company assignment
-      const allCompanies = await db.getAllCompanies();
-      let companyId: number | undefined;
-      
-      if (allCompanies.length === 1) {
-        companyId = allCompanies[0].id;
-      } else if (allCompanies.length > 1) {
-        // Multiple companies — match by email domain if company has emailDomain set
-        const email = userInfo.email?.toLowerCase() || '';
-        const emailDomain = email.split('@')[1];
-        if (emailDomain) {
-          const matched = allCompanies.find(c => c.emailDomain?.toLowerCase() === emailDomain);
-          companyId = matched?.id ?? allCompanies[0].id;
-        } else {
-          companyId = allCompanies[0].id;
-        }
-      }
-
-      // Determine role and activation from env-driven config
+      // Existing accounts and invitations carry trusted membership. A login
+      // never transfers them when domain mappings or company ordering change.
       const email = userInfo.email?.toLowerCase() || '';
       const { role, isActive } = resolveRoleFromEmail(email);
+      const existing =
+        (await db.getUserByOpenId(userInfo.openId)) ??
+        (email ? await db.getUserByEmail(email) : undefined);
+      let companyId = existing?.companyId ?? undefined;
+      if (!existing) {
+        const domain = email.split("@")[1];
+        const companies = await db.getAllCompanies();
+        const matches = companies.filter(
+          c => domain && c.emailDomain?.toLowerCase() === domain
+        );
+        if (matches.length === 1) companyId = matches[0].id;
+        else if (role !== "admin") {
+          res
+            .status(403)
+            .send(
+              renderLoginErrorPage(
+                "Invitation Required",
+                "Your account needs an authorized company invitation. Contact your administrator."
+              )
+            );
+          return;
+        }
+      }
 
       await db.upsertUser({
         openId: userInfo.openId,
@@ -265,20 +272,27 @@ export function registerOAuthRoutes(app: Express) {
       }
 
       if (!ENV.isProduction) {
-        console.log('[OAuth] User upserted:', { email: userInfo.email, role, companyId, isActive });
+        console.log('[OAuth] User upserted:', { email: userInfo.email, role, companyId, isActive, });
       }
 
       // Fetch user after upsert to get the current sessionVersion for JWT embedding.
       const user = await db.getUserByOpenId(userInfo.openId);
 
+      if (
+        !user ||
+        !Number.isInteger(user.sessionVersion) ||
+        user.sessionVersion < 1
+      )
+        throw new Error("Required session version unavailable");
+
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
         expiresInMs: ONE_YEAR_MS,
-        sessionVersion: (user as any)?.sessionVersion ?? 1,
+        sessionVersion:user.sessionVersion,
       });
 
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS, });
       if (user && user.isActive === 0) {
         // User exists but is not active - show pending approval message
         res.status(403).send(`

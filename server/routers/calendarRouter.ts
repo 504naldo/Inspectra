@@ -16,6 +16,7 @@ type CalendarEvent = {
 /**
  * Build a Google Calendar event body from job data.
  */
+export
 async function buildEventBody(jobId: number) {
   const job = await db.getJobById(jobId);
   if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
@@ -33,12 +34,12 @@ async function buildEventBody(jobId: number) {
   // Build attendee list from assigned technicians
   const attendees: { email: string; displayName?: string }[] = [];
   if (leadTech?.email) {
-    attendees.push({ email: leadTech.email, displayName: leadTech.name || undefined });
+    attendees.push({ email: leadTech.email, displayName: leadTech.name || undefined, });
   }
   if (technicians?.additional) {
     for (const tech of technicians.additional) {
       if (tech.email && tech.email !== leadTech?.email) {
-        attendees.push({ email: tech.email, displayName: tech.name || undefined });
+        attendees.push({ email: tech.email, displayName: tech.name || undefined, });
       }
     }
   }
@@ -63,24 +64,22 @@ async function buildEventBody(jobId: number) {
   if (leadTech?.name) descriptionParts.push(`\nLead Technician: ${leadTech.name}`);
   descriptionParts.push(`\n---\nView in Inspectra: ${process.env.APP_URL || ""}/tech/jobs/${jobId}`);
 
-  // Determine event date/time
-  // If scheduledDate is set, use it. Default to a 4-hour block starting at 8am.
-  let startDate: Date;
-  if (job.scheduledDate) {
-    startDate = new Date(job.scheduledDate);
-    // If the date has no time component (midnight), set to 8am
-    if (startDate.getHours() === 0 && startDate.getMinutes() === 0) {
-      startDate.setHours(8, 0, 0, 0);
-    }
-  } else {
-    // No scheduled date — use tomorrow at 8am
-    startDate = new Date();
-    startDate.setDate(startDate.getDate() + 1);
-    startDate.setHours(8, 0, 0, 0);
-  }
-
-  const endDate = new Date(startDate);
-  endDate.setHours(startDate.getHours() + 4); // 4-hour default duration
+  // Explicit schedule instants are authoritative. Never invent an 8am visit.
+  const startDate =job.scheduledStartAt
+    ? new Date(job.scheduledStartAt)
+    : null;
+  const endDate = job.scheduledEndAt ? new Date(job.scheduledEndAt) : null;
+    if (
+    !startDate ||
+    !endDate ||
+    !Number.isFinite (startDate.getTime()) ||
+    endDate <= startDate
+  )
+    throw new TRPCError( {
+      code: "PRECONDITION_FAILED",
+      message:
+        "Set the scheduled start and end time before creating a calendar event",
+    });
 
   // Build event title
   const title = site?.name
@@ -173,6 +172,8 @@ export const calendarRouter = router({
       // Save the event ID to the job
       await db.updateJob(input.jobId, {
         googleCalendarEventId: event.id,
+        googleCalendarOwnerId: ctx.user.id,
+        googleCalendarId: "primary",
       });
 
       return {
@@ -206,8 +207,15 @@ export const calendarRouter = router({
 
       const eventBody = await buildEventBody(input.jobId);
 
+      if (job.googleCalendarOwnerId !== ctx.user.id || !job.googleCalendarId)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "Only the recorded calendar owner can change this event; legacy events require reconciliation",
+        });
+
       const response = await fetch(
-        `${CALENDAR_API}/calendars/primary/events/${job.googleCalendarEventId}?sendUpdates=all`,
+        `${CALENDAR_API}/calendars/${encodeURIComponent(job.googleCalendarId!)}/events/${job.googleCalendarEventId}?sendUpdates=all`,
         {
           method: "PUT",
           headers: {
@@ -223,7 +231,9 @@ export const calendarRouter = router({
         console.error("[Calendar] Update event failed:", response.status, errorBody);
         if (response.status === 404) {
           // Event was deleted from Google Calendar — clear the reference
-          await db.updateJob(input.jobId, { googleCalendarEventId: null });
+          await db.updateJob(input.jobId, { googleCalendarEventId: null,
+            googleCalendarOwnerId: null,
+            googleCalendarId: null, });
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Calendar event no longer exists. It may have been deleted from Google Calendar.",
@@ -257,8 +267,15 @@ export const calendarRouter = router({
         return { success: true, message: "No calendar event to delete" };
       }
 
+      if (job.googleCalendarOwnerId !== ctx.user.id || !job.googleCalendarId)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "Only the recorded calendar owner can change this event; legacy events require reconciliation",
+        });
+
       const response = await fetch(
-        `${CALENDAR_API}/calendars/primary/events/${job.googleCalendarEventId}?sendUpdates=all`,
+        `${CALENDAR_API}/calendars/${encodeURIComponent(job.googleCalendarId!)}/events/${job.googleCalendarEventId}?sendUpdates=all`,
         {
           method: "DELETE",
           headers: {
@@ -277,7 +294,9 @@ export const calendarRouter = router({
       }
 
       // Clear the reference
-      await db.updateJob(input.jobId, { googleCalendarEventId: null });
+      await db.updateJob(input.jobId, { googleCalendarEventId: null,
+        googleCalendarOwnerId: null,
+        googleCalendarId: null, });
 
       return { success: true };
     }),

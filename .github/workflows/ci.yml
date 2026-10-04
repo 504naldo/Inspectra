@@ -33,11 +33,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install PDF text regression tool
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
       - name: Type check
         run: pnpm run check
@@ -52,3 +55,9 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+      - name: Build production assets
+        run: pnpm run build
+
+      - name: Smoke test built server (isolated, no migrations)
+        run: node scripts/smokeBuiltServer.mjs

@@ -1,9 +1,8 @@
 /**
- * Startup migration runner.
- * Reads all .sql files from drizzle/migrations/, tracks applied migrations
- * in a `__schema_migrations` table, and applies any pending ones on startup.
- * This allows schema changes to be deployed automatically via GitHub without
- * requiring manual SQL execution.
+ * Read-only startup migration preflight. Journal installations are verified by
+ * requiredSchema; manual histories must have no pending files. Explicit
+ * maintenance runs apply sequentially, stop on failure and refuse historical
+ * backfills/constraint changes that require reviewed evidence.
  */
 import mysql from "mysql2/promise";
 import fs from "fs";
@@ -17,7 +16,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * literals so that semicolons inside strings are not treated as terminators.
  * Also strips line comments (-- ...).
  */
-function splitSqlStatements(sql: string): string[] {
+export function splitSqlStatements(sql: string): string[] {
+  if (/^DELIMITER /m.test(sql)) {
+    const statements: string[] = [];
+    let delimiter = ";", chunk = "";
+    for (const line of sql.split("\n")) {
+      const change = /^DELIMITER\s+(\S+)\s*$/.exec(line);
+      if (change) {
+        if (chunk.trim()) statements.push(...(delimiter === ";" ? splitSqlStatements(chunk) : chunk.split(delimiter).map(s => s.trim()).filter(Boolean)));
+        chunk = ""; delimiter = change[1];
+      } else chunk += line + "\n";
+    }
+    if (chunk.trim()) statements.push(...(delimiter === ";" ? splitSqlStatements(chunk) : chunk.split(delimiter).map(s => s.trim()).filter(Boolean)));
+    return statements;
+  }
   const statements: string[] = [];
   let current = "";
   let inString = false;
@@ -73,8 +85,8 @@ function splitSqlStatements(sql: string): string[] {
   return statements.filter((s) => s.length > 0 && !s.startsWith("--"));
 }
 
-export async function runMigrations(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
+export async function runMigrations(options: { databaseUrl?: string; migrationsDir?: string; apply?: boolean } = {}): Promise<void> {
+  const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;
   if (!databaseUrl) {
     console.log("[Migrations] DATABASE_URL not set, skipping migrations.");
     return;
@@ -84,6 +96,19 @@ export async function runMigrations(): Promise<void> {
   try {
     connection = await mysql.createConnection(databaseUrl);
 
+    // Startup is read-only: explicit maintenance runs alone may execute DDL.
+    // Journal installations must not replay the unrelated manual history.
+    const [journal] = await connection.query<mysql.RowDataPacket[]>("SHOW TABLES LIKE '__drizzle_migrations'");
+    if (journal.length && !options.migrationsDir) return;
+    if (!options.apply) {
+      const directory = options.migrationsDir ?? path.resolve(__dirname, "../drizzle/migrations");
+      if (!fs.existsSync(directory)) throw new Error("Migration history directory unavailable");
+      const [recorded] = await connection.query<mysql.RowDataPacket[]>("SELECT migration_name FROM __schema_migrations");
+      const applied = new Set(recorded.map(row => row.migration_name));
+      const pending = fs.readdirSync(directory).filter(file => file.endsWith(".sql") && file !== "RAILWAY_CATCHUP.sql" && !applied.has(file));
+      if (pending.length) throw new Error(`Explicit maintenance required; startup will not apply pending migrations: ${pending.join(", ")}`);
+      return;
+    }
     // Ensure the migrations tracking table exists
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS __schema_migrations (
@@ -94,7 +119,7 @@ export async function runMigrations(): Promise<void> {
     `);
 
     // Find all migration files
-    const migrationsDir = path.resolve(__dirname, "../drizzle/migrations");
+    const migrationsDir = options.migrationsDir ?? path.resolve(__dirname, "../drizzle/migrations");
     if (!fs.existsSync(migrationsDir)) {
       console.log("[Migrations] No migrations directory found, skipping.");
       return;
@@ -117,12 +142,13 @@ export async function runMigrations(): Promise<void> {
     );
     const applied = new Set(rows.map((r) => r.migration_name as string));
 
-    // Apply pending migrations. Each file is handled independently — a file
-    // that fails (e.g. a statement incompatible with this MySQL version)
-    // logs and is left unapplied for retry on the next boot, but must not
-    // stop later files in the list from being attempted.
+    // Explicit maintenance only: stop at the first error so later constraints
+    // never overtake an incomplete prerequisite. Retry committed DDL safely.
     for (const file of migrationFiles) {
       if (applied.has(file)) continue;
+
+      if (/^00(06|10|11|12|13|14|15)_/.test(file))
+        throw new Error(`Migration ${file} requires reviewed historical evidence and explicit separate maintenance; no automatic backfill or constraint tightening`);
 
       const filePath = path.join(migrationsDir, file);
       const sql = fs.readFileSync(filePath, "utf-8");
@@ -136,7 +162,7 @@ export async function runMigrations(): Promise<void> {
       try {
         for (const stmt of statements) {
           try {
-            await connection.execute(stmt);
+            await connection.query(stmt);
           } catch (err: unknown) {
             const error = err as { code?: string; message?: string };
             // Ignore "column/key/table already exists" errors so migrations
@@ -145,6 +171,7 @@ export async function runMigrations(): Promise<void> {
               error.code === "ER_DUP_FIELDNAME" ||
               error.code === "ER_TABLE_EXISTS_ERROR" ||
               error.code === "ER_DUP_KEYNAME" ||
+              error.code === "ER_TRG_ALREADY_EXISTS" ||
               error.message?.includes("Duplicate column name") ||
               error.message?.includes("Duplicate key name") ||
               error.message?.includes("already exists")
@@ -164,13 +191,14 @@ export async function runMigrations(): Promise<void> {
         console.log(`[Migrations] Applied: ${file}`);
       } catch (err) {
         console.error(`[Migrations] Failed to apply ${file}, will retry on next boot:`, err);
+        throw err;
       }
     }
 
     console.log("[Migrations] Finished migration pass.");
   } catch (err) {
     console.error("[Migrations] Migration failed:", err);
-    // Don't crash the server — log and continue
+    throw err;
   } finally {
     if (connection) await connection.end();
   }

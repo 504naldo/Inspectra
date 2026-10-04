@@ -5,8 +5,9 @@ import type { TrpcContext } from "./_core/context";
 // Mock the DB so tests don't need a real database connection
 vi.mock("./db", () => ({
   getDb: vi.fn(),
+  withAudit: vi.fn(async (_ctx, _name, fn) => fn()),
   getSiteById: vi.fn(),
-  assertJobCompany: vi.fn().mockResolvedValue(undefined),
+  assertJobCompany: vi.fn().mockResolvedValue({ id: 1, siteId: 1, companyId: 1, customerOrgId: 11 }),
   assertJobNotFinalized: vi.fn().mockResolvedValue(undefined),
 }));
 import * as db from "./db";

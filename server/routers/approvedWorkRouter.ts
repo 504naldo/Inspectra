@@ -1,3 +1,4 @@
+import { toPublicUser } from "../publicUser";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
@@ -41,7 +42,7 @@ export const approvedWorkRouter = router({
 
       const records = await db.getApprovedWorkByCompany(
         input.companyId,
-        input.status,
+        input.status
       );
 
       if (records.length === 0) return [];
@@ -100,7 +101,8 @@ export const approvedWorkRouter = router({
 
       const techIds = (record.assignedTechnicianIds as number[] | null) ?? [];
       const techs = techIds.length
-        ? (await Promise.all(techIds.map(id => db.getUserById(id)))).filter(Boolean)
+        ? (await Promise.all(techIds.map(id => db.getUserById(id)))).filter((u): u is NonNullable<typeof u> => !!u)
+            .map(toPublicUser)
         : [];
 
       return {
@@ -163,7 +165,7 @@ export const approvedWorkRouter = router({
       });
 
       void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "created",
-        title: "Approved work record created" });
+        title: "Approved work record created", });
       return record;
     }),
 
@@ -187,7 +189,7 @@ export const approvedWorkRouter = router({
       }
 
       const item = await db.getRepairQuoteItemById(input.quoteItemId);
-      if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Quote item not found." });
+      if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Quote item not found.", });
 
       const quote = await getQuoteForCompany(input.quoteId, ctx.user.companyId!);
 
@@ -223,7 +225,7 @@ export const approvedWorkRouter = router({
 
       void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "created",
         title: "Approved work created from quote item",
-        relatedEntityType: "repair_quote", relatedEntityId: input.quoteId });
+        relatedEntityType: "repair_quote", relatedEntityId: input.quoteId, });
       return record;
     }),
 
@@ -270,7 +272,7 @@ export const approvedWorkRouter = router({
       await db.updateApprovedWork(id, {
         ...rest,
         ...(approvedAmount !== undefined
-          ? { approvedAmount: approvedAmount != null ? String(approvedAmount) : null }
+          ? { approvedAmount: approvedAmount != null ? String(approvedAmount) : null, }
           : {}),
       });
       return { success: true };
@@ -302,10 +304,10 @@ export const approvedWorkRouter = router({
         timestamps.closedAt = new Date();
       }
 
-      await db.updateApprovedWork(input.id, { status: input.status, ...timestamps });
+      await db.updateApprovedWork(input.id, { status: input.status, ...timestamps, });
       void logActivity({ ctx, entityType: "approved_work", entityId: input.id, eventType: "status_changed",
         title: `Approved work status changed to ${input.status}`,
-        oldValue: record.status, newValue: input.status });
+        oldValue: record.status, newValue: input.status, });
       return { success: true };
     }),
 
@@ -435,10 +437,10 @@ export const approvedWorkRouter = router({
       await db.updateApprovedWork(record.id, { workOrderId: wo.id });
       void logActivity({ ctx, entityType: "work_order", entityId: wo.id, eventType: "created",
         title: `Work order created: ${wo.workOrderNumber}`,
-        relatedEntityType: "approved_work", relatedEntityId: record.id });
+        relatedEntityType: "approved_work", relatedEntityId: record.id, });
       void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "linked",
         title: `Work order created: ${wo.workOrderNumber}`,
-        relatedEntityType: "work_order", relatedEntityId: wo.id });
+        relatedEntityType: "work_order", relatedEntityId: wo.id, });
       return wo;
     }),
 
@@ -454,7 +456,7 @@ export const approvedWorkRouter = router({
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
       if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
       if (record.status === "cancelled") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot invoice a cancelled record." });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot invoice a cancelled record.", });
       }
 
       if (record.invoiceNumber) {
@@ -538,7 +540,7 @@ export const approvedWorkRouter = router({
         }
       } else if (record.workOrderId) {
         const wo = await db.getWorkOrderById(record.workOrderId);
-        const woLines = (wo?.lineItems as Array<{ description: string; quantity: number; unitPrice: number; total?: number }> | null) ?? [];
+        const woLines = (wo?.lineItems as Array<{ description: string; quantity: number; unitPrice: number; total?: number; }> | null) ?? [];
         for (let i = 0; i < woLines.length; i++) {
           const wl = woLines[i];
           const lineTotal = wl.total ?? wl.quantity * wl.unitPrice;
@@ -579,7 +581,7 @@ export const approvedWorkRouter = router({
 
       void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "converted",
         title: `Invoice created: ${inv.invoiceNumber}`,
-        relatedEntityType: "invoice", relatedEntityId: inv.id });
+        relatedEntityType: "invoice", relatedEntityId: inv.id, });
       return { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber };
     }),
 
@@ -607,7 +609,7 @@ export const approvedWorkRouter = router({
         ...(input.officeNotes ? { officeNotes: input.officeNotes } : {}),
       });
       void logActivity({ ctx, entityType: "approved_work", entityId: input.id, eventType: "closed",
-        title: "Approved work closed" });
+        title: "Approved work closed", });
       return { success: true };
     }),
 });

@@ -28,7 +28,7 @@ See **[`docs/README.md`](./docs/README.md)**. Key entry points:
 ## Getting Started (GitHub Codespaces / Dev Container)
 
 This repo includes a `.devcontainer/devcontainer.json` so it can be opened
-directly in GitHub Codespaces or VS Code Dev Containers with Node 20 and
+directly in GitHub Codespaces or VS Code Dev Containers with Node 22 and
 pnpm preconfigured.
 
 1. **Open in Codespaces** — from the GitHub repo page, click **Code → Codespaces
@@ -74,7 +74,7 @@ pnpm preconfigured.
    (`server/_core/index.ts` via `tsx watch`).
 
 7. **Open the forwarded ports** — Codespaces/VS Code will prompt to open port
-   `5173` (Vite dev server, the app UI) automatically. Port `5000` (API server)
+   `3000` (the app UI and API) automatically. The same Express server
    is also forwarded for direct API access if needed.
 
 8. **Run checks before committing**:
@@ -97,7 +97,7 @@ pnpm preconfigured.
       `GOOGLE_CLIENT_SECRET` pair from the Google Cloud Console.
     - *AI assistant features are missing* — `OPENAI_API_KEY` is optional; AI
       features degrade gracefully without it.
-    - *Port already in use* — stop any other process bound to `5000`/`5173`,
+    - *Port already in use* — stop any other process bound to `3000`,
       or change `forwardPorts` in `.devcontainer/devcontainer.json`.
     - *`pnpm install` fails on a postinstall/build step* — ensure Corepack is
       enabled (`corepack enable`) and you're using pnpm `10.4.1` as pinned in

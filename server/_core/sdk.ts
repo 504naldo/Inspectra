@@ -172,7 +172,7 @@ class SDKServer {
    */
   async createSessionToken(
     openId: string,
-    options: { expiresInMs?: number; name?: string; sessionVersion?: number } = {}
+    options: { expiresInMs?: number; name?: string; sessionVersion?: number; } = {}
   ): Promise<string> {
     return this.signSession(
       {
@@ -207,7 +207,7 @@ class SDKServer {
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string; sessionVersion: number } | null> {
+  ): Promise<{ openId: string; appId: string; name: string; sessionVersion: number; } | null> {
     if (!cookieValue) {
       return null;
     }
@@ -273,9 +273,12 @@ class SDKServer {
 
     // Reject sessions whose version no longer matches — this fires when an admin
     // deactivates a user, or when the user explicitly logs out.
-    // Cast: sessionVersion is not declared in the Drizzle schema until migration 0044
-    // runs; once deployed it returns from the DB at runtime even without a schema entry.
-    const dbSessionVersion: number = (user as any).sessionVersion ?? 1;
+    const dbSessionVersion =user.sessionVersion;
+    if (!Number.isInteger(dbSessionVersion) || dbSessionVersion < 1) {
+      throw ForbiddenError(
+        "Session version unavailable — please log in again."
+      );
+    }
     if (session.sessionVersion !== dbSessionVersion) {
       throw ForbiddenError("Session has been revoked — please log in again.");
     }

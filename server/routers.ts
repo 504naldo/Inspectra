@@ -1,3 +1,4 @@
+import { toPublicUser } from "./publicUser";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -7,16 +8,16 @@ import { incrementUserSessionVersion } from "./db";
 // Domain routers
 import { companyRouter, customerOrgRouter } from "./routers/entityRouters";
 import { siteRouter } from "./routers/siteRouter";
-import { areaRouter, deviceRouter, smokeAlarmRouter } from "./routers/deviceRouters";
+import { areaRouter, deviceRouter, smokeAlarmRouter, } from "./routers/deviceRouters";
 import { jobRouter } from "./routers/jobRouter";
-import { inspectionResultRouter, checklistRouter } from "./routers/inspectionRouter";
+import { inspectionResultRouter, checklistRouter, } from "./routers/inspectionRouter";
 import { deficiencyRouter, repairRouter } from "./routers/deficiencyRouter";
-import { attachmentRouter, fileTagRouter, uploadQueueRouter } from "./routers/attachmentRouters";
-import { reportRouter, annualReportRouter, deficiencyReportRouter } from "./routers/reportRouter";
+import { attachmentRouter, fileTagRouter, uploadQueueRouter, } from "./routers/attachmentRouters";
+import { reportRouter, annualReportRouter, deficiencyReportRouter, } from "./routers/reportRouter";
 import { aiRouter } from "./routers/aiRouter";
 import { importRouter } from "./routers/importRouter";
 import { complianceRouter } from "./routers/complianceRouter";
-import { dashboardRouter, syncRouter, userRouter } from "./routers/dashboardRouter";
+import { dashboardRouter, syncRouter, userRouter, } from "./routers/dashboardRouter";
 
 // Already extracted routers
 import { fireAlarmRouter } from "./fireAlarmRouter";
@@ -66,7 +67,7 @@ import { feedbackRouter } from "./routers/feedbackRouter";
 import { workflowHealthRouter } from "./routers/workflowHealthRouter";
 import { contactRouter } from "./routers/contactRouter";
 import { mediaRouter } from "./routers/mediaRouter";
-import { knowledgePageRouter, knowledgeEquipmentRouter, knowledgeIngestionRouter, knowledgeFactRouter, knowledgeQARouter } from "./routers/knowledgeSystemRouter";
+import { knowledgePageRouter, knowledgeEquipmentRouter, knowledgeIngestionRouter, knowledgeFactRouter, knowledgeQARouter, } from "./routers/knowledgeSystemRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -75,7 +76,7 @@ export const appRouter = router({
       opts.ctx.res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
       opts.ctx.res.setHeader('Pragma', 'no-cache');
       opts.ctx.res.setHeader('Expires', '0');
-      return opts.ctx.user;
+      return opts.ctx.user ? toPublicUser(opts.ctx.user) : null;
     }),
     logout: publicProcedure.mutation(async ({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);

@@ -18,7 +18,7 @@
  *  Stable externalRef key prevents duplicate inserts across re-imports:
  *    serial or barcode → CATEGORY:siteId:sn/bc:<value>
  *    smoke alarms      → SMOKE_ALARM:siteId:suite:<suite>[:<location>]
- *    fallback          → CATEGORY:siteId:<location>:<deviceType>:<model>
+ *    fallback          → CATEGORY:siteId:<floor>:<location>:<deviceType>:<model>
  */
 
 import * as XLSX from 'xlsx';
@@ -30,7 +30,7 @@ import { safeToLower, safeTrim } from '../safeStringHelpers';
 import { detectHeaderRow } from '../headerDetection';
 import { autoMapColumns } from '../autoMapper';
 import { getImportSchema, shouldSkipRow } from '../importSchemas';
-import { normalizePowerType, extractDeviceCode } from '../powerTypeNormalization';
+import { normalizePowerType, extractDeviceCode, } from '../powerTypeNormalization';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,7 +47,8 @@ export type WorkbookImportType =
   | 'smokeAlarms'
   | 'backflows';
 
-type DeviceCategory = 'FIRE_ALARM_DEVICE' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHT' | 'SMOKE_ALARM' | 'BACKFLOW';
+type DeviceCategory =
+  | 'FIRE_ALARM_DEVICE' | 'FIRE_EXTINGUISHER' | 'EMERGENCY_LIGHT' | 'SMOKE_ALARM' | 'BACKFLOW';
 
 const TYPE_TO_CATEGORY: Record<Exclude<WorkbookImportType, 'site'>, DeviceCategory> = {
   fireAlarmDevices: 'FIRE_ALARM_DEVICE',
@@ -85,11 +86,11 @@ const DEFAULT_DEVICE_TYPE: Partial<Record<WorkbookImportType, string>> = {
  * first (more specific) so their sheets are not accidentally claimed by the
  * broader fire-alarm catch-all below.
  */
-const SHEET_DETECTION: Array<{ importType: WorkbookImportType; keywords: string[] }> = [
-  { importType: 'fireExtinguishers', keywords: ['extinguisher', 'exting', 'fire ext'] },
-  { importType: 'smokeAlarms',       keywords: ['smoke alarm', 'smoke alarms', 'smoke detector', 'smoke detectors'] },
-  { importType: 'emergencyLights',   keywords: ['emergency light', 'emergency lighting', 'emerg light', 'exit light', 'exit sign'] },
-  { importType: 'backflows',         keywords: ['backflow', 'backflows', 'backflow preventer', 'preventer'] },
+const SHEET_DETECTION: Array<{ importType: WorkbookImportType; keywords: string[]; }> = [
+  { importType: 'fireExtinguishers', keywords: ['extinguisher', 'exting', 'fire ext'], },
+  { importType: 'smokeAlarms',       keywords: ['smoke alarm', 'smoke alarms', 'smoke detector', 'smoke detectors',], },
+  { importType: 'emergencyLights',   keywords: ['emergency light', 'emergency lighting', 'emerg light', 'exit light', 'exit sign',], },
+  { importType: 'backflows',         keywords: ['backflow', 'backflows', 'backflow preventer', 'preventer'], },
   {
     importType: 'fireAlarmDevices',
     keywords: [
@@ -133,7 +134,7 @@ export function classifyWorkbookSheets(sheetNames: string[]): ClassifiedSheet[] 
       if (claimed.has(name)) continue;
       const lower = (safeToLower(name) ?? '').trim();
       if (!lower) continue;
-      if (keywords.some((kw) => lower.includes(kw))) {
+      if (keywords.some(kw => lower.includes(kw))) {
         claimed.add(name);
         results.push({ sheetName: name, importType });
         break; // One sheet per detection rule; re-enter outer loop for next type
@@ -141,10 +142,10 @@ export function classifyWorkbookSheets(sheetNames: string[]): ClassifiedSheet[] 
     }
   }
 
-  const unclassified = sheetNames.filter((n) => !claimed.has(n));
+  const unclassified = sheetNames.filter(n => !claimed.has(n));
   console.log('[workbookImport] Sheet classification:', {
     all: sheetNames,
-    classified: results.map((r) => `${r.sheetName} → ${r.importType}`),
+    classified: results.map(r => `${r.sheetName} → ${r.importType}`),
     unclassified,
   });
 
@@ -197,17 +198,17 @@ export async function importWorkbookForSite(options: ImportWorkbookOptions): Pro
   // Phase 2: for sheets not matched by name, try header-based classification.
   // This handles sheets like "Individual Devices" whose name contains no
   // category keyword, but whose headers clearly belong to fire alarm devices.
-  const classifiedNames = new Set(classified.map((c) => c.sheetName));
+  const classifiedNames = new Set(classified.map(c => c.sheetName));
   for (const sheetName of workbook.SheetNames) {
     if (classifiedNames.has(sheetName)) continue;
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
 
-    const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
+    const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', });
     if (rawRows.length === 0) continue;
 
     const headerInfo = detectHeaderRow(rawRows, 'fireAlarmDevices', 30);
-    const headers = headerInfo.headers.map((h) => (h == null ? '' : String(h)));
+    const headers = headerInfo.headers.map(h => (h == null ? '' : String(h)));
     const mapping = autoMapColumns(headers, 'fireAlarmDevices');
     const mappedCount = Object.keys(mapping).length;
 
@@ -215,7 +216,7 @@ export async function importWorkbookForSite(options: ImportWorkbookOptions): Pro
       // Headers match fire alarm device columns — treat as fire alarm sheet
       console.log(
         `[workbookImport] Header-based classification: "${sheetName}" → fireAlarmDevices` +
-        ` (${mappedCount} columns mapped: ${Object.keys(mapping).join(', ')})`,
+        ` (${mappedCount} columns mapped: ${Object.keys(mapping).join(', ')})`
       );
       classified.push({ sheetName, importType: 'fireAlarmDevices' });
       classifiedNames.add(sheetName);
@@ -223,7 +224,7 @@ export async function importWorkbookForSite(options: ImportWorkbookOptions): Pro
       console.log(
         `[workbookImport] Sheet "${sheetName}" unclassified — ` +
         `${mappedCount} columns matched (need ≥2 for auto-classification). ` +
-        `Headers: [${headers.filter(Boolean).slice(0, 8).join(', ')}]`,
+        `Headers: [${headers.filter(Boolean).slice(0, 8).join(', ')}]`
       );
     }
   }
@@ -232,7 +233,7 @@ export async function importWorkbookForSite(options: ImportWorkbookOptions): Pro
   if (!db) throw new Error('Database not available');
 
   let siteFieldsUpdated = 0;
-  const counts = { fireAlarm: 0, extinguishers: 0, emergencyLights: 0, smokeAlarms: 0, backflows: 0 };
+  const counts = { fireAlarm: 0, extinguishers: 0, emergencyLights: 0, smokeAlarms: 0, backflows: 0, };
   let excludedRowsCount = 0;
 
   for (const { sheetName, importType } of classified) {
@@ -257,7 +258,7 @@ export async function importWorkbookForSite(options: ImportWorkbookOptions): Pro
   }
 
   const total = counts.fireAlarm + counts.extinguishers + counts.emergencyLights + counts.smokeAlarms + counts.backflows;
-  const catCount = Object.values(counts).filter((c) => c > 0).length;
+  const catCount = Object.values(counts).filter(c => c > 0).length;
 
   return {
     siteFieldsUpdated,
@@ -323,14 +324,14 @@ async function parseDeviceSheet(
   importType: Exclude<WorkbookImportType, 'site'>,
   siteId: number,
   companyId: number,
-  db: any,
+  db: any
 ): Promise<{ count: number; excluded: number }> {
   // Read as array-of-arrays so autoMapper + headerDetection can work properly
-  const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
+  const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', });
   if (rawRows.length === 0) return { count: 0, excluded: 0 };
 
   const headerInfo = detectHeaderRow(rawRows, importType, 30);
-  const headers = headerInfo.headers.map((h) => (h == null ? '' : String(h)));
+  const headers = headerInfo.headers.map(h => (h == null ? '' : String(h)));
   const dataRows = rawRows.slice(headerInfo.dataStartIndex);
 
   const columnMapping = autoMapColumns(headers, importType);
@@ -343,12 +344,13 @@ async function parseDeviceSheet(
     console.warn(
       `[workbookImport] No columns mapped for sheet (importType=${importType}). ` +
       `Headers: [${headers.filter(Boolean).slice(0, 10).join(', ')}]. ` +
-      `All ${dataRows.length} data rows will be skipped.`,
+      `All ${dataRows.length} data rows will be skipped.`
     );
   }
 
   let count = 0;
   let excluded = 0;
+  const candidates: Record<string, any>[] = [];
 
   for (const rawRow of dataRows) {
     // Skip header-like and pricing rows
@@ -392,6 +394,22 @@ async function parseDeviceSheet(
     }
 
     const deviceData = buildDeviceData(importType, rowData, siteId, companyId, category);
+    candidates.push(deviceData);
+  }
+  const countsByIdentity = new Map<string, number>();
+  for (const row of candidates)
+    countsByIdentity.set(
+      row.externalRef,
+      (countsByIdentity.get(row.externalRef) ?? 0) + 1
+    );
+  for (const deviceData of candidates) {
+    if ((countsByIdentity.get(deviceData.externalRef) ?? 0) > 1) {
+      console.warn(
+        `[workbookImport] Ambiguous identity excluded: ${deviceData.externalRef}`
+      );
+      excluded++;
+      continue;
+    }
     try {
       await upsertDeviceByRef(deviceData, db);
       count++;
@@ -433,7 +451,7 @@ function buildDeviceData(
   rowData: Record<string, any>,
   siteId: number,
   companyId: number,
-  category: DeviceCategory,
+  category: DeviceCategory
 ): Record<string, any> {
   const rawLocation = rowData.location || rowData.suiteNumber || 'Unknown';
   const location = rowData.floor
@@ -488,11 +506,13 @@ function buildDeviceData(
 
 // ─── Stable identity (externalRef) ───────────────────────────────────────────
 
+export
+
 function buildExternalRef(
   importType: WorkbookImportType,
   rowData: Record<string, any>,
   siteId: number,
-  category: DeviceCategory,
+  category: DeviceCategory
 ): string {
   const slug = (s: any) => String(s || '').trim().toLowerCase().replace(/\s+/g, '-');
 
@@ -509,7 +529,8 @@ function buildExternalRef(
   }
 
   // Deterministic composite fallback
-  return [category, siteId, slug(rowData.location), slug(rowData.deviceType), slug(rowData.model)]
+  return [category, siteId, slug(rowData.floor),
+    slug(rowData.location), slug(rowData.deviceType), slug(rowData.model),]
     .filter(Boolean)
     .join(':');
 }
@@ -526,8 +547,8 @@ async function upsertDeviceByRef(deviceData: Record<string, any>, db: any): Prom
       and(
         eq(devices.companyId, companyId),
         eq(devices.siteId, siteId),
-        eq(devices.externalRef, externalRef),
-      ),
+        eq(devices.externalRef, externalRef)
+      )
     )
     .limit(1);
 
@@ -550,7 +571,7 @@ async function upsertDeviceByRef(deviceData: Record<string, any>, db: any): Prom
 function extractFieldFromObject(row: Record<string, any>, keys: string[]): string {
   for (const header of Object.keys(row)) {
     const normalised = safeTrim(safeToLower(header)) ?? '';
-    if (keys.some((k) => normalised.includes(k))) {
+    if (keys.some(k => normalised.includes(k))) {
       const val = row[header];
       return typeof val === 'string' ? val.trim() : String(val || '').trim();
     }

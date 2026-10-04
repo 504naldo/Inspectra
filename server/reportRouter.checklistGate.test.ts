@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
-import { REQUIRED_CHECKLIST_ITEMS } from "./checklistValidation";
+import { getCanonicalFireAlarmChecklist } from "./canonicalFireAlarmReport";
+import { TRPCError } from "@trpc/server";
+vi.mock("./canonicalFireAlarmReport", () => ({
+  getCanonicalFireAlarmChecklist: vi.fn(),
+}));
 
 vi.mock("./db", () => ({
   getDb: vi.fn().mockResolvedValue({}),
@@ -43,24 +47,17 @@ function createOfficeContext(): TrpcContext {
   return {
     user,
     req: { protocol: "https", headers: {} } as TrpcContext["req"],
-    res: { clearCookie: vi.fn(), setHeader: vi.fn() } as unknown as TrpcContext["res"],
+    res: { clearCookie: vi.fn(), setHeader: vi.fn(), } as unknown as TrpcContext["res"],
   };
 }
 
-const completeResponses = REQUIRED_CHECKLIST_ITEMS.map((item) => ({
-  id: 1,
-  jobId: 1,
-  sectionNumber: item.sectionNumber,
-  itemId: item.itemId,
-  status: "PASS" as const,
-  comment: null,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-}));
-
 describe("Annual report generation - checklist completeness gate", () => {
   it("blocks generation when the CAN/ULC-S536 checklist is incomplete", async () => {
-    vi.mocked(db.getChecklistResponsesByJob).mockResolvedValue([] as any);
+    vi.mocked(getCanonicalFireAlarmChecklist).mockRejectedValue(
+      new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Fire alarm checklist item(s) incomplete",
+      }));
 
     const caller = appRouter.createCaller(createOfficeContext());
 
@@ -71,7 +68,7 @@ describe("Annual report generation - checklist completeness gate", () => {
   });
 
   it("does not block on the checklist gate once every item has a saved response", async () => {
-    vi.mocked(db.getChecklistResponsesByJob).mockResolvedValue(completeResponses as any);
+    vi.mocked(getCanonicalFireAlarmChecklist).mockResolvedValue([]);
 
     const caller = appRouter.createCaller(createOfficeContext());
 

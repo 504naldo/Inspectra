@@ -1,3 +1,5 @@
+import { assertSiteCompany, assertCustomerOrgCompany } from "../tenantGuards";
+import { TRPCError } from "@trpc/server";
 import { createRequire } from "module";
 import { invokeLLM } from "./llm";
 import * as db from "../db";
@@ -32,7 +34,8 @@ export interface ExtractedSiteData {
   };
   devices: Array<{
     deviceType: string;
-    category: "FIRE_ALARM_DEVICE" | "SMOKE_ALARM" | "FIRE_EXTINGUISHER" | "EMERGENCY_LIGHT" | "SPRINKLER";
+    category:
+      | "FIRE_ALARM_DEVICE" | "SMOKE_ALARM" | "FIRE_EXTINGUISHER" | "EMERGENCY_LIGHT" | "SPRINKLER";
     location: string | null;
     floor: string | null;
     manufacturer: string | null;
@@ -89,7 +92,7 @@ export function sanitizeExtractedSiteData(data: ExtractedSiteData): ExtractedSit
 
   const devices = Array.isArray(data.devices) ? data.devices : [];
   const cleanedDevices = devices
-    .map((d) => ({
+    .map(d => ({
       ...d,
       deviceType: cleanExtractedValue(d.deviceType) ?? "",
       location: cleanExtractedValue(d.location),
@@ -100,7 +103,7 @@ export function sanitizeExtractedSiteData(data: ExtractedSiteData): ExtractedSit
       notes: cleanExtractedValue(d.notes),
     }))
     // A device with no usable type is unusable noise (usually a leaked schema row).
-    .filter((d) => d.deviceType.length > 0);
+    .filter(d => d.deviceType.length > 0);
 
   return { ...data, site: cleanedSite, devices: cleanedDevices };
 }
@@ -247,7 +250,24 @@ export interface PdfImportResult {
  * Shared between importPdfFromDrive and importPdfFromUpload.
  */
 export async function importPdfData(opts: PdfImportOpts): Promise<PdfImportResult> {
-  const { pdfBuffer, fileName, companyId, userId, customerOrgId: inputCustomerOrgId, siteId: inputSiteId } = opts;
+  const { pdfBuffer, fileName, companyId, userId, customerOrgId: suppliedOrgId, siteId: inputSiteId, } = opts;
+  let inputCustomerOrgId = suppliedOrgId;
+  if (inputSiteId != null) {
+    const site = await assertSiteCompany(inputSiteId, companyId);
+    if (
+      site.companyId !== companyId ||
+      (inputCustomerOrgId != null && site.customerOrgId !== inputCustomerOrgId)
+    )
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "PDF destination links disagree",
+      });
+    inputCustomerOrgId = site.customerOrgId;
+  }
+  if (inputCustomerOrgId != null) {
+    const org = await assertCustomerOrgCompany(inputCustomerOrgId, companyId);
+    if (org.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+  }
 
   // 1. Extract text
   const pdfText = await extractPdfText(pdfBuffer);

@@ -1,3 +1,4 @@
+import { withAudit } from "../db";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, technicianProcedure } from "../_core/trpc";
@@ -56,7 +57,8 @@ export const fireAlarmFormRouter = router({
         sectionHeaderValues: z.record(z.string(), z.record(z.string(), z.string())).optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
       const db = await getDb();
       if (!db) return;
       await assertJobCompany(input.jobId, ctx.user.companyId!);
@@ -78,7 +80,7 @@ export const fireAlarmFormRouter = router({
         await db.insert(fireAlarmFormHeader).values({ jobId, ...fields } as any);
       }
       return { success: true };
-    }),
+    })),
 
   // ─── Attendance Log ───────────────────────────────────────────────────────
 
@@ -109,7 +111,8 @@ export const fireAlarmFormRouter = router({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
       const db = await getDb();
       if (!db) return;
       await assertJobCompany(input.jobId, ctx.user.companyId!);
@@ -123,7 +126,7 @@ export const fireAlarmFormRouter = router({
           .where(eq(fireAlarmAttendanceLog.id, id))
           .limit(1);
         if (!existing[0] || existing[0].jobId !== input.jobId) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Attendance row not found" });
+          throw new TRPCError({ code: "NOT_FOUND", message: "Attendance row not found", });
         }
         await db
           .update(fireAlarmAttendanceLog)
@@ -134,11 +137,13 @@ export const fireAlarmFormRouter = router({
         const result = await db.insert(fireAlarmAttendanceLog).values(fields as any);
         return { id: Number((result as any)[0].insertId) };
       }
-    }),
+    })
+    ),
 
   deleteAttendanceRow: technicianProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
       const db = await getDb();
       if (!db) return;
       // Resolve the row's parent job and scope through it before deleting.
@@ -148,7 +153,7 @@ export const fireAlarmFormRouter = router({
         .where(eq(fireAlarmAttendanceLog.id, input.id))
         .limit(1);
       if (!existing[0]) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Attendance row not found" });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Attendance row not found", });
       }
       await assertJobCompany(existing[0].jobId, ctx.user.companyId!);
       await assertJobNotFinalized(existing[0].jobId, db);
@@ -156,7 +161,7 @@ export const fireAlarmFormRouter = router({
         .delete(fireAlarmAttendanceLog)
         .where(eq(fireAlarmAttendanceLog.id, input.id));
       return { success: true };
-    }),
+    })),
 
   // ─── Ancillary Circuits (Section 12) ─────────────────────────────────────
 
@@ -187,7 +192,8 @@ export const fireAlarmFormRouter = router({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
       const db = await getDb();
       if (!db) return;
       await assertJobCompany(input.jobId, ctx.user.companyId!);
@@ -201,7 +207,7 @@ export const fireAlarmFormRouter = router({
           .where(eq(fireAlarmAncillaryCircuits.id, id))
           .limit(1);
         if (!existing[0] || existing[0].jobId !== input.jobId) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Ancillary circuit not found" });
+          throw new TRPCError({ code: "NOT_FOUND", message: "Ancillary circuit not found", });
         }
         await db
           .update(fireAlarmAncillaryCircuits)
@@ -212,11 +218,13 @@ export const fireAlarmFormRouter = router({
         const result = await db.insert(fireAlarmAncillaryCircuits).values(fields as any);
         return { id: Number((result as any)[0].insertId) };
       }
-    }),
+    })
+    ),
 
   deleteAncillaryCircuit: technicianProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
       const db = await getDb();
       if (!db) return;
       // Resolve the row's parent job and scope through it before deleting.
@@ -226,7 +234,7 @@ export const fireAlarmFormRouter = router({
         .where(eq(fireAlarmAncillaryCircuits.id, input.id))
         .limit(1);
       if (!existing[0]) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Ancillary circuit not found" });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Ancillary circuit not found", });
       }
       await assertJobCompany(existing[0].jobId, ctx.user.companyId!);
       await assertJobNotFinalized(existing[0].jobId, db);
@@ -234,5 +242,6 @@ export const fireAlarmFormRouter = router({
         .delete(fireAlarmAncillaryCircuits)
         .where(eq(fireAlarmAncillaryCircuits.id, input.id));
       return { success: true };
-    }),
+    })
+    ),
 });

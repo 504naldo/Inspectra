@@ -1,6 +1,7 @@
+import { getCanonicalFireAlarmChecklist } from "../canonicalFireAlarmReport";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, technicianProcedure, officeProcedure, adminProcedure } from "../_core/trpc";
+import { router, protectedProcedure, technicianProcedure, officeProcedure, adminProcedure, } from "../_core/trpc";
 import * as db from "../db";
 import { invokeLLM } from "../_core/llm";
 
@@ -33,7 +34,7 @@ const aiRouter = router({
     if (missingFields.length > 0) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: `Missing required fields: ${missingFields.join(', ')}. Please provide all required information before generating narrative.`
+        message: `Missing required fields: ${missingFields.join(', ')}. Please provide all required information before generating narrative.`,
       });
     }
     const prompt = `You are a fire alarm inspection expert. Generate a professional deficiency narrative based on the following information:
@@ -54,8 +55,8 @@ Format your response as JSON with keys: description, correctiveAction, customerE
 
     const response = await invokeLLM({
       messages: [
-        { role: "system", content: "You are a fire alarm inspection expert assistant. Always respond with valid JSON." },
-        { role: "user", content: prompt }
+        { role: "system", content: "You are a fire alarm inspection expert assistant. Always respond with valid JSON.", },
+        { role: "user", content: prompt },
       ],
       response_format: {
         type: "json_schema",
@@ -65,19 +66,19 @@ Format your response as JSON with keys: description, correctiveAction, customerE
           schema: {
             type: "object",
             properties: {
-              description: { type: "string", description: "Technical deficiency description" },
-              correctiveAction: { type: "string", description: "Recommended corrective action" },
-              customerExplanation: { type: "string", description: "Customer-friendly explanation" }
+              description: { type: "string", description: "Technical deficiency description", },
+              correctiveAction: { type: "string", description: "Recommended corrective action", },
+              customerExplanation: { type: "string", description: "Customer-friendly explanation", },
             },
-            required: ["description", "correctiveAction", "customerExplanation"],
-            additionalProperties: false
-          }
-        }
-      }
+            required: ["description", "correctiveAction", "customerExplanation",],
+            additionalProperties: false,
+          },
+        },
+      },
     });
 
     const content = response.choices[0]?.message?.content;
-    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty' });
+    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty', });
     
     return { ...JSON.parse(content), isDraft: true };
   }),
@@ -108,8 +109,8 @@ Format your response as JSON with keys: troubleshootingSteps (array), partsAndTo
 
     const response = await invokeLLM({
       messages: [
-        { role: "system", content: "You are a fire alarm repair expert assistant. Always respond with valid JSON." },
-        { role: "user", content: prompt }
+        { role: "system", content: "You are a fire alarm repair expert assistant. Always respond with valid JSON.", },
+        { role: "user", content: prompt },
       ],
       response_format: {
         type: "json_schema",
@@ -119,20 +120,20 @@ Format your response as JSON with keys: troubleshootingSteps (array), partsAndTo
           schema: {
             type: "object",
             properties: {
-              troubleshootingSteps: { type: "array", items: { type: "string" } },
+              troubleshootingSteps: { type: "array", items: { type: "string" }, },
               partsAndTools: { type: "array", items: { type: "string" } },
               suggestedPhotos: { type: "array", items: { type: "string" } },
-              repairChecklist: { type: "array", items: { type: "string" } }
+              repairChecklist: { type: "array", items: { type: "string" } },
             },
-            required: ["troubleshootingSteps", "partsAndTools", "suggestedPhotos", "repairChecklist"],
-            additionalProperties: false
-          }
-        }
-      }
+            required: ["troubleshootingSteps", "partsAndTools", "suggestedPhotos", "repairChecklist",],
+            additionalProperties: false,
+          },
+        },
+      },
     });
 
     const content = response.choices[0]?.message?.content;
-    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty' });
+    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty', });
     
     return JSON.parse(content);
   }),
@@ -185,8 +186,8 @@ Format your response as JSON with keys: executiveSummary (array of strings), sys
 
     const response = await invokeLLM({
       messages: [
-        { role: "system", content: "You are a fire alarm inspection report writer. Only report observed facts, never conclusions about cause or origin. Always respond with valid JSON." },
-        { role: "user", content: prompt }
+        { role: "system", content: "You are a fire alarm inspection report writer. Only report observed facts, never conclusions about cause or origin. Always respond with valid JSON.", },
+        { role: "user", content: prompt },
       ],
       response_format: {
         type: "json_schema",
@@ -199,19 +200,19 @@ Format your response as JSON with keys: executiveSummary (array of strings), sys
               executiveSummary: { type: "array", items: { type: "string" } },
               systemStatus: { type: "string" },
               priorityItems: { type: "array", items: { type: "string" } },
-              nextSteps: { type: "array", items: { type: "string" } }
+              nextSteps: { type: "array", items: { type: "string" } },
             },
-            required: ["executiveSummary", "systemStatus", "priorityItems", "nextSteps"],
-            additionalProperties: false
-          }
-        }
-      }
+            required: ["executiveSummary", "systemStatus", "priorityItems", "nextSteps",],
+            additionalProperties: false,
+          },
+        },
+      },
     });
 
     const content = response.choices[0]?.message?.content;
-    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty' });
+    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty', });
     
-    return { ...JSON.parse(content), stats, deficiencyCount: deficiencies.length };
+    return { ...JSON.parse(content), stats, deficiencyCount: deficiencies.length, };
   }),
   
   // Photo note helper
@@ -226,8 +227,8 @@ Format your response as JSON with keys: caption (short, 10 words max), inspectio
 
     const response = await invokeLLM({
       messages: [
-        { role: "system", content: "You are a fire alarm inspection assistant. Generate concise, professional photo captions. Always respond with valid JSON." },
-        { role: "user", content: prompt }
+        { role: "system", content: "You are a fire alarm inspection assistant. Generate concise, professional photo captions. Always respond with valid JSON.", },
+        { role: "user", content: prompt },
       ],
       response_format: {
         type: "json_schema",
@@ -238,17 +239,17 @@ Format your response as JSON with keys: caption (short, 10 words max), inspectio
             type: "object",
             properties: {
               caption: { type: "string" },
-              inspectionNote: { type: "string" }
+              inspectionNote: { type: "string" },
             },
             required: ["caption", "inspectionNote"],
-            additionalProperties: false
-          }
-        }
-      }
+            additionalProperties: false,
+          },
+        },
+      },
     });
 
     const content = response.choices[0]?.message?.content;
-    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty' });
+    if (!content || typeof content !== 'string') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI response empty', });
     
     return JSON.parse(content);
   }),
@@ -274,10 +275,10 @@ Format your response as JSON with keys: caption (short, 10 words max), inspectio
 
     // Stats by device category
     const resultByDevice = new Map(results.map(r => [r.deviceId, r]));
-    const catStats = new Map<string, { total: number; pass: number; fail: number; notTested: number; na: number }>();
+    const catStats = new Map<string, { total: number; pass: number; fail: number; notTested: number; na: number; }>();
     for (const dev of allDevices) {
       const cat = dev.category || 'UNKNOWN';
-      if (!catStats.has(cat)) catStats.set(cat, { total: 0, pass: 0, fail: 0, notTested: 0, na: 0 });
+      if (!catStats.has(cat)) catStats.set(cat, { total: 0, pass: 0, fail: 0, notTested: 0, na: 0, });
       const s = catStats.get(cat)!;
       s.total++;
       const r = resultByDevice.get(dev.id);
@@ -349,7 +350,7 @@ CHECKS TO PERFORM:
 
 Return JSON array only. No prose.`;
 
-    let parsed: { issues: { device_id: number | null; device_type: string; field: string; issue: string; severity: string }[] };
+    let parsed: { issues: { device_id: number | null; device_type: string; field: string; issue: string; severity: string; }[]; };
     const MODEL = "gpt-4o";
 
     try {
@@ -376,9 +377,9 @@ Return JSON array only. No prose.`;
                       device_type: { type: "string" },
                       field: { type: "string" },
                       issue: { type: "string" },
-                      severity: { type: "string", enum: ["warning", "blocker"] },
+                      severity: { type: "string", enum: ["warning", "blocker"], },
                     },
-                    required: ["device_id", "device_type", "field", "issue", "severity"],
+                    required: ["device_id", "device_type", "field", "issue", "severity",],
                     additionalProperties: false,
                   },
                 },
@@ -395,7 +396,7 @@ Return JSON array only. No prose.`;
       if (!content || typeof content !== 'string') throw new Error('Empty AI response');
       parsed = JSON.parse(content);
     } catch (err) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `AI review failed: ${String(err)}` });
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `AI review failed: ${String(err)}`, });
     }
 
     // Persist result
@@ -433,7 +434,7 @@ Return JSON array only. No prose.`;
     return { ok: true };
   }),
 
-  runQACheck: adminProcedure.input(z.object({
+  runQACheck: officeProcedure.input(z.object({
     jobId: z.number(),
   })).mutation(async ({ input, ctx }) => {
     const job = await db.assertJobCompany(input.jobId, ctx.user.companyId!);
@@ -444,6 +445,17 @@ Return JSON array only. No prose.`;
     const deficiencies = await db.getDeficienciesByJob(input.jobId);
     
     const issues: string[] = [];
+      if (job.jobType === "annual") {
+        try {
+          await getCanonicalFireAlarmChecklist(job.id);
+        } catch (error) {
+          issues.push(
+            error instanceof Error
+              ? error.message
+              : "Fire alarm capture is incomplete"
+          );
+        }
+      }
     
     // Check for untested devices
     const testedDeviceIds = new Set(results.map(r => r.deviceId));
@@ -486,7 +498,7 @@ Return JSON array only. No prose.`;
       testedDevices: results.length,
       deficienciesCount: deficiencies.length,
       issues,
-      passedQA: issues.length === 0
+      passedQA: issues.length === 0,
     };
   }),
 });

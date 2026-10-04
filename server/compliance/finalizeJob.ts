@@ -24,6 +24,7 @@
 
 import { eq, isNull, and } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { getCanonicalFireAlarmChecklist } from "../canonicalFireAlarmReport";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import * as schema from "../../drizzle/schema";
 import type { TrpcContext } from "../_core/context";
@@ -35,7 +36,7 @@ import {
 } from "../../shared/_core/errors";
 import {
   buildFinalizationPayload,
-  computeFinalizationHash,
+  computeFinalizationHash
 } from "./hash";
 
 export type FinalizeJobInput = {
@@ -75,10 +76,11 @@ export async function finalizeJob(
   const jobRows = await db
     .select()
     .from(schema.jobs)
-    .where(eq(schema.jobs.id, jobId));
+    .where(eq(schema.jobs.id, jobId))
+    .for("update");
 
   if (jobRows.length === 0) {
-    throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found` });
+    throw new TRPCError({ code: "NOT_FOUND", message: `Job ${jobId} not found`, });
   }
 
   const job = jobRows[0];
@@ -87,7 +89,7 @@ export async function finalizeJob(
   // ctx.user is guaranteed non-null by protectedProcedure + adminOrOfficeProcedure
   const user = ctx.user!;
 
-  if (job.companyId !== user.companyId) {
+  if (job.companyId !== user.companyId && user.role !== "admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   }
 
@@ -183,6 +185,8 @@ export async function finalizeJob(
 
   // 6. Build finalization payload and compute hash
   const payload = await buildFinalizationPayload(jobId, db);
+  if (job.jobType === "annual" && payload.fireAlarmInspectionResults.length)
+    await getCanonicalFireAlarmChecklist(jobId);
   const finalizationHash = computeFinalizationHash(payload);
 
   // 7. Write finalization fields + status transition
@@ -209,7 +213,7 @@ export async function finalizeJob(
     if (woRows.length > 0) {
       await db
         .update(schema.workOrders)
-        .set({ finalizedAt: now, finalizedById: user.id, status: "completed", completedAt: now })
+        .set({ finalizedAt: now, finalizedById: user.id, status: "completed", completedAt: now, })
         .where(eq(schema.workOrders.id, woRows[0].id));
     }
   } catch (woErr) {

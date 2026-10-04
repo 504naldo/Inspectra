@@ -1,5 +1,6 @@
+import { withAudit } from "../db";
 import { z } from "zod";
-import { router, technicianProcedure, adminOrOfficeProcedure } from "../_core/trpc";
+import { router, technicianProcedure, adminOrOfficeProcedure, } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import * as db from "../db";
@@ -16,7 +17,7 @@ async function assertDeficiencyAccess(deficiencyId: number, companyId: number) {
   const deficiency = await db.getDeficiencyById(deficiencyId);
   if (!deficiency) throw new TRPCError({ code: "NOT_FOUND", message: "Deficiency not found" });
   const job = await getJobForCompany(deficiency.jobId, companyId);
-  if ((job as any).finalizedAt) throw new TRPCError({ code: "FORBIDDEN", message: "Job is finalized" });
+  await db.assertJobNotFinalized(job.id);
   return { deficiency, job };
 }
 
@@ -25,12 +26,11 @@ async function assertAttachmentAccess(attachmentId: number, companyId: number) {
   if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
   const [att] = await drizzle.select().from(attachments).where(eq(attachments.id, attachmentId));
   if (!att) throw new TRPCError({ code: "NOT_FOUND" });
-  if (att.entityType === "deficiency") {
-    const deficiency = await db.getDeficiencyById(att.entityId);
-    if (deficiency) {
-      await getJobForCompany(deficiency.jobId, companyId); // authorize via parent job
-    }
-  }
+  if (att.entityType !== "deficiency")
+    throw new TRPCError( {
+      code: "BAD_REQUEST",
+      message: "Expected deficiency media",
+    }); await assertDeficiencyAccess(att.entityId, companyId);
   return { att, drizzle };
 }
 
@@ -50,7 +50,7 @@ export const mediaRouter = router({
           and(
             eq(attachments.entityType, "deficiency"),
             eq(attachments.entityId, input.deficiencyId),
-            eq(attachments.uploadStatus, "completed"),
+            eq(attachments.uploadStatus, "completed")
           )
         )
         .orderBy(attachments.sortOrder, attachments.createdAt);
@@ -72,7 +72,8 @@ export const mediaRouter = router({
         idempotencyKey: z.string().min(1).max(64).optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "mediaRouter.mutation", async () => {
       const companyId = ctx.user.companyId;
       if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
       // assertDeficiencyAccess scopes by company + finalized job only — NOT by
@@ -89,7 +90,7 @@ export const mediaRouter = router({
 
       // Sanitise filename to prevent path traversal
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
-      const ext = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }[input.mimeType];
+      const ext = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", }[input.mimeType];
       const randomSuffix = Math.random().toString(36).substring(7);
       const fileKey = `${companyId}/deficiencies/${input.deficiencyId}/${randomSuffix}.${ext}`;
 
@@ -128,7 +129,8 @@ export const mediaRouter = router({
       });
 
       return row;
-    }),
+    })
+    ),
 
   updateDeficiencyMedia: technicianProcedure
     .input(
@@ -140,7 +142,8 @@ export const mediaRouter = router({
         sortOrder: z.number().int().min(0).optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "mediaRouter.mutation", async () => {
       const companyId = ctx.user.companyId;
       if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const { drizzle } = await assertAttachmentAccess(input.id, companyId);
@@ -153,28 +156,37 @@ export const mediaRouter = router({
 
       await drizzle.update(attachments).set(patch).where(eq(attachments.id, input.id));
       return { success: true };
-    }),
+    })
+    ),
 
   deleteDeficiencyMedia: technicianProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "mediaRouter.mutation", async () => {
       const companyId = ctx.user.companyId;
       if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const { drizzle } = await assertAttachmentAccess(input.id, companyId);
       // Soft delete: mark as failed so it no longer appears in queries
       await drizzle.update(attachments).set({ uploadStatus: "failed" }).where(eq(attachments.id, input.id));
       return { success: true };
-    }),
+    })
+    ),
 
   reorderDeficiencyMedia: adminOrOfficeProcedure
     .input(z.object({ deficiencyId: z.number(), orderedIds: z.array(z.number()) }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "mediaRouter.mutation", async () => {
       const companyId = ctx.user.companyId;
       if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const deficiency = await db.getDeficiencyById(input.deficiencyId);
       if (!deficiency) throw new TRPCError({ code: "NOT_FOUND" });
-      const job = await db.getJobById(deficiency.jobId);
-      if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+        await assertDeficiencyAccess(input.deficiencyId, companyId);
+        for (
+      const id of input.orderedIds) {
+          const { att } = await assertAttachmentAccess(id, companyId);
+      if (att.entityId !== input.deficiencyId) throw new TRPCError({ code: "FORBIDDEN",
+              message: "Media belongs to another deficiency", });
+        }
       const drizzle = await getDb();
       if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       // Only reorder attachments that actually belong to this deficiency, so a
@@ -191,11 +203,13 @@ export const mediaRouter = router({
         )
       );
       return { success: true };
-    }),
+    })
+    ),
 
   markCustomerFacing: adminOrOfficeProcedure
     .input(z.object({ id: z.number(), isCustomerFacing: z.boolean() }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) =>
+      withAudit(ctx, "mediaRouter.mutation", async () => {
       const companyId = ctx.user.companyId;
       if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
       const { drizzle } = await assertAttachmentAccess(input.id, companyId);
@@ -204,15 +218,14 @@ export const mediaRouter = router({
         .set({ isCustomerFacing: input.isCustomerFacing ? 1 : 0 })
         .where(eq(attachments.id, input.id));
       return { success: true };
-    }),
+    })
+    ),
 
   getMediaForJob: adminOrOfficeProcedure
     .input(z.object({ jobId: z.number() }))
     .query(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId;
-      if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
-      const job = await db.getJobById(input.jobId);
-      if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!companyId) throw new TRPCError({ code: "FORBIDDEN" }); await getJobForCompany(input.jobId,companyId);
       const drizzle = await getDb();
       if (!drizzle) return [];
       return drizzle
@@ -222,7 +235,7 @@ export const mediaRouter = router({
           and(
             eq(attachments.jobId, input.jobId),
             eq(attachments.entityType, "deficiency"),
-            eq(attachments.uploadStatus, "completed"),
+            eq(attachments.uploadStatus, "completed")
           )
         )
         .orderBy(attachments.entityId, attachments.sortOrder, attachments.createdAt);
@@ -232,9 +245,7 @@ export const mediaRouter = router({
     .input(z.object({ jobId: z.number() }))
     .query(async ({ input, ctx }) => {
       const companyId = ctx.user.companyId;
-      if (!companyId) throw new TRPCError({ code: "FORBIDDEN" });
-      const job = await db.getJobById(input.jobId);
-      if (!job || job.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!companyId) throw new TRPCError({ code: "FORBIDDEN" }); await getJobForCompany(input.jobId,companyId);
       const drizzle = await getDb();
       if (!drizzle) return [];
       return drizzle
@@ -245,7 +256,7 @@ export const mediaRouter = router({
             eq(attachments.jobId, input.jobId),
             eq(attachments.entityType, "deficiency"),
             eq(attachments.uploadStatus, "completed"),
-            eq(attachments.isCustomerFacing, 1),
+            eq(attachments.isCustomerFacing, 1)
           )
         )
         .orderBy(attachments.entityId, attachments.sortOrder, attachments.createdAt);
