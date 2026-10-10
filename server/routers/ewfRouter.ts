@@ -3,7 +3,11 @@ import { deficiencies, jobs } from "../../drizzle/schema";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, officeProcedure, technicianProcedure } from "../_core/trpc";
+import {
+  router,
+  officeProcedure as baseOfficeProcedure,
+  technicianProcedure as baseTechnicianProcedure,
+} from "../_core/trpc";
 import {
   assertSiteCompany,
   getDeficiencyForCompany,
@@ -13,21 +17,21 @@ import { ewfBinding, ewfCommand, sourceHash } from "../ewfIntegration";
 const accountInput = z.object({ accountScope: z.string().max(100) });
 const verifyScope = (
   scope: string,
-  user: { id: number; companyId: number | null }
+  user: { id: number; companyId: number | null; role: string }
 ) => {
-  if (scope !== `${user.id}:${user.companyId}`)
+  if (scope !== `${user.id}:${user.companyId}:${user.role}`)
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Account context changed",
     });
 };
-const office = officeProcedure
+const officeProcedure = baseOfficeProcedure
   .input(accountInput)
   .use(({ ctx, input, next }) => {
     verifyScope(input.accountScope, ctx.user);
     return next();
   });
-const technician = technicianProcedure
+const technicianProcedure = baseTechnicianProcedure
   .input(accountInput)
   .use(({ ctx, input, next }) => {
     verifyScope(input.accountScope, ctx.user);
@@ -133,11 +137,11 @@ const command = z.discriminatedUnion("action", [
   }),
 ]);
 export const ewfRouter = router({
-  properties: office.query(async ({ ctx }) => {
+  properties: officeProcedure.query(async ({ ctx }) => {
     if (!ctx.user.companyId) return [];
     return getSitesByCompany(ctx.user.companyId);
   }),
-  deficiencies: office
+  deficiencies: officeProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
       const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
@@ -147,10 +151,16 @@ export const ewfRouter = router({
         .select({ id: deficiencies.id, title: deficiencies.title })
         .from(deficiencies)
         .innerJoin(jobs, eq(deficiencies.jobId, jobs.id))
-        .where(and(eq(jobs.siteId, input.siteId),eq(jobs.companyId,site.companyId),eq(jobs.customerOrgId,site.customerOrgId)));
+        .where(
+          and(
+            eq(jobs.siteId, input.siteId),
+            eq(jobs.companyId, site.companyId),
+            eq(jobs.customerOrgId, site.customerOrgId)
+          )
+        );
       return rows;
     }),
-  source: office.input(ids).query(async ({ ctx, input }) => {
+  source: officeProcedure.input(ids).query(async ({ ctx, input }) => {
     const source = await ewfSource(
       input.siteId,
       input.deficiencyId,
@@ -158,7 +168,7 @@ export const ewfRouter = router({
     );
     return { source, hash: sourceHash(source) };
   }),
-  open: office
+  open: officeProcedure
     .input(
       ids.extend({
         reviewedSourceHash: z.string().length(64),
@@ -179,7 +189,7 @@ export const ewfRouter = router({
         });
       return ewfCommand(
         ewfBinding(source.companyId),
-        ctx.user.id,
+        ctx.user,
         source,
         "open",
         {
@@ -190,7 +200,7 @@ export const ewfRouter = router({
         }
       );
     }),
-  read: technician.input(ids).query(async ({ ctx, input }) => {
+  read: technicianProcedure.input(ids).query(async ({ ctx, input }) => {
     const source = await ewfSource(
       input.siteId,
       input.deficiencyId,
@@ -198,16 +208,24 @@ export const ewfRouter = router({
     );
     return ewfCommand(
       ewfBinding(source.companyId),
-      ctx.user.id,
+      ctx.user,
       source,
       "read",
       {}
     );
   }),
-  command: technician
+  command: technicianProcedure
     .input(ids.extend({ command }))
     .mutation(async ({ ctx, input }) => {
       // EWF additionally requires the exact active mapped fitter assignment; no changes to Inspectra offline sync permissions.
+      if (
+        ctx.user.role === "technician" &&
+        ["assign", "review"].includes(input.command.action)
+      )
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Office estimate management required",
+        });
       const source = await ewfSource(
         input.siteId,
         input.deficiencyId,
@@ -215,7 +233,7 @@ export const ewfRouter = router({
       );
       return ewfCommand(
         ewfBinding(source.companyId),
-        ctx.user.id,
+        ctx.user,
         source,
         input.command.action,
         input.command.payload

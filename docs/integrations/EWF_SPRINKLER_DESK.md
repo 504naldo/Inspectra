@@ -156,7 +156,7 @@ Fictional screenshots: [submitted fitter](screenshots/fictional-fitter-submitted
 | Passed | EWF final regressions | 185 tests on Node22.23.3 and24.19.0; zero skips/failures |
 | Passed | EWF browser/PWA | All ten existing Chromium scripts; fictional desktop/mobile/permissions/private cache/offline/document workflows |
 | Passed | Cross-app browser | Real Inspectra and EWF services, isolated MySQL/SQLite; 8 hours, parts, saved/submitted/reviewed content, return link and account/customer denial; 390px viewport |
-| Passed | Inspectra final tests | 119 files / 1,248 tests, zero failures |
+| Passed | Inspectra final tests | 119 files / 1,249 tests, zero failures |
 | Skipped | Existing Inspectra tests | 14 tests in four files: S3-dependent, disabled Phase2, existing auto-mapping |
 | Passed | Inspectra check/build/smoke | Typecheck, production build and isolated built health/UI; existing build warnings |
 | Passed | Tenant audit | 61 router files / zero active findings / two reviewed exceptions |
@@ -185,3 +185,13 @@ operational/financial records; this release does not merge, copy or total the tw
 ledgers. Historical consolidation, duplicate matching and shared reporting need
 separate reviewed ownership/reconciliation decisions. A configured tenant cannot
 be relabeled after retained property mappings exist.
+
+The signed actor classification is derived only from the authenticated Inspectra
+server context; browser roles are never accepted. Technician delegation requires
+an EWF technician account and explicit fitter assignment, even if an operator
+misconfigured a privileged account map. Assign/review additionally require
+Inspectra office permission. Cached private queries and form state include role
+as well as user/company identity.
+
+Existing-draft linking currently requires exactly one matching EWF deficiency.
+Multi-deficiency quote correspondence needs an expanded reviewed source contract.

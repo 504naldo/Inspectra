@@ -51,12 +51,23 @@ export function ewfBinding(companyId: number): EwfBinding {
 }
 export async function ewfCommand(
   binding: EwfBinding,
-  actorId: number,
+  actor: { id: number; role: string },
   source: unknown,
   action: string,
   payload: unknown
 ) {
-  const body = { actorId, source, action, payload },
+  if (!["admin", "office", "technician"].includes(actor.role))
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Verified staff identity required",
+    });
+  const body = {
+      actorId: actor.id,
+      actorKind: actor.role === "technician" ? "technician" : "office",
+      source,
+      action,
+      payload,
+    },
     time = String(Date.now()),
     nonce = randomUUID();
   const signature = createHmac("sha256", binding.key)

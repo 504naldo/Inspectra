@@ -18,10 +18,10 @@ export default function SprinklerDesk({
   const { user } = useAuth();
   const desk = (
     <Desk
-      key={`${user?.id}:${user?.companyId}:${siteId}:${deficiencyId}`}
+      key={`${user?.id}:${user?.companyId}:${user?.role}:${siteId}:${deficiencyId}`}
       siteId={siteId}
       deficiencyId={deficiencyId}
-      accountScope={`${user?.id}:${user?.companyId}`}
+      accountScope={`${user?.id}:${user?.companyId}:${user?.role}`}
       office={user?.role === "admin" || user?.role === "office"}
     />
   );

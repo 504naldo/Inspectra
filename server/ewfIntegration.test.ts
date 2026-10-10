@@ -69,12 +69,12 @@ describe("Sprinkler Desk integration boundary", () => {
   it("guards parents and derives company/user/context; source changes reject reviewed hash without network writes", async () => {
     const c = caller();
     const source = await c.ewf.source({
-      accountScope: "1:7",
+      accountScope: "1:7:office",
       siteId: 10,
       deficiencyId: 20,
     });
     await c.ewf.open({
-      accountScope: "1:7",
+      accountScope: "1:7:office",
       siteId: 10,
       deficiencyId: 20,
       reviewedSourceHash: source.hash,
@@ -83,7 +83,7 @@ describe("Sprinkler Desk integration boundary", () => {
     expect(getDeficiencyForCompany).toHaveBeenCalledWith(20, 7);
     expect(ewfCommand).toHaveBeenCalledWith(
       expect.objectContaining({ companyId: 7 }),
-      1,
+      expect.objectContaining({ id: 1, role: "office" }),
       source.source,
       "open",
       expect.objectContaining({ reviewedSourceHash: source.hash })
@@ -95,7 +95,7 @@ describe("Sprinkler Desk integration boundary", () => {
     } as any);
     await expect(
       c.ewf.open({
-        accountScope: "1:7",
+        accountScope: "1:7:office",
         siteId: 10,
         deficiencyId: 20,
         reviewedSourceHash: source.hash,
@@ -106,14 +106,14 @@ describe("Sprinkler Desk integration boundary", () => {
   it("customer and technician cannot create links; parent denial, missing parents, mismatched property/org prevent integration calls", async () => {
     await expect(
       caller("customer", null).ewf.read({
-        accountScope: "1:7",
+        accountScope: "1:7:office",
         siteId: 10,
         deficiencyId: 20,
       })
     ).rejects.toThrow();
     await expect(
       caller("technician").ewf.source({
-        accountScope: "1:7",
+        accountScope: "1:7:office",
         siteId: 10,
         deficiencyId: 20,
       })
@@ -122,13 +122,21 @@ describe("Sprinkler Desk integration boundary", () => {
       new Error("Cross company denied")
     );
     await expect(
-      caller().ewf.read({ accountScope: "1:7", siteId: 10, deficiencyId: 20 })
+      caller().ewf.read({
+        accountScope: "1:7:office",
+        siteId: 10,
+        deficiencyId: 20,
+      })
     ).rejects.toThrow("Cross company");
     vi.mocked(getDeficiencyForCompany).mockRejectedValueOnce(
       new Error("Missing deficiency")
     );
     await expect(
-      caller().ewf.read({ accountScope: "1:7", siteId: 10, deficiencyId: 20 })
+      caller().ewf.read({
+        accountScope: "1:7:office",
+        siteId: 10,
+        deficiencyId: 20,
+      })
     ).rejects.toThrow("Missing deficiency");
     vi.mocked(getJobForCompany).mockResolvedValue({
       id: 40,
@@ -137,19 +145,23 @@ describe("Sprinkler Desk integration boundary", () => {
       customerOrgId: 30,
     } as any);
     await expect(
-      caller().ewf.read({ accountScope: "1:7", siteId: 10, deficiencyId: 20 })
+      caller().ewf.read({
+        accountScope: "1:7:office",
+        siteId: 10,
+        deficiencyId: 20,
+      })
     ).rejects.toThrow("does not belong");
     expect(ewfCommand).not.toHaveBeenCalled();
   });
   it("technician commands use their mapped identity and platform admin still needs an explicit target-company binding", async () => {
     await caller("technician").ewf.read({
-      accountScope: "1:7",
+      accountScope: "1:7:technician",
       siteId: 10,
       deficiencyId: 20,
     });
     expect(ewfCommand).toHaveBeenCalledWith(
       expect.anything(),
-      1,
+      expect.objectContaining({ id: 1, role: "technician" }),
       expect.objectContaining({ companyId: 7 }),
       "read",
       {}
@@ -157,11 +169,38 @@ describe("Sprinkler Desk integration boundary", () => {
     vi.stubEnv("EWF_INTEGRATION_BINDINGS", "[]");
     await expect(
       caller("admin", null).ewf.read({
-        accountScope: "1:null",
+        accountScope: "1:null:admin",
         siteId: 10,
         deficiencyId: 20,
       })
     ).rejects.toThrow("No reviewed company");
+  });
+  it("technician office commands and role-stale cache contexts fail before delegation", async () => {
+    await expect(
+      caller("technician").ewf.command({
+        accountScope: "1:7:technician",
+        siteId: 10,
+        deficiencyId: 20,
+        command: {
+          action: "review",
+          payload: {
+            estimateId: "11111111-1111-4111-8111-111111111111",
+            row_version: 0,
+            quote_row_version: 0,
+            reviewed: true,
+            review_note: "Fictional",
+          },
+        },
+      })
+    ).rejects.toThrow("Office estimate management");
+    await expect(
+      caller("technician").ewf.read({
+        accountScope: "1:7:office",
+        siteId: 10,
+        deficiencyId: 20,
+      })
+    ).rejects.toThrow("Account context changed");
+    expect(ewfCommand).not.toHaveBeenCalled();
   });
   it("default-off and unsafe endpoint configuration fail closed", () => {
     vi.stubEnv("EWF_INTEGRATION_ENABLED", "false");
