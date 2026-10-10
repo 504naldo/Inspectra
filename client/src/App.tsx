@@ -1,3 +1,4 @@
+const SprinklerDesk = lazy(() => import('./pages/SprinklerDesk'));
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { OfflineBanner } from "@/components/OfflineBanner";
@@ -251,6 +252,10 @@ function Router() {
         <Route path="/login" component={Login} />
         <Route path="/quote/accept" component={QuoteAccept} />
 
+        <Route path="/sprinkler-desk/:siteId/:deficiencyId">
+          {params=>withNumericParams(params,["siteId","deficiencyId"],ids=>(<ProtectedRoute allowedRoles={["admin","office","technician"]}><SprinklerDesk siteId={ids.siteId} deficiencyId={ids.deficiencyId}/></ProtectedRoute>))}
+        </Route>
+        <Route path="/sprinkler-desk"><ProtectedRoute allowedRoles={["admin","office"]}><SprinklerDesk/></ProtectedRoute></Route>
         {/* Technician routes */}
         <Route path="/tech">
           <ProtectedRoute allowedRoles={["admin", "office", "technician"]}>

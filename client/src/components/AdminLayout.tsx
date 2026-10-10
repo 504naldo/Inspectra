@@ -107,6 +107,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Schedule",        href: "/admin/schedule",              icon: CalendarDays },
       { label: "Jobs",            href: "/admin/jobs",                  icon: ClipboardList },
       { label: "Approved Work",   href: "/admin/approved-work",         icon: CheckSquare  },
+      { label: "Sprinkler Desk", href: "/sprinkler-desk", icon: Wrench },
       { label: "Work Orders",     href: "/admin/work-orders",           icon: Wrench       },
       { label: "Auto-Schedule",   href: "/admin/scheduling-automation", icon: Zap          },
       { label: "Workflow Health", href: "/admin/workflow-health",       icon: Activity     },
