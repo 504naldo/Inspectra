@@ -189,3 +189,31 @@ Migration and rollback procedure: [release-safety runbook](runbooks/PR18_RELEASE
 The earlier F01–F23 register still contains other draft release blockers;
 this follow-up does not close them or authorize a merge. Automation stays
 default-off; effective live EMAIL_AUTOMATION_ENABLED remains unverified.
+
+
+## Sprinkler Desk integration — 2026-10-10
+
+First workflow only; default-off and not approved for production activation.
+Architecture/ownership/security and staged migration/rollback procedure:
+[integration boundary](integrations/EWF_SPRINKLER_DESK.md). EWF remains the
+authoritative SQLite service. No production database/volume/settings changed.
+
+| Finding | Status | Evidence / release gate |
+|---|---|---|
+| EWF identity/tenant routing | Implemented, staging-only | Guarded Inspectra parent context; server-only signed requests; reviewed active account maps; exact fitter assignment; no delegated sessions/roles |
+| Historical estimating context | Implemented | Immutable source/property mappings; row revisions; submitted EWF triggers; changed context fails closed |
+| MFA delegation | Blocked for enrolled/required accounts | Adapter cannot attest MFA; deny delegation rather than bypass protection. Separate verified design and approval required |
+| EWF schema18 activation | Unapproved | Fictional schema17 bundle/restore, transactional interruption and repeat rehearsal; production backup and staging rehearsal remain release gates |
+| Whole-suite consolidation | In progress | First quote/fitter workflow only. Approval/WO/scheduling/visits/billing/stock/equipment/report adapters remain future phases |
+| Production recovery | Open | Inspectra PR18 deployment failed; this integration does not repair or verify live schema. No integration activation until independently recovered and approved |
+
+Validation: 1,248 Inspectra tests passed /14 skipped; EWF184 tests passed on
+Node22.23.3/24.19.0; all ten EWF browser/PWA checks and real cross-app mobile
+workflow passed. Inspectra typecheck/build/isolated smoke and strict tenant audit
+(61 routers,0 active findings,2 reviewed exceptions) passed. EWF dependency audit
+passed; Inspectra dependency audit **failed** with75 existing vulnerabilities
+(11 low,41 moderate,20 high,3 critical), unchanged dependencies/lockfile. Lint
+is unconfigured; Android/live HTTPS/MFA/production restored-data validation unrun.
+First release restricts each EWF instance to one configured Inspectra company:
+native EWF office access is organizational, so adding more clients would bypass
+tenancy. Multiple-client adapter configuration fails closed.

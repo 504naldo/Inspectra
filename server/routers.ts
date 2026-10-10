@@ -1,3 +1,4 @@
+import {ewfRouter} from './routers/ewfRouter';
 import { toPublicUser } from "./publicUser";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -94,6 +95,7 @@ export const appRouter = router({
   company: companyRouter,
   customerOrg: customerOrgRouter,
   site: siteRouter,
+  ewf: ewfRouter,
   area: areaRouter,
   device: deviceRouter,
   smokeAlarm: smokeAlarmRouter,
