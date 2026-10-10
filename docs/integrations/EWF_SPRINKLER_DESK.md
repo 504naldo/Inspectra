@@ -174,3 +174,14 @@ and draft PR publication state belong in the PR, not inferred from local results
 Final adapter checks also verify atomic quote/property/deficiency/link rollback
 on audit failure, safe retry and reuse of the existing EWF quote-number policy.
 Work-order numbering remains untouched.
+
+Changed Inspectra source remains readable as retained original evidence with an
+explicit stale/read-only flag; assignment/save/submit/review reject it. The
+adapter never rebinds the retained snapshot to current source facts.
+
+Existing Inspectra inspection, quote, work-order, invoice and inventory records
+retain their current Inspectra ownership. EWF authority applies to its own
+operational/financial records; this release does not merge, copy or total the two
+ledgers. Historical consolidation, duplicate matching and shared reporting need
+separate reviewed ownership/reconciliation decisions. A configured tenant cannot
+be relabeled after retained property mappings exist.

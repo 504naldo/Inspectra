@@ -131,7 +131,9 @@ function Desk({
           <p className="whitespace-pre-wrap">
             {source.data.source.deficiency.description}
           </p>
-          <small className="break-all">Captured source version: {source.data.source.version}</small>
+          <small className="break-all">
+            Captured source version: {source.data.source.version}
+          </small>
           {!data && (
             <>
               <label className="block">
@@ -162,7 +164,11 @@ function Desk({
                 </label>
               )}
               <Button
-                disabled={reviewedHash !== source.data.hash || open.isPending}
+                disabled={
+                  reviewedHash !== source.data.hash ||
+                  open.isPending ||
+                  (!!quoteId && quoteVersion.trim() === "")
+                }
                 onClick={() =>
                   open.mutate({
                     ...ids,
@@ -187,7 +193,15 @@ function Desk({
       {view.error && <p role="status">{view.error.message}</p>}
       {data && (
         <section className="space-y-4">
-          <h2 className="font-bold break-all">Linked quote {data.quoteNumber}</h2>
+          <h2 className="font-bold break-all">
+            Linked quote {data.quoteNumber}
+          </h2>
+          {data.sourceStale && (
+            <p role="alert">
+              Inspectra source changed. This retained estimate is read-only;
+              office reconciliation is required before a new request.
+            </p>
+          )}
           <p>
             {data.source.property.name} — {data.source.property.address}
           </p>
@@ -196,7 +210,8 @@ function Desk({
           </p>
           <p>
             Recorded source: {data.source.deficiency.severity},{" "}
-            {data.source.deficiency.status}. Version <span className="break-all">{data.source.version}</span>
+            {data.source.deficiency.status}. Version{" "}
+            <span className="break-all">{data.source.version}</span>
           </p>
           <p>
             Return to this linked quote:{" "}
@@ -222,7 +237,7 @@ function Desk({
                 </select>
               </label>
               <Button
-                disabled={!fitter || command.isPending}
+                disabled={data.sourceStale || !fitter || command.isPending}
                 onClick={() =>
                   command.mutate({
                     ...ids,

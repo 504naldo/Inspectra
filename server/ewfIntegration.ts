@@ -118,6 +118,7 @@ export type EwfEstimate = {
   reviewable: boolean;
 };
 export type EwfView = {
+  sourceStale: boolean;
   source: {
     version: string;
     property: { name: string; address: string; city: string };

@@ -231,6 +231,29 @@ try {
     ewf.app.db.prepare("SELECT count(*) n FROM work_orders").get().n,
     0
   );
+  await db.query(
+    "UPDATE deficiencies SET description='Changed fictional source' WHERE id=1"
+  );
+  await page.reload();
+  await page
+    .getByText(
+      "Inspectra source changed. This retained estimate is read-only;",
+      { exact: false }
+    )
+    .waitFor();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Assign estimate request" })
+      .isDisabled(),
+    true
+  );
+  assert.equal(
+    JSON.parse(
+      ewf.app.db.prepare("SELECT source_json FROM inspectra_links").get()
+        .source_json
+    ).deficiency.description,
+    "Fictional source for estimating only"
+  );
   const unassigned = await context("ewf-fictional-3"),
     denied = await unassigned.newPage();
   await denied.goto(base + "/sprinkler-desk/1/1");
