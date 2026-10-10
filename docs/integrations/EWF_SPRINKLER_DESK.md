@@ -153,7 +153,7 @@ Fictional screenshots: [submitted fitter](screenshots/fictional-fitter-submitted
 | Status | Check | Evidence |
 |---|---|---|
 | Passed | EWF baseline | Schema17 / PR4 current main; 180 tests on Node22.23.3 and24.19.0 |
-| Passed | EWF final regressions | 184 tests on Node22.23.3 and24.19.0; zero skips/failures |
+| Passed | EWF final regressions | 185 tests on Node22.23.3 and24.19.0; zero skips/failures |
 | Passed | EWF browser/PWA | All ten existing Chromium scripts; fictional desktop/mobile/permissions/private cache/offline/document workflows |
 | Passed | Cross-app browser | Real Inspectra and EWF services, isolated MySQL/SQLite; 8 hours, parts, saved/submitted/reviewed content, return link and account/customer denial; 390px viewport |
 | Passed | Inspectra final tests | 119 files / 1,248 tests, zero failures |
@@ -170,3 +170,7 @@ Fictional screenshots: [submitted fitter](screenshots/fictional-fitter-submitted
 No real email, customer link activation, production migration, credential change,
 volume replacement, infrastructure update or deployment occurred. Hosted checks
 and draft PR publication state belong in the PR, not inferred from local results.
+
+Final adapter checks also verify atomic quote/property/deficiency/link rollback
+on audit failure, safe retry and reuse of the existing EWF quote-number policy.
+Work-order numbering remains untouched.

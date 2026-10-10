@@ -207,7 +207,7 @@ authoritative SQLite service. No production database/volume/settings changed.
 | Whole-suite consolidation | In progress | First quote/fitter workflow only. Approval/WO/scheduling/visits/billing/stock/equipment/report adapters remain future phases |
 | Production recovery | Open | Inspectra PR18 deployment failed; this integration does not repair or verify live schema. No integration activation until independently recovered and approved |
 
-Validation: 1,248 Inspectra tests passed /14 skipped; EWF184 tests passed on
+Validation: 1,248 Inspectra tests passed /14 skipped; EWF185 tests passed on
 Node22.23.3/24.19.0; all ten EWF browser/PWA checks and real cross-app mobile
 workflow passed. Inspectra typecheck/build/isolated smoke and strict tenant audit
 (61 routers,0 active findings,2 reviewed exceptions) passed. EWF dependency audit

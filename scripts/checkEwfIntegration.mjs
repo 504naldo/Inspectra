@@ -172,7 +172,7 @@ try {
   await page
     .getByRole("button", { name: "Create or link draft quote" })
     .click();
-  await page.getByText("Linked quote Q-I-").waitFor();
+  await page.getByText("Linked quote Q-").waitFor();
   await page.getByLabel("Active mapped fitter").selectOption(fitter.id);
   await page.getByRole("button", { name: "Assign estimate request" }).click();
   await page.getByRole("button", { name: "Submit saved estimate" }).waitFor();
