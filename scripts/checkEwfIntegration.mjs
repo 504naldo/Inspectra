@@ -173,6 +173,9 @@ try {
     .getByRole("button", { name: "Create or link draft quote" })
     .click();
   await page.getByText("Linked quote Q-").waitFor();
+  await page
+    .getByLabel("I reviewed the current quote and source context")
+    .check();
   await page.getByLabel("Active mapped fitter").selectOption(fitter.id);
   await page.getByRole("button", { name: "Assign estimate request" }).click();
   await page.getByRole("button", { name: "Submit saved estimate" }).waitFor();
@@ -236,10 +239,9 @@ try {
   );
   await page.reload();
   await page
-    .getByText(
-      "Inspectra source changed. This retained estimate is read-only;",
-      { exact: false }
-    )
+    .getByText("Source context changed. This retained estimate is read-only;", {
+      exact: false,
+    })
     .waitFor();
   assert.equal(
     await page

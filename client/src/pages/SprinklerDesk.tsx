@@ -48,7 +48,10 @@ function Desk({
     [reviewedHash, setReviewedHash] = useState(""),
     [quoteId, setQuoteId] = useState(""),
     [quoteVersion, setQuoteVersion] = useState(""),
-    [fitter, setFitter] = useState("");
+    [fitter, setFitter] = useState(""),
+    [reviewedQuoteVersion, setReviewedQuoteVersion] = useState<number | null>(
+      null
+    );
   const ids = { siteId, deficiencyId, accountScope };
   const properties = trpc.ewf.properties.useQuery(
     { accountScope },
@@ -198,7 +201,7 @@ function Desk({
           </h2>
           {data.sourceStale && (
             <p role="alert">
-              Inspectra source changed. This retained estimate is read-only;
+              Source context changed. This retained estimate is read-only;
               office reconciliation is required before a new request.
             </p>
           )}
@@ -207,6 +210,9 @@ function Desk({
           </p>
           <p>
             {data.source.deficiency.title}: {data.source.deficiency.description}
+          </p>
+          <p>
+            Current EWF quote: {data.quoteTitle} — {data.quoteDescription}
           </p>
           <p>
             Recorded source: {data.source.deficiency.severity},{" "}
@@ -221,6 +227,18 @@ function Desk({
           </p>
           {office && (
             <div>
+              <label className="block">
+                <input
+                  type="checkbox"
+                  checked={reviewedQuoteVersion === data.quoteVersion}
+                  onChange={e =>
+                    setReviewedQuoteVersion(
+                      e.target.checked ? data.quoteVersion : null
+                    )
+                  }
+                />{" "}
+                I reviewed the current quote and source context for this request
+              </label>
               <label>
                 Active mapped fitter
                 <select
@@ -237,14 +255,19 @@ function Desk({
                 </select>
               </label>
               <Button
-                disabled={data.sourceStale || !fitter || command.isPending}
+                disabled={
+                  data.sourceStale ||
+                  reviewedQuoteVersion !== data.quoteVersion ||
+                  !fitter ||
+                  command.isPending
+                }
                 onClick={() =>
                   command.mutate({
                     ...ids,
                     command: {
                       action: "assign",
                       payload: {
-                        quote_row_version: data.quoteVersion,
+                        quote_row_version: reviewedQuoteVersion!,
                         fitter_user_id: fitter,
                         request_brief:
                           "Estimate total labour-hours, parts and scope from the retained source. No shutdown authorization.",

@@ -142,6 +142,8 @@ export type EwfView = {
   };
   quoteId: string;
   quoteNumber: string;
+  quoteTitle: string;
+  quoteDescription: string;
   quoteVersion: number;
   sourceHash: string;
   items: EwfEstimate[];

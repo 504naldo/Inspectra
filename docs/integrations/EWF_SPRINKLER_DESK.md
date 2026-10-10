@@ -195,3 +195,10 @@ as well as user/company identity.
 
 Existing-draft linking currently requires exactly one matching EWF deficiency.
 Multi-deficiency quote correspondence needs an expanded reviewed source contract.
+
+Migration18 also retains the reviewed EWF operational property/deficiency
+projection separately from the Inspectra source. Changes on either side force
+read-only historical access and reject new assignments/updates. Assignment
+forms pin the explicitly reviewed EWF quote revision; a refresh cannot silently
+replace that review with a newer revision. Current quote context is labeled
+separately from the retained source.
