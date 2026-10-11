@@ -10,7 +10,7 @@ Status: open · in-progress · fixed · accepted-risk · wont-do.
 | ID | Issue | Sev | Area | Status | Evidence | Fix commit | Validation | Owner | Next action |
 |----|-------|-----|------|--------|----------|-----------|------------|-------|-------------|
 | PR-01 | Full marketing site duplicated inside the app | P1 | Frontend | fixed | `Home.tsx` rendered `components/landing/*` | `refactor: separate app entry…` | build/check green; lightweight entry | eng | — |
-| DEP-01 | Vulnerable dependency graph | P0 | Security/dependencies | in-progress | Earlier75 findings; refreshed unchanged-main audit200; patched graph now2 high SheetJS findings | security dependency branch (see draft PR) | 1,244 tests passed,14 existing skipped; type/build/smoke/strict audit/mobile Markdown/PWA passed; dependency audit still fails | eng | Allow official SheetJS distribution host, verify patched upstream artifact and imports; complete native acceptance. No suppressions. See `security/DEPENDENCY_AUDIT.md` |
+| DEP-01 | Vulnerable dependency graph | P0 | Security/dependencies | fixed | Earlier 75 findings; refreshed unchanged-main audit 200; official SheetJS 0.20.3 completes remediation: fresh full/production audits report zero | security dependency branch (draft PR #20) | Official archive matches lockfile integrity; 55 focused tests, typecheck/build/PWA/smoke/strict tenant audit passed after update; full MySQL suite pending hosted CI | eng | Verify exact-commit hosted CI and complete F22/native release checks. No suppressions. See `security/DEPENDENCY_AUDIT.md` |
 | PR-02 | Raw `parseInt(params.id)` in numeric routes → NaN mounts / bad tRPC queries | P1 | Routing | fixed | `App.tsx` route table | `fix: harden routing…` + `client: route all numeric-param routes through strict parser, pass parsed props` | `routeParams.test.ts` (7) | eng | Completed: **every** route with a numeric param now validates via `withNumericParams` (renders NotFound on an invalid id) and passes an already-parsed numeric prop; the 12 remaining detail pages (tech fire-alarm/checklist/template, admin jobs/sites/quotes/repair-quotes/equipment-knowledge/inspection-templates) no longer call `useParams`/`useRoute` + `parseInt`. `pnpm check` clean |
 | PR-03 | Catch-all silently redirected unknown URLs to `/` | P2 | Routing | fixed | `App.tsx` catch-all | `fix: harden routing…` | manual | eng | — |
 | PR-04 | Unconditional `[AuthGuard]` console log; duplicated root redirect | P2 | Routing | fixed | `App.tsx` Router effect | `fix: harden routing…` | DEV-gated + loop guard | eng | — |
@@ -114,7 +114,7 @@ for CI: do not merge this draft until the remaining release checks are resolved.
 | F19 false/duplicate sends | in-progress | Durable outbox reservation before Gmail/Resend; accepted receipt reuse; ambiguous outcomes block retries; fake-provider/SQL-failure tests | Reconciliation UI/runbook acceptance; live provider semantics; other explicit send routes |
 | F20 QA workflow | fixed | No 50-job discovery cutoff; independent counts; approval capability on both entries; office QA route and corrected notification link | Browser navigation acceptance |
 | F21 calendar schedule/owner | fixed | Explicit instants, required real schedule, recorded integration owner/calendar; wrong-owner and DST tests | Live Google Calendar acceptance; legacy owner reconciliation |
-| F22 runtime/verification | in-progress | Node 22 CI/dev/runtime source configuration; build and isolated built-server smoke required in CI | Live Railway runtime, S3, Android toolchain and SheetJS upgrade below |
+| F22 runtime/verification | in-progress | Node 22 CI/dev/runtime source configuration; build and isolated built-server smoke required in CI | Live Railway runtime, S3, Android toolchain; latest dependency verification in `security/DEPENDENCY_AUDIT.md` |
 | F23 immutable snapshots/schema | in-progress | Insert captures template/certification; update preserves item snapshot; journal NOT NULL; startup verifies required schema and rejects legacy nulls | Live DDL and reviewed legacy snapshot conversion |
 
 ### Verified checks on the draft
@@ -138,9 +138,10 @@ made no real outbound sends. These results supersede intermediate failures.
 
 Disposable MinIO image pulls from Docker Hub and Quay were rejected by the
 network proxy, so the S3 tests remain unrun rather than using production storage.
-The fixed SheetJS upstream distribution request was also proxy-denied (403).
-`xlsx` **0.18.5 remains an open dependency blocker**; existing worker time limits
-do not resolve its known advisories. No unverified substitute dependency added.
+At this earlier draft's verification, the fixed SheetJS distribution was also
+proxy-denied (403) and `xlsx` 0.18.5 remained a dependency blocker. The 2026-10-11
+security follow-up in draft PR #20 installs the official 0.20.3 archive and clears
+both dependency audits. See `security/DEPENDENCY_AUDIT.md` for current results.
 
 Migration 0036 is for the journal/CI schema. Manual migration 0086 is prepared
 for the separate production migration history and requires the existing 0014

@@ -4,7 +4,7 @@
   "features": {
     "ghcr.io/devcontainers/features/node:1": { "version": "22" }
   },
-  "postCreateCommand": "corepack enable && corepack prepare pnpm@10.4.1 --activate && pnpm install --frozen-lockfile && (test -f .env || cp .env.example .env)",
+  "postCreateCommand": "corepack enable && corepack prepare pnpm@10.34.5 --activate && pnpm install --frozen-lockfile && (test -f .env || cp .env.example .env)",
   "forwardPorts": [3000],
   "portsAttributes": {
     "3000": { "label": "Inspectra app and API", "onAutoForward": "openBrowser" }

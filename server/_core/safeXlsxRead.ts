@@ -1,26 +1,16 @@
 import { Worker } from "node:worker_threads";
 import type { ParsingOptions, WorkBook } from "xlsx";
 
-// The npm "xlsx" package is pinned at 0.18.5 — SheetJS's last npm release —
-// which carries a known prototype-pollution issue (CVE-2023-30533) and ReDoS
-// issue (CVE-2024-22363) when parsing crafted input. The fixed releases were
-// only ever published to SheetJS's own CDN, which this environment's network
-// policy blocks, so the library itself can't be upgraded here.
-//
-// Since every caller feeds XLSX.read() a user-uploaded file, we contain the
-// parse in a disposable worker thread instead: it has its own V8 isolate, so
-// a prototype-pollution write lands on that isolate's Object.prototype and is
-// discarded when the worker is torn down, and a ReDoS hang can be killed via
-// worker.terminate() without affecting the main server process.
+// SheetJS 0.20.3 is installed from the official CDN with lockfile integrity;
+// it fixes CVE-2023-30533 (prototype pollution) and CVE-2024-22363 (ReDoS).
+// Keep parsing user-uploaded files in a disposable worker as defense in depth:
+// its separate V8 isolate contains unexpected parser state, and a slow or hung
+// parse can be terminated without blocking the main server process.
 const PARSE_TIMEOUT_MS = 15_000;
 
 // IMPORTANT: this source runs via `new Worker(code, { eval: true })`, whose
-// default module type is CommonJS. It MUST stay CJS (`require`; no static
-// `import`, no top-level `await`). An earlier ESM version happened to work on
-// Node 22 (which auto-detects ESM in eval workers) but threw a SyntaxError on
-// startup under Node 20 — the version production runs (nixpacks `nodejs_20`) —
-// so the worker never started and every upload failed with "could not parse
-// file. Ensure it is a valid .xlsx workbook."
+// default module type is CommonJS. Keep CJS (`require`; no static `import`,
+// no top-level `await`) rather than relying on Node's ESM auto-detection.
 const WORKER_SOURCE = `
   const { parentPort, workerData } = require("node:worker_threads");
   try {
