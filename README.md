@@ -41,7 +41,7 @@ pnpm preconfigured.
    or dependencies change later):
    ```bash
    corepack enable
-   corepack prepare pnpm@10.4.1 --activate
+   corepack prepare pnpm@10.34.5 --activate
    pnpm install --frozen-lockfile
    ```
 
@@ -100,7 +100,7 @@ pnpm preconfigured.
     - *Port already in use* — stop any other process bound to `3000`,
       or change `forwardPorts` in `.devcontainer/devcontainer.json`.
     - *`pnpm install` fails on a postinstall/build step* — ensure Corepack is
-      enabled (`corepack enable`) and you're using pnpm `10.4.1` as pinned in
+      enabled (`corepack enable`) and you're using pnpm `10.34.5` as pinned in
       `package.json`.
 
 ## Database Migrations

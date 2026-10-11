@@ -6,6 +6,21 @@ on:
   pull_request:
 
 jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install locked dependencies without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      # Report all severities. Known unpatched dependencies remain release gates.
+      - name: Dependency security audit
+        run: pnpm run security:dependency-audit
+
   test:
     runs-on: ubuntu-latest
 
