@@ -64,6 +64,7 @@ jobs:
 
   storage-acceptance:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     services:
       mysql:
         image: mysql:8.0
@@ -95,27 +96,36 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Start disposable object storage
-        run: >-
-          docker run --detach --name inspectra-ci-minio
-          --publish 127.0.0.1:9000:9000
-          --env MINIO_ROOT_USER="$S3_ACCESS_KEY_ID"
-          --env MINIO_ROOT_PASSWORD="$S3_SECRET_ACCESS_KEY"
-          quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data --address :9000
-      - name: Prepare private synthetic bucket
-        run: node scripts/prepareDisposableS3.mjs
-      - name: Apply disposable database schema
-        run: pnpm exec drizzle-kit migrate
+      # Official signed RELEASE.2025-04-22T22-12-26Z source; the historical
+      # Docker Hub and Quay image references now require authentication.
+      - uses: actions/checkout@v4
+        with:
+          repository: minio/minio
+          ref: 0d7408fc9969caf07de6a8c3a84f9fbb10a6739e
+          path: tmp/minio-source
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.2'
+          cache-dependency-path: tmp/minio-source/go.sum
+      - name: Build pinned disposable object storage
+        working-directory: tmp/minio-source
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tmp/minio-acceptance"
+          CGO_ENABLED=0 go build -mod=readonly -tags kqueue -trimpath -o "$GITHUB_WORKSPACE/tmp/minio-acceptance/minio" .
       - name: Real storage and HTTP acceptance
-        run: >-
-          pnpm exec vitest run server/assetImport.test.ts server/fullWorkbookImport.test.ts
-          server/filesRouterSiteImport.test.ts server/sheetSelection.test.ts server/storageAcceptance.test.ts
+        run: node scripts/checkStorageAcceptance.mjs
       - name: MinIO diagnostics
         if: failure()
-        run: docker logs inspectra-ci-minio
-      - name: Remove disposable object storage
+        run: tail -200 tmp/minio-acceptance/minio.log
+      - name: Storage acceptance evidence
         if: always()
-        run: docker rm --force inspectra-ci-minio
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-acceptance-evidence
+          path: |
+            tmp/minio-acceptance/*.log
+            tmp/minio-acceptance/*.json
 
   payment-acceptance:
     runs-on: ubuntu-latest
