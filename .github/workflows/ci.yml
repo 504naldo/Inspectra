@@ -136,7 +136,6 @@ jobs:
     env:
       DATABASE_URL: mysql://root@127.0.0.1:3306/inspectra_ci
       DISPOSABLE_DB_ACCEPTANCE: "true"
-      DISPOSABLE_MYSQL_CONTAINER: ${{ job.services.mysql.id }}
       CHROMIUM_BIN: /usr/bin/google-chrome
     steps:
       - uses: actions/checkout@v4
@@ -154,9 +153,13 @@ jobs:
       - name: Real payment browser acceptance
         run: node scripts/checkPaymentBrowser.mjs
       - name: Current-schema synthetic backup and recovery
+        env:
+          DISPOSABLE_MYSQL_CONTAINER: ${{ job.services.mysql.id }}
         run: node scripts/checkPaymentRestore.mjs
       - name: MySQL diagnostics
         if: failure()
+        env:
+          DISPOSABLE_MYSQL_CONTAINER: ${{ job.services.mysql.id }}
         run: docker logs "$DISPOSABLE_MYSQL_CONTAINER"
 
   browser-acceptance:
