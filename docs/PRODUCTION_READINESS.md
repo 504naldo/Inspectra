@@ -457,9 +457,10 @@ URLs are not changed by reads. Legacy keyless records stay keyless; no expired U
 is turned into invented provenance. Version-1 seals are unchanged; the still
 unreleased version 2 includes both keys. Fresh signature captures, real PNG PDF
 embedding, failed retrieval/rendering, locking and hash tamper cases passed
-focused checks and independent review. Updated MySQL migration/restore and real
-storage capture acceptance still require the next hosted run. Company logos are
-external URLs; no unsupported managed-logo upload workflow was added.
+focused checks and independent review. Run `38997667071` then passed the updated
+MySQL migration/restore checks and all five authenticated storage cases, including
+real capture of both signature keys, expired URL rejection and fresh byte retrieval.
+Company logos are external URLs; no unsupported managed-logo upload workflow was added.
 
 ### SheetJS dependency remains blocked
 
@@ -479,6 +480,54 @@ upstream artifact and independently verified digest supplied locally. Then pin
 the official artifact, verify its content/version and lockfile integrity, and run
 the worker, workbook/import and advisory regressions plus frozen installation,
 typecheck and build. An unverified mirror or version-only lockfile edit is not a fix.
+
+### Final hosted acceptance — 2026-10-17
+
+The final code run is
+[38998121971](https://github.com/504naldo/Inspectra/actions/runs/38998121971),
+GitHub head `416c617c7d6ae96b772680ddcc1ac5c30671afc1`. Its tree
+`430deddacb6cfd78e496df80bac9f2a193f9efbf` exactly matches local code commit
+`6f9f7ef59774123d5eaa4f58d333fb179b87a793`. This head includes both preview
+corrections and the durable-signature implementation. **All five jobs passed.**
+The subsequent evidence update changes this documentation only; application,
+schema, tests, acceptance scripts and workflow remain identical to this tested head.
+
+| Check | Final verified result |
+|---|---|
+| Node 22 / MySQL full suite | **2,314 passed**, zero failures, **18 explicit skips**; 192 passing files and five storage-gated files across 197 total. Node **22.23.3**, MySQL **8.0.46**, pinned pnpm **10.4.1**. |
+| Required build/start checks | Frozen dependency installation, whole-project TypeScript, strict tenant scan (61 routers, zero active findings, one reviewed exception), fresh journal migration through **0042**, production client/server build and isolated built-server health/UI smoke all passed. |
+| Real MySQL integrity and migrations | Manual **0086–0092** selected-history acceptance, interrupted-trigger DDL/retry, legacy NULL captures/signatures and v1 seals passed. Repair-quote concurrency/rollback (15), inspection sealing/rollback (9), import serialization/rollback (3) and invoice batch concurrency/rollback (3) all executed and passed. These are disposable histories, not the production history. |
+| Real storage and authenticated HTTP | **16/16 cases across five files passed**, with a private synthetic MinIO bucket and MySQL. All 11 workbook cases and five authenticated expiry/provenance/multipart/seal/signature cases ran. Original Site workbook preview/import/reimport assertions passed unchanged. Actual technician/contact captures persisted separate real keys; expired URLs returned 403 and fresh signatures returned identical bytes. |
+| Browser component acceptance | **8/8 scenarios passed** using production React components and real Chromium DOM/storage/Web Locks with synthetic HTTP/provider responses. Covers interruptions, late cross-account queries, quota failure, durable-send loss/reload and cross-tab recovery, recipient/entity resets, smoke focus/revisions and the individual-device all-pass barrier. Backend/provider/service-worker/native acceptance is separate. |
+| Payment browser and backup recovery | Real Chromium/MySQL response-loss, refresh/restart, cumulative payments and two-tab deduplication passed. Native dump/restore preserved current/legacy signature keys and URLs, all evidence, owners, totals and six guards; stale-backup detection, rejected historical writers and repeated exact-once forward recovery passed through schema 0042. |
+| Android build | Debug APK built with Java **21.0.12**, Gradle **8.14.3**, 308 tasks executed; nonempty APK verified and uploaded. The APK was never launched. |
+| Independent/local review | No additional implementation blocker found in the reviewed scope. Final preview/mapping/canonical-import checks passed **49 tests** locally; final hosted results above include these changes. |
+
+The full-suite skips are **16 storage cases**, all executed successfully in the
+separate storage job, plus **two historical Phase-2 source-comment checks** that
+remain skipped. A formerly skipped client Fire-Pro mapping case now runs with
+the established safe contract: ambiguous `Unit #` is not guessed to be a barcode;
+an explicit `Barcode` column takes precedence. No production mapper behavior was
+changed to force the obsolete expectation to pass.
+
+Evidence artifacts for this exact run:
+
+| Artifact | Download | ZIP SHA-256 |
+|---|---|---|
+| Browser traces/results | [12087624289](https://github.com/504naldo/Inspectra/actions/runs/38998121971/artifacts/12087624289) | `800fc1632f4011ce6495f038eba30d49ffcba046938a181aa8973c36dee08b99` |
+| Storage runtime log | [12088336363](https://github.com/504naldo/Inspectra/actions/runs/38998121971/artifacts/12088336363) | `efa3e0d883092eacd0b04e03c5e4055adbe4728ad7b6b1c2ee149ae75b2700f9` |
+| Unlaunched Android debug APK | [12088076481](https://github.com/504naldo/Inspectra/actions/runs/38998121971/artifacts/12088076481) | `89bfbec166e8d593efdb01dba4a79a5181deff06ed7f23a8814ea418e4847651` |
+
+Storage assertions and the 16-case result are in the
+[storage job log](https://github.com/504naldo/Inspectra/actions/runs/38998121971/job/117295075821),
+not in the small runtime-log artifact. Downloaded browser/storage artifacts had
+their ZIP digests verified; the storage log confirms loopback binding and graceful
+shutdown. Android's digest is the uploaded artifact metadata, not hardware acceptance.
+
+Read-only production verification at **03:18 UTC on October 17** still showed the
+successful October 2 deployment, one running replica, zero crashed replicas and
+no pending work. Main remained `179e8c8` and unprotected. No production deployment
+or schema change is inferred from this green audit-branch run.
 
 ### Remaining release work after automated acceptance
 
