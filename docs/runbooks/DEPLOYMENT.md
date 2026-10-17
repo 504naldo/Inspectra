@@ -20,6 +20,56 @@ backfills. Never expose database credentials in logs, PRs, or docs.
     DDL (no MariaDB `IF NOT EXISTS` on `ADD COLUMN/INDEX`; no `AFTER <col>` that
     depends on apply order).
 
+## Enable CI gates before release
+
+As observed on 2026-10-17, GitHub `main` was unprotected and Railway's source
+had `checkSuites=false`. The audit fixes were tested on a separate branch; these
+settings have not been changed. An authorized repository/service operator must
+apply and verify both gates before merging release changes.
+
+In Railway, select project `b594cb45-0b33-4e6e-b3f1-afbefea37457`, production
+environment `acc3b1c9-1755-4f26-8703-263669598d49`, service
+`4a7b9797-4ad6-4029-a828-80224babea2b` (**Inspectra**). In service settings,
+enable **Wait for CI**, retaining repository `504naldo/Inspectra` and branch
+`main`. The exact desired setting is `source.checkSuites: true`; do not reconnect
+the source, change its commit/branch or trigger a deploy to enable this gate.
+Read back the service configuration and confirm that setting, the unchanged
+source and no unintended pending/deployment changes.
+
+An authenticated Railway CLI with environment-edit support exposes the setting
+at `--service-config <service-id> source.checkSuites true`; the dashboard toggle
+is the direct operator path. The connected `update_service` and
+`connect_service_source` tools do not expose this field. Reconnecting a live
+source starts a build. The current executor has no Railway CLI/local credentials,
+so no CLI or service-setting mutation was performed here.
+
+In GitHub repository settings, protect `main` with an active branch rule/ruleset
+requiring pull requests and all five status checks from the **CI** workflow in
+[ci.yml](../../.github/workflows/ci.yml):
+
+| Required check context | Acceptance covered |
+|---|---|
+| `test` | TypeScript, tenant scan, MySQL tests/migrations, production build and built-server smoke. |
+| `storage-acceptance` | Disposable storage, workbook and authenticated upload/signature cases. |
+| `payment-acceptance` | Real browser/payment and synthetic full backup recovery. |
+| `browser-acceptance` | Production component interruption and account-boundary scenarios. |
+| `android-build` | Android debug APK build; no hardware execution. |
+
+Select the checks emitted by GitHub Actions, require the branch to be current
+before merging, and prohibit force-push/deletion of `main`. Verify the rule is
+active and document any administrator/bypass exceptions. The connected GitHub
+App has no administration capability; its GET-only fetch tool cannot configure
+branch protection/rulesets. No protection change was performed here.
+
+[Railway Wait for CI](https://docs.railway.com/deployments/github-autodeploys#wait-for-ci)
+waits for GitHub Actions **workflow conclusions**, not individual required job
+contexts. Skipped/neutral workflows do not block; a cancelled workflow can be
+ignored if another workflow succeeded. Thus `source.checkSuites=true` does not
+provide GitHub branch protection or prove all required checks ran. Keep the
+workflow's `push: main` trigger and required jobs intact; preserve the separate
+maintenance/backup prerequisites below. Enabling either gate is not release or
+schema-maintenance acceptance.
+
 ## Deployment sequence
 
 1. **Create a backup.** Take/verify a backup/snapshot of the production database

@@ -48,6 +48,11 @@ sync, the sync screen, QA submission, or the Capacitor shell.
      behavior do not match real hardware.
 4. Confirm the app points at the intended API base URL (staging, not
    production, unless you are doing a production smoke test with disposable data).
+   The current native transport in [`native.ts`](../../client/src/lib/native.ts)
+   hardcodes `https://app.inspectrafire.ca/api/trpc`; setting a Vite environment
+   variable alone does not retarget it. The audit CI APK is build evidence only.
+   For the fault-injection tests below, obtain a reviewed acceptance build whose
+   native transport targets an isolated test backend before installing/launching it.
 5. Install to the device and launch once while online to complete first-run
    init (Capacitor push/permission prompts, service worker/asset cache).
 
@@ -263,14 +268,22 @@ pending items are still there and sync successfully.
 
 **Pass criteria:** the QA dialog **warns** that N items are not yet synced and
 **lists them by type**, including **device tests, deficiencies, checklist,
-template, fire-alarm results, and smoke-alarm tests**. Submission is **blocked**
-unless the technician ticks the explicit override. (Fire-alarm and smoke-alarm
-counts appearing here is the specific safeguard added in this pass.)
+template, fire-alarm results, smoke-alarm tests, and photos**. Ordinary pending
+items block submission unless the technician ticks the explicit override.
+Legacy/unreadable queues, pending fire-alarm drafts and evidence that cannot be
+checked remain **blocked even with the override**, as enforced by
+[`isQaSubmitBlocked`](../../client/src/lib/qaPreflight.ts) and the job dialog's
+recovery counts. The override does not bypass server evidence requirements.
 
-3. Sync, confirm the warning clears, then submit cleanly.
+3. In the isolated test profile, load a reviewed synthetic legacy-queue fixture.
+   Tick the override and verify submission remains blocked, the original queue is
+   preserved, and no generic legacy request is replayed. Recover through the
+   supported review flow; do not delete the queue to make the test pass.
+4. Sync/recover the test records, confirm the warning clears, then submit cleanly.
 
 **Fail:** the dialog reports "nothing pending" while a fire-alarm/smoke result is
-still queued, or submission proceeds with no warning.
+still queued, submission proceeds with no warning, or the override bypasses an
+unresolved legacy/evidence blocker.
 
 ---
 
@@ -347,7 +360,8 @@ duplicate.
    **visible and retryable** with a clear message (§14).
 5. **Session expiry** yields an actionable message and **no data loss** (§15).
 6. QA submission **warns/blocks** on unsynced critical records, including
-   **fire-alarm and smoke-alarm** results, with an explicit override (§16).
+   **fire-alarm and smoke-alarm** results; only ordinary pending items allow an
+   explicit override. Legacy/evidence blockers remain blocked (§16).
 7. Camera permission flow is graceful (§17).
 8. Server shows **one correctly-attributed row per item**, no cross-company
    leakage (§18).
@@ -361,3 +375,106 @@ critical data; a crash on camera/permission; or any cross-company record.
 
 Record the result (PASS/FAIL), the build tested, the tester, and the date at the
 top of your test report, and attach the evidence from §20.
+
+---
+
+## 22. Audit acceptance addendum: device storage, sessions and operation recovery
+
+**Status: prepared, not executed on hardware.** Run these cases in addition to
+§1–§21 before closing F12/F13/F14/F19 device acceptance in the
+[readiness register](../PRODUCTION_READINESS.md#remaining-release-work-after-automated-acceptance).
+Desktop Chromium scenarios and an unlaunched APK do not satisfy these checks.
+
+Use a physical Android device and an isolated test backend/database, synthetic
+accounts in two companies, and disposable jobs/invoices. Verify the native API
+destination as required in §1. Block production/provider egress; explicit email
+routes must use a reviewed test provider that records acceptance without sending
+to real recipients. Default-off automated email does not disable explicit Send.
+Use synthetic addresses such as `recipient@example.invalid`. Record the app
+commit, APK digest, Android/WebView versions, device model and each test result.
+Keep fault injection confined to this disposable profile; preserve original
+drafts/operation IDs and redact credentials from evidence.
+
+### 22.1 Quota and durable-write failure
+
+1. Save a synthetic fire-alarm draft and note its persisted value. Using the
+   test fault injector or WebView debugger, reject writes for that draft's
+   localStorage journal with `QuotaExceededError`; leave reads and unrelated
+   records intact. Edit the field again and wait beyond its debounce.
+2. Verify a visible storage error, the prior persisted draft unchanged, and no
+   network mutation for the unpersisted correction. Record the unsaved text
+   before navigating; a rejected storage write cannot survive restart.
+3. Restore writes, re-enter the correction and confirm it persists and syncs
+   once. Repeat with a rejected IndexedDB journal commit before a synthetic
+   payment and email attempt: neither may dispatch before its durable commit.
+
+**Pass:** errors remain visible, earlier evidence is retained, and failed local
+commits produce no payment/provider effect. Do not clear app data or delete
+pending operations as a recovery step.
+
+### 22.2 Account change with a delayed response
+
+1. As account A, create a pending draft and use the test backend/proxy to hold a
+   job query response. Sign out and sign in as account B in the other company.
+2. Release A's response and attempt the old screen's pending action. B must see
+   only B's data; the stale action must be cancelled or rejected before effects,
+   never dispatched under B's identity.
+3. Return to A. Confirm A's draft is still scoped to A, then recover/sync it once.
+
+**Evidence:** sanitized request identity headers, both screen states, retained
+draft scopes and server rows proving no cross-account write. Do not clear storage
+between accounts to hide a boundary failure.
+
+### 22.3 Service-worker and app update with pending work
+
+1. On Android Chrome/PWA, record the active worker/build, create a pending draft,
+   then publish a reviewed replacement build to the isolated test origin.
+2. Trigger the worker's normal update and activation, close/reopen the app and
+   verify the draft and original operation IDs remain recoverable. Reconnect and
+   confirm one server effect for each deliberate operation.
+3. For the Capacitor app, repeat with an in-place, same-app-ID/same-signature APK
+   update that preserves app data. Record whether the WebView has an active
+   worker; if it does, exercise its update too. If it does not, mark that worker
+   case not applicable and keep the Chrome/PWA result separate.
+
+**Fail:** an update erases pending work, replays a generic queued mutation, mixes
+accounts or creates a replacement UUID without reconciliation. Uninstall/reinstall
+is not an in-place update test.
+
+### 22.4 Native haptics and camera
+
+1. With device haptics enabled, open a disposable device test and tap PASS, FAIL
+   and N/A. Check the success/error/light feedback used by `DeviceTest.tsx`.
+2. Repeat with OS haptics disabled and after background/foreground transitions.
+   Selection and saving must still work without a plugin error or crash.
+3. Complete the physical-camera capture/permission cases in §8 and §17 on this
+   same build; record each result separately from vibration feedback.
+
+**Evidence:** tester observation, OS settings and sanitized WebView/native errors.
+A device without vibration hardware cannot establish the haptics result.
+
+### 22.5 Native payment and manual-send UUID recovery
+
+1. As the synthetic office account, confirm IndexedDB and Web Locks work in the
+   actual WebView. If Web Locks are unavailable, verify both actions fail closed
+   with no server/provider effect; record the flow as unsupported, not passed.
+2. On a synthetic $100 invoice, record $40. Have the isolated backend/proxy drop
+   the response after commit. Force-stop/reopen the app and reopen the dialog.
+   Reconciliation/retry must retain the original UUID/amount/date, with one $40
+   receipt. Only after receipt confirmation, use **Start another payment** for a
+   separate $60; verify $100 total and two receipts.
+3. For each available quote, repair-quote, invoice and Gmail report Send dialog,
+   save an exact synthetic payload/UUID, record test-provider acceptance, and
+   drop the response. Force-stop/reopen, check the original receipt and recover
+   document state without another provider call. Record the same recipient,
+   subject/body where applicable, UUID and provider-call count before/after.
+4. Hold one email outcome at `sending`/`unknown`. Reopening or changing recipients
+   must not create a fresh attempt. Reconcile against test-provider evidence;
+   only confirmed acceptance/rejection permits an explicit replacement. Repeat
+   with two live views sharing the same app origin/storage if that native shell
+   supports them; otherwise leave native cross-view acceptance unrun.
+
+**Pass:** one effect per original UUID, no silent payload replacement, and
+uncertain operations preserved for review. Provider acceptance is not recipient
+delivery. Record unsupported/unrun cases explicitly; this checklist itself
+supplies no live-provider or hardware acceptance.

@@ -98,6 +98,12 @@ describe.each([
   { procedure: "generatePDF" as const, generator: generateInspectionReportPDF },
   { procedure: "generateCompliancePDF" as const, generator: generateComplianceReportPDF },
 ])("$procedure signature wiring", ({ procedure, generator }) => {
+  it("does not reach signature-bearing PDF generation when canonical job authorization fails", async () => {
+    vi.mocked(db.assertJobCompany).mockRejectedValueOnce(new Error("foreign job"));
+    await expect(reportRouter.createCaller(context)[procedure]({ jobId: job.id })).rejects.toThrow("foreign job");
+    expect(generator).not.toHaveBeenCalled();
+    expect(db.createReport).not.toHaveBeenCalled();
+  });
   it.each(sources)("preserves $name through the customer-safe builder", async ({ key, url }) => {
     job.techSignatureKey = key;
     job.techSignatureUrl = url;

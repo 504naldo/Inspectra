@@ -1,8 +1,8 @@
 import { TRPCError } from "@trpc/server";
-import { storageGet } from "./storage";
-import { fetchImageBuffer } from "./pdfSharedStyles";
+import { fetchAuthorizedStorageImage } from "./pdfSharedStyles";
 
 /** Resolve captured signature evidence without changing stored URLs or seal data.
+ * Call only for a canonical stored job signature after authorizing its parent.
  * URL-only historical captures retain their unknown key; no key is inferred.
  * A recorded signature must be retrievable before a report can be published.
  */
@@ -12,12 +12,9 @@ export async function resolveSignatureImageForPdf(signature: {
 }): Promise<Buffer | undefined> {
   if (!signature.fileKey && !signature.fileUrl) return undefined;
   try {
-    // A known key is authoritative: signing failures must not use an old URL.
-    const url = signature.fileKey
-      ? (await storageGet(signature.fileKey)).url
-      : signature.fileUrl!;
-    // This retains the normal public-URL/redirect SSRF protection for images.
-    const buffer = await fetchImageBuffer(url);
+    // The wrapper validates fresh signer output before allowing configured
+    // private storage. Known-key failures never fall back to an old stored URL.
+    const buffer = await fetchAuthorizedStorageImage(signature);
     if (buffer?.length) return buffer;
   } catch {
     // Do not expose signed URLs, object names, or storage credentials in errors.

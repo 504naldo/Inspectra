@@ -483,7 +483,7 @@ typecheck and build. An unverified mirror or version-only lockfile edit is not a
 
 ### Final hosted acceptance — 2026-10-17
 
-The final code run is
+The verified code run before the private-endpoint follow-up below is
 [38998121971](https://github.com/504naldo/Inspectra/actions/runs/38998121971),
 GitHub head `416c617c7d6ae96b772680ddcc1ac5c30671afc1`. Its tree
 `430deddacb6cfd78e496df80bac9f2a193f9efbf` exactly matches local code commit
@@ -528,6 +528,41 @@ Read-only production verification at **03:18 UTC on October 17** still showed th
 successful October 2 deployment, one running replica, zero crashed replicas and
 no pending work. Main remained `179e8c8` and unprotected. No production deployment
 or schema change is inferred from this green audit-branch run.
+
+### Further audit closure — 2026-10-16 (America/Vancouver)
+
+The F18 private-endpoint follow-up now uses the same validated storage-image
+fetch for signatures and report photos. It authorizes the canonical parent
+before resolving a stored key, then permits a private endpoint only for an
+internally generated SDK URL matching the configured origin, bucket and exact
+object key. Keyless records retain public-host checks; redirects are rejected.
+Known-key signing, validation or fetch failure never retries the stored URL.
+Unavailable signatures block generation; unavailable photos return a structured
+failure and retain the existing secret-free warning behavior. No schema,
+captured row or seal algorithm changes are part of this follow-up.
+
+Local checks passed **98 tests across 11 files**, whole-project TypeScript and
+patch checks. Independent review found no blocker. The real-storage acceptance
+case now exercises actual private MinIO signature retrieval/PDF embedding and
+photo recovery after URL expiry. Hosted verification of this head is pending;
+the earlier green run does not establish these additional behaviors.
+
+The [Android field runbook](runbooks/ANDROID_OFFLINE_FIELD_TEST.md#22-audit-acceptance-addendum-device-storage-sessions-and-operation-recovery)
+now specifies quota failures, late account responses, service-worker/in-place APK
+updates, haptics and native payment/manual-send operation recovery, with isolated
+test prerequisites. It distinguishes non-overridable legacy/evidence QA blockers.
+These are prepared procedures, not hardware results. The
+[deployment runbook](runbooks/DEPLOYMENT.md#enable-ci-gates-before-release)
+now identifies the exact Railway target, Wait for CI setting and five required
+GitHub checks; Railway's workflow-conclusion gate does not replace branch protection.
+
+Current cloud configuration revision **27** is enforced and current, with the
+package-manager host preset, no bound credentials/identities and no private TCP
+destinations. Official SheetJS hosts remain excluded. A fresh read-only scan of
+local caches and official GitHub releases/tags/source found no authenticated
+patched artifact. SheetJS 0.18.5 remains installed. Current connected tools cannot
+set Railway `source.checkSuites` or GitHub branch protection; source reconnection
+would start a build and is not a substitute. No production setting was changed.
 
 ### Remaining release work after automated acceptance
 

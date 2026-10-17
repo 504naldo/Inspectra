@@ -2,6 +2,7 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import { assertPublicHttpUrl } from './_core/ssrfGuard';
+import { resolveAuthorizedStorageDownload } from './storageDownload';
 
 /**
  * Shared PDF Styling Utilities
@@ -1017,13 +1018,34 @@ export function drawSignatureTable(
 export async function fetchImageBuffer(url: string): Promise<Buffer | undefined> {
   try {
     await assertPublicHttpUrl(url);
-    const res = await fetch(url, { redirect: "error" });
-    if (!res.ok) return undefined;
-    const ab = await res.arrayBuffer();
-    return Buffer.from(ab);
+    return await fetchImageBytes(url);
   } catch {
     return undefined;
   }
+}
+
+/** Call only after authorizing the stored image's canonical parent. Resolving
+ * inside this wrapper permits a private configured storage endpoint only for a
+ * fresh SDK URL bound to its exact origin, bucket and object key. URL-only
+ * records keep the public-URL guard; callers cannot supply a trusted-URL bypass.
+ */
+export async function fetchAuthorizedStorageImage(image: {
+  fileKey?: string | null;
+  fileUrl?: string | null;
+}): Promise<Buffer | undefined> {
+  try {
+    const url = await resolveAuthorizedStorageDownload(image);
+    return url ? await fetchImageBytes(url) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Both callers above validate the source before reaching this unexported fetch.
+async function fetchImageBytes(url: string): Promise<Buffer | undefined> {
+  const res = await fetch(url, { redirect: "error" });
+  if (!res.ok) return undefined;
+  return Buffer.from(await res.arrayBuffer());
 }
 
 // ============================================

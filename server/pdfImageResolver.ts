@@ -9,23 +9,22 @@
 // (a customer re-downloads an annual report months later), at which point the
 // stored fileUrl is dead and the photo silently vanishes from the PDF.
 //
-// resolveAttachmentImageForPdf() fixes this by minting a FRESH signed URL from
-// the durable fileKey at generation time, and only falling back to the stored
-// fileUrl when no key is available. Fetching still goes through the SSRF-guarded
-// fetchImageBuffer, so protection is preserved. Failures are reported (never
-// silently treated as an embedded image) via a structured result plus a log
-// line that identifies the attachment/report internally WITHOUT leaking the
-// fileKey, signed URL, bucket, or any storage credential.
+// resolveAttachmentImageForPdf() fixes this by fetching a FRESH signed URL from
+// the durable fileKey at generation time. Only keyless records use fileUrl.
+// The shared storage image helper binds fresh URLs to the configured storage
+// endpoint and keeps the public-URL guard for keyless records. Failures are
+// reported via a structured result plus a log line that identifies the
+// attachment/report internally WITHOUT leaking the fileKey, signed URL,
+// bucket, or any storage credential.
 
-import { storageGet } from "./storage";
-import { fetchImageBuffer } from "./pdfSharedStyles";
+import { fetchAuthorizedStorageImage } from "./pdfSharedStyles";
 
 /** Minimal shape needed to resolve an attachment's image — a subset of the row. */
 export interface PdfAttachmentInput {
   id?: number | null;
   /** Durable S3/R2 object key. Preferred source: re-signed at generation time. */
   fileKey?: string | null;
-  /** Presigned URL stored at upload time; may be expired. Fallback only. */
+  /** Presigned URL stored at upload time; used only when no durable key exists. */
   fileUrl?: string | null;
   entityType?: string | null;
   entityId?: number | null;
@@ -41,10 +40,6 @@ export interface ResolveImageOptions {
    * MUST NOT contain secrets — it is only written to server logs.
    */
   reportRef?: string;
-  /** Injectable for testing. Defaults to a fresh presigned GET URL from storage. */
-  signKey?: (key: string) => Promise<string>;
-  /** Injectable for testing. Defaults to the SSRF-guarded image fetch. */
-  fetchBuffer?: (url: string) => Promise<Buffer | undefined>;
 }
 
 /**
@@ -59,29 +54,26 @@ function attachmentLabel(a: PdfAttachmentInput): string {
 }
 
 /**
- * Emit a safe warning. Only the error's constructor name is logged (e.g.
- * "CredentialsProviderError") — never its message, which can embed the bucket
- * or signed URL for storage/SDK errors.
+ * Emit a safe warning without error details, which can embed the bucket or
+ * signed URL for storage/SDK errors.
  */
 function warnImage(
   stage: string,
   a: PdfAttachmentInput,
   reportRef: string | undefined,
-  err?: unknown,
 ): void {
   const ref = reportRef ? `${reportRef} ` : "";
-  const errName = err instanceof Error ? ` (${err.name})` : "";
-  console.warn(`[pdf-image] ${ref}${attachmentLabel(a)}: ${stage}${errName}`);
+  console.warn(`[pdf-image] ${ref}${attachmentLabel(a)}: ${stage}`);
 }
 
-const defaultSignKey = async (key: string): Promise<string> => (await storageGet(key)).url;
-
 /**
- * Resolve an attachment to an image Buffer for embedding in a PDF.
+ * Resolve an attachment to an image Buffer after authorizing its canonical
+ * parent. The helper permits private storage only for fresh SDK-signed URLs.
  *
  * Order of preference:
  *   1. fileKey present → mint a FRESH signed URL and fetch it.
- *   2. otherwise / if signing fails → fall back to the stored fileUrl.
+ *   2. otherwise → fetch the stored fileUrl with the public-URL guard.
+ * A known key remains authoritative when signing or fetching fails.
  *
  * Returns a discriminated result so callers can distinguish "embedded" from
  * "failed" and record the failure — a failed image is NEVER returned as a
@@ -93,42 +85,24 @@ export async function resolveAttachmentImageForPdf(
   attachment: PdfAttachmentInput,
   options: ResolveImageOptions = {},
 ): Promise<ResolveImageResult> {
-  const signKey = options.signKey ?? defaultSignKey;
-  const fetchBuffer = options.fetchBuffer ?? fetchImageBuffer;
   const reportRef = options.reportRef;
-
-  // 1. Prefer a fresh signed URL derived from the durable key.
-  let url: string | undefined;
-  let source: "fresh-key" | "stored-url" = "fresh-key";
-  const key = attachment.fileKey?.trim();
-  if (key) {
-    try {
-      url = await signKey(key);
-    } catch (err) {
-      // Signing unavailable (e.g. storage creds absent) — try the stored URL.
-      warnImage("sign-failed", attachment, reportRef, err);
-    }
-  }
-
-  // 2. Fall back to the stored (possibly expired) presigned URL.
-  if (!url) {
-    const stored = attachment.fileUrl?.trim();
-    if (stored) {
-      url = stored;
-      source = "stored-url";
-    }
-  }
-
-  if (!url) {
+  if (!attachment.fileKey && !attachment.fileUrl) {
     warnImage("no-source", attachment, reportRef);
     return { ok: false, reason: "no-source" };
   }
 
-  const buffer = await fetchBuffer(url); // SSRF-guarded, returns undefined on failure
-  if (!buffer) {
-    warnImage("fetch-failed", attachment, reportRef);
-    return { ok: false, reason: "fetch-failed" };
+  try {
+    const buffer = await fetchAuthorizedStorageImage({
+      fileKey: attachment.fileKey,
+      fileUrl: attachment.fileUrl,
+    });
+    if (buffer?.length) {
+      return { ok: true, buffer, source: attachment.fileKey ? "fresh-key" : "stored-url" };
+    }
+  } catch {
+    // Keep this boundary non-throwing even if the shared helper later changes.
   }
 
-  return { ok: true, buffer, source };
+  warnImage("fetch-failed", attachment, reportRef);
+  return { ok: false, reason: "fetch-failed" };
 }

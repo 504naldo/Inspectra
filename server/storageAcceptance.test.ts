@@ -19,6 +19,9 @@ import { handleMultipartUpload } from "./_core/upload";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
 import { storageGet, storagePut } from "./storage";
+import { resolveSignatureImageForPdf } from "./signatureImage";
+import { resolveAttachmentImageForPdf } from "./pdfImageResolver";
+import { generateInspectionReportPDF } from "./pdfGeneratorFirePro";
 
 // No storage/DB/HTTP mocks. CI provides a private, disposable MinIO + MySQL pair.
 describe.skipIf(process.env.DISPOSABLE_S3_ACCEPTANCE !== "true")("Disposable S3 and authenticated HTTP acceptance", () => {
@@ -188,7 +191,7 @@ describe.skipIf(process.env.DISPOSABLE_S3_ACCEPTANCE !== "true")("Disposable S3 
     expect([...await keys(multipartPrefix), ...await keys(attachmentPrefix)].sort()).toEqual(before);
   }, 30000);
 
-  it("persists real signature keys and recovers their bytes after the original URL expires", async () => {
+  it("recovers real signature/photo keys and embeds a private-storage signature after URL expiry", async () => {
     const bytes = readFileSync(new URL("../assets/ewf-logo.png", import.meta.url));
     const input = { jobId: ownJobId, techSignatureBase64: bytes.toString("base64"),
       contactSignatureBase64: bytes.toString("base64"), contactName: "Synthetic contact" };
@@ -197,16 +200,43 @@ describe.skipIf(process.env.DISPOSABLE_S3_ACCEPTANCE !== "true")("Disposable S3 
     expect(stored.techSignatureKey).toMatch(/^signatures\/.+\.png$/);
     expect(stored.contactSignatureKey).toMatch(/^signatures\/.+\.png$/);
     expect(stored.contactSignatureKey).not.toBe(stored.techSignatureKey);
+    let expiredTechUrl: string | undefined;
     for (const key of [stored.techSignatureKey!, stored.contactSignatureKey!]) {
       objectKeys.add(key);
       const expired = await getSignedUrl(s3, new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key }),
         { expiresIn: 7 * 24 * 60 * 60, signingDate: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) });
+      if (key === stored.techSignatureKey) expiredTechUrl = expired;
       expect((await fetch(expired)).status).toBe(403);
       const fresh = await storageGet(key);
       const response = await fetch(fresh.url);
       expect(response.status).toBe(200);
       expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
     }
+    expect(await resolveSignatureImageForPdf({ fileKey: stored.techSignatureKey, fileUrl: expiredTechUrl })).toEqual(bytes);
+    const reportData = {
+      jobNumber: stored.jobNumber, jobTitle: "Synthetic signature acceptance", siteName: "Synthetic site",
+      siteAddress: "123 Test Street", siteCity: "Synthetic city", siteState: "", customerName: "Synthetic customer",
+      inspectionDate: null, technicianName: "Not recorded", companyName: "Synthetic company",
+      deviceSummaries: [], deficiencies: [], inspectionResults: [],
+    };
+    const unsignedPdf = await generateInspectionReportPDF(reportData);
+    const signedPdf = await generateInspectionReportPDF({ ...reportData,
+      techSignatureKey: stored.techSignatureKey!, techSignatureUrl: expiredTechUrl });
+    const images = (pdf: Buffer) => (pdf.toString("latin1").match(/\/Subtype \/Image\b/g) ?? []).length;
+    expect(images(signedPdf)).toBeGreaterThan(images(unsignedPdf));
+    expect(signedPdf.toString("latin1")).not.toContain(stored.techSignatureKey!);
+
+    const photo = await ownClient.attachment.upload.mutate({ entityType: "job", entityId: ownJobId,
+      jobId: ownJobId, siteId: ownSiteId, fileName: "synthetic-photo.png", fileData: bytes.toString("base64"),
+      mimeType: "image/png", idempotencyKey: randomUUID() });
+    objectKeys.add(photo.fileKey);
+    const expiredPhotoUrl = await getSignedUrl(s3, new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: photo.fileKey }),
+      { expiresIn: 7 * 24 * 60 * 60, signingDate: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) });
+    expect((await fetch(expiredPhotoUrl)).status).toBe(403);
+    const recoveredPhoto = await resolveAttachmentImageForPdf({ ...photo, fileUrl: expiredPhotoUrl });
+    expect(recoveredPhoto).toEqual({ ok: true, source: "fresh-key", buffer: bytes });
+    await expect(resolveSignatureImageForPdf({ fileUrl: expiredTechUrl })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(await resolveAttachmentImageForPdf({ fileUrl: expiredPhotoUrl })).toEqual({ ok: false, reason: "fetch-failed" });
     const before = await keys("signatures/");
     await expect(foreignClient.job.saveSignatures.mutate(input)).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });
     await expect(ownClient.job.saveSignatures.mutate({ ...input, jobId: sealedJobId })).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });

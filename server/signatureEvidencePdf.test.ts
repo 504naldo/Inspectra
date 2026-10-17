@@ -1,15 +1,14 @@
 import { readFileSync } from "node:fs";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { storageGet } from "./storage";
-import { fetchImageBuffer } from "./pdfSharedStyles";
+import { assertPublicHttpUrl } from "./_core/ssrfGuard";
 import { generateComplianceReportPDF, type ComplianceReportData } from "./pdfGeneratorCompliance";
 import { generateInspectionReportPDF, type ReportData } from "./pdfGeneratorFirePro";
 import { buildCustomerSafeComplianceData, buildCustomerSafeReportData } from "./customerSafeReport";
 
 vi.mock("./storage", () => ({ storageGet: vi.fn() }));
-vi.mock("./pdfSharedStyles", async importOriginal => ({
-  ...(await importOriginal<typeof import("./pdfSharedStyles")>()), fetchImageBuffer: vi.fn(),
-}));
+vi.mock("./_core/ssrfGuard", () => ({ assertPublicHttpUrl: vi.fn() }));
+const fetchMock = vi.fn();
 // A real, repository-owned PNG exercises PDFKit's actual image embedding.
 const png = readFileSync(new URL("../assets/ewf-logo.png", import.meta.url));
 const inspection: ReportData = {
@@ -24,8 +23,11 @@ const compliance: ComplianceReportData = {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(storageGet).mockResolvedValue({ key: "signatures/permanent.png", url: "https://storage.example/fresh?signature=new" });
-  vi.mocked(fetchImageBuffer).mockResolvedValue(png);
+  vi.stubEnv("S3_ENDPOINT", "");
+  vi.stubGlobal("fetch", fetchMock);
+  fetchMock.mockResolvedValue(new Response(png));
 });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 const imageCount = (pdf: Buffer) => (pdf.toString("latin1").match(/\/Subtype \/Image\b/g) ?? []).length;
 const generators = [
   ["inspection", (signature = {}) => generateInspectionReportPDF(buildCustomerSafeReportData({ ...inspection, ...signature }))],
@@ -37,13 +39,25 @@ it.each(generators)("%s PDFs embed a freshly signed durable signature instead of
   const before = structuredClone(signature);
   const signed = await generate(signature);
   expect(storageGet).toHaveBeenCalledWith(signature.techSignatureKey);
-  expect(fetchImageBuffer).toHaveBeenCalledOnce();
-  expect(fetchImageBuffer).toHaveBeenCalledWith("https://storage.example/fresh?signature=new");
+  expect(assertPublicHttpUrl).toHaveBeenCalledWith("https://storage.example/fresh?signature=new");
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(fetchMock).toHaveBeenCalledWith("https://storage.example/fresh?signature=new", { redirect: "error" });
   expect(imageCount(signed)).toBeGreaterThan(imageCount(unsigned));
   expect(signed.toString("latin1")).not.toContain("signatures/permanent.png");
   expect(signature).toEqual(before);
 });
 it.each(generators)("%s PDFs fail when captured signature bytes cannot be rendered", async (_name, generate) => {
-  vi.mocked(fetchImageBuffer).mockResolvedValue(Buffer.from("invalid-image"));
+  fetchMock.mockResolvedValue(new Response("invalid-image"));
   await expect(generate({ techSignatureKey: "signatures/permanent.png" }).then(() => undefined)).rejects.toThrow("signature could not be rendered");
+});
+it.each(generators)("%s PDFs embed signatures at the exact configured private storage endpoint", async (_name, generate) => {
+  vi.stubEnv("S3_ENDPOINT", "http://127.0.0.1:9000");
+  vi.stubEnv("S3_BUCKET", "inspectra-images");
+  const freshUrl = `http://127.0.0.1:9000/inspectra-images/signatures/permanent.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=${"a".repeat(64)}`;
+  vi.mocked(storageGet).mockResolvedValue({ key: "signatures/permanent.png", url: freshUrl });
+  const unsigned = await generate();
+  const signed = await generate({ techSignatureKey: "signatures/permanent.png", techSignatureUrl: "http://127.0.0.1:9000/stale.png" });
+  expect(fetchMock).toHaveBeenCalledWith(freshUrl, { redirect: "error" });
+  expect(assertPublicHttpUrl).not.toHaveBeenCalled();
+  expect(imageCount(signed)).toBeGreaterThan(imageCount(unsigned));
 });
