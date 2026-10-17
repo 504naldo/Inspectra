@@ -598,6 +598,23 @@ status showed the same October 2 deployment online, one running replica and no
 pending rollout. No approved staging target, database/provider test identity or
 attached Android device was available for the remaining external checks.
 
+### Isolated staging discovery and plan — 2026-10-16 (America/Vancouver)
+
+At the owner's request, read-only discovery inspected **21 accessible Railway
+projects, 22 environments and 30 services**, including repository sources.
+Only the existing production service uses `504naldo/Inspectra`; no isolated
+Inspectra staging deployment was found. The
+[staging setup plan](runbooks/INSPECTRA_STAGING_PLAN.md) records fresh-resource
+isolation, current official costs, exact approvals, secure credential names,
+synthetic-only data and physical Android acceptance steps. Provisioning remains
+unapproved and unperformed. No production secrets or customer data were copied.
+
+The plan explicitly retains native routing/OAuth and provider test-safety gates.
+Production backup/restore/PITR verification and historical inspection/financial
+reconciliation stay **open**. Neither a synthetic staging run nor this plan is
+evidence that those production requirements passed. No production merge/deploy,
+setting change, database action or provider call is part of this planning work.
+
 ### Remaining release work after automated acceptance
 
 The following work stays open. Passing disposable tests does not supply the

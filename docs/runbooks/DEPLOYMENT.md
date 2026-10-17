@@ -22,6 +22,12 @@ backfills. Never expose database credentials in logs, PRs, or docs.
 
 ## Enable CI gates before release
 
+For proposed isolated acceptance infrastructure, use the
+[Inspectra staging setup plan](INSPECTRA_STAGING_PLAN.md). It requires resource,
+spend, data and stop/cleanup approvals before provisioning, then separate
+staging-deployment/provider/device approvals. Synthetic staging checks leave
+production backup/restore verification and historical reconciliation open.
+
 As observed on 2026-10-17, GitHub `main` was unprotected and Railway's source
 had `checkSuites=false`. The audit fixes were tested on a separate branch; these
 settings have not been changed. An authorized repository/service operator must
