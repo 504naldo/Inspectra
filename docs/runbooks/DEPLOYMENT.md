@@ -120,6 +120,7 @@ automation setting was changed in the continuation.
 
 Payments require a stable client request UUID and record cumulative receipts
 under an invoice lock. Existing accounting history is not backfilled. Resolve
-historical reconciliation and batch Sage concurrency before claiming full
-accounting acceptance. Required built-server CI smoke runs without a database
+historical reconciliation and live Sage export acceptance before claiming full
+accounting acceptance. Disposable MySQL tests cover batch concurrency and rollback.
+Required built-server CI smoke runs without a database
 or provider credentials; it proves boot/health/UI only, not live integrations.

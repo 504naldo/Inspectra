@@ -14,7 +14,7 @@ import fetch from "node-fetch";
 import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
 import { assertSiteCompany, assertEntityCompany, getAttachmentOwnerCompanyId, } from "../tenantGuards";
 import { safeXlsxRead } from "../_core/safeXlsxRead";
-import { importWorkbookForSite } from "../services/workbookImport";
+import { classifyWorkbookSheets, importWorkbookForSite } from "../services/workbookImport";
 
 export const filesRouter = router({
   // Upload file to S3 and return URL
@@ -172,9 +172,21 @@ export const filesRouter = router({
         // Device sheet indicators
         const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #",];
         const matchCount = deviceKeywords.filter(kw => allText.includes(kw)).length;
+
+        // Canonical imports also accept named device sheets with ordinary
+        // Location/Tag/Type headers. Require a header signal as well as the
+        // recognized name so a title alone cannot classify unrelated data.
+        const namedDeviceSheet = classifyWorkbookSheets([sheetName])
+          .some(({ importType }) => ["fireExtinguishers", "emergencyLights", "fireAlarmDevices"].includes(importType));
+        const deviceHeaders = ["device", "device type", "location", "serial", "serial number", "unit #"];
+        const hasDeviceHeader = first10Rows.some(row => row.filter(cell => safeTrim(cell)).length >= 2
+          && row.some(cell => deviceHeaders.includes(safeTrim(safeToLower(cell)))));
         
         if (matchCount >= 2) {
           return { isDevice: true, reason: `Matched ${matchCount} device keywords`, };
+        }
+        if (namedDeviceSheet && hasDeviceHeader) {
+          return { isDevice: true, reason: "Recognized device sheet name and header" };
         }
         
         return { isDevice: false, reason: "Not enough device keywords" };

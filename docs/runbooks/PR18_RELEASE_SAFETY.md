@@ -1,7 +1,8 @@
 # PR #18 migration and recovery procedure
 
 Current continuation: 2026-10-17, based on merged PR #18 (`179e8c8`). The
-additional audit fixes remain local. Main auto-deploys on merge before CI
+additional audit fixes are published on the separate, unmerged
+`codex/audit-acceptance-20261017` branch. Main auto-deploys on merge before CI
 completes. Release requires separate authorization, verified backups and access;
 no live migration or deployment was performed during this continuation.
 
@@ -165,7 +166,7 @@ device validation.
 
 ## Validation evidence
 
-See the single [readiness register](../PRODUCTION_READINESS.md#pr-18-release-safety-follow-up--2026-10-03)
+See the single [readiness register](../PRODUCTION_READINESS.md#final-hosted-acceptance--2026-10-17)
 for passed, failed/resolved, skipped and unrun checks and independent review.
 
 ## Repeat isolated browser and backup checks

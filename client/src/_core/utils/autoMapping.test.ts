@@ -87,13 +87,7 @@ describe('autoMapColumns', () => {
     expect(mappedFields.length).toBe(1);
   });
   
-  // PRE-EXISTING FAILURE (skipped 2026-06-30): this case asserts the 'Unit #'
-  // header maps to `barcode`, but autoMapColumns currently leaves it unmapped.
-  // It surfaced only when client tests were wired into the vitest runner
-  // (vitest.config.ts) during the routing-hardening pass — it is not a
-  // regression from that change. Tracked for separate triage of the auto-mapper
-  // synonym list; skipped here to keep the suite green without hiding it.
-  it.skip('should handle real-world Fire-Pro template headers', () => {
+  it('should map supported Fire-Pro headers without guessing an ambiguous unit number', () => {
     const headers = [
       'Unit #',
       'Location',
@@ -111,9 +105,21 @@ describe('autoMapColumns', () => {
     expect(result.mapping.manufacturer).toBe('Mfr');
     expect(result.mapping.model).toBe('Model');
     expect(result.mapping.serialNumber).toBe('Serial #');
-    expect(result.mapping.barcode).toBe('Unit #');
+    // Unit numbers can identify a suite/location rather than an asset barcode.
+    // Preserve that ambiguity instead of inventing a device identity.
+    expect(result.mapping.barcode).toBeUndefined();
+    expect(Object.values(result.mapping)).not.toContain('Unit #');
     expect(result.mapping.notes).toBe('Notes');
     expect(result.totalMapped).toBeGreaterThanOrEqual(6);
+  });
+
+  it('should prefer an explicit barcode header while leaving unit numbers unmapped', () => {
+    const result = autoMapColumns(['Unit #', 'Location', 'Type/Size', 'Barcode'], DEVICE_FIELDS);
+
+    expect(result.mapping.barcode).toBe('Barcode');
+    expect(result.mapping.location).toBe('Location');
+    expect(result.mapping.deviceType).toBe('Type/Size');
+    expect(Object.values(result.mapping)).not.toContain('Unit #');
   });
   
   it('should handle Individual device record headers', () => {

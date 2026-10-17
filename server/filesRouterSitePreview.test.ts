@@ -39,6 +39,25 @@ describe("site worksheet previews", () => {
     const workbook = XLSX.utils.book_new();
     const rows = format.startsWith("two") ? fields : fields.map(([label, value]) => [label, "", value]);
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), "Site Information");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ["Location", "Tag", "Type"],
+      ...Array.from({ length: 12 }, (_, index) => [`Location ${index + 1}`, `EXT-${index + 1}`, "ABC 10lb"]),
+    ]), "Fire Extinguishers");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ["Location", "Tag", "Type"],
+      ...Array.from({ length: 8 }, (_, index) => [`Location ${index + 1}`, `EL-${index + 1}`, "Emergency Light"]),
+    ]), "Emergency Lights");
+    for (const name of ["Labour Rates", "Summary"]) {
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+        ["Device Type", "Location"], ["Synthetic", "Synthetic"],
+      ]), name);
+    }
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ["Description", "Value"], ["Archive metadata", "Synthetic"],
+    ]), "Extinguisher Devices Archive");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ["Location", "Time"], ["Synthetic airport", "09:00"],
+    ]), "Flight Schedule");
     const bytes = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
     vi.mocked(fetch).mockResolvedValue({ ok: true, buffer: async () => bytes } as any);
 
@@ -47,6 +66,14 @@ describe("site worksheet previews", () => {
     expect(preview).toMatchObject({ hasSiteSheet: true, sitePreview: {
       name: "Synthetic Site", address: "456 Test Avenue", city: "Synthetic City",
       contactName: "Synthetic Contact", contactPhone: "555-0100",
-    } });
+    }, counts: { extinguishers: 12, emergencyLights: 8 }, totalRows: 20 });
+    expect(preview.availableSheets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Fire Extinguishers", isDevice: true }),
+      expect.objectContaining({ name: "Emergency Lights", isDevice: true }),
+      expect.objectContaining({ name: "Labour Rates", isDevice: false }),
+      expect.objectContaining({ name: "Summary", isDevice: false }),
+      expect.objectContaining({ name: "Extinguisher Devices Archive", isDevice: false }),
+      expect.objectContaining({ name: "Flight Schedule", isDevice: false }),
+    ]));
   });
 });

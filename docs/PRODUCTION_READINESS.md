@@ -8,12 +8,14 @@ Severity: P0 = blocks release / data-integrity / security · P1 = important · P
 Status: open · in-progress · fixed · accepted-risk · wont-do.
 
 **Current continuation (2026-10-17):** local checkout includes merged PR #18
-(`179e8c8`). The October 2–3 draft/publication statements below are historical
-evidence, not the current merge status. Deployment, live schema and release
-acceptance are not established by the local checks. Read-only Railway inspection
-on October 17 confirmed the latest attempted deployment failed on missing
-`jobs.googleCalendarOwnerId`; see the final continuation and deployment diagnosis
-below. The October 16–17 continuations record current fixes and verification limits.
+(`179e8c8`) and further fixes published on the separate, unmerged
+`codex/audit-acceptance-20261017` branch. Read the final hosted acceptance and
+remaining-release-work sections below for current status; earlier tables and
+"unrun" statements preserve the evidence available at each earlier commit.
+Production still serves the successful October 2 deployment. The October 4
+attempt failed on missing `jobs.googleCalendarOwnerId`; the audit branch has not
+replaced it. Hosted disposable checks do not establish live schema, production
+backup/PITR, historical evidence, provider or device acceptance.
 
 | ID | Issue | Sev | Area | Status | Evidence | Fix commit | Validation | Owner | Next action |
 |----|-------|-----|------|--------|----------|-----------|------------|-------|-------------|
@@ -87,7 +89,7 @@ These can't be settled by static analysis or the CI suite — they need a real d
 - Don't create a new root `*_AUDIT.md` for ongoing work — record it here.
 - Root audit files remain for history; see `docs/audits/README.md`.
 
-## Uploaded audit remediation — 2026-10-02 (draft branch)
+## Uploaded audit remediation — 2026-10-02 (historical draft status)
 
 Source: owner's `Inspectra_Audit_Report_2026-10-02.docx`, findings F01–F23,
 static baseline `7c4e5df`. Before editing, clean main was verified as
@@ -433,6 +435,17 @@ seal cases and ten imports passed. One real Site-preview defect remained:
 two-column key/value rows were skipped despite the parser's column-two fallback.
 The row guard is corrected and two-/three-column regressions pass locally; real-storage rerun remains pending.
 
+Run `38997667071` subsequently passed **2,312 tests** (19 explicit skips), all
+eight browser scenarios, payment/current-signature backup recovery and the
+Android build. Real storage passed **15/16**, including all five authenticated
+upload/signature cases. The corrected Site fields passed, exposing a second
+preview defect: an ordinary `Location`/`Tag`/`Type` extinguisher sheet accepted by
+execution was omitted from preview counts. Preview detection now accepts a
+recognized device-sheet name plus an actual header signal, retaining pricing and
+summary exclusions. The original integration fixture is unchanged; focused
+regressions cover its 12 extinguisher/8 light counts and unrelated-sheet denial.
+Final hosted verification follows below.
+
 ### Remaining signature durability implementation
 
 The smaller F18 follow-up is now implemented locally. Newly captured technician
@@ -466,3 +479,22 @@ upstream artifact and independently verified digest supplied locally. Then pin
 the official artifact, verify its content/version and lockfile integrity, and run
 the worker, workbook/import and advisory regressions plus frozen installation,
 typecheck and build. An unverified mirror or version-only lockfile edit is not a fix.
+
+### Remaining release work after automated acceptance
+
+The following work stays open. Passing disposable tests does not supply the
+missing production evidence or authorize a release.
+
+| Item | Concrete prerequisite |
+|---|---|
+| SheetJS advisories (F22) | Obtain and authenticate the official patched artifact, pin it with lockfile integrity, then repeat the import/security and installation checks described above. Installed 0.18.5 is still vulnerable. |
+| Live schema and financial recovery (F07/F15/F23) | Verify a restorable production backup/PITR and source accounting reconciliation; inspect the actual migration history, invoice-number duplicates and all six payment guards; rehearse the reviewed schema path on a sanitized restore before a maintenance window. Startup performs no migration or backfill. |
+| Historical inspection/report evidence (F10/F11/F23) | An inspection owner must review representative original reports, credentials, template/device captures and legacy seals. Preserve unproven records and recover original evidence; today's master data cannot establish what was inspected. |
+| Credential exposure and live integrations (F01/F02/F19/F21) | Complete the authorized incident/token review, OAuth/invitation, Google Calendar ownership, email and Sage acceptance using the intended accounts. For uncertain sends, reconcile the original UUID/payload against provider records before any intentional replacement. Synthetic providers establish no live delivery result. |
+| Android and offline field acceptance (F12/F13/F14/F19) | Run the field runbook on actual hardware, including camera/haptics, process interruptions, storage/quota, account changes, service-worker updates and native send recovery. A desktop browser harness and an unlaunched debug APK do not establish these results. |
+| Legacy signatures and external images (F18) | Recover original evidence when an expired historical signature has no durable key. Operator-supplied logos still require a stable external host. Signature PDF fetching keeps public-host SSRF checks; private custom storage endpoints need separate supported-path acceptance. |
+| Release gating | Main is unprotected and Railway follows main with `checkSuites=false`. Establish the intended protection/check policy and complete the maintenance runbook before merging. No protection, deployment or production-setting change was made here. |
+
+No production SQL, historical conversion, provider mutation, token rotation, real
+outbound message, APK launch, main merge or deployment was performed in this
+continuation. These are explicit remaining prerequisites, not completed fixes.
