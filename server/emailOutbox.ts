@@ -49,7 +49,7 @@ export async function sendEmailOnce(operation: {
       message: "Send operation ID belongs to different input or account",
     });
   if (!reserved) {
-    if (row.status === "accepted" && row.providerMessageId)
+    if (row.status === "accepted" && typeof row.providerMessageId === "string" && row.providerMessageId.trim())
       return { id: row.providerMessageId, acceptance: "accepted" as const };
     throw new TRPCError({
       code: "CONFLICT",
@@ -61,7 +61,8 @@ export async function sendEmailOnce(operation: {
   }
   try {
     const response = await send();
-    if (!response.id) throw new Error("Provider response has no message ID");
+    if (typeof response?.id !== "string" || !response.id.trim())
+      throw new Error("Provider response has no message ID");
     await database
       .update(emailOutbox)
       .set({ status: "accepted", providerMessageId: response.id })

@@ -1,12 +1,4 @@
-import { drizzle } from "drizzle-orm/mysql2";
-import { ENV } from './_core/env';
-import mysql from 'mysql2/promise';
-
-const connection = mysql.createPool({
-  uri: ENV.databaseUrl,
-});
-
-const db = drizzle(connection);
+import { getDb } from "./db/client";
 import {
   sprinklerInspections,
   sprinklerSystems,
@@ -17,33 +9,44 @@ import {
   type InsertSprinklerChecklistItem,
   type InsertSprinklerDevice,
 } from "../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+
+async function requireDb() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db;
+}
 
 // ============================================
 // SPRINKLER INSPECTIONS
 // ============================================
 
 export async function createSprinklerInspection(data: InsertSprinklerInspection) {
+  const db = await requireDb();
   const [inspection] = await db.insert(sprinklerInspections).values(data);
   return inspection;
 }
 
 export async function getSprinklerInspectionById(id: number) {
+  const db = await requireDb();
   const [inspection] = await db.select().from(sprinklerInspections).where(eq(sprinklerInspections.id, id));
   return inspection;
 }
 
 export async function getSprinklerInspectionByJobId(jobId: number) {
+  const db = await requireDb();
   const [inspection] = await db.select().from(sprinklerInspections).where(eq(sprinklerInspections.jobId, jobId));
   return inspection;
 }
 
 export async function updateSprinklerInspection(id: number, data: Partial<InsertSprinklerInspection>) {
+  const db = await requireDb();
   await db.update(sprinklerInspections).set(data).where(eq(sprinklerInspections.id, id));
   return getSprinklerInspectionById(id);
 }
 
 export async function finalizeSprinklerInspection(id: number, userId: number) {
+  const db = await requireDb();
   await db.update(sprinklerInspections).set({
     status: 'finalized',
     finalizedAt: new Date(),
@@ -57,29 +60,35 @@ export async function finalizeSprinklerInspection(id: number, userId: number) {
 // ============================================
 
 export async function createSprinklerSystem(data: InsertSprinklerSystem) {
+  const db = await requireDb();
   const [system] = await db.insert(sprinklerSystems).values(data);
   return system;
 }
 
 export async function getSprinklerSystemsByInspectionId(inspectionId: number) {
+  const db = await requireDb();
   return db.select().from(sprinklerSystems).where(eq(sprinklerSystems.inspectionId, inspectionId));
 }
 
 export async function getSprinklerSystemById(id: number) {
+  const db = await requireDb();
   const [system] = await db.select().from(sprinklerSystems).where(eq(sprinklerSystems.id, id));
   return system;
 }
 
 export async function updateSprinklerSystem(id: number, data: Partial<InsertSprinklerSystem>) {
+  const db = await requireDb();
   await db.update(sprinklerSystems).set(data).where(eq(sprinklerSystems.id, id));
   return getSprinklerSystemById(id);
 }
 
 export async function deleteSprinklerSystem(id: number) {
+  const db = await requireDb();
   await db.delete(sprinklerSystems).where(eq(sprinklerSystems.id, id));
 }
 
 export async function upsertSprinklerSystems(inspectionId: number, systems: Partial<InsertSprinklerSystem>[]) {
+  const db = await requireDb();
   // Delete existing systems for this inspection
   await db.delete(sprinklerSystems).where(eq(sprinklerSystems.inspectionId, inspectionId));
   
@@ -97,29 +106,35 @@ export async function upsertSprinklerSystems(inspectionId: number, systems: Part
 // ============================================
 
 export async function createSprinklerChecklistItem(data: InsertSprinklerChecklistItem) {
+  const db = await requireDb();
   const [item] = await db.insert(sprinklerChecklistItems).values(data);
   return item;
 }
 
 export async function getSprinklerChecklistItemsByInspectionId(inspectionId: number) {
+  const db = await requireDb();
   return db.select().from(sprinklerChecklistItems).where(eq(sprinklerChecklistItems.inspectionId, inspectionId));
 }
 
 export async function getSprinklerChecklistItemById(id: number) {
+  const db = await requireDb();
   const [item] = await db.select().from(sprinklerChecklistItems).where(eq(sprinklerChecklistItems.id, id));
   return item;
 }
 
 export async function updateSprinklerChecklistItem(id: number, data: Partial<InsertSprinklerChecklistItem>) {
+  const db = await requireDb();
   await db.update(sprinklerChecklistItems).set(data).where(eq(sprinklerChecklistItems.id, id));
   return getSprinklerChecklistItemById(id);
 }
 
 export async function deleteSprinklerChecklistItem(id: number) {
+  const db = await requireDb();
   await db.delete(sprinklerChecklistItems).where(eq(sprinklerChecklistItems.id, id));
 }
 
 export async function upsertSprinklerChecklistItems(inspectionId: number, items: Partial<InsertSprinklerChecklistItem>[]) {
+  const db = await requireDb();
   // Delete existing items for this inspection
   await db.delete(sprinklerChecklistItems).where(eq(sprinklerChecklistItems.inspectionId, inspectionId));
   
@@ -137,29 +152,35 @@ export async function upsertSprinklerChecklistItems(inspectionId: number, items:
 // ============================================
 
 export async function createSprinklerDevice(data: InsertSprinklerDevice) {
+  const db = await requireDb();
   const [device] = await db.insert(sprinklerDevices).values(data);
   return device;
 }
 
 export async function getSprinklerDevicesByInspectionId(inspectionId: number) {
+  const db = await requireDb();
   return db.select().from(sprinklerDevices).where(eq(sprinklerDevices.inspectionId, inspectionId));
 }
 
 export async function getSprinklerDeviceById(id: number) {
+  const db = await requireDb();
   const [device] = await db.select().from(sprinklerDevices).where(eq(sprinklerDevices.id, id));
   return device;
 }
 
 export async function updateSprinklerDevice(id: number, data: Partial<InsertSprinklerDevice>) {
+  const db = await requireDb();
   await db.update(sprinklerDevices).set(data).where(eq(sprinklerDevices.id, id));
   return getSprinklerDeviceById(id);
 }
 
 export async function deleteSprinklerDevice(id: number) {
+  const db = await requireDb();
   await db.delete(sprinklerDevices).where(eq(sprinklerDevices.id, id));
 }
 
 export async function upsertSprinklerDevices(inspectionId: number, devices: Partial<InsertSprinklerDevice>[]) {
+  const db = await requireDb();
   // Delete existing devices for this inspection
   await db.delete(sprinklerDevices).where(eq(sprinklerDevices.inspectionId, inspectionId));
   

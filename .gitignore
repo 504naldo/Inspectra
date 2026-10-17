@@ -109,6 +109,8 @@ temp/
 
 # Dev/extraction scripts (Python)
 /*.py
+__pycache__/
+*.py[cod]
 
 # Extracted data dumps
 /complete_devices.json

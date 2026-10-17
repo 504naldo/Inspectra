@@ -2,7 +2,8 @@ import { router, protectedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as sprinklerDb from "./db.sprinkler";
-import { assertJobCompany, assertJobNotFinalized } from "./db";
+import { assertJobCompany, assertJobNotFinalized, withAudit } from "./db";
+import type { TrpcContext } from "./_core/context";
 
 // Role-based procedure helpers
 const technicianProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -28,38 +29,44 @@ async function assertInspectionCompany(inspectionId: number, companyId: number) 
   return inspection;
 }
 
-// Same as assertInspectionCompany, plus blocks writes once the parent job is finalized.
-async function assertInspectionMutable(inspectionId: number, companyId: number) {
+// Resolve indirect parents before the transaction: its first read must lock the
+// job, so waiting for a concurrent seal cannot establish a stale RR snapshot.
+async function withMutableInspection<T>(
+  ctx: TrpcContext,
+  procedure: string,
+  inspectionId: number,
+  fn: () => Promise<T>,
+) {
+  const companyId = ctx.user!.companyId!;
   const inspection = await assertInspectionCompany(inspectionId, companyId);
-  await assertJobNotFinalized(inspection.jobId);
-  return inspection;
+  return withAudit(ctx, procedure, async tx => {
+    await assertJobNotFinalized(inspection.jobId, tx);
+    const current = await assertInspectionCompany(inspectionId, companyId);
+    if (current.jobId !== inspection.jobId) {
+      throw new TRPCError({ code: "CONFLICT", message: "Inspection parent changed; retry the operation" });
+    }
+    return fn();
+  });
 }
 
-// Same as assertInspectionCompany, but for child records (systems/checklist items/devices)
-// addressed only by their own id — resolves inspectionId via the provided lookup first.
-async function assertChildCompany<T extends { inspectionId: number }>(
+async function withMutableChild<T extends { inspectionId: number }, R>(
+  ctx: TrpcContext,
+  procedure: string,
   getById: (id: number) => Promise<T | undefined>,
   id: number,
-  companyId: number,
-  notFoundLabel: string
+  notFoundLabel: string,
+  fn: () => Promise<R>,
 ) {
   const row = await getById(id);
   if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `${notFoundLabel} ${id} not found` });
-  await assertInspectionCompany(row.inspectionId, companyId);
-  return row;
-}
-
-// Same as assertChildCompany, plus blocks writes once the parent job is finalized.
-async function assertChildMutable<T extends { inspectionId: number }>(
-  getById: (id: number) => Promise<T | undefined>,
-  id: number,
-  companyId: number,
-  notFoundLabel: string
-) {
-  const row = await getById(id);
-  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `${notFoundLabel} ${id} not found` });
-  await assertInspectionMutable(row.inspectionId, companyId);
-  return row;
+  return withMutableInspection(ctx, procedure, row.inspectionId, async () => {
+    const current = await getById(id);
+    if (!current) throw new TRPCError({ code: "NOT_FOUND", message: `${notFoundLabel} ${id} not found` });
+    if (current.inspectionId !== row.inspectionId) {
+      throw new TRPCError({ code: "CONFLICT", message: "Inspection parent changed; retry the operation" });
+    }
+    return fn();
+  });
 }
 
 export const sprinklerRouter = router({
@@ -73,8 +80,11 @@ export const sprinklerRouter = router({
     buildingId: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
     await assertJobCompany(input.jobId, ctx.user.companyId!);
-    await assertJobNotFinalized(input.jobId);
-    return sprinklerDb.createSprinklerInspection(input as any);
+    return withAudit(ctx, "sprinkler.createInspection", async tx => {
+      await assertJobNotFinalized(input.jobId, tx);
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      return sprinklerDb.createSprinklerInspection(input as any);
+    });
   }),
 
   getInspection: technicianProcedure.input(z.object({
@@ -100,26 +110,25 @@ export const sprinklerRouter = router({
     inspectionDate: z.date().optional(),
     buildingId: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
-    await assertInspectionMutable(input.id, ctx.user.companyId!);
-    const { id, ...data } = input;
-    return sprinklerDb.updateSprinklerInspection(id, data);
+    return withMutableInspection(ctx, "sprinkler.updateInspection", input.id, async () => {
+      const { id, ...data } = input;
+      return sprinklerDb.updateSprinklerInspection(id, data);
+    });
   }),
 
   finalizeInspection: technicianProcedure.input(z.object({
     id: z.number(),
   })).mutation(async ({ input, ctx }) => {
-    await assertInspectionCompany(input.id, ctx.user.companyId!);
-
-    // Validate before finalizing
-    const validation = await sprinklerDb.validateSprinklerInspectionForFinalize(input.id);
-    if (!validation.valid) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: `Cannot finalize: ${validation.errors.join(', ')}`
-      });
-    }
-
-    return sprinklerDb.finalizeSprinklerInspection(input.id, ctx.user.id);
+    return withMutableInspection(ctx, "sprinkler.finalizeInspection", input.id, async () => {
+      const validation = await sprinklerDb.validateSprinklerInspectionForFinalize(input.id);
+      if (!validation.valid) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Cannot finalize: ${validation.errors.join(', ')}`
+        });
+      }
+      return sprinklerDb.finalizeSprinklerInspection(input.id, ctx.user.id);
+    });
   }),
   
   // ============================================
@@ -167,8 +176,8 @@ export const sprinklerRouter = router({
       notes: z.string().optional(),
     })),
   })).mutation(async ({ input, ctx }) => {
-    await assertInspectionMutable(input.inspectionId, ctx.user.companyId!);
-    return sprinklerDb.upsertSprinklerSystems(input.inspectionId, input.systems);
+    return withMutableInspection(ctx, "sprinkler.upsertSystems", input.inspectionId,
+      () => sprinklerDb.upsertSprinklerSystems(input.inspectionId, input.systems));
   }),
 
   // ============================================
@@ -197,8 +206,8 @@ export const sprinklerRouter = router({
       textValue: z.string().optional(),
     })),
   })).mutation(async ({ input, ctx }) => {
-    await assertInspectionMutable(input.inspectionId, ctx.user.companyId!);
-    return sprinklerDb.upsertSprinklerChecklistItems(input.inspectionId, input.items);
+    return withMutableInspection(ctx, "sprinkler.upsertChecklistItems", input.inspectionId,
+      () => sprinklerDb.upsertSprinklerChecklistItems(input.inspectionId, input.items));
   }),
 
   updateChecklistItem: technicianProcedure.input(z.object({
@@ -210,9 +219,11 @@ export const sprinklerRouter = router({
     tempValue: z.string().optional(),
     textValue: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
-    await assertChildMutable(sprinklerDb.getSprinklerChecklistItemById, input.id, ctx.user.companyId!, "Sprinkler checklist item");
-    const { id, ...data } = input;
-    return sprinklerDb.updateSprinklerChecklistItem(id, data);
+    return withMutableChild(ctx, "sprinkler.updateChecklistItem", sprinklerDb.getSprinklerChecklistItemById,
+      input.id, "Sprinkler checklist item", async () => {
+        const { id, ...data } = input;
+        return sprinklerDb.updateSprinklerChecklistItem(id, data);
+      });
   }),
 
   // ============================================
@@ -244,8 +255,8 @@ export const sprinklerRouter = router({
       remarks: z.string().optional(),
     })),
   })).mutation(async ({ input, ctx }) => {
-    await assertInspectionMutable(input.inspectionId, ctx.user.companyId!);
-    return sprinklerDb.upsertSprinklerDevices(input.inspectionId, input.devices);
+    return withMutableInspection(ctx, "sprinkler.upsertDevices", input.inspectionId,
+      () => sprinklerDb.upsertSprinklerDevices(input.inspectionId, input.devices));
   }),
   
   updateDevice: technicianProcedure.input(z.object({
@@ -263,9 +274,11 @@ export const sprinklerRouter = router({
     checkF: z.boolean().optional(),
     remarks: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
-    await assertChildMutable(sprinklerDb.getSprinklerDeviceById, input.id, ctx.user.companyId!, "Sprinkler device");
-    const { id, ...data } = input;
-    return sprinklerDb.updateSprinklerDevice(id, data);
+    return withMutableChild(ctx, "sprinkler.updateDevice", sprinklerDb.getSprinklerDeviceById,
+      input.id, "Sprinkler device", async () => {
+        const { id, ...data } = input;
+        return sprinklerDb.updateSprinklerDevice(id, data);
+      });
   }),
   
   createDevice: technicianProcedure.input(z.object({
@@ -284,15 +297,15 @@ export const sprinklerRouter = router({
     checkF: z.boolean().optional(),
     remarks: z.string().optional(),
   })).mutation(async ({ input, ctx }) => {
-    await assertInspectionMutable(input.inspectionId, ctx.user.companyId!);
-    return sprinklerDb.createSprinklerDevice(input as any);
+    return withMutableInspection(ctx, "sprinkler.createDevice", input.inspectionId,
+      () => sprinklerDb.createSprinklerDevice(input as any));
   }),
 
   deleteDevice: technicianProcedure.input(z.object({
     id: z.number(),
   })).mutation(async ({ input, ctx }) => {
-    await assertChildMutable(sprinklerDb.getSprinklerDeviceById, input.id, ctx.user.companyId!, "Sprinkler device");
-    return sprinklerDb.deleteSprinklerDevice(input.id);
+    return withMutableChild(ctx, "sprinkler.deleteDevice", sprinklerDb.getSprinklerDeviceById,
+      input.id, "Sprinkler device", () => sprinklerDb.deleteSprinklerDevice(input.id));
   }),
   
   // ============================================

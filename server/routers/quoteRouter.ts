@@ -19,12 +19,16 @@ import { router, officeProcedure, publicProcedure, customerProcedure } from "../
 import { sendQuoteApprovedNotification } from "../emailService.js";
 import * as db from "../db.js";
 import { getJobForCompany, getQuoteForCompany } from "../tenantGuards.js";
+import { assertQuoteAvailableForDecision, assertStandardQuoteEditable, assertStandardQuoteStatusTransition, withLockedQuoteDecision, withLockedStandardQuote } from "../standardQuoteIntegrity.js";
 import { ENV } from "../_core/env.js";
 import { storagePut } from "../storage.js";
 import { generateQuotePDF, generateBuildingQuotePDF } from "../quotePdfGenerator.js";
 import { buildCustomerSafeQuoteData, buildCustomerSafeBuildingQuoteData } from "../customerSafeReport.js";
-import type { QuoteLineItem } from "../../drizzle/schema.js";
-import { _createWorkOrderFromQuote } from "./repairQuoteRouter.js";
+import { quotes, type QuoteLineItem } from "../../drizzle/schema.js";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { sendEmailOnce, EmailProviderRejected } from "../emailOutbox.js";
+import { approveRepairQuoteFromCustomer } from "./repairQuoteRouter.js";
+import { approveStandardQuoteFromCustomer } from "../standardQuoteLifecycle.js";
 
 // ── Zod schemas ──────────────────────────────────────────────────────────────
 
@@ -88,6 +92,9 @@ export const quoteRouter = router({
         const defs = await Promise.all(
           input.deficiencyIds.map((id) => db.getDeficiencyById(id))
         );
+        if (defs.some(d => !d || d.jobId !== job.id)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Deficiency does not belong to this quote's job." });
+        }
         items = defs
           .filter((d): d is NonNullable<typeof d> => !!d && d.jobId === input.jobId)
           .map((d) => ({
@@ -98,6 +105,7 @@ export const quoteRouter = router({
           }));
       }
 
+      await assertQuoteDeficiencyLinks(job.id, items);
       const total = items.reduce((sum, i) => sum + i.unitPrice * i.qty, 0);
 
       const quote = await db.createQuote({
@@ -151,20 +159,25 @@ export const quoteRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
-      if (quote.status !== "draft") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Only draft quotes can be edited." });
+      const authorizedQuote = await getQuoteForCompany(input.id, ctx.user.companyId!);
+      if (authorizedQuote.quoteType === "repair") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Edit repair quotes through the repair quote workflow." });
       }
-
-      const items = input.lineItems
-        ? (input.lineItems as QuoteLineItem[])
-        : (quote.lineItems as QuoteLineItem[]);
-      const total = items.reduce((sum, i) => sum + i.unitPrice * i.qty, 0);
-
-      await db.updateQuote(input.id, {
-        lineItems: items,
-        notes: input.notes ?? quote.notes,
-        total: String(total),
+      await withLockedStandardQuote(ctx, "quote.update", input.id, authorizedQuote.companyId, async (quote, tx) => {
+        if (quote.quoteType === "building") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Edit building quotes through the building quote workflow." });
+        }
+        await assertStandardQuoteEditable(quote, tx);
+        const items = input.lineItems
+          ? (input.lineItems as QuoteLineItem[])
+          : quote.lineItems;
+        await assertQuoteDeficiencyLinks(quote.jobId, items);
+        const total = items.reduce((sum, i) => sum + i.unitPrice * i.qty, 0);
+        await tx.update(quotes).set({
+          lineItems: items,
+          notes: input.notes ?? quote.notes,
+          total: String(total),
+        }).where(eq(quotes.id, quote.id));
       });
       return { success: true };
     }),
@@ -177,101 +190,124 @@ export const quoteRouter = router({
       z.object({
         id: z.number().int().positive(),
         customerEmail: z.string().email(),
+        requestId: z.string().uuid(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
-      if (quote.status !== "draft" && quote.status !== "sent") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Quote is already accepted or declined." });
+      const authorizedQuote = await getQuoteForCompany(input.id, ctx.user.companyId!);
+      if (authorizedQuote.quoteType === "repair") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Send repair quotes through the repair quote workflow." });
       }
-
-      const [job, site, customer, company] = await Promise.all([
-        db.getJobById(quote.jobId),
-        db.getSiteById(quote.siteId),
-        db.getCustomerOrgById(quote.customerOrgId),
-        db.getCompanyById(quote.companyId),
-      ]);
-
-      // Generate accept token
-      const acceptToken = crypto.randomBytes(32).toString("hex");
-      const acceptUrl = `${ENV.appUrl}/quote/accept?token=${acceptToken}`;
-
-      // Gather deficiency summaries for the PDF
-      const lineItems = quote.lineItems as QuoteLineItem[];
-      const defIds = lineItems.map((i) => i.deficiencyId).filter((id): id is number => id !== null);
-      const defDetails = await Promise.all(defIds.map((id) => db.getDeficiencyById(id)));
-
-      // Generate PDF
-      const pdfBuffer = await generateQuotePDF(buildCustomerSafeQuoteData({
-        quoteId: quote.id,
-        jobNumber: job?.jobNumber ?? `JOB-${quote.jobId}`,
-        siteName: site?.name ?? "Unknown Site",
-        siteAddress: site?.address ?? "",
-        customerName: customer?.name ?? "Customer",
-        customerEmail: input.customerEmail,
-        companyName: company?.name ?? "EWF",
-        createdAt: quote.createdAt,
-        lineItems: lineItems,
-        total: parseFloat(String(quote.total)),
-        notes: quote.notes,
-        acceptUrl,
-        deficiencySummaries: defDetails
-          .filter((d): d is NonNullable<typeof d> => !!d)
-          .map((d) => ({
-            title: d.title,
-            severity: d.severity,
-            description: d.observedIssue ?? d.description,
-            location: null,
-          })),
-      }));
-
-      // Upload to S3
-      const pdfKey = `quotes/${quote.companyId}/${quote.id}/quote-${quote.id}.pdf`;
-      const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
-
-      // Send email to customer via Resend
-      if (ENV.resendApiKey) {
-        const emailBody = buildQuoteEmailHtml({
-          customerName: customer?.name ?? "Customer",
-          siteName: site?.name ?? "",
-          jobNumber: job?.jobNumber ?? "",
-          total: parseFloat(String(quote.total)),
-          acceptUrl,
-          pdfUrl,
-        });
-
-        await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${ENV.resendApiKey}`,
-          },
-          body: JSON.stringify({
-            from: `${company?.name ?? "Inspectra"} <noreply@inspectrafire.ca>`,
-            to: [input.customerEmail],
-            subject: `Deficiency Repair Quote — ${site?.name ?? ""} (${job?.jobNumber ?? ""})`,
-            html: emailBody,
-            attachments: [
-              {
-                filename: `quote-${quote.id}.pdf`,
-                content: pdfBuffer.toString("base64"),
-              },
-            ],
-          }),
-        });
+      if (authorizedQuote.quoteType === "building") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Use the building quote PDF and delivery workflow." });
       }
-
-      // Persist: token, expiry (90 days), pdfUrl, sentAt, status→sent
-      const acceptTokenExpiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-      await db.updateQuote(quote.id, {
-        acceptToken,
-        acceptTokenExpiresAt,
-        pdfUrl,
-        sentAt: new Date(),
-        status: "sent",
+      if (!ENV.resendApiKey) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Email delivery is not configured" });
+      }
+      let pdfUrl = authorizedQuote.pdfUrl;
+      const result = await sendEmailOnce({
+        requestId: input.requestId,
+        companyId: authorizedQuote.companyId,
+        userId: ctx.user.id,
+        entityType: "quote",
+        entityId: authorizedQuote.id,
+        provider: "resend",
+        payload: input,
+        send: async () => {
+          const database = await db.getDb();
+          if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+          // Initialize the link under a short lock. Concurrent explicit sends
+          // share a live token, and receipt retries never replace the emailed link.
+          const quote = await database.transaction(async tx => {
+            const [current] = await tx.select().from(quotes)
+              .where(and(eq(quotes.id, authorizedQuote.id), eq(quotes.companyId, authorizedQuote.companyId)))
+              .for("update");
+            if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Quote not found" });
+            if (current.quoteType === "repair" || current.quoteType === "building" || !["draft", "sent"].includes(current.status)) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "Quote is already accepted or declined, or cannot be sent through this workflow." });
+            }
+            await assertQuoteDeficiencyLinks(current.jobId, current.lineItems);
+            // Seal before PDF/storage/provider work. Draft status is not evidence
+            // that no customer has received this scope: the final state write may
+            // fail, or the provider response may be lost. Content edits take this
+            // same parent lock, so they either finish first or see the durable seal.
+            const finalizedAt = current.finalizedAt ?? new Date();
+            const liveToken = current.acceptToken && (!current.acceptTokenExpiresAt || new Date(current.acceptTokenExpiresAt) > new Date());
+            const acceptToken = liveToken ? current.acceptToken! : crypto.randomBytes(32).toString("hex");
+            const acceptTokenExpiresAt = liveToken ? current.acceptTokenExpiresAt : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+            await tx.update(quotes).set({ finalizedAt, acceptToken, acceptTokenExpiresAt }).where(eq(quotes.id, current.id));
+            return { ...current, finalizedAt, acceptToken, acceptTokenExpiresAt };
+          });
+          const acceptUrl = `${ENV.appUrl}/quote/accept?token=${quote.acceptToken}`;
+          const [job, site, customer, company] = await Promise.all([
+            db.getJobById(quote.jobId), db.getSiteById(quote.siteId),
+            db.getCustomerOrgById(quote.customerOrgId), db.getCompanyById(quote.companyId),
+          ]);
+          const lineItems = quote.lineItems as QuoteLineItem[];
+          const defIds = lineItems.map(i => i.deficiencyId).filter((id): id is number => id !== null);
+          const defDetails = await Promise.all(defIds.map(id => db.getDeficiencyById(id)));
+          const pdfBuffer = await generateQuotePDF(buildCustomerSafeQuoteData({
+            quoteId: quote.id,
+            jobNumber: job?.jobNumber ?? `JOB-${quote.jobId}`,
+            siteName: site?.name ?? "Unknown Site",
+            siteAddress: site?.address ?? "",
+            customerName: customer?.name ?? "Customer",
+            customerEmail: input.customerEmail,
+            companyName: company?.name ?? "EWF",
+            createdAt: quote.createdAt,
+            lineItems,
+            total: parseFloat(String(quote.total)),
+            notes: quote.notes,
+            acceptUrl,
+            deficiencySummaries: defDetails
+              .filter((d): d is NonNullable<typeof d> => !!d)
+              .map(d => ({ title: d.title, severity: d.severity, description: d.observedIssue ?? d.description, location: null })),
+          }));
+          const pdfKey = `quotes/${quote.companyId}/${quote.id}/quote-${quote.id}.pdf`;
+          ({ url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf"));
+          // Save preparation separately from provider acceptance. A retry after
+          // the final state update fails can return the original PDF and token.
+          await db.updateQuote(quote.id, { pdfUrl });
+          const html = buildQuoteEmailHtml({
+            customerName: customer?.name ?? "Customer", siteName: site?.name ?? "",
+            jobNumber: job?.jobNumber ?? "", total: parseFloat(String(quote.total)),
+            acceptUrl, pdfUrl: pdfUrl!,
+          });
+          const response = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${ENV.resendApiKey}`,
+              "Idempotency-Key": input.requestId,
+            },
+            body: JSON.stringify({
+              from: `${company?.name ?? "Inspectra"} <noreply@inspectrafire.ca>`,
+              to: [input.customerEmail],
+              subject: `Deficiency Repair Quote — ${site?.name ?? ""} (${job?.jobNumber ?? ""})`,
+              html,
+              attachments: [{ filename: `quote-${quote.id}.pdf`, content: pdfBuffer.toString("base64") }],
+            }),
+          });
+          if (!response.ok) {
+            if ([401, 403, 429].includes(response.status)) {
+              throw new EmailProviderRejected(`Provider rejected the quote (${response.status})`);
+            }
+            throw new Error(`Quote delivery outcome needs reconciliation (${response.status})`);
+          }
+          const receipt = await response.json() as { id?: unknown };
+          if (typeof receipt?.id !== "string" || !receipt.id.trim()) {
+            throw new Error("Quote delivery outcome needs reconciliation: provider returned no message ID");
+          }
+          return { id: receipt.id };
+        },
       });
-
-      return { success: true, pdfUrl };
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      // An accepted receipt may be replayed after the customer has acted.
+      // Never downgrade that later decision back to sent.
+      await database.update(quotes).set({ status: "sent", sentAt: sql`COALESCE(${quotes.sentAt}, NOW())` })
+        .where(and(eq(quotes.id, authorizedQuote.id), eq(quotes.companyId, authorizedQuote.companyId), inArray(quotes.status, ["draft", "sent"])));
+      return { success: true, pdfUrl, acceptance: result.acceptance, messageId: result.id };
     }),
 
   /**
@@ -299,6 +335,8 @@ export const quoteRouter = router({
           message: "At least one service or labour line is required.",
         });
       }
+
+      await assertBuildingQuoteLinks(ctx.user.companyId!, input.siteId ?? 0, input.customerOrgId ?? 0);
 
       // Build unified line items from services and labour
       const serviceItems: QuoteLineItem[] = input.serviceLines.map((s) => ({
@@ -372,54 +410,47 @@ export const quoteRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
-      if (quote.status !== "draft") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Only draft quotes can be edited." });
+      const authorizedQuote = await getQuoteForCompany(input.id, ctx.user.companyId!);
+      if (authorizedQuote.quoteType !== "building") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This is not a building quote." });
       }
-
-      const serviceLines = input.serviceLines;
-      const labourLines = input.labourLines;
-
-      let allItems = quote.lineItems as QuoteLineItem[];
-      let total = parseFloat(String(quote.total));
-
-      if (serviceLines !== undefined && labourLines !== undefined) {
-        const serviceItems: QuoteLineItem[] = serviceLines.map((s) => ({
-          deficiencyId: null,
-          description: s.description,
-          unitPrice: s.unitPrice,
-          qty: s.qty,
-          type: "service" as const,
-          lineNotes: s.lineNotes,
-        }));
-        const labourItems: QuoteLineItem[] = labourLines.map((l) => ({
-          deficiencyId: null,
-          description: l.labourType,
-          unitPrice: l.rate,
-          qty: 1,
-          type: "labour" as const,
-          hours: l.hours,
-          rate: l.rate,
-          lineNotes: l.lineNotes,
-        }));
-        allItems = [...serviceItems, ...labourItems];
-        const subtotal =
-          serviceItems.reduce((s, i) => s + i.unitPrice * i.qty, 0) +
-          labourItems.reduce((s, i) => s + (i.hours ?? 0) * (i.rate ?? 0), 0);
-        const disc = input.discount ?? parseFloat(String((quote as any).discount ?? "0"));
-        total = subtotal - subtotal * (disc / 100);
-      }
-
-      await db.updateQuote(input.id, {
-        siteId: input.siteId ?? quote.siteId,
-        customerOrgId: input.customerOrgId ?? quote.customerOrgId,
-        lineItems: allItems,
-        notes: input.comments ?? quote.notes,
-        total: total.toFixed(2),
-        ...(input.buildingInfo && { buildingInfo: input.buildingInfo }),
-        ...(input.discount !== undefined && { discount: input.discount.toFixed(2) }),
-        ...(input.discountReason !== undefined && { discountReason: input.discountReason }),
-      } as any);
+      await withLockedStandardQuote(ctx, "quote.updateBuilding", input.id, authorizedQuote.companyId, async (quote, tx) => {
+        if (quote.quoteType !== "building") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This is not a building quote." });
+        }
+        await assertStandardQuoteEditable(quote, tx);
+        const siteId = input.siteId ?? quote.siteId;
+        const customerOrgId = input.customerOrgId ?? quote.customerOrgId;
+        await assertBuildingQuoteLinks(quote.companyId, siteId, customerOrgId);
+        const existingItems = quote.lineItems;
+        const serviceItems: QuoteLineItem[] = input.serviceLines === undefined
+          ? existingItems.filter(i => i.type !== "labour")
+          : input.serviceLines.map(s => ({
+            deficiencyId: null, description: s.description, unitPrice: s.unitPrice,
+            qty: s.qty, type: "service", lineNotes: s.lineNotes,
+          }));
+        const labourItems: QuoteLineItem[] = input.labourLines === undefined
+          ? existingItems.filter(i => i.type === "labour")
+          : input.labourLines.map(l => ({
+            deficiencyId: null, description: l.labourType, unitPrice: l.rate,
+            qty: 1, type: "labour", hours: l.hours, rate: l.rate, lineNotes: l.lineNotes,
+          }));
+        if (!serviceItems.length && !labourItems.length) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "At least one service or labour line is required." });
+        }
+        const discount = input.discount ?? Number(quote.discount ?? 0);
+        const subtotal = serviceItems.reduce((sum, i) => sum + i.unitPrice * i.qty, 0)
+          + labourItems.reduce((sum, i) => sum + (i.hours ?? 0) * (i.rate ?? i.unitPrice), 0);
+        await tx.update(quotes).set({
+          siteId, customerOrgId,
+          lineItems: [...serviceItems, ...labourItems],
+          notes: input.comments ?? quote.notes,
+          total: (subtotal * (1 - discount / 100)).toFixed(2),
+          ...(input.buildingInfo && { buildingInfo: input.buildingInfo }),
+          ...(input.discount !== undefined && { discount: input.discount.toFixed(2) }),
+          ...(input.discountReason !== undefined && { discountReason: input.discountReason }),
+        }).where(eq(quotes.id, quote.id));
+      });
 
       return { success: true };
     }),
@@ -449,6 +480,9 @@ export const quoteRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
+      if (quote.quoteType !== "building") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This is not a building quote." });
+      }
 
       const company = await db.getCompanyById(quote.companyId);
       const info = (quote as any).buildingInfo as { city?: string; backflowFeeCity?: string; buildingId?: string; buildingName?: string; address?: string } | null ?? {};
@@ -494,9 +528,16 @@ export const quoteRouter = router({
         comments: quote.notes ?? undefined,
       }));
 
-      const pdfKey = `quotes/${quote.companyId}/${quote.id}/building-quote-${quote.id}.pdf`;
+      // A draft can change while PDF/storage work is in flight. Never overwrite
+      // a previously shared object's bytes, or attach the stale PDF to new scope.
+      const pdfKey = `quotes/${quote.companyId}/${quote.id}/building-quote-${quote.id}-${crypto.randomUUID()}.pdf`;
       const { url: pdfUrl } = await storagePut(pdfKey, pdfBuffer, "application/pdf");
-      await db.updateQuote(quote.id, { pdfUrl } as any);
+      await withLockedStandardQuote(ctx, "quote.downloadBuildingPDF", quote.id, quote.companyId, async (current, tx) => {
+        if (standardQuoteContent(current) !== standardQuoteContent(quote)) {
+          throw new TRPCError({ code: "CONFLICT", message: "The quote changed while its PDF was being generated. Download the current version again." });
+        }
+        await tx.update(quotes).set({ pdfUrl }).where(eq(quotes.id, quote.id));
+      });
 
       return { pdfUrl };
     }),
@@ -512,13 +553,25 @@ export const quoteRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
-
-      const extra: Record<string, unknown> = {};
-      if (input.status === "sent" && !quote.sentAt) extra.sentAt = new Date();
-      if (input.status === "accepted" && !quote.acceptedAt) extra.acceptedAt = new Date();
-
-      await db.updateQuote(input.id, { status: input.status, ...extra } as any);
+      const authorizedQuote = await getQuoteForCompany(input.id, ctx.user.companyId!);
+      if (authorizedQuote.quoteType !== "building") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This is not a building quote." });
+      }
+      if (input.status === "accepted") {
+        assertStandardQuoteStatusTransition(authorizedQuote, "accepted");
+        await approveStandardQuoteFromCustomer(authorizedQuote, { companyId: authorizedQuote.companyId, name: ctx.user.name ?? "", email: ctx.user.email ?? "" }, ctx);
+        return { success: true };
+      }
+      await withLockedStandardQuote(ctx, "quote.updateBuildingStatus", input.id, authorizedQuote.companyId, async (quote, tx) => {
+        assertStandardQuoteStatusTransition(quote, input.status);
+        if (input.status === "draft") await assertStandardQuoteEditable(quote, tx);
+        await tx.update(quotes).set({
+          status: input.status,
+          ...(input.status !== "draft" && { finalizedAt: quote.finalizedAt ?? new Date() }),
+          ...(input.status === "sent" && !quote.sentAt && { sentAt: new Date() }),
+          ...(input.status === "accepted" && !quote.acceptedAt && { acceptedAt: new Date() }),
+        }).where(eq(quotes.id, quote.id));
+      });
       return { success: true };
     }),
 
@@ -529,80 +582,10 @@ export const quoteRouter = router({
   accept: publicProcedure
     .input(z.object({ token: z.string().min(1) }))
     .mutation(async ({ input }) => {
-      const quote = await db.getQuoteByToken(input.token);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND", message: "Quote not found or link has expired." });
-      if (quote.status === "accepted") {
-        return { success: true, alreadyAccepted: true };
-      }
-      if (quote.status !== "sent") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "This quote is no longer available." });
-      }
-      if (quote.acceptTokenExpiresAt && new Date() > new Date(quote.acceptTokenExpiresAt)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "This quote link has expired. Please contact us for a new quote." });
-      }
-
-      // Mark quote accepted
-      await db.updateQuote(quote.id, {
-        status: "accepted",
-        acceptedAt: new Date(),
-      });
-
-      // Auto-create Approved Work record so office can schedule the repair without a manual step
-      try {
-        const existingAW = await db.getApprovedWorkByQuote(quote.id);
-        if (!existingAW) {
-          await db.createApprovedWork({
-            companyId: quote.companyId,
-            siteId: quote.siteId,
-            customerOrgId: quote.customerOrgId,
-            jobId: quote.jobId,
-            quoteId: quote.id,
-            type: "repair_order",
-            status: "approved",
-            approvalSource: "email",
-            approvedAt: new Date(),
-            approvedAmount: String(quote.total),
-            approvedScope: quote.quoteNumber ? `Quote ${quote.quoteNumber}` : `Quote #${quote.id}`,
-          });
-        }
-      } catch (awErr) {
-        console.warn("[ApprovedWork] Auto-create failed on customer accept:", awErr);
-      }
-
-      // Flag linked deficiencies as quoted and link to work order
-      const lineItems = quote.lineItems as QuoteLineItem[];
-      const defIds = lineItems
-        .map((i) => i.deficiencyId)
-        .filter((id): id is number => id !== null);
-
-      // Best-effort: link work order to this accepted quote
-      try {
-        const wo = await db.getWorkOrderByJob(quote.jobId);
-        if (wo) {
-          await db.updateWorkOrder(wo.id, {
-            quoteId: quote.id,
-            workType: "repair",
-            lineItems: lineItems,
-            total: String(quote.total),
-          });
-          // Link each deficiency to the work order
-          await Promise.all(
-            defIds.map((id) => db.updateDeficiency(id, { status: "quoted", workOrderId: wo.id }))
-          );
-        } else {
-          await Promise.all(
-            defIds.map((id) => db.updateDeficiency(id, { status: "quoted" }))
-          );
-        }
-      } catch (woErr) {
-        console.warn("[WorkOrder] Failed to link WO on quote accept:", woErr);
-        // Still mark deficiencies quoted even if WO link fails
-        await Promise.all(
-          defIds.map((id) => db.updateDeficiency(id, { status: "quoted" }))
-        );
-      }
-
-      return { success: true, alreadyAccepted: false };
+      const candidate = await db.getQuoteByToken(input.token);
+      if (!candidate) throw new TRPCError({ code: "NOT_FOUND", message: "Quote not found or link has expired." });
+      if (candidate.quoteType === "repair") return approveRepairQuoteFromCustomer(candidate, { token: input.token });
+      return approveStandardQuoteFromCustomer(candidate, { token: input.token });
     }),
 
   listByCustomerOrg: customerProcedure.query(async ({ ctx }) => {
@@ -614,57 +597,21 @@ export const quoteRouter = router({
   approveFromPortal: customerProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
-      const quote = await db.getQuoteById(input.id);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-      if (quote.customerOrgId !== ctx.user.customerOrgId) throw new TRPCError({ code: "FORBIDDEN" });
-      if (quote.status === "accepted") return { success: true, alreadyAccepted: true };
-      if (quote.status !== "sent" && quote.status !== "viewed") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "This quote is not available for approval." });
+      const candidate = await db.getQuoteById(input.id);
+      if (!candidate) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!ctx.user.customerOrgId || candidate.customerOrgId !== ctx.user.customerOrgId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (candidate.quoteType === "repair") {
+        return approveRepairQuoteFromCustomer(candidate, {
+          customerOrgId: ctx.user.customerOrgId, name: ctx.user.name ?? "", email: ctx.user.email ?? "",
+        }, ctx);
       }
-
       const approvedByName = ctx.user.name ?? "";
       const approvedByEmail = ctx.user.email ?? "";
-
-      await db.updateQuote(input.id, {
-        status: "accepted",
-        acceptedAt: new Date(),
-        approvedAt: new Date(),
-        approvedByName,
-        approvedByEmail,
-        approvalSource: "portal_later",
-      } as any);
-
-      // Auto-create ApprovedWork
-      try {
-        const existingAW = await db.getApprovedWorkByQuote(quote.id);
-        if (!existingAW) {
-          await db.createApprovedWork({
-            companyId: quote.companyId,
-            siteId: quote.siteId,
-            customerOrgId: quote.customerOrgId,
-            jobId: quote.jobId,
-            quoteId: quote.id,
-            type: "repair_order",
-            status: "approved",
-            approvalSource: "portal",
-            approvedAt: new Date(),
-            approvedAmount: String(quote.total),
-            approvedScope: quote.quoteNumber ? `Quote ${quote.quoteNumber}` : `Quote #${quote.id}`,
-          });
-        }
-      } catch (awErr) {
-        console.warn("[ApprovedWork] Auto-create failed on portal approve:", awErr);
-      }
-
-      // Create (or update) the work order for this repair, and mark linked
-      // deficiencies as quoted with the work order linked — mirrors the office
-      // accept flow in repairQuoteRouter so portal approvals don't require a
-      // manual "Create Work Order" step afterward.
-      try {
-        await _createWorkOrderFromQuote(quote.id, quote.companyId);
-      } catch (err) {
-        console.warn("[quote] Failed to create work order on portal approve:", err);
-      }
+      const decision = await approveStandardQuoteFromCustomer(candidate, {
+        customerOrgId: ctx.user.customerOrgId, name: approvedByName, email: approvedByEmail,
+      }, ctx);
+      if (decision.alreadyAccepted) return decision;
+      const quote = candidate;
 
       // Notify admin
       const site = await db.getSiteById(quote.siteId).catch(() => undefined);
@@ -685,29 +632,58 @@ export const quoteRouter = router({
       reason: z.string().max(1000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const quote = await db.getQuoteById(input.quoteId);
-      if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
-
-      const job = await db.getJobById(quote.jobId);
-      if (!job || job.customerOrgId !== ctx.user.customerOrgId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
-
-      if (quote.status === "declined") {
-        return { success: true };
-      }
-
-      await db.updateQuote(input.quoteId, {
-        status: "declined",
-        declinedAt: new Date(),
-        declinedReason: input.reason ?? null,
-        declinedByName: ctx.user.name ?? null,
-        declinedByEmail: ctx.user.email ?? null,
-      } as any);
+      await withLockedQuoteDecision(input.quoteId, async (quote, tx) => {
+        if (!ctx.user.customerOrgId || quote.customerOrgId !== ctx.user.customerOrgId) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        if (quote.status === "declined") return;
+        await assertQuoteAvailableForDecision(quote, tx);
+        await tx.update(quotes).set({
+          status: "declined", declinedAt: new Date(),
+          finalizedAt: quote.finalizedAt ?? new Date(),
+          declinedReason: input.reason ?? null,
+          declinedByName: ctx.user.name ?? null,
+          declinedByEmail: ctx.user.email ?? null,
+        }).where(eq(quotes.id, quote.id));
+      });
 
       return { success: true };
     }),
 });
+
+/** Linked IDs must agree with the actual quote, including admin operations. */
+async function assertQuoteDeficiencyLinks(jobId: number, items: QuoteLineItem[]) {
+  for (const id of Array.from(new Set(items.map(item => item.deficiencyId).filter((id): id is number => id !== null)))) {
+    const deficiency = await db.getDeficiencyById(id);
+    if (!deficiency || deficiency.jobId !== jobId) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Deficiency does not belong to this quote's job." });
+    }
+  }
+}
+
+async function assertBuildingQuoteLinks(companyId: number, siteId: number, customerOrgId: number) {
+  if (customerOrgId) {
+    const customer = await db.getCustomerOrgById(customerOrgId);
+    if (!customer || customer.companyId !== companyId) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Customer does not belong to this quote's company." });
+    }
+  }
+  if (siteId) {
+    const site = await db.getSiteById(siteId);
+    if (!site || site.companyId !== companyId || (customerOrgId && site.customerOrgId !== customerOrgId)) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Site does not belong to this quote's company and customer." });
+    }
+  }
+}
+
+function standardQuoteContent(quote: typeof quotes.$inferSelect): string {
+  return JSON.stringify({
+    companyId: quote.companyId, jobId: quote.jobId, siteId: quote.siteId,
+    customerOrgId: quote.customerOrgId, quoteType: quote.quoteType,
+    lineItems: quote.lineItems, total: quote.total, notes: quote.notes,
+    buildingInfo: quote.buildingInfo, discount: quote.discount, discountReason: quote.discountReason,
+  });
+}
 
 // ── Email HTML helper ─────────────────────────────────────────────────────────
 

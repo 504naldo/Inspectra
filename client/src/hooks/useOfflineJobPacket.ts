@@ -1,181 +1,150 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export type OfflinePacketStatus = "not_cached" | "caching" | "cached" | "stale" | "failed";
-
-export interface PacketEntry {
-  packet: any;
-  cachedAt: string;
-  cacheVersion: string;
-  status: "cached" | "stale" | "failed";
-}
-
-export type PacketStore = Record<string, PacketEntry>;
-
-// ── Storage constants ─────────────────────────────────────────────────────────
-
-const PACKET_KEY = "fire_inspect_job_packets";
-
-// ── Module-level event bus (same-tab updates) ─────────────────────────────────
+import { useOfflineScope } from "./useOfflineScope";
+import { offlineScopeKey } from "@/lib/offlineScope";
+import {
+  loadAndCachePacket,
+  getCachedPacket,
+  readPacketStore,
+  removePacketById,
+  savePacketEntry,
+  type OfflinePacketStatus,
+} from "@/lib/scopedPacketStore";
+export {
+  getCachedPacket,
+  getPacketStatusFromStorage,
+  readPacketStore,
+  removePacketById,
+} from "@/lib/scopedPacketStore";
+export type {
+  OfflinePacketStatus,
+  PacketEntry,
+  PacketStore,
+} from "@/lib/scopedPacketStore";
 
 const listeners = new Set<() => void>();
-
-function notifyListeners() {
-  listeners.forEach((l) => l());
+function notify() {
+  listeners.forEach(listener => listener());
 }
-
-// ── Pure storage helpers (no React) ──────────────────────────────────────────
-
-export function readPacketStore(): PacketStore {
-  try {
-    return JSON.parse(localStorage.getItem(PACKET_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function writePacketStore(store: PacketStore) {
-  try {
-    localStorage.setItem(PACKET_KEY, JSON.stringify(store));
-  } catch (e: any) {
-    if (e?.name === "QuotaExceededError") {
-      toast.error("Not enough storage space to cache this job. Clear old packets first.");
-    }
-  }
-}
-
-export function getCachedPacket(jobId: number): PacketEntry | null {
-  const store = readPacketStore();
-  return store[String(jobId)] ?? null;
-}
-
-export function getPacketStatusFromStorage(jobId: number): OfflinePacketStatus {
-  const entry = getCachedPacket(jobId);
-  if (!entry) return "not_cached";
-  return entry.status === "stale" ? "stale" : "cached";
-}
-
-function saveEntry(jobId: number, entry: PacketEntry) {
-  const store = readPacketStore();
-  store[String(jobId)] = entry;
-  writePacketStore(store);
-  notifyListeners();
-}
-
-function deleteEntry(jobId: number) {
-  const store = readPacketStore();
-  delete store[String(jobId)];
-  writePacketStore(store);
-  notifyListeners();
-}
-
-export function removePacketById(jobId: number) {
-  deleteEntry(jobId);
-}
-
-function markEntryStale(jobId: number) {
-  const store = readPacketStore();
-  if (store[String(jobId)]) {
-    store[String(jobId)] = { ...store[String(jobId)], status: "stale" };
-    writePacketStore(store);
-    notifyListeners();
-  }
-}
-
-// ── Hook ─────────────────────────────────────────────────────────────────────
-
-export function useOfflineJobPacket(jobId: number) {
-  const [isCaching, setIsCaching] = useState(false);
+function usePacketUpdates() {
   const [, setVersion] = useState(0);
-
-  // Subscribe to module-level store changes so UI updates when preload completes
   useEffect(() => {
-    const update = () => setVersion((v) => v + 1);
+    const update = () => setVersion(version => version + 1);
     listeners.add(update);
-    return () => { listeners.delete(update); };
+    window.addEventListener("storage", update);
+    return () => {
+      listeners.delete(update);
+      window.removeEventListener("storage", update);
+    };
   }, []);
-
+}
+export function useOfflineJobPacket(jobId: number) {
+  const scope = useOfflineScope();
+  const scopeKey = scope ? offlineScopeKey(scope) : "signed-out";
+  const identity = `${scopeKey}:${jobId}`;
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
+  const operationRef = useRef(0);
+  const [caching, setCaching] = useState({ identity: "", active: false });
+  usePacketUpdates();
   const utils = trpc.useUtils();
-
+  useEffect(
+    () => () => {
+      operationRef.current++;
+    },
+    []
+  );
   const preload = useCallback(async () => {
-    setIsCaching(true);
+    if (!scope) {
+      toast.error("Sign in before caching a job");
+      return;
+    }
+    const operation = ++operationRef.current;
+    const isCurrent = () =>
+      identityRef.current === identity && operationRef.current === operation;
+    setCaching({ identity, active: true });
     try {
-      const data = await utils.job.getOfflineJobPacket.fetch({ jobId });
-      saveEntry(jobId, {
-        packet: data,
-        cachedAt: new Date().toISOString(),
-        cacheVersion: data.cacheVersion,
-        status: "cached",
-      });
+      const saved = await loadAndCachePacket(
+        jobId,
+        scope,
+        () => utils.job.getOfflineJobPacket.fetch({ jobId }),
+        isCurrent
+      );
+      if (!saved || !isCurrent()) return;
+      notify();
       toast.success("Job is now available offline");
-    } catch (err: any) {
-      // Save failed marker only if there was a previous entry to preserve it
-      const existing = getCachedPacket(jobId);
-      if (existing) {
-        saveEntry(jobId, { ...existing, status: "failed" });
-      } else {
-        const store = readPacketStore();
-        store[String(jobId)] = { packet: null, cachedAt: new Date().toISOString(), cacheVersion: "", status: "failed" };
-        writePacketStore(store);
-        notifyListeners();
+    } catch (error) {
+      if (!isCurrent()) return;
+      try {
+        const existing = readPacketStore(scope)[String(jobId)];
+        if (existing)
+          savePacketEntry(jobId, { ...existing, status: "failed" }, scope);
+        notify();
+      } catch {
+        /* Keep the previous copy intact if recovery/storage failed. */
       }
-      toast.error(err?.message ?? "Failed to cache job for offline use");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to cache job for offline use"
+      );
     } finally {
-      setIsCaching(false);
+      if (isCurrent()) setCaching({ identity, active: false });
     }
-  }, [jobId, utils]);
-
-  const refresh = preload;
-
+  }, [identity, jobId, scope, utils]);
   const remove = useCallback(() => {
-    deleteEntry(jobId);
-    toast.success("Offline packet removed");
-  }, [jobId]);
-
-  // Mark as stale if the server has newer data (call with server's job.updatedAt)
-  const checkStale = useCallback((serverUpdatedAt: string | Date | null | undefined) => {
-    if (!serverUpdatedAt) return;
-    const entry = getCachedPacket(jobId);
-    if (!entry?.packet?.lastUpdatedAt) return;
-    const serverTime = new Date(serverUpdatedAt).getTime();
-    const cachedTime = new Date(entry.packet.lastUpdatedAt).getTime();
-    if (serverTime > cachedTime) {
-      markEntryStale(jobId);
+    try {
+      removePacketById(jobId, scope);
+      notify();
+      toast.success("Offline packet removed");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Offline packet could not be removed"
+      );
     }
-  }, [jobId]);
-
-  const entry = getCachedPacket(jobId);
-  const status: OfflinePacketStatus = isCaching ? "caching" : (entry?.status ?? "not_cached");
-
+  }, [jobId, scope]);
+  const checkStale = useCallback(
+    (serverUpdatedAt: string | Date | null | undefined) => {
+      if (!scope || !serverUpdatedAt) return;
+      const entry = readPacketStore(scope)[String(jobId)];
+      if (!entry?.packet?.lastUpdatedAt) return;
+      if (
+        new Date(serverUpdatedAt).getTime() >
+          new Date(entry.packet.lastUpdatedAt).getTime() &&
+        entry.status !== "stale"
+      ) {
+        try {
+          savePacketEntry(jobId, { ...entry, status: "stale" }, scope);
+          notify();
+        } catch {
+          /* Preserve the existing cached copy. */
+        }
+      }
+    },
+    [jobId, scope]
+  );
+  const entry = getCachedPacket(jobId, scope);
+  const isCaching = caching.identity === identity && caching.active;
+  const status: OfflinePacketStatus = isCaching
+    ? "caching"
+    : (entry?.status ?? "not_cached");
   return {
     status,
     cachedAt: entry?.cachedAt ?? null,
     packet: entry?.packet ?? null,
     isCaching,
     preload,
-    refresh,
+    refresh: preload,
     remove,
     checkStale,
   };
 }
-
-// ── All cached packets (for SyncScreen) ──────────────────────────────────────
-
 export function useAllCachedPackets() {
-  const [store, setStore] = useState<PacketStore>(readPacketStore);
-  const [, setVersion] = useState(0);
-
-  useEffect(() => {
-    const update = () => {
-      setStore(readPacketStore());
-      setVersion((v) => v + 1);
-    };
-    listeners.add(update);
-    return () => { listeners.delete(update); };
-  }, []);
-
-  return store;
+  const scope = useOfflineScope();
+  usePacketUpdates();
+  // Read using this render's identity so the previous account never flashes.
+  return readPacketStore(scope);
 }

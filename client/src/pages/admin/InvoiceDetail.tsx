@@ -1,5 +1,7 @@
 import { createPaymentJournal } from "@/lib/paymentJournal";
 import { PaymentOperation } from "@/lib/paymentOperation";
+import { useDurableEmail } from "@/hooks/useDurableEmail";
+import type { DeliveryInput, DeliveryReceipt } from "@/lib/deliveryOperation";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AdminLayout from "@/components/AdminLayout";
@@ -414,12 +416,22 @@ function SendInvoiceDialog({
   invoice,
   onSend,
   isPending,
+  accountId,
+  accountCompanyId,
+  lookup,
+  onAccepted,
+  canStartNew,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  invoice: { id: number; customerOrgId?: number | null; siteId?: number | null; billToEmail?: string | null; };
-  onSend: (to: string[]) => void;
+  invoice: { id: number; companyId: number; customerOrgId?: number | null; siteId?: number | null; billToEmail?: string | null; };
+  onSend: (input: DeliveryInput) => Promise<{ acceptance: "accepted" }>;
   isPending: boolean;
+  accountId?: number;
+  accountCompanyId: number | null;
+  lookup: (requestId: string) => Promise<DeliveryReceipt | null>;
+  onAccepted: () => void;
+  canStartNew: boolean;
 }) {
   const { data } = trpc.contact.getRecipientsForWorkflow.useQuery(
     { customerOrgId: invoice.customerOrgId ?? undefined, siteId: invoice.siteId ?? undefined, workflowType: "invoice", },
@@ -444,7 +456,11 @@ function SendInvoiceDialog({
     setSelected(prev => { const s = new Set(prev); s.has(email) ? s.delete(email) : s.add(email); return s; });
 
   const extraEmails = extra.split(/[\s,;]+/).map(s => s.trim()).filter(s => s.includes("@") && s.includes("."));
-  const allTo = [...Array.from(selected), ...extraEmails];
+  const allTo = Array.from(new Set([...Array.from(selected), ...extraEmails]));
+  const delivery = useDurableEmail({ open, scope: accountId ? {
+    accountId, accountCompanyId, companyId: invoice.companyId, route: "invoice.send", entityId: invoice.id,
+  } : null, onSend, lookup, onAccepted });
+  const working = delivery.working || isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -454,10 +470,20 @@ function SendInvoiceDialog({
             <Send className="h-4 w-4 text-primary" /> Send Invoice to Customer
           </DialogTitle>
           <DialogDescription>
-            A PDF will be generated and emailed to the selected recipients.
+            A PDF will be emailed to the selected recipients. Provider acceptance is tracked for recovery.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
+          {delivery.error && <p role="alert" className="rounded-md border border-red-200 p-3 text-sm text-red-800">{delivery.error}</p>}
+          {delivery.restoring && <p role="status" className="text-sm text-muted-foreground">Checking saved email…</p>}
+          {delivery.saved && <div role="status" className="rounded-md border bg-muted/40 p-3 space-y-2 text-sm">
+            <p className="font-medium">{delivery.accepted ? "Email provider accepted this email" : delivery.saved.status === "rejected" ? "Provider rejected this email" : "An email send is saved for recovery"}</p>
+            <p>{delivery.accepted ? "The original request remains saved. Check its status to finish any pending invoice update." : "Check the outcome or retry the original email with its saved recipients."}</p>
+            <ul className="list-disc pl-5 break-all">{delivery.saved.input.to.map(to => <li key={to}>{to}</li>)}</ul>
+            <Button size="sm" variant="outline" disabled={working} onClick={delivery.checkStatus}>Check email status</Button>
+          </div>}
+          <fieldset hidden={!!delivery.saved} disabled={working || !!delivery.saved || !!delivery.error || !canStartNew} className="space-y-4">
+          <legend className="sr-only">Invoice email recipients</legend>
           {(data?.warnings ?? []).map((w, i) => (
             <div key={i} className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
@@ -524,22 +550,22 @@ function SendInvoiceDialog({
               Separate multiple with commas or spaces.
             </p>
           </div>
+          </fieldset>
+          {!canStartNew && !delivery.saved && <p className="text-sm text-muted-foreground">This invoice is closed. Saved email recovery is available when an earlier attempt exists.</p>}
         </div>
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
+          {delivery.canStartAnother ? canStartNew && <Button size="sm" disabled={working} onClick={delivery.startAnother}>Start another email</Button> : <Button
             size="sm"
-            disabled={allTo.length === 0 || isPending}
-            onClick={() => onSend(allTo)}
+            disabled={working || !delivery.ready || (!delivery.saved && (!canStartNew || allTo.length === 0 || !!delivery.error))}
+            onClick={() => delivery.send({ id: invoice.id, to: allTo })}
             className="gap-1.5"
           >
-            {isPending ? ( <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : ( <Send className="h-3.5 w-3.5" />
-            )}
-            Send to {allTo.length} recipient{allTo.length !== 1 ? "s" : ""}
-          </Button>
+            {working ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            {delivery.saved ? "Retry original email" : `Send to ${allTo.length} recipient${allTo.length !== 1 ? "s" : ""}`}
+          </Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -599,12 +625,7 @@ export default function InvoiceDetail({ id }: Props) {
     onError:e => toast.error(e.message),
   });
 
-  const [sendRequestId, setSendRequestId] = useState(() => crypto.randomUUID());
-
-  const sendMut = trpc.invoice.send.useMutation({
-    onSuccess: () => { toast.success("Invoice sent to customer"); setSendOpen(false); invalidate(); },
-    onError:e => toast.error(e.message),
-  });
+  const sendMut = trpc.invoice.send.useMutation();
 
   const generatePdf = trpc.invoice.generatePdf.useMutation({
     onSuccess: ({ pdfUrl }) => { invalidate(); window.open(pdfUrl, "_blank", "noopener"); },
@@ -747,13 +768,9 @@ export default function InvoiceDetail({ id }: Props) {
                   {generatePdf.isPending ? "Generating…" : "Generate PDF"}
                 </Button>
               )}
-              {!isLocked && (invoice.status === "draft" || invoice.status === "sent") && (
-                <Button size="sm" className="gap-1.5" onClick={() => {
-                      setSendRequestId(crypto.randomUUID()); setSendOpen(true);
-                    }}>
-                    <Send className="h-3.5 w-3.5" /> Send Invoice
-                  </Button>
-              )}
+              {canManage && <Button size="sm" className="gap-1.5" onClick={() => setSendOpen(true)}>
+                <Send className="h-3.5 w-3.5" /> Invoice Email
+              </Button>}
               {!isLocked && invoice.status === "draft" && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-muted-foreground" onClick={() => updateStatus.mutate({ id: invoice.id, status: "sent" })} disabled={updateStatus.isPending}>
                   <CheckCircle className="h-3.5 w-3.5" /> Mark Sent (manual)
@@ -1193,11 +1210,17 @@ export default function InvoiceDetail({ id }: Props) {
       </Dialog>
 
       <SendInvoiceDialog
+        key={`${user?.id ?? "signed-out"}:${user?.companyId ?? "platform"}:${invoice.companyId}:${invoice.id}`}
         open={sendOpen}
         onOpenChange={setSendOpen}
-        invoice={{ id: invoice.id, customerOrgId: invoice.customerOrgId, siteId: invoice.siteId, billToEmail: invoice.billToEmail, }}
+        invoice={{ id: invoice.id, companyId: invoice.companyId, customerOrgId: invoice.customerOrgId, siteId: invoice.siteId, billToEmail: invoice.billToEmail, }}
         isPending={sendMut.isPending}
-        onSend={to => sendMut.mutate({ id: invoice.id, requestId: sendRequestId, to })}
+        accountId={user?.id}
+        accountCompanyId={user?.companyId ?? null}
+        canStartNew={!isVoid && !isPaid}
+        lookup={requestId => utils.emailDelivery.lookup.fetch({ requestId })}
+        onAccepted={invalidate}
+        onSend={input => sendMut.mutateAsync(input)}
       />
     </AdminLayout>
   );

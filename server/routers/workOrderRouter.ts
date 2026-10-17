@@ -2,13 +2,13 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   router,
-  protectedProcedure,
   officeProcedure,
   technicianProcedure,
 } from "../_core/trpc";
 import * as db from "../db";
 import { assertWorkOrderCompany } from "../tenantGuards";
 import { logActivity } from "../activityLogger";
+import { withMutableWorkOrder } from "../workOrderIntegrity";
 
 const materialSchema = z.object({
   description: z.string().min(1),
@@ -20,7 +20,7 @@ export const workOrderRouter = router({
   /**
    * Fetch a single work order by ID.
    */
-  get: protectedProcedure
+  get: technicianProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const wo = await assertWorkOrderCompany(input.id, ctx.user.companyId!);
@@ -47,7 +47,7 @@ export const workOrderRouter = router({
   /**
    * Get the work order linked to a specific job.
    */
-  listByJob: protectedProcedure
+  listByJob: technicianProcedure
     .input(z.object({ jobId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const wo = await db.getWorkOrderByJob(input.jobId);
@@ -77,20 +77,12 @@ export const workOrderRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const wo = await assertWorkOrderCompany(input.id, ctx.user.companyId!);
-      if (wo.finalizedAt) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "Work order is finalized and cannot be modified.",
-        });
-      }
-
       const { id, estimatedHours, ...rest } = input;
-      await db.updateWorkOrder(id, {
-        ...rest,
-        ...(estimatedHours !== undefined
-          ? { estimatedHours: estimatedHours !== null ? String(estimatedHours) : null }
-          : {}),
+      await withMutableWorkOrder(ctx, "workOrder.update", id, async () => {
+        await db.updateWorkOrder(id, {
+          ...rest,
+          ...(estimatedHours !== undefined ? { estimatedHours: estimatedHours !== null ? String(estimatedHours) : null } : {}),
+        });
       });
       if (input.scheduledDate !== undefined) {
         void logActivity({ ctx, entityType: "work_order", entityId: id, eventType: "scheduled",
@@ -114,18 +106,12 @@ export const workOrderRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const wo = await assertWorkOrderCompany(input.id, ctx.user.companyId!);
-      if (wo.finalizedAt) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "Work order is finalized and cannot be modified.",
-        });
-      }
-
-      const { id, actualHours, ...rest } = input;
-      await db.updateWorkOrder(id, {
-        ...rest,
-        ...(actualHours !== undefined ? { actualHours: String(actualHours) } : {}),
+      await withMutableWorkOrder(ctx, "workOrder.techUpdate", input.id, async wo => {
+        if (wo.status === "completed" || wo.status === "cancelled") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Work order is already ${wo.status}.` });
+        }
+        const { id, actualHours, ...rest } = input;
+        await db.updateWorkOrder(id, { ...rest, ...(actualHours !== undefined ? { actualHours: String(actualHours) } : {}) });
       });
       return { success: true };
     }),
@@ -143,25 +129,15 @@ export const workOrderRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const wo = await assertWorkOrderCompany(input.id, ctx.user.companyId!);
-      if (wo.finalizedAt) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "Work order is finalized and cannot be modified.",
+      await withMutableWorkOrder(ctx, "workOrder.complete", input.id, async wo => {
+        if (wo.status === "completed" || wo.status === "cancelled") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Work order is already ${wo.status}.` });
+        }
+        await db.updateWorkOrder(input.id, {
+          status: "completed", completedAt: new Date(),
+          completionSummary: input.completionSummary ?? wo.completionSummary,
+          actualHours: input.actualHours !== undefined ? String(input.actualHours) : wo.actualHours,
         });
-      }
-      if (wo.status === "completed" || wo.status === "cancelled") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Work order is already ${wo.status}.`,
-        });
-      }
-
-      await db.updateWorkOrder(input.id, {
-        status: "completed",
-        completedAt: new Date(),
-        completionSummary: input.completionSummary ?? wo.completionSummary,
-        actualHours: input.actualHours !== undefined ? String(input.actualHours) : wo.actualHours,
       });
       void logActivity({ ctx, entityType: "work_order", entityId: input.id, eventType: "completed",
         title: "Work order completed" });

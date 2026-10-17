@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { FieldHeader } from "@/components/field/FieldHeader";
 import { ConnectionBadge } from "@/components/field/ConnectionBadge";
@@ -26,9 +26,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { getJobStatusLabel, getJobStatusBadgeClass } from "@/lib/statusLabels";
+import { accountCacheNamespace } from "@/lib/accountCache";
+import { cacheCurrentJobDownload } from "@/lib/offlineDownload";
 
 export default function JobsList() {
   const { user } = useAuth();
+  const displayedAccount = accountCacheNamespace(user);
+  const accountRef = useRef(displayedAccount);
+  const mounted = useRef(true);
+  accountRef.current = displayedAccount;
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const { isOnline, cacheJobData } = useOfflineStorage();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
@@ -134,17 +144,22 @@ export default function JobsList() {
   const handleDownload = async (jobId: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const isCurrent = () => mounted.current && accountRef.current === displayedAccount;
+    if (!isCurrent()) return;
     setDownloadingJobId(jobId);
     try {
-      const data = await utils.sync.getJobDataForOffline.fetch({ jobId });
-      if (data) {
-        cacheJobData(jobId, data);
+      const cached = await cacheCurrentJobDownload(
+        () => utils.sync.getJobDataForOffline.fetch({ jobId }),
+        data => cacheJobData(jobId, data),
+        isCurrent,
+      );
+      if (cached && isCurrent()) {
         toast.success('Job data cached for offline use');
       }
     } catch {
-      toast.error('Failed to download job data');
+      if (isCurrent()) toast.error('Failed to download job data');
     } finally {
-      setDownloadingJobId(null);
+      if (isCurrent()) setDownloadingJobId(null);
     }
   };
 

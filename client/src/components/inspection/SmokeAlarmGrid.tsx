@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { scanBarcode } from "@/lib/native";
 import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
@@ -12,6 +12,7 @@ import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
 import { useSectionPendingChanges } from "./useSectionPendingChanges";
 import { SearchInput } from "./SearchInput";
+import { acknowledgedDevicePatch, GridWriteGuard, RevisionBoundInput, RevisionBoundSelect, useGridWriteBarrier } from "./gridWriteSafety";
 
 // ─── Legend data ────────────────────────────────────────────────────────────
 
@@ -83,6 +84,7 @@ function codeToPowerType(code: string): "hardwired" | "battery" | "sealed" | und
 
 export interface SmokeAlarmRow {
   id: number;
+  deviceRevision?: string;
   suiteNumber?: string | null;
   location?: string | null;
   deviceType?: string | null;
@@ -118,6 +120,7 @@ interface EditState {
   deviceId: number;
   field: string;
   value: string;
+  revision: string;
 }
 
 // ─── Column config ───────────────────────────────────────────────────────────
@@ -248,7 +251,11 @@ function MaintenanceButton({
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export function SmokeAlarmGrid({
+export function SmokeAlarmGrid(props: SmokeAlarmGridProps) {
+  return <ScopedSmokeAlarmGrid key={`${props.companyId}:${props.siteId}:${props.jobId}`} {...props} />;
+}
+
+function ScopedSmokeAlarmGrid({
   jobId,
   siteId,
   companyId,
@@ -259,33 +266,26 @@ export function SmokeAlarmGrid({
   onRefresh,
 }: SmokeAlarmGridProps) {
   const isMobile = useIsMobile();
+  const barrier = useGridWriteBarrier();
   const [editing, setEditing] = useState<EditState | null>(null);
   const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
+  // Bind each pending observation to the definition actually shown when edited.
+  const draftRevisions = useRef<Record<number, string>>({});
+  const displayedRevision = useCallback((id: number) => rows.find(row => row.id === id)?.deviceRevision ?? "", [rows]);
+  const rememberRevision = useCallback((id: number) => {
+    draftRevisions.current[id] ??= displayedRevision(id);
+  }, [displayedRevision]);
+
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
-  const [localMeta, setLocalMeta] = useState<Record<number, LocalMeta>>(() => {
-    const init: Record<number, LocalMeta> = {};
-    devices.forEach((d) => {
-      init[d.id] = {
-        batteryReplaced: d.batteryReplaced ?? "",
-        maintenanceRequired: (d.maintenanceRequired as MaintenanceValue) ?? "",
-      };
-    });
-    return init;
-  });
-  const {
-    queueChange: queuePendingDeviceChange,
-    clearChanges: clearPendingDeviceChanges,
-    hasUnsavedChanges: hasPendingDeviceChanges,
-    pendingChanges: pendingDeviceChanges,
-  } = useSectionPendingChanges();
   const {
     queueChange: queuePendingResultChange,
     clearChanges: clearPendingResultChanges,
     hasUnsavedChanges: hasPendingResultChanges,
     pendingChanges: pendingResultChanges,
+    setPendingChanges: setPendingResultChanges,
   } = useSectionPendingChanges();
-  const hasPending = hasPendingDeviceChanges || hasPendingResultChanges;
+  const hasPending = hasPendingResultChanges;
   const [legendOpen, setLegendOpen] = useState(false);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -318,7 +318,7 @@ export function SmokeAlarmGrid({
   });
 
   const updateDevice = trpc.device.technicianUpdate.useMutation({
-    onError: () => toast.error("Failed to save field"),
+    onError: (error) => toast.error(error.message || "Failed to save field"),
   });
 
   const addDevice = trpc.device.addDuringInspection.useMutation({
@@ -341,6 +341,7 @@ export function SmokeAlarmGrid({
   });
 
   const handleAddSubmit = () => {
+    if (barrier.isLockedNow()) return;
     if (!addForm.suiteNumber.trim() && !addForm.location.trim()) {
       toast.error("Suite number or location required");
       return;
@@ -357,11 +358,21 @@ export function SmokeAlarmGrid({
     });
   };
 
-  const updateLocalRow = (id: number, updates: Partial<SmokeAlarmRow>) => {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
-  };
+  const saveMetadata = useCallback(async (deviceId: number, patch: Record<string, unknown>, revision: string) => {
+    if (isFinalized) return;
+    try {
+      await barrier.run(async () => {
+        const saved = await updateDevice.mutateAsync({ jobId, id: deviceId, ...patch,
+          expectedDeviceRevision: revision } as Parameters<typeof updateDevice.mutate>[0]);
+        setRows(previous => acknowledgedDevicePatch(previous, deviceId, patch, saved.deviceRevision, revision));
+        if (draftRevisions.current[deviceId] === revision) draftRevisions.current[deviceId] = saved.deviceRevision;
+        onRefresh?.();
+      });
+    } catch { /* A failed patch never changes the displayed device definition. */ }
+  }, [isFinalized, barrier.run, updateDevice, jobId, setRows, onRefresh]);
 
   const handleSort = (dir: "asc" | "desc") => {
+    if (barrier.isLockedNow()) return;
     setSortDir(dir);
     const sorted = [...rows].sort((a, b) => {
       const aKey = (a.suiteNumber || a.location || "").toLowerCase();
@@ -375,82 +386,73 @@ export function SmokeAlarmGrid({
 
   const handleResultChange = useCallback(
     (deviceId: number, result: InspectionResult) => {
+      if (isFinalized || barrier.isLockedNow()) return;
       setLocalResults((prev) => ({ ...prev, [deviceId]: result }));
+      rememberRevision(deviceId);
       queuePendingResultChange(deviceId, "result", result);
       onResultChange?.(deviceId, result);
     },
-    [queuePendingResultChange, onResultChange]
+    [queuePendingResultChange, onResultChange, rememberRevision, isFinalized, barrier.isLockedNow]
   );
 
   const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
-    if (isFinalized) return;
-    setEditing({ deviceId, field, value: currentValue });
+    if (isFinalized || barrier.isLockedNow()) return;
+    if (editing?.deviceId === deviceId && editing.field === field) return;
+    setEditing({ deviceId, field, value: currentValue, revision: displayedRevision(deviceId) });
   };
 
   const handleEditBlur = () => {
-    if (!editing) return;
-    const { deviceId, field, value } = editing;
-    const payload: Record<string, any> = { id: deviceId };
-    if (field === "suite")     { payload.suiteNumber  = value || undefined; updateLocalRow(deviceId, { suiteNumber: value || undefined }); }
-    if (field === "battType")  payload.batterySize  = value || undefined;
-    if (field === "battQty")   payload.batteryCount = value ? Number(value) || undefined : undefined;
-    if (field === "inService") payload.batteryYear  = value;
-    if (field === "remarks")   payload.notes        = value;
-    updateDevice.mutate(payload as Parameters<typeof updateDevice.mutate>[0]);
+    if (!editing || barrier.isLockedNow()) return;
+    const { deviceId, field, value, revision } = editing;
+    const patch: Record<string, unknown> = {};
+    if (field === "suite") patch.suiteNumber = value;
+    if (field === "battType") patch.batterySize = value;
+    if (field === "battQty") patch.batteryCount = value === "" ? undefined : Number(value);
+    if (field === "inService") patch.batteryYear = value;
+    if (field === "remarks") patch.notes = value;
     setEditing(null);
+    void saveMetadata(deviceId, patch, revision);
   };
 
   const handleSaveSection = useCallback(async () => {
+    if (isFinalized) return;
     try {
-      const deviceSaveTasks = (Object.entries(pendingDeviceChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
-        updateDevice.mutateAsync({ id: Number(id), ...changeSet } as Parameters<typeof updateDevice.mutate>[0])
-      );
-      const resultSaveTasks = (Object.entries(pendingResultChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
-        upsertResult.mutateAsync({
-          jobId,
-          deviceId: Number(id),
-          result: changeSet.result as InspectionResult,
-        })
-      );
-      await Promise.all([...deviceSaveTasks, ...resultSaveTasks]);
-      clearPendingDeviceChanges();
-      clearPendingResultChanges();
-      toast.success("Smoke alarm changes saved");
-    } catch {
-      toast.error("Failed to save smoke alarm changes");
-    }
-  }, [
-    pendingDeviceChanges,
-    pendingResultChanges,
-    updateDevice,
-    upsertResult,
-    jobId,
-    clearPendingDeviceChanges,
-    clearPendingResultChanges,
-  ]);
+      await barrier.run(async () => {
+        for (const [id, changeSet] of Object.entries(pendingResultChanges)) {
+          await upsertResult.mutateAsync({ jobId, deviceId: Number(id),
+            expectedDeviceRevision: draftRevisions.current[Number(id)] ?? "",
+            result: changeSet.result as InspectionResult });
+          setPendingResultChanges(previous => { const next = { ...previous }; delete next[Number(id)]; return next; });
+          delete draftRevisions.current[Number(id)];
+        }
+        clearPendingResultChanges();
+        draftRevisions.current = {};
+        onRefresh?.();
+        toast.success("Smoke alarm changes saved");
+      });
+    } catch { toast.error("Failed to save smoke alarm changes"); }
+  }, [pendingResultChanges, upsertResult, jobId, clearPendingResultChanges, setPendingResultChanges, onRefresh, isFinalized, barrier.run]);
 
   const handleBatteryReplacedToggle = (device: SmokeAlarmRow) => {
-    if (isFinalized) return;
-    const current = localMeta[device.id]?.batteryReplaced ?? "";
+    if (isFinalized || barrier.isLockedNow()) return;
+    const current = device.batteryReplaced ?? "";
     const next = current === "Y" ? "N" : current === "N" ? "" : "Y";
-    setLocalMeta((prev) => ({ ...prev, [device.id]: { ...prev[device.id], batteryReplaced: next } }));
-    updateDevice.mutate({ id: device.id, batteryReplaced: next || undefined });
+    void saveMetadata(device.id, { batteryReplaced: next }, device.deviceRevision ?? "");
   };
 
   const handleMaintenanceToggle = (device: SmokeAlarmRow) => {
-    if (isFinalized) return;
-    const current = localMeta[device.id]?.maintenanceRequired ?? "";
+    if (isFinalized || barrier.isLockedNow()) return;
+    const current = device.maintenanceRequired ?? "";
     const idx = MAINTENANCE_OPTIONS.indexOf(current as MaintenanceValue);
     const next = MAINTENANCE_OPTIONS[(idx + 1) % MAINTENANCE_OPTIONS.length];
-    setLocalMeta((prev) => ({ ...prev, [device.id]: { ...prev[device.id], maintenanceRequired: next } }));
-    updateDevice.mutate({ id: device.id, maintenanceRequired: next || undefined });
+    void saveMetadata(device.id, { maintenanceRequired: next }, device.deviceRevision ?? "");
   };
 
   const getEffectiveResult = (device: SmokeAlarmRow): InspectionResult =>
     localResults[device.id] ?? device.result ?? "not_tested";
 
   const getRowBg = (device: SmokeAlarmRow) => {
-    const maint = localMeta[device.id]?.maintenanceRequired;
+    const maint = device.maintenanceRequired;
     if (maint === "YES") return "bg-red-50 dark:bg-red-950/20";
     const result = getEffectiveResult(device);
     if (result === "pass") return "bg-green-50 dark:bg-green-950/20";
@@ -461,16 +463,17 @@ export function SmokeAlarmGrid({
   const completed = rows.filter((d) => getEffectiveResult(d) !== "not_tested").length;
 
   const handleAllPass = useCallback(() => {
-    if (isFinalized) return;
+    if (isFinalized || barrier.isLockedNow()) return;
     const updates: Record<number, InspectionResult> = {};
     rows.forEach((d) => { updates[d.id] = "pass"; });
     setLocalResults((prev) => ({ ...prev, ...updates }));
     rows.forEach((d) => {
-      upsertResult.mutate({ jobId, deviceId: d.id, result: "pass" });
+      rememberRevision(d.id);
+      queuePendingResultChange(d.id, "result", "pass");
       onResultChange?.(d.id, "pass");
     });
-    toast.success(`Marked ${rows.length} smoke alarm${rows.length !== 1 ? "s" : ""} as pass`);
-  }, [rows, isFinalized, jobId, upsertResult, onResultChange]);
+    toast.success(`Marked ${rows.length} smoke alarm${rows.length !== 1 ? "s" : ""} as pass. Save changes to submit.`);
+  }, [rows, isFinalized, queuePendingResultChange, onResultChange, rememberRevision, barrier.isLockedNow]);
 
   // ── Header bar ─────────────────────────────────────────────────────────────
   const header = (
@@ -489,7 +492,7 @@ export function SmokeAlarmGrid({
           {!isFinalized && hasPending && (
             <button
               onClick={handleSaveSection}
-              disabled={updateDevice.isPending || upsertResult.isPending}
+              disabled={barrier.isLocked || updateDevice.isPending || upsertResult.isPending}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save
@@ -540,7 +543,7 @@ export function SmokeAlarmGrid({
   // ── Mobile card layout ─────────────────────────────────────────────────────
   if (isMobile) {
     return (
-      <div className="space-y-3">
+      <GridWriteGuard barrier={barrier} className="space-y-3">
         {header}
         {rows.length === 0 && !showAddRow && (
           <p className="text-center py-6 text-sm text-muted-foreground">No smoke alarms for this site</p>
@@ -550,7 +553,7 @@ export function SmokeAlarmGrid({
         )}
         {visibleRows.map((device) => {
           const result = getEffectiveResult(device);
-          const meta = localMeta[device.id] ?? {};
+          const meta = device;
           const isExpanded = expandedRow === device.id;
           const battTypeVal = editing?.deviceId === device.id && editing.field === "battType"
             ? editing.value
@@ -613,57 +616,48 @@ export function SmokeAlarmGrid({
                       <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
                         Suite #
                       </label>
-                      <input
+                      <RevisionBoundInput
                         type="text"
                         className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
-                        defaultValue={device.suiteNumber ?? ""}
+                        value={device.suiteNumber ?? ""}
                         disabled={isFinalized}
-                        onBlur={(e) => {
-                          const val = e.target.value || undefined;
-                          updateLocalRow(device.id, { suiteNumber: val });
-                          updateDevice.mutate({ id: device.id, suiteNumber: val });
-                        }}
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { suiteNumber: value }, revision)}
                       />
                     </div>
                     <div>
                       <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
                         Type
                       </label>
-                      <select
+                      <RevisionBoundSelect
                         className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
                         value={device.deviceType ?? ""}
                         disabled={isFinalized}
-                        onChange={(e) => {
-                          const val = e.target.value || undefined;
-                          updateLocalRow(device.id, { deviceType: val });
-                          updateDevice.mutate({ id: device.id, deviceType: val });
-                        }}
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { deviceType: value }, revision)}
                       >
                         <option value="">—</option>
                         {DEVICE_TYPE_OPTIONS.map((o) => (
                           <option key={o} value={o}>{o}</option>
                         ))}
-                      </select>
+                      </RevisionBoundSelect>
                     </div>
                     <div>
                       <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
                         Power
                       </label>
-                      <select
+                      <RevisionBoundSelect
                         className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
                         value={powerTypeToCode(device.powerType)}
                         disabled={isFinalized}
-                        onChange={(e) => {
-                          const pt = codeToPowerType(e.target.value);
-                          updateLocalRow(device.id, { powerType: pt });
-                          updateDevice.mutate({ id: device.id, powerType: pt });
-                        }}
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { powerType: codeToPowerType(value) }, revision)}
                       >
                         <option value="">—</option>
                         {POWER_SOURCE_OPTIONS.map((o) => (
                           <option key={o} value={o}>{o}</option>
                         ))}
-                      </select>
+                      </RevisionBoundSelect>
                     </div>
                   </div>
 
@@ -673,36 +667,30 @@ export function SmokeAlarmGrid({
                       <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
                         Battery Type
                       </label>
-                      <select
+                      <RevisionBoundSelect
                         className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
                         value={battTypeVal}
                         disabled={isFinalized}
-                        onChange={(e) => {
-                          const nextVal = e.target.value || undefined;
-                          updateLocalRow(device.id, { batterySize: e.target.value });
-                          updateDevice.mutate({ id: device.id, batterySize: nextVal });
-                        }}
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { batterySize: value }, revision)}
                       >
                         <option value="">—</option>
                         {BATTERY_TYPE_OPTIONS.map((o) => (
                           <option key={o} value={o}>{o}</option>
                         ))}
-                      </select>
+                      </RevisionBoundSelect>
                     </div>
                     <div>
                       <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
                         # Batts
                       </label>
-                      <input
+                      <RevisionBoundInput
                         type="number"
                         className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
-                        defaultValue={device.batteryCount ?? ""}
+                        value={device.batteryCount ?? ""}
                         disabled={isFinalized}
-                        onBlur={(e) => {
-                          const nextVal = e.target.value ? Number(e.target.value) : undefined;
-                          updateLocalRow(device.id, { batteryCount: nextVal });
-                          updateDevice.mutate({ id: device.id, batteryCount: nextVal });
-                        }}
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { batteryCount: value === "" ? undefined : Number(value) }, revision)}
                       />
                     </div>
                   </div>
@@ -723,17 +711,14 @@ export function SmokeAlarmGrid({
                       <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
                         In Service Date
                       </label>
-                      <input
+                      <RevisionBoundInput
                         type="text"
                         placeholder="e.g. 2025"
                         className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
-                        defaultValue={inServiceVal}
+                        value={inServiceVal}
                         disabled={isFinalized}
-                        onBlur={(e) => {
-                          const nextVal = e.target.value || undefined;
-                          updateLocalRow(device.id, { batteryYear: e.target.value });
-                          updateDevice.mutate({ id: device.id, batteryYear: nextVal });
-                        }}
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { batteryYear: value }, revision)}
                       />
                     </div>
                   </div>
@@ -755,7 +740,7 @@ export function SmokeAlarmGrid({
                         Maint. Required
                       </label>
                       <MaintenanceButton
-                        value={meta.maintenanceRequired ?? ""}
+                        value={(meta.maintenanceRequired as MaintenanceValue) ?? ""}
                         onChange={() => handleMaintenanceToggle(device)}
                         disabled={isFinalized}
                       />
@@ -767,13 +752,14 @@ export function SmokeAlarmGrid({
                     <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">
                       Remarks
                     </label>
-                    <input
+                    <RevisionBoundInput
                       type="text"
                       className="w-full text-sm rounded border px-2 py-2 bg-background min-h-[44px]"
-                      defaultValue={remarksVal}
+                      value={remarksVal}
                       disabled={isFinalized}
-                      onBlur={(e) => updateDevice.mutate({ id: device.id, notes: e.target.value })}
-                    />
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { notes: value }, revision)}
+                      />
                   </div>
                 </div>
               )}
@@ -823,15 +809,15 @@ export function SmokeAlarmGrid({
             <Plus className="h-3.5 w-3.5" /> Add Smoke Alarm
           </button>
         )}
-      </div>
+      </GridWriteGuard>
     );
   }
 
   // ── Desktop table layout ───────────────────────────────────────────────────
   return (
-    <div className="space-y-3">
+    <GridWriteGuard barrier={barrier} className="space-y-3">
       {header}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={event => { if (!barrier.isLockedNow()) onDragEnd(event); }}>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-xs border-collapse">
           <thead>
@@ -855,7 +841,7 @@ export function SmokeAlarmGrid({
             {visibleRows.map((device) => {
               const idx = rowIdxMap.get(device.id)!;
               const result = getEffectiveResult(device);
-              const meta = localMeta[device.id] ?? {};
+              const meta = device;
               const rowBg = getRowBg(device);
 
               const cellValue = (field: string): string => {
@@ -921,20 +907,17 @@ export function SmokeAlarmGrid({
                   {/* B — Type */}
                   <td className="px-2 py-1.5 border-r">
                     {!isFinalized ? (
-                      <select
+                      <RevisionBoundSelect
                         className="w-full bg-transparent outline-none border-b border-primary/30 hover:border-primary text-xs font-mono focus:border-primary"
                         value={device.deviceType ?? ""}
-                        onChange={(e) => {
-                          const val = e.target.value || undefined;
-                          updateLocalRow(device.id, { deviceType: val });
-                          updateDevice.mutate({ id: device.id, deviceType: val });
-                        }}
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { deviceType: value }, revision)}
                       >
                         <option value="">—</option>
                         {DEVICE_TYPE_OPTIONS.map((o) => (
                           <option key={o} value={o}>{o}</option>
                         ))}
-                      </select>
+                      </RevisionBoundSelect>
                     ) : device.deviceType ? (
                       <span className="font-mono px-1 py-0.5 rounded bg-[#16324F]/8 text-[#16324F] dark:text-blue-300">
                         {device.deviceType}
@@ -947,20 +930,17 @@ export function SmokeAlarmGrid({
                   {/* C — Power Source */}
                   <td className="px-2 py-1.5 border-r text-muted-foreground">
                     {!isFinalized ? (
-                      <select
+                      <RevisionBoundSelect
                         className="w-full bg-transparent outline-none border-b border-primary/30 hover:border-primary text-xs font-mono focus:border-primary"
                         value={powerTypeToCode(device.powerType)}
-                        onChange={(e) => {
-                          const pt = codeToPowerType(e.target.value);
-                          updateLocalRow(device.id, { powerType: pt });
-                          updateDevice.mutate({ id: device.id, powerType: pt });
-                        }}
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { powerType: codeToPowerType(value) }, revision)}
                       >
                         <option value="">—</option>
                         {POWER_SOURCE_OPTIONS.map((o) => (
                           <option key={o} value={o}>{o}</option>
                         ))}
-                      </select>
+                      </RevisionBoundSelect>
                     ) : (
                       powerTypeToCode(device.powerType) || <span className="text-muted-foreground/40">—</span>
                     )}
@@ -1058,7 +1038,7 @@ export function SmokeAlarmGrid({
                   {/* I — Maintenance Required */}
                   <td className="px-2 py-1.5 border-r text-center">
                     <MaintenanceButton
-                      value={meta.maintenanceRequired ?? ""}
+                      value={(meta.maintenanceRequired as MaintenanceValue) ?? ""}
                       onChange={() => handleMaintenanceToggle(device)}
                       disabled={isFinalized}
                     />
@@ -1147,6 +1127,6 @@ export function SmokeAlarmGrid({
           </button>
         </div>
       )}
-    </div>
+    </GridWriteGuard>
   );
 }

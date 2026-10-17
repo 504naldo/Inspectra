@@ -31,6 +31,28 @@ import { autoMapColumns } from "@/_core/utils/autoMapping";
 import { friendlyErrorMessage } from "@/lib/utils";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
 import { HardDrive } from "lucide-react";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../../server/routers";
+
+type WorkbookOutputs = inferRouterOutputs<AppRouter>["assetImport"];
+
+function WorkbookIssues({ rows }: { rows: WorkbookOutputs["previewAllFromFile"]["excludedRows"] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-md border p-4 space-y-2 text-left">
+      <p className="text-sm font-medium">{rows.length} rows excluded</p>
+      <ul className="max-h-64 overflow-y-auto space-y-3 text-sm">
+        {rows.slice(0, 100).map((row, index) => (
+          <li key={`${row.sheetName}:${row.rowNumber}:${index}`}>
+            <span className="font-medium">{row.sheetName}, row {row.rowNumber}: </span>
+            {row.reason}
+          </li>
+        ))}
+      </ul>
+      {rows.length > 100 && <p className="text-xs text-muted-foreground">Showing the first 100 excluded rows.</p>}
+    </div>
+  );
+}
 
 type ImportStep = 'selectType' | 'upload' | 'mapping' | 'preview' | 'importing' | 'results';
 
@@ -138,14 +160,9 @@ export default function AssetImport({ siteId }: AssetImportProps) {
   const [quickSiteId, setQuickSiteId] = useState<string>(siteId > 0 ? siteId.toString() : '');
   const [quickFile, setQuickFile] = useState<File | null>(null);
   const [quickFileData, setQuickFileData] = useState<string>('');
-  const [quickStep, setQuickStep] = useState<'upload' | 'importing' | 'results'>('upload');
-  const [quickResults, setQuickResults] = useState<{
-    success: boolean;
-    siteFieldsUpdated: number;
-    deviceCounts: { fireAlarm: number; extinguishers: number; emergencyLights: number; smokeAlarms: number; backflows: number; sprinklerSystems: number; sprinklerDevices: number; total: number };
-    excludedRowsCount: number;
-    message: string;
-  } | null>(null);
+  const [quickStep, setQuickStep] = useState<'upload' | 'previewing' | 'preview' | 'importing' | 'results'>('upload');
+  const [quickPreview, setQuickPreview] = useState<WorkbookOutputs["previewAllFromFile"] | null>(null);
+  const [quickResults, setQuickResults] = useState<WorkbookOutputs["importAllFromFile"] | null>(null);
   const quickFileInputRef = useRef<HTMLInputElement>(null);
 
   // Queries
@@ -228,6 +245,17 @@ export default function AssetImport({ siteId }: AssetImportProps) {
     },
   });
   
+  const previewAllMutation = trpc.assetImport.previewAllFromFile.useMutation({
+    onSuccess: (data) => {
+      setQuickPreview(data);
+      setQuickStep('preview');
+    },
+    onError: (err) => {
+      toast.error(friendlyErrorMessage(err, 'Preview failed'));
+      setQuickStep('upload');
+    },
+  });
+
   const importAllMutation = trpc.assetImport.importAllFromFile.useMutation({
     onSuccess: (data) => {
       setQuickResults(data);
@@ -244,6 +272,8 @@ export default function AssetImport({ siteId }: AssetImportProps) {
     if (!file) return;
     if (!isSpreadsheetFile(file)) { toast.error(getSpreadsheetErrorMessage()); return; }
     setQuickFile(file);
+    setQuickFileData('');
+    setQuickPreview(null);
     const reader = new FileReader();
     reader.onload = (event) => {
       const base64 = btoa(
@@ -253,6 +283,12 @@ export default function AssetImport({ siteId }: AssetImportProps) {
       setQuickFileData(base64);
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  const handleQuickPreview = () => {
+    if (!quickSiteId || !quickFileData || !quickFile) return;
+    setQuickStep('previewing');
+    previewAllMutation.mutate({ siteId: parseInt(quickSiteId), fileData: quickFileData, fileName: quickFile.name });
   };
 
   const handleQuickImport = () => {
@@ -266,6 +302,7 @@ export default function AssetImport({ siteId }: AssetImportProps) {
     setQuickFile(null);
     setQuickFileData('');
     setQuickResults(null);
+    setQuickPreview(null);
     if (quickFileInputRef.current) quickFileInputRef.current.value = '';
   };
 
@@ -452,10 +489,46 @@ export default function AssetImport({ siteId }: AssetImportProps) {
 
                   <div className="flex justify-end">
                     <Button
-                      onClick={handleQuickImport}
+                      onClick={handleQuickPreview}
                       disabled={!quickSiteId || !quickFile || !quickFileData}
                       size="lg"
                     >
+                      <Zap className="h-4 w-4 mr-2" />
+                      Preview Import
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {quickStep === 'previewing' && (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Loader2 className="h-12 w-12 mx-auto animate-spin text-primary mb-4" />
+                  <h3 className="text-lg font-medium">Checking workbook…</h3>
+                </CardContent>
+              </Card>
+            )}
+
+            {quickStep === 'preview' && quickPreview && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Review Workbook Import</CardTitle>
+                  <CardDescription>{quickFile?.name} — {quickPreview.classifiedSheets.length} sheets recognized</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <p className="text-sm">
+                    {quickPreview.insertedCount} devices to insert, {quickPreview.updatedCount} to update,
+                    {' '}{quickPreview.excludedRowsCount} rows excluded.
+                  </p>
+                  {quickPreview.classifiedSheets.some(sheet => sheet.importType === 'site') && (
+                    <p className="text-sm">Site information from the workbook will also be applied.</p>
+                  )}
+                  <WorkbookIssues rows={quickPreview.excludedRows} />
+                  <p className="text-xs text-muted-foreground">Counts are checked again when you import.</p>
+                  <div className="flex justify-end gap-3">
+                    <Button variant="outline" onClick={() => { setQuickStep('upload'); setQuickPreview(null); }}>Back</Button>
+                    <Button onClick={handleQuickImport}>
                       <Zap className="h-4 w-4 mr-2" />
                       Import All Device Types
                     </Button>
@@ -499,9 +572,8 @@ export default function AssetImport({ siteId }: AssetImportProps) {
                       ))}
                     </div>
                     <p className="text-sm font-semibold mt-2">Total: {quickResults.deviceCounts.total} devices</p>
-                    {quickResults.excludedRowsCount > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">{quickResults.excludedRowsCount} rows skipped (missing location)</p>
-                    )}
+                    <p className="text-sm mt-1">{quickResults.insertedCount} inserted, {quickResults.updatedCount} updated</p>
+                    <div className="mt-4"><WorkbookIssues rows={quickResults.excludedRows} /></div>
                   </CardContent>
                 </Card>
 

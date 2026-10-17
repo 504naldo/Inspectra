@@ -78,6 +78,16 @@ const ID_TOKENS = [
 const SCOPING_SIGNALS: RegExp[] = [
   /assert\w*Company\b/,              // assertJobCompany, assertSiteCompany, assertDeviceCompany, assertCustomerOrgCompany, …
   /assertAttachmentDestination\b/, // canonical attachment parent plus company/org/link checks
+  /\bwithMutableJob\s*\(/,          // jobWriteTransaction: scoped parent before + after first locking read
+  /\bwithAttachmentWrite\s*\(/,     // canonical attachment parents, sorted locks and reauthorization
+  /\bwithMutableWorkOrder\s*\(/,    // workOrderRouter: scoped work order + revalidated parent job
+  /\bwithMutableAssignmentJobs\s*\(/, // every actual job scoped before/after sorted seal locks; same-company batch
+  /\bwithMutableDeficiency\s*\(/,   // canonical deficiency authorization, parent seal lock and drift recheck
+  /\bwithReportJob\s*\(/,           // coherent report snapshot: scope before and after the job lock
+  /\bwithLockedApprovedWork\s*\(/,  // scoped approval, sorted job/quote/work-order locks and link revalidation
+  /\bwithApprovedWorkCreation\s*\(/, // company authorization plus actual ancestor consistency under locks
+  /\bwithLockedRepairQuoteLifecycle\s*\(/, // scoped repair quote plus revalidated job and work-order ancestors
+  /\brequireUploadedAttachment\s*\(/, // same uploader + canonical parent + persisted object provenance
   /assert\w*Access\b/,               // assertDeficiencyAccess, assertAttachmentAccess, …
   /get\w+ForCompany\b/,              // getJobForCompany, getSiteForCompany, …
   /requireOwned\w*/,                 // requireOwnedQueueItem, requireOwned…
@@ -108,8 +118,6 @@ const ALLOWLIST: Record<string, string> = {
   // to the regex.
   "server/routers/complianceRouter.ts::finalizeJob":
     "delegates to compliance/finalizeJob.ts, which enforces job company ownership with the documented platform-admin bypass before finalizing",
-  "server/jobAssignmentRouter.ts::listMyJobs":
-    "self-scoped: returns only the caller's own assignments (WHERE jobAssignments.userId = ctx.user.id)",
   // listJobsWithAssignees / listDispatch previously relied on this allowlist for
   // their input.companyId trust; both now enforce assertCompanyScope() (office
   // scoped to its own company, admin cross-company), so they no longer need an

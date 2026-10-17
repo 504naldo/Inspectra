@@ -25,6 +25,12 @@ vi.mock("./db", () => ({
   getChecklistResponsesByJob: vi.fn(),
 }));
 
+vi.mock("./jobWriteTransaction", async () => {
+  const database = await import("./db");
+  return { withReportJob: async (ctx: TrpcContext, _name: string, jobId: number, action: (job: unknown) => unknown) => action(await database.assertJobCompany(jobId, ctx.user!.companyId!)) };
+});
+vi.mock("./recordedReportFacts", async importOriginal => ({ ...(await importOriginal<typeof import("./recordedReportFacts")>()), getRecordedReportFacts: vi.fn().mockResolvedValue({}) }));
+
 import * as db from "./db";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;

@@ -322,11 +322,14 @@ export default function ChecklistCompletion({ jobId }: ChecklistCompletionProps)
     const key = `${sectionNumber}-${itemId}`;
     const localId = `${jobId}-${key}`;
     if (isOnline) {
+      const sentDrafts = getChecklistResponsesForJob(jobId).filter(
+        r => r.localId === localId
+      );
       saveResponse.mutate(
         { jobId, sectionNumber, itemId, status, comment },
         // Clears any stale offline copy of this item so a later sync can't overwrite
         // this fresher, already-saved value.
-        { onSuccess: () => markChecklistResponsesSynced([localId]) }
+        { onSuccess: () => markChecklistResponsesSynced(sentDrafts) }
       );
     } else {
       saveOfflineChecklistResponse({ localId, jobId, sectionNumber, itemId, status, comment, synced: false });
@@ -377,14 +380,14 @@ export default function ChecklistCompletion({ jobId }: ChecklistCompletionProps)
       };
     });
 
+    const sentDrafts = getChecklistResponsesForJob(jobId);
     bulkSave.mutate({ responses: responsesArray }, {
       // The bulk save just pushed the canonical current state for every item in
       // `responses` (which already incorporates any offline edits) — clear them
       // all so a later sync doesn't replay stale local copies over this.
       onSuccess: () => {
-        const localIds = getChecklistResponsesForJob(jobId).map((r) => r.localId);
-        if (localIds.length > 0) {
-          markChecklistResponsesSynced(localIds);
+          if (sentDrafts.length > 0) {
+          markChecklistResponsesSynced(sentDrafts);
           clearSyncedChecklistResponses();
         }
       },

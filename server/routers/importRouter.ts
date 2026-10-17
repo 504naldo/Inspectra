@@ -5,6 +5,9 @@ import * as db from "../db";
 import { assertSiteCompany, assertImportLogCompany } from "../tenantGuards";
 import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
 import { safeXlsxRead } from "../_core/safeXlsxRead";
+import { withLockedImportSite, isRecoverableImportRowError } from "../services/importSiteTransaction";
+import { findImportDeviceMatches, findImportSourceCollisions } from "../services/importDeviceIdentity";
+import { buildExternalRef } from "../services/workbookImport";
 
 // Import router for CSV/XLSX imports
 const importRouter = router({
@@ -385,288 +388,328 @@ const importRouter = router({
         message: `Sheet "${input.sheetName}" not found`
       });
     }
-    
+
     const sheet = workbook.Sheets[input.sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-    
+
     // Use smart header detection
     const { detectHeaderRow } = await import('../headerDetection');
     const headerDetection = detectHeaderRow(data, input.importType, 30);
     const headers = headerDetection.headers;
     const rows = data.slice(headerDetection.dataStartIndex);
-    
+
     // Get schema for import type
     const { getImportSchema, shouldSkipRow } = await import('../importSchemas');
     const schema = getImportSchema(input.importType);
-    
-    // Map new import types to legacy DB enum
-    const legacyImportType = input.importType === 'site' ? 'sites' : 'devices';
-    
-    // Create import log
-    const importLog = await db.createImportLog({
-      companyId: targetCompanyId,
-      siteId: input.siteId,
-      importedById: ctx.user.id,
-      importType: legacyImportType,
-      fileName: input.fileName,
-      columnMapping: input.columnMapping as any,
-      duplicateHandling: input.duplicateHandling,
-      totalRows: rows.length,
-      status: 'importing',
-      startedAt: new Date(),
-    });
-    
-    let successCount = 0;
-    let errorCount = 0;
-    let duplicateCount = 0;
-    let skippedCount = 0;
-    const rowResults: Array<{
-      importLogId: number;
-      rowNumber: number;
-      status: 'success' | 'error' | 'duplicate' | 'skipped';
-      entityId?: number;
-      originalData: any;
-      errorMessage?: string;
-    }> = [];
 
-    // Preserve the source spreadsheet order: give each imported device a
-    // sortOrder following its row position, appended after any existing devices.
-    const sortBase = await db.getMaxDeviceSortOrder(input.siteId);
-
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-
-      // Skip heading/note rows and pricing tables
-      if (shouldSkipRow(row, headers)) {
-        skippedCount++;
-        continue;
-      }
-      
+    const allowedFields = new Set([...schema.requiredFields, ...schema.optionalFields]);
+    if (Object.keys(input.columnMapping).some(field => !allowedFields.has(field))) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Column mapping contains an unsupported field" });
+    }
+    const mappedRows = rows.map(row => {
       const rowData: Record<string, any> = {};
-      
-      // Map columns to fields
       for (const [targetField, sourceColumn] of Object.entries(input.columnMapping)) {
-        const colIndex = headers.indexOf(sourceColumn);
-        if (colIndex !== -1 && row[colIndex] !== undefined && row[colIndex] !== '') {
-          rowData[targetField] = row[colIndex];
+        const index = headers.indexOf(sourceColumn);
+        if (index >= 0 && row[index] !== undefined && row[index] !== '') rowData[targetField] = row[index];
+      }
+      schema.validateRow(rowData); // The shared normalizers also run at execution.
+      const identity = input.importType === 'site' ? undefined : buildExternalRef(
+        input.importType === 'sprinklerDevices' ? 'fireAlarmDevices' : input.importType,
+        rowData, input.siteId, schema.category as Parameters<typeof buildExternalRef>[3],
+      );
+      const defaults: Record<string, string> = { emergencyLights: 'Emergency Light', fireExtinguishers: 'Fire Extinguisher' };
+      const identityData = {
+        companyId: targetCompanyId, siteId: input.siteId,
+        category: schema.category as Parameters<typeof buildExternalRef>[3], externalRef: identity!,
+        serialNumber: rowData.serialNumber, barcode: rowData.barcode,
+        location: rowData.location ? `${rowData.floor ? rowData.floor + ' - ' : ''}${rowData.location}` : undefined,
+        deviceType: input.importType === 'smokeAlarms' ? 'Smoke Alarm' : String(rowData.deviceType ?? '').trim() || defaults[input.importType] || 'Unknown',
+      };
+      return { rowData, identity, identityData, skipped: shouldSkipRow(row, headers) };
+    });
+    const identityRows = mappedRows.map((row, index) => ({ ...row, index })).filter(row => row.identity && !row.skipped);
+    const sourceCollisions = findImportSourceCollisions(identityRows.map(row => row.identityData));
+    const ambiguousSourceRows = new Set(Array.from(sourceCollisions.keys()).map(index => identityRows[index].index));
+
+    return withLockedImportSite({ siteId: input.siteId, companyId: targetCompanyId,
+      customerOrgId: targetSite.customerOrgId }, async tx => {
+      // Resolve every saved target before the first write. Distinct source
+      // aliases can otherwise overwrite one legacy asset in row order.
+      const plannedMatches = new Map<number, Awaited<ReturnType<typeof findImportDeviceMatches>>>();
+      const targets = new Map<number, number[]>();
+      if (input.duplicateHandling !== 'create_new') {
+        for (const row of identityRows) {
+          if (ambiguousSourceRows.has(row.index)) continue;
+          const matches = await findImportDeviceMatches(tx, row.identityData, true);
+          plannedMatches.set(row.index, matches);
+          if (matches.length === 1) {
+            const group = targets.get(matches[0].id) ?? [];
+            group.push(row.index); targets.set(matches[0].id, group);
+          }
         }
       }
-      
-      try {
-        if (input.importType === 'site') {
-          // Update site information
-          if (rowData.siteName) {
-            await db.updateSite(input.siteId, {
-              name: rowData.siteName,
-              address: rowData.address,
-              city: rowData.city,
+      const ambiguousTargetRows = new Set(Array.from(targets.values()).filter(group => group.length > 1).flat());
+      // Map new import types to legacy DB enum
+      const legacyImportType = input.importType === 'site' ? 'sites' : 'devices';
+
+      // Create import log
+      const importLog = await db.createImportLog({
+        companyId: targetCompanyId,
+        siteId: input.siteId,
+        importedById: ctx.user.id,
+        importType: legacyImportType,
+        fileName: input.fileName,
+        columnMapping: input.columnMapping as any,
+        duplicateHandling: input.duplicateHandling,
+        totalRows: rows.length,
+        status: 'importing',
+        startedAt: new Date(),
+      });
+
+      let successCount = 0;
+      let errorCount = 0;
+      let duplicateCount = 0;
+      let skippedCount = 0;
+      const rowResults: Array<{
+        importLogId: number;
+        rowNumber: number;
+        status: 'success' | 'error' | 'duplicate' | 'skipped';
+        entityId?: number;
+        originalData: any;
+        errorMessage?: string;
+      }> = [];
+
+      // Preserve the source spreadsheet order: give each imported device a
+      // sortOrder following its row position, appended after any existing devices.
+      const sortBase = await db.getMaxDeviceSortOrder(input.siteId);
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+
+        // Skip heading/note rows and pricing tables
+        if (shouldSkipRow(row, headers)) {
+          skippedCount++;
+          continue;
+        }
+
+        const { rowData, identity } = mappedRows[i];
+        const rowNumber = (sheet['!ref'] ? XLSX.utils.decode_range(sheet['!ref']).s.r : 0) + headerDetection.dataStartIndex + i + 1;
+        if (identity && input.duplicateHandling !== 'create_new' && (ambiguousSourceRows.has(i) || ambiguousTargetRows.has(i))) {
+          errorCount++;
+          rowResults.push({ importLogId: importLog.id, rowNumber, status: 'error', originalData: rowData,
+            errorMessage: ambiguousSourceRows.has(i)
+              ? 'Ambiguous device identity alias shared by multiple source rows. All matching rows were excluded.'
+              : 'Multiple source identities resolve to the same saved device. All matching rows were excluded. Reconcile serial/barcode aliases.' });
+          continue;
+        }
+
+        try {
+          if (input.importType === 'site') {
+            // Update site information
+            if (rowData.siteName) {
+              await db.updateSite(input.siteId, {
+                name: rowData.siteName,
+                address: rowData.address,
+                city: rowData.city,
+                notes: rowData.notes,
+              });
+              successCount++;
+              rowResults.push({
+                importLogId: importLog.id,
+                rowNumber,
+                status: 'success',
+                entityId: input.siteId,
+                originalData: rowData,
+              });
+            }
+          } else {
+            // Auto-fill deviceType for types that don't have a Type column in the workbook
+            const autoDeviceType: Record<string, string> = {
+              emergencyLights:  'Emergency Light',
+              fireExtinguishers: 'Fire Extinguisher',
+            };
+            const resolvedDeviceType =
+              String(rowData.deviceType ?? '').trim() ||
+              autoDeviceType[input.importType] ||
+              'Unknown';
+
+            // Create new device with category
+            const deviceData: any = {
+              companyId: targetCompanyId,
+              siteId: input.siteId,
+              // Row position (1-based) after existing devices → source order.
+              sortOrder: sortBase + i + 1,
+              category: schema.category || 'FIRE_ALARM_DEVICE',
+              deviceType: resolvedDeviceType,
+              manufacturer: rowData.manufacturer,
+              model: rowData.model,
+              serialNumber: rowData.serialNumber,
+              location: rowData.location ? `${rowData.floor ? rowData.floor + ' - ' : ''}${rowData.location}` : undefined,
+              barcode: rowData.barcode,
               notes: rowData.notes,
-            });
+            };
+
+            // Add emergency light specific fields
+            if (input.importType === 'emergencyLights') {
+              deviceData.ladderHeight  = rowData.ladderHeight  || undefined;
+              deviceData.supplyVoltage = rowData.supplyVoltage || undefined;
+              deviceData.modelWattage  = rowData.modelWattage  || undefined;
+              deviceData.batteryYear   = rowData.batteryYear   || undefined;
+              deviceData.batterySize   = rowData.batterySize   || undefined;
+              deviceData.batteryCount  = rowData.batteryCount  ? Number(rowData.batteryCount) || undefined : undefined;
+              deviceData.lampCount     = rowData.lampCount     ? Number(rowData.lampCount)    || undefined : undefined;
+            }
+
+            // Add extinguisher specific fields
+            if (input.importType === 'fireExtinguishers') {
+              deviceData.mfgDate  = rowData.mfgDate  || undefined;
+              deviceData.lastHST  = rowData.lastHST  || undefined;
+              deviceData.last6yr  = rowData.last6yr  || undefined;
+            }
+
+            // Add smoke alarm specific fields
+            if (input.importType === 'smokeAlarms') {
+              const { normalizePowerType } = await import('../powerTypeNormalization');
+              deviceData.suiteNumber = rowData.suiteNumber;
+              deviceData.powerType = rowData.powerType ? normalizePowerType(rowData.powerType) : 'unknown';
+              deviceData.installDate = rowData.installDate ? new Date(rowData.installDate) : null;
+              deviceData.deviceType = 'Smoke Alarm';
+            }
+
+            deviceData.externalRef = identity;
+            const matches = plannedMatches.get(i) ?? [];
+            if (matches.length > 1 && input.duplicateHandling !== 'create_new') {
+              errorCount++;
+              rowResults.push({ importLogId: importLog.id, rowNumber, status: 'error', originalData: rowData,
+                errorMessage: 'This identity matches multiple saved devices. Resolve saved duplicates before importing.' });
+              continue;
+            }
+            const existing = matches[0];
+            if (existing && input.duplicateHandling === 'skip') {
+              skippedCount++;
+              rowResults.push({ importLogId: importLog.id, rowNumber, status: 'skipped', originalData: rowData,
+                errorMessage: 'Duplicate - skipped' });
+              continue;
+            }
+            if (existing && input.duplicateHandling === 'update') {
+              const { sortOrder: _sortOrder, ...patch } = deviceData;
+              await db.updateDevice(existing.id, patch);
+              duplicateCount++;
+              rowResults.push({ importLogId: importLog.id, rowNumber, status: 'duplicate', originalData: rowData,
+                entityId: existing.id });
+              continue;
+            }
+            // create_new is an explicit operator choice; skip/update are serialized.
+            const device = await db.createDevice(deviceData);
+
             successCount++;
             rowResults.push({
               importLogId: importLog.id,
-              rowNumber: i + 2,
+              rowNumber,
               status: 'success',
-              entityId: input.siteId,
+              entityId: device.id,
               originalData: rowData,
             });
           }
-        } else {
-          // Check for duplicate
-          const existing = await db.findDuplicateDevice(
-            input.siteId,
-            rowData.serialNumber || null,
-            rowData.barcode || null
-          );
-          
-          if (existing) {
-            if (input.duplicateHandling === 'skip') {
-              skippedCount++;
-              rowResults.push({
-                importLogId: importLog.id,
-                rowNumber: i + 2,
-                status: 'skipped',
-                originalData: rowData,
-                errorMessage: 'Duplicate - skipped',
-              });
-              continue;
-            } else if (input.duplicateHandling === 'update') {
-              await db.updateDevice(existing.id, {
-                ...rowData,
-                siteId: input.siteId,
-              });
-              duplicateCount++;
-              rowResults.push({
-                importLogId: importLog.id,
-                rowNumber: i + 2,
-                status: 'duplicate',
-                entityId: existing.id,
-                originalData: rowData,
-              });
-              continue;
-            }
-            // create_new falls through to create
-          }
-          
-          // Auto-fill deviceType for types that don't have a Type column in the workbook
-          const autoDeviceType: Record<string, string> = {
-            emergencyLights:  'Emergency Light',
-            fireExtinguishers: 'Fire Extinguisher',
-          };
-          const resolvedDeviceType =
-            rowData.deviceType?.trim() ||
-            autoDeviceType[input.importType] ||
-            'Unknown';
-
-          // Create new device with category
-          const deviceData: any = {
-            companyId: targetCompanyId,
-            siteId: input.siteId,
-            // Row position (1-based) after existing devices → source order.
-            sortOrder: sortBase + i + 1,
-            category: schema.category || 'FIRE_ALARM_DEVICE',
-            deviceType: resolvedDeviceType,
-            manufacturer: rowData.manufacturer,
-            model: rowData.model,
-            serialNumber: rowData.serialNumber,
-            location: rowData.location ? `${rowData.floor ? rowData.floor + ' - ' : ''}${rowData.location}` : undefined,
-            barcode: rowData.barcode,
-            notes: rowData.notes,
-          };
-
-          // Add emergency light specific fields
-          if (input.importType === 'emergencyLights') {
-            deviceData.ladderHeight  = rowData.ladderHeight  || undefined;
-            deviceData.supplyVoltage = rowData.supplyVoltage || undefined;
-            deviceData.modelWattage  = rowData.modelWattage  || undefined;
-            deviceData.batteryYear   = rowData.batteryYear   || undefined;
-            deviceData.batterySize   = rowData.batterySize   || undefined;
-            deviceData.batteryCount  = rowData.batteryCount  ? Number(rowData.batteryCount) || undefined : undefined;
-            deviceData.lampCount     = rowData.lampCount     ? Number(rowData.lampCount)    || undefined : undefined;
-          }
-
-          // Add extinguisher specific fields
-          if (input.importType === 'fireExtinguishers') {
-            deviceData.mfgDate  = rowData.mfgDate  || undefined;
-            deviceData.lastHST  = rowData.lastHST  || undefined;
-            deviceData.last6yr  = rowData.last6yr  || undefined;
-          }
-
-          // Add smoke alarm specific fields
-          if (input.importType === 'smokeAlarms') {
-            const { normalizePowerType } = await import('../powerTypeNormalization');
-            deviceData.suiteNumber = rowData.suiteNumber;
-            deviceData.powerType = rowData.powerType ? normalizePowerType(rowData.powerType) : 'unknown';
-            deviceData.installDate = rowData.installDate ? new Date(rowData.installDate) : null;
-            deviceData.deviceType = 'Smoke Alarm';
-          }
-          
-          const device = await db.createDevice(deviceData);
-          
-          successCount++;
+        } catch (error: any) {
+          if (!isRecoverableImportRowError(error)) throw error;
+          errorCount++;
           rowResults.push({
             importLogId: importLog.id,
-            rowNumber: i + 2,
-            status: 'success',
-            entityId: device.id,
+            rowNumber,
+            status: 'error',
             originalData: rowData,
+            errorMessage: error.message || 'Unknown error',
           });
         }
-      } catch (error: any) {
-        errorCount++;
-        rowResults.push({
-          importLogId: importLog.id,
-          rowNumber: i + 2,
-          status: 'error',
-          originalData: rowData,
-          errorMessage: error.message || 'Unknown error',
-        });
       }
-    }
-    
-    // Save row results
-    await db.createBulkImportRowResults(rowResults);
-    
-    // Parse Summary Sheet if it exists and update site summary
-    try {
-      const summarySheetNames = ['Summary', 'summary', 'SUMMARY', 'Summary Sheet', 'SUMMARY SHEET'];
-      const summarySheetName = workbook.SheetNames.find(name => 
-        summarySheetNames.some(s => name.toLowerCase().includes(s.toLowerCase()))
-      );
-      
-      if (summarySheetName && workbook.Sheets[summarySheetName]) {
-        const { parseSummarySheet } = await import('../summarySheetParser');
-        const summarySheet = workbook.Sheets[summarySheetName];
-        const summaryData = XLSX.utils.sheet_to_json(summarySheet, { header: 1 }) as any[][];
-        const parsedSummary = parseSummarySheet(summaryData);
-        
-        // Calculate device totals from imported devices
-        const siteDevices = await db.getDevicesBySite(input.siteId);
-        const totals = {
-          fireAlarmDevicesCount: siteDevices.filter(d => d.category === 'FIRE_ALARM_DEVICE').length,
-          smokeAlarmsCount: siteDevices.filter(d => d.category === 'SMOKE_ALARM').length,
-          emergencyLightsCount: siteDevices.filter(d => d.category === 'EMERGENCY_LIGHT').length,
-          fireExtinguishersCount: siteDevices.filter(d => d.category === 'FIRE_EXTINGUISHER').length,
-          sprinklerDevicesCount: siteDevices.filter(d => d.category === 'SPRINKLER').length,
-        };
-        
-        // Merge totals into parsed summary
-        parsedSummary.totals = totals;
-        
-        // Update site with summary data and sync flat columns
-        const updateData: any = {
-          summary: parsedSummary as any,
-        };
-        
-        // Sync key flat columns from summary for search/indexing
-        if (parsedSummary.building?.name) {
-          updateData.name = parsedSummary.building.name;
+
+      // Save row results
+      await db.createBulkImportRowResults(rowResults);
+
+      // Parse Summary Sheet if it exists and update site summary
+      try {
+        const summarySheetNames = ['Summary', 'summary', 'SUMMARY', 'Summary Sheet', 'SUMMARY SHEET'];
+        const summarySheetName = workbook.SheetNames.find(name =>
+          summarySheetNames.some(s => name.toLowerCase().includes(s.toLowerCase()))
+        );
+
+        if (summarySheetName && workbook.Sheets[summarySheetName]) {
+          const { parseSummarySheet } = await import('../summarySheetParser');
+          const summarySheet = workbook.Sheets[summarySheetName];
+          const summaryData = XLSX.utils.sheet_to_json(summarySheet, { header: 1 }) as any[][];
+          const parsedSummary = parseSummarySheet(summaryData);
+
+          // Calculate device totals from imported devices
+          const siteDevices = await db.getDevicesBySite(input.siteId);
+          const totals = {
+            fireAlarmDevicesCount: siteDevices.filter(d => d.category === 'FIRE_ALARM_DEVICE').length,
+            smokeAlarmsCount: siteDevices.filter(d => d.category === 'SMOKE_ALARM').length,
+            emergencyLightsCount: siteDevices.filter(d => d.category === 'EMERGENCY_LIGHT').length,
+            fireExtinguishersCount: siteDevices.filter(d => d.category === 'FIRE_EXTINGUISHER').length,
+            sprinklerDevicesCount: siteDevices.filter(d => d.category === 'SPRINKLER').length,
+          };
+
+          // Merge totals into parsed summary
+          parsedSummary.totals = totals;
+
+          // Update site with summary data and sync flat columns
+          const updateData: any = {
+            summary: parsedSummary as any,
+          };
+
+          // Sync key flat columns from summary for search/indexing
+          if (parsedSummary.building?.name) {
+            updateData.name = parsedSummary.building.name;
+          }
+          if (parsedSummary.address) {
+            if (parsedSummary.address.street) updateData.address = parsedSummary.address.street;
+            if (parsedSummary.address.city) updateData.city = parsedSummary.address.city;
+            if (parsedSummary.address.state) updateData.state = parsedSummary.address.state;
+            if (parsedSummary.address.postalCode) updateData.postalCode = parsedSummary.address.postalCode;
+          }
+          if (parsedSummary.contacts?.[0]) {
+            if (parsedSummary.contacts[0].name) updateData.contactName = parsedSummary.contacts[0].name;
+            if (parsedSummary.contacts[0].phone) updateData.contactPhone = parsedSummary.contacts[0].phone;
+          }
+          if (parsedSummary.notes) {
+            updateData.notes = parsedSummary.notes;
+          }
+
+          await db.updateSite(input.siteId, updateData);
+
+          console.log('[execute] Summary Sheet parsed and saved:', {
+            siteId: input.siteId,
+            summarySheetName,
+            totals,
+          });
         }
-        if (parsedSummary.address) {
-          if (parsedSummary.address.street) updateData.address = parsedSummary.address.street;
-          if (parsedSummary.address.city) updateData.city = parsedSummary.address.city;
-          if (parsedSummary.address.state) updateData.state = parsedSummary.address.state;
-          if (parsedSummary.address.postalCode) updateData.postalCode = parsedSummary.address.postalCode;
-        }
-        if (parsedSummary.contacts?.[0]) {
-          if (parsedSummary.contacts[0].name) updateData.contactName = parsedSummary.contacts[0].name;
-          if (parsedSummary.contacts[0].phone) updateData.contactPhone = parsedSummary.contacts[0].phone;
-        }
-        if (parsedSummary.notes) {
-          updateData.notes = parsedSummary.notes;
-        }
-        
-        await db.updateSite(input.siteId, updateData);
-        
-        console.log('[execute] Summary Sheet parsed and saved:', {
-          siteId: input.siteId,
-          summarySheetName,
-          totals,
-        });
+      } catch (summaryError: any) {
+        console.error('[execute] Failed to parse Summary Sheet:', summaryError);
+        // A database/transaction failure must roll back devices, site fields and
+        // the import log together, rather than report a completed partial import.
+        throw summaryError;
       }
-    } catch (summaryError: any) {
-      console.error('[execute] Failed to parse Summary Sheet:', summaryError);
-      // Don't fail the entire import if summary parsing fails
-    }
-    
-    // Update import log
-    await db.updateImportLog(importLog.id, {
-      status: errorCount > 0 ? 'partial' : 'completed',
-      successCount,
-      errorCount,
-      duplicateCount,
-      skippedCount,
-      completedAt: new Date(),
+
+      // Update import log
+      await db.updateImportLog(importLog.id, {
+        status: errorCount > 0 ? 'partial' : 'completed',
+        successCount,
+        errorCount,
+        duplicateCount,
+        skippedCount,
+        completedAt: new Date(),
+      });
+
+      return {
+        importLogId: importLog.id,
+        totalRows: rows.length,
+        successCount,
+        errorCount,
+        duplicateCount,
+        skippedCount,
+      };
     });
-    
-    return {
-      importLogId: importLog.id,
-      totalRows: rows.length,
-      successCount,
-      errorCount,
-      duplicateCount,
-      skippedCount,
-    };
   }),
 });
 

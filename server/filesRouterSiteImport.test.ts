@@ -5,6 +5,7 @@ import { companies, customerOrgs, sites, jobs, attachments, devices } from "../d
 import { getDb } from "./db";
 import { storagePut } from "./storage";
 import * as XLSX from "xlsx";
+import { assertDisposableS3Environment } from "../scripts/disposableS3Config.mjs";
 
 /**
  * filesRouter Site Sheet Import Test
@@ -33,8 +34,8 @@ function createTestContext(role: "admin" | "office" | "technician" = "office") {
   };
 }
 
-// Requires a real S3/R2 bucket — skips gracefully when credentials aren't configured.
-describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("filesRouter Site Sheet Import", () => {
+// Real disposable storage is required; production credentials never enable this suite.
+describe.skipIf(process.env.DISPOSABLE_S3_ACCEPTANCE !== "true")("filesRouter Site Sheet Import", () => {
   let testCompanyId: number;
   let testCustomerOrgId: number;
   let testSiteId: number;
@@ -42,6 +43,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("filesRouter Site Sheet Import", 
   let testAttachmentId: number;
 
   beforeAll(async () => {
+    assertDisposableS3Environment();
     const database = await getDb();
     if (!database) throw new Error("Database not available");
 
@@ -149,6 +151,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("filesRouter Site Sheet Import", 
 
     // Create attachment record
     const [attachment] = await database.insert(attachments).values({
+      companyId: testCompanyId,
       entityType: "job",
       entityId: testJobId,
       siteId: testSiteId,
@@ -166,6 +169,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("filesRouter Site Sheet Import", 
   });
 
   afterAll(async () => {
+    if (!testCompanyId) return;
     const database = await getDb();
     if (!database) return;
 

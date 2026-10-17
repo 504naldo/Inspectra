@@ -1,24 +1,36 @@
 import { useEffect, useState } from "react";
-import { offlineStorage, subscribePendingResults, type PendingInspectionResult } from "@/lib/offlineStorage";
-
-/**
- * Tracks pending fire-alarm checklist results queued in IndexedDB awaiting sync.
- * Reacts instantly to save/sync/clear via offlineStorage's pub/sub instead of polling.
- */
+import {
+  offlineStorage,
+  subscribePendingResults,
+  type PendingInspectionResult,
+} from "@/lib/offlineStorage";
+import { useOfflineScope } from "./useOfflineScope";
+import { offlineScopeKey } from "@/lib/offlineScope";
 export function usePendingFireAlarmResults() {
-  const [results, setResults] = useState<PendingInspectionResult[]>([]);
-
+  const scope = useOfflineScope();
+  const scopeKey = scope ? offlineScopeKey(scope) : "";
+  const [state, setState] = useState<{
+    scopeKey: string;
+    items: PendingInspectionResult[];
+  }>({ scopeKey: "", items: [] });
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
-      offlineStorage.getPendingResults().then((items) => {
-        if (!cancelled) setResults(items);
-      }).catch(() => {});
+      offlineStorage
+        .getPendingResults(scope)
+        .then(items => {
+          if (!cancelled) setState({ scopeKey, items });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ scopeKey, items: [] });
+        });
     };
-
     refresh();
-    return subscribePendingResults(refresh);
-  }, []);
-
-  return results;
+    const unsubscribe = subscribePendingResults(refresh);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [scopeKey]);
+  return state.scopeKey === scopeKey ? state.items : [];
 }

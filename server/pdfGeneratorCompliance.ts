@@ -43,7 +43,7 @@ export interface ChecklistSection {
 export interface DeviceRecord {
   deviceType: string;
   location: string;
-  result: 'PASS' | 'DEFICIENT' | 'NO ACCESS';
+  result: 'PASS' | 'DEFICIENT' | 'NO ACCESS' | 'N/A' | 'NOT TESTED';
   notes?: string;
 }
 
@@ -51,13 +51,13 @@ export interface ExtinguisherRecord {
   location: string;
   type: string;
   serialNumber?: string;
-  result: 'PASS' | 'DEFICIENT';
+  result: 'PASS' | 'DEFICIENT' | 'N/A' | 'NOT TESTED';
 }
 
 export interface EmergencyLightRecord {
   location: string;
-  functionalTest: 'PASS' | 'FAIL';
-  durationTest?: 'PASS' | 'FAIL' | 'N/A';
+  functionalTest: 'PASS' | 'FAIL' | 'N/A' | 'NOT TESTED';
+  durationTest?: 'PASS' | 'FAIL' | 'N/A' | 'NOT RECORDED';
   comments?: string;
 }
 
@@ -71,9 +71,9 @@ export interface DeficiencySummary {
 export interface ComplianceReportData {
   // Header information
   workOrderNumber: string;
-  dateOfService: Date;
-  inspectionFrequency:
-    | 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly' | 'Annual' | '3 Year' | '5 Year' | '25 Year';
+  dateOfService: Date | null;
+  inspectionFrequency?:
+    | 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly' | 'Annual' | 'Semi-annual' | 'Service' | 'Repair' | '3 Year' | '5 Year' | '25 Year';
   contactPerson: string;
   contactPhone: string;
   buildingName: string;
@@ -104,13 +104,14 @@ export interface ComplianceReportData {
   
   // Summary page
   systemModel: string;
-  systemOperation: 'Single Stage' | 'Two Stage';
+  systemOperation?: 'Single Stage' | 'Two Stage';
   fireSignalReceivingCentre?: string;
-  connectedToFireSignalReceivingCentre: boolean;
-  systemFullyFunctional: boolean;
+  connectedToFireSignalReceivingCentre?: boolean;
+  systemFullyFunctional?: boolean;
+  completeSystemInspection?: boolean;
   deficienciesIdentified: boolean;
   deficienciesCorrectedDate?: Date;
-  recommendationsIdentified: boolean;
+  recommendationsIdentified?: boolean;
   
   // Technician information
   technicianName: string;
@@ -154,7 +155,7 @@ function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
   doc.fontSize(8).font('Helvetica-Bold').fillColor('#000000')
      .text('Date of Service:', rightBoxX + 5, margin + 6);
   doc.font('Helvetica')
-     .text(data.dateOfService.toLocaleDateString(), rightBoxX + 75, margin + 6);
+     .text(data.dateOfService?.toLocaleDateString() ?? 'Not recorded', rightBoxX + 75, margin + 6);
   doc.font('Helvetica-Bold')
      .text('Work Order Number:', rightBoxX + 130, margin + 6);
   doc.font('Helvetica')
@@ -173,7 +174,9 @@ function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
     { label: '5 Year',    value: '5 Year',    x: rightBoxX + 120, y: freqY + 17 },
     { label: '25 Year',   value: '25 Year',   x: rightBoxX + 180, y: freqY + 17 },
   ];
-  frequencies.forEach(freq => {
+  if (!frequencies.some(freq => freq.value === data.inspectionFrequency)) {
+    doc.fontSize(8).font('Helvetica').text(`Recorded type: ${data.inspectionFrequency ?? 'Not recorded'}`, rightBoxX + 5, freqY + 10, { width: rightBoxWidth - 10 });
+  } else frequencies.forEach(freq => {
     drawCheckbox(doc, freq.x, freq.y, data.inspectionFrequency === freq.value, 8);
     doc.fontSize(7).font('Helvetica').text(freq.label, freq.x + 12, freq.y);
   });
@@ -273,9 +276,8 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
         propertyCity: data.city,
         propertyPostalCode: data.postalCode,
         inspectionDate: data.dateOfService,
-        companyName: data.companyName || 'Earth Wind and Fire',
-        companyPhone: data.companyPhone || '604-299-1030',
-        companyEmail: 'info@ewf.ca',
+        companyName: data.companyName,
+        companyPhone: data.companyPhone,
       });
       
       // ============================================
@@ -431,8 +433,8 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
       
       currentY += 25;
       
-      const statusColor = data.systemFullyFunctional ? '#16a34a' : '#dc2626';
-      const statusText = data.systemFullyFunctional ? 'PASS - System Fully Functional' : 'DEFICIENT - Action Required';
+      const statusColor = data.systemFullyFunctional === true ? '#16a34a' : data.systemFullyFunctional === false ? '#dc2626' : '#4b5563';
+      const statusText = data.systemFullyFunctional === true ? 'PASS - System Fully Functional' : data.systemFullyFunctional === false ? 'DEFICIENT - Action Required' : 'System functionality not recorded';
       
       doc.rect(40, currentY, 532, 40)
          .fillAndStroke(statusColor + '20', statusColor);
@@ -476,20 +478,20 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
       
       doc.text('The fire alarm system is connected to a fire signal receiving centre.', 45, currentY + 20);
       doc.text(`Name, if applicable: ${data.fireSignalReceivingCentre || ''}`, 45, currentY + 30);
-      drawCheckbox(doc, 450, currentY + 20, data.connectedToFireSignalReceivingCentre, 10);
+      drawCheckbox(doc, 450, currentY + 20, data.connectedToFireSignalReceivingCentre === true, 10);
       doc.text('Yes', 465, currentY + 20);
-      drawCheckbox(doc, 500, currentY + 20, !data.connectedToFireSignalReceivingCentre, 10);
+      drawCheckbox(doc, 500, currentY + 20, data.connectedToFireSignalReceivingCentre === false, 10);
       doc.text('No', 515, currentY + 20);
       
       currentY += 50;
       
       // Compliance checklist
       const complianceItems = [
-        { text: 'The entire fire alarm system has been inspected and tested in accordance with CAN/ULC-S536:2019, Inspection and Testing of Fire Alarm Systems.', yes: true, no: false, },
-        { text: 'The fire alarm system is fully functional.', yes: data.systemFullyFunctional, no: !data.systemFullyFunctional, },
-        { text: 'During the Annual Inspection and Test were any Deficiencies Identified? See Page 2, if applicable.', yes: data.deficienciesIdentified, no: !data.deficienciesIdentified, },
+        { text: 'A complete-system inspection declaration was recorded by the technician.', yes: data.completeSystemInspection === true, no: data.completeSystemInspection === false, },
+        { text: 'The fire alarm system is fully functional.', yes: data.systemFullyFunctional === true, no: data.systemFullyFunctional === false, },
+        { text: 'Deficiencies are recorded in this report. See the deficiency records for details.', yes: data.deficienciesIdentified, no: !data.deficienciesIdentified, },
         { text: 'As of the following Date (M/D/Y) all identified Deficiencies have been corrected:', yes: false, no: false, },
-        { text: 'During the Annual Inspection and Test were any Recommendations Identified? See Page 3, if applicable', yes: data.recommendationsIdentified, no: !data.recommendationsIdentified, },
+        { text: 'Recommendations were recorded by the technician.', yes: data.recommendationsIdentified === true, no: data.recommendationsIdentified === false, },
       ];
       
       complianceItems.forEach(item => {
@@ -505,13 +507,14 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
         
         doc.text('No', 521, currentY + 8);
         drawCheckbox(doc, 511, currentY + 8, item.no, 10);
+        if (!item.yes && !item.no) doc.fontSize(6).font('Helvetica').text('Not recorded', 360, currentY + 16, { width: 75 });
         
         currentY += itemHeight;
       });
       
       currentY += 10;
 
-      // ── ASTTBC-compliant affirmation + signature table ───────────────────
+      // ── Recorded evidence and signature table ───────────────────
       // Page count is estimated from buffered pages at this point; we use a
       // placeholder and the footer pass will have the real count.
       const estimatedPageCount = doc.bufferedPageRange().count + data.checklists.length + 2;
@@ -737,7 +740,7 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
           doc.text(extinguisher.type, 245, currentY + 3);
           doc.text(extinguisher.serialNumber || 'N/A', 395, currentY + 3);
           
-          const resultColor = extinguisher.result === 'PASS' ? '#10b981' : '#ef4444';
+          const resultColor = extinguisher.result === 'PASS' ? '#10b981' : extinguisher.result === 'DEFICIENT' ? '#ef4444' : '#6b7280';
           doc.fillColor(resultColor).text(extinguisher.result, 495, currentY + 3);
           doc.fillColor('#000000');
           
@@ -787,14 +790,14 @@ export async function generateComplianceReportPDF(data: ComplianceReportData): P
           
           doc.fontSize(8).font('Helvetica').text(light.location, 45, currentY + 3);
           
-          const funcColor = light.functionalTest === 'PASS' ? '#10b981' : '#ef4444';
+          const funcColor = light.functionalTest === 'PASS' ? '#10b981' : light.functionalTest === 'FAIL' ? '#ef4444' : '#6b7280';
           doc.fillColor(funcColor).text(light.functionalTest, 225, currentY + 3);
           
           if (light.durationTest) {
             const durColor = light.durationTest === 'PASS' ? '#10b981' : light.durationTest === 'FAIL' ? '#ef4444' : '#6b7280';
             doc.fillColor(durColor).text(light.durationTest, 325, currentY + 3);
           } else {
-            doc.fillColor('#6b7280').text('N/A', 325, currentY + 3);
+            doc.fillColor('#6b7280').text('NOT RECORDED', 325, currentY + 3);
           }
           
           doc.fillColor('#000000').text(light.comments || '', 425, currentY + 3, { width: 145, lineGap: 2, });

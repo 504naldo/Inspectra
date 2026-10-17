@@ -1,10 +1,14 @@
 import { z } from "zod";
-import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
-import { getDb } from "../db";
-import { attachments, sites } from "../../drizzle/schema";
+import { router, officeProcedure } from "../_core/trpc";
+import { getDb, assertJobNotFinalized } from "../db";
+import { attachments } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { importWorkbookForSite } from "../services/workbookImport";
-import { assertPublicHttpUrl } from "../_core/ssrfGuard";
+import { importWorkbookForSite, previewWorkbookForSite } from "../services/workbookImport";
+import { assertSiteCompany, getJobForCompany } from "../tenantGuards";
+import { assertImportDestination } from "../importDestination";
+import { assertAttachmentDestination, assertAttachmentLinksUnchanged, withAttachmentWrite } from "../attachmentAccess";
+import { resolveAuthorizedStorageDownload } from "../storageDownload";
+import { TRPCError } from "@trpc/server";
 
 /**
  * Asset Import Router
@@ -16,31 +20,30 @@ import { assertPublicHttpUrl } from "../_core/ssrfGuard";
  *   for a job and imports it for the job's site.
  * - importAllFromFile: direct base64 upload path — used by the Quick Import UI.
  */
+const workbookUploadInput = z.object({
+  siteId: z.number(),
+  fileData: z.string(),
+  fileName: z.string(),
+});
+
 export const assetImportRouter = router({
   /**
    * Import all device categories from the latest Excel file attached to a job.
    */
-  importAssetsFromExcel: protectedProcedure
+  importAssetsFromExcel: officeProcedure
     .input(z.object({ jobId: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const { jobId } = input;
-      const companyId = ctx.user.companyId;
-
-      if (!companyId) throw new Error("User must belong to a company");
-
+      const job = await getJobForCompany(jobId, ctx.user.companyId!);
+      const destination = await assertImportDestination({
+        companyId: job.companyId,
+        siteId: job.siteId,
+        customerOrgId: job.customerOrgId,
+      });
+      if (!destination.site) throw new TRPCError({ code: "BAD_REQUEST", message: "Job must be linked to a site" });
+      await assertJobNotFinalized(jobId);
       const db = await getDb();
       if (!db) throw new Error("Database not available");
-
-      // Verify job access and get siteId
-      const { jobs } = await import("../../drizzle/schema");
-      const [job] = await db
-        .select()
-        .from(jobs)
-        .where(and(eq(jobs.id, jobId), eq(jobs.companyId, companyId)))
-        .limit(1);
-
-      if (!job) throw new Error("Job not found or access denied");
-      if (!job.siteId) throw new Error("Job must be linked to a site");
 
       // Find latest Excel attachment
       const excelMimeTypes = [
@@ -72,60 +75,69 @@ export const assetImportRouter = router({
         );
       }
 
-      // Download and run the canonical import pipeline
-      await assertPublicHttpUrl(attachment.fileUrl);
-      const response = await fetch(attachment.fileUrl, { redirect: "error" });
+      const source = await assertAttachmentDestination(attachment, ctx.user);
+      if (
+        source.companyId !== job.companyId ||
+        source.customerOrgId !== job.customerOrgId ||
+        (source.siteId != null && source.siteId !== destination.site.id) ||
+        (source.jobId != null && source.jobId !== job.id)
+      ) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Import source and destination disagree" });
+      }
+      const downloadUrl = await resolveAuthorizedStorageDownload(attachment);
+      if (!downloadUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Attachment has no downloadable file" });
+      const response = await fetch(downloadUrl, { redirect: "error" });
       if (!response.ok) throw new Error("Failed to download Excel file from storage");
 
       const fileBuffer = Buffer.from(await response.arrayBuffer());
-      const result = await importWorkbookForSite({
-        fileBuffer,
-        fileName: attachment.fileName,
-        siteId: job.siteId,
-        companyId,
-        userId: ctx.user.id,
+      return withAttachmentWrite(ctx, "assetImport.importAssetsFromExcel", [attachment,
+        { entityType: "job", entityId: jobId },
+      ], async () => {
+        const currentFile = await assertAttachmentLinksUnchanged(attachment);
+        if (currentFile.fileKey !== attachment.fileKey ||
+            (!attachment.fileKey && currentFile.fileUrl !== attachment.fileUrl)) {
+          throw new TRPCError({ code: "CONFLICT", message: "Import source changed. Preview it again." });
+        }
+        const currentJob = await getJobForCompany(jobId, ctx.user.companyId!);
+        if (currentJob.siteId !== destination.site!.id || currentJob.companyId !== job.companyId ||
+            currentJob.customerOrgId !== job.customerOrgId) {
+          throw new TRPCError({ code: "CONFLICT", message: "Import destination changed. Preview it again." });
+        }
+        return formatResult(await importWorkbookForSite({
+          fileBuffer, fileName: currentFile.fileName, siteId: destination.site!.id,
+          companyId: job.companyId, customerOrgId: job.customerOrgId, userId: ctx.user.id,
+        }));
       });
-
-      return formatResult(result);
     }),
 
-  /**
-   * Quick Import: accept a base64-encoded Excel workbook and import all device
-   * categories for the given site in one shot. Used by the Quick Import UI.
-   */
-  importAllFromFile: officeProcedure
-    .input(z.object({
-      siteId:   z.number(),
-      fileData: z.string(), // base64-encoded Excel file
-      fileName: z.string(),
-    }))
+  /** Preview the canonical workbook plan without writing any records. */
+  previewAllFromFile: officeProcedure.input(workbookUploadInput)
     .mutation(async ({ input, ctx }) => {
-      const { siteId, fileData, fileName } = input;
-      const companyId = ctx.user.companyId;
-
-      if (!companyId) throw new Error("User must belong to a company");
-
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
-
-      // Verify site belongs to this company
-      const [site] = await db
-        .select()
-        .from(sites)
-        .where(and(eq(sites.id, siteId), eq(sites.companyId, companyId)))
-        .limit(1);
-
-      if (!site) throw new Error("Site not found or access denied");
-
-      const fileBuffer = Buffer.from(fileData, "base64");
-      const result = await importWorkbookForSite({
-        fileBuffer,
-        fileName,
-        siteId,
-        companyId,
+      const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
+      await assertImportDestination({ companyId: site.companyId, siteId: site.id, customerOrgId: site.customerOrgId });
+      return previewWorkbookForSite({
+        fileBuffer: Buffer.from(input.fileData, "base64"),
+        fileName: input.fileName,
+        siteId: site.id,
+        companyId: site.companyId,
+        customerOrgId: site.customerOrgId,
         userId: ctx.user.id,
       });
+    }),
 
+  /** Quick Import revalidates the workbook and current saved identities. */
+  importAllFromFile: officeProcedure.input(workbookUploadInput)
+    .mutation(async ({ input, ctx }) => {
+      const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
+      await assertImportDestination({ companyId: site.companyId, siteId: site.id, customerOrgId: site.customerOrgId });
+      const result = await importWorkbookForSite({
+        fileBuffer: Buffer.from(input.fileData, "base64"),
+        fileName: input.fileName,
+        siteId: site.id,
+        companyId: site.companyId,
+        customerOrgId: site.customerOrgId,
+        userId: ctx.user.id,
+      });
       return formatResult(result);
     }),
 });
@@ -152,7 +164,10 @@ function formatResult(result: Awaited<ReturnType<typeof importWorkbookForSite>>)
       sprinklerDevices: 0,
       total:           result.counts.total,
     },
+    insertedCount: result.insertedCount,
+    updatedCount: result.updatedCount,
     excludedRowsCount: result.excludedRowsCount,
+    excludedRows: result.excludedRows,
     classifiedSheets: result.classifiedSheets,
     message: result.message,
   };

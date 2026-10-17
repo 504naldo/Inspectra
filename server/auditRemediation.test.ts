@@ -62,11 +62,12 @@ async function tenant(tag: string) {
     jobNumber: `AUDIT-${tag}`,
     officeNotes: "private office notes",
   });
-  const device = await db.createDevice({
+  const createdDevice = await db.createDevice({
     companyId: company.id,
     siteId: site.id,
     deviceType: "Smoke Detector",
   });
+  const device = (await db.getDeviceById(createdDevice.id))!;
   return { company, org, site, job, device };
 }
 describe("Audit remediation — real MySQL boundaries and atomicity", () => {
@@ -332,12 +333,14 @@ describe("Audit remediation — real MySQL boundaries and atomicity", () => {
         jobId: A.job.id,
         deviceId: B.device.id,
         result: "pass",
+        expectedDeviceRevision: B.device.deviceRevision,
       })
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       staff.inspectionResult.bulkMarkPass({
         jobId: A.job.id,
         deviceIds: [A.device.id, sibling.device.id],
+        expectedDeviceRevisions: { [A.device.id]: A.device.deviceRevision, [sibling.device.id]: sibling.device.deviceRevision },
       })
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
@@ -345,6 +348,7 @@ describe("Audit remediation — real MySQL boundaries and atomicity", () => {
         jobId: A.job.id,
         deviceId: 9999999,
         result: "pass",
+        expectedDeviceRevision: "missing-device-revision",
       })
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(await db.getInspectionResultsByJob(A.job.id)).toHaveLength(0);
@@ -359,6 +363,7 @@ describe("Audit remediation — real MySQL boundaries and atomicity", () => {
         jobId: A.job.id,
         deviceId: A.device.id,
         result: "pass",
+        expectedDeviceRevision: A.device.deviceRevision,
         testedAt,
       })
     );
@@ -473,15 +478,16 @@ describe("Audit remediation — real MySQL boundaries and atomicity", () => {
         checklistItemId: 9999999,
       })
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    const first = await staff.fireAlarm.saveInspectionResult(input);
+    const shown = (await staff.fireAlarm.getJobChecklist({jobId:A.job.id})).find(row=>row.id===item.id)!;
+    const capturedInput = {...input,questionRevision:shown.questionRevision};
+    const first = await staff.fireAlarm.saveInspectionResult(capturedInput);
     await database
       .update(fireAlarmChecklistTemplates)
       .set({ itemDescription: "Changed live template" })
       .where(eq(fireAlarmChecklistTemplates.id, item.id));
-    expect(
-      (await staff.fireAlarm.saveInspectionResult({ ...input, result: "fail" }))
-        .id
-    ).toBe(first.id);
+    await expect(
+      staff.fireAlarm.saveInspectionResult({ ...capturedInput, result: "fail" })
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     const [saved] = await database
       .select()
       .from(fireAlarmInspectionResults)
@@ -489,6 +495,7 @@ describe("Audit remediation — real MySQL boundaries and atomicity", () => {
     expect(saved.itemSnapshot).toMatchObject({
       itemDescription: "Original audit question",
     });
+    expect(saved.result).toBe("pass");
     expect(saved.technicianCertificationSnapshot).toMatchObject({
       name: "Audit fixture",
     });

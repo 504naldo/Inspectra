@@ -25,6 +25,8 @@
 import { eq, isNull, and } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getCanonicalFireAlarmChecklist } from "../canonicalFireAlarmReport";
+import { assertCapturedTemplateEvidence } from "../canonicalTemplateReport";
+import { assertDeviceEvidenceForReport } from "../canonicalDeviceEvidence";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import * as schema from "../../drizzle/schema";
 import type { TrpcContext } from "../_core/context";
@@ -184,9 +186,13 @@ export async function finalizeJob(
   }
 
   // 6. Build finalization payload and compute hash
-  const payload = await buildFinalizationPayload(jobId, db);
-  if (job.jobType === "annual" && payload.fireAlarmInspectionResults.length)
+  const payload = await buildFinalizationPayload(jobId, db, 2);
+  // An empty annual capture is missing evidence, not a reason to skip the gate.
+  // Other job types that contain fire-alarm captures must validate them too.
+  if (job.jobType === "annual" || payload.fireAlarmInspectionResults.length > 0)
     await getCanonicalFireAlarmChecklist(jobId);
+  await assertCapturedTemplateEvidence(jobId, job.companyId, db);
+  assertDeviceEvidenceForReport(job, payload.inspectionResults, payload.deficiencies);
   const finalizationHash = computeFinalizationHash(payload);
 
   // 7. Write finalization fields + status transition
@@ -197,6 +203,7 @@ export async function finalizeJob(
       finalizedAt: now,
       finalizedById: user.id,
       finalizationHash,
+      finalizationHashVersion: 2,
       syncAssertedAt: now,
       syncAssertedById: user.id,
       completedAt: job.completedAt ?? now,

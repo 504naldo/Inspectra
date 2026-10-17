@@ -5,17 +5,34 @@ import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { callerIsPlatformOperator } from "../_core/actorContext";
 import { assertAttachmentCompany } from "../tenantGuards";
+import {
+  assertAttachmentLinksUnchanged,
+  withAttachmentWrite,
+  filterAuthorizedAttachments,
+} from "../attachmentAccess";
 import { logActivity } from "../activityLogger";
 import { eq, and, inArray, desc, isNotNull, like, or } from "drizzle-orm";
 import {
-  reports, jobs, sites, customerOrgs, attachments, quotes, knowledgeBase,
+  reports,
+  jobs,
+  sites,
+  customerOrgs,
+  attachments,
+  quotes,
+  knowledgeBase,
 } from "../../drizzle/schema";
 
 async function getRawDb() {
   return db.getDb ? db.getDb() : null;
 }
 
-const DOC_TYPES = ["all", "report", "attachment", "quote", "knowledge_base",] as const;
+const DOC_TYPES = [
+  "all",
+  "report",
+  "attachment",
+  "quote",
+  "knowledge_base",
+] as const;
 
 type DocItem = {
   id: string;
@@ -37,16 +54,24 @@ type DocItem = {
 
 export const documentCenterRouter = router({
   list: officeProcedure
-    .input(z.object({
-      search: z.string().max(200).default(""),
-      docType: z.enum(DOC_TYPES).default("all"),
-      limit: z.number().int().min(1).max(500).default(200),
-    }))
+    .input(
+      z.object({
+        search: z.string().max(200).default(""),
+        docType: z.enum(DOC_TYPES).default("all"),
+        limit: z.number().int().min(1).max(500).default(200),
+      })
+    )
     .query(async ({ ctx, input }) => {
       const companyId = ctx.user.companyId!;
       const rawDb = await getRawDb();
 
-      const emptyCounts = { all: 0, report: 0, attachment: 0, quote: 0, knowledge_base: 0, };
+      const emptyCounts = {
+        all: 0,
+        report: 0,
+        attachment: 0,
+        quote: 0,
+        knowledge_base: 0,
+      };
       if (!rawDb) return { items: [], counts: emptyCounts };
 
       const sp = input.search ? `%${input.search}%` : null;
@@ -54,14 +79,23 @@ export const documentCenterRouter = router({
 
       // Get all company job IDs (shared scoping)
       const companyJobRows = await rawDb
-        .select({ id: jobs.id, jobNumber: jobs.jobNumber, siteId: jobs.siteId, customerOrgId: jobs.customerOrgId, })
+        .select({
+          id: jobs.id,
+          jobNumber: jobs.jobNumber,
+          siteId: jobs.siteId,
+          customerOrgId: jobs.customerOrgId,
+        })
         .from(jobs)
         .where(eq(jobs.companyId, companyId));
       const companyJobIds = companyJobRows.map(j => j.id);
 
       // Get all company site IDs (for site-scoped attachments)
       const companySiteRows = await rawDb
-        .select({ id: sites.id, name: sites.name, customerOrgId: sites.customerOrgId, })
+        .select({
+          id: sites.id,
+          name: sites.name,
+          customerOrgId: sites.customerOrgId,
+        })
         .from(sites)
         .where(eq(sites.companyId, companyId));
       const companySiteIds = companySiteRows.map(s => s.id);
@@ -69,11 +103,19 @@ export const documentCenterRouter = router({
       const items: DocItem[] = [];
 
       // ── 1. Reports ─────────────────────────────────────────────────────────
-      if ((docType === "all" || docType === "report") && companyJobIds.length > 0) {
-        const baseWhere = and(inArray(reports.jobId, companyJobIds),
-          or(isNotNull(reports.fileKey), isNotNull(reports.fileUrl)));
+      if (
+        (docType === "all" || docType === "report") &&
+        companyJobIds.length > 0
+      ) {
+        const baseWhere = and(
+          inArray(reports.jobId, companyJobIds),
+          or(isNotNull(reports.fileKey), isNotNull(reports.fileUrl))
+        );
         const where = sp
-          ? and(baseWhere, or(like(reports.title, sp), like(reports.reportNumber, sp)))
+          ? and(
+              baseWhere,
+              or(like(reports.title, sp), like(reports.reportNumber, sp))
+            )
           : baseWhere;
 
         const rows = await rawDb
@@ -104,7 +146,7 @@ export const documentCenterRouter = router({
             docType: "report",
             title: r.title,
             fileName: `${r.reportNumber}.pdf`,
-            fileUrl: await resolveDocumentUrl( r),
+            fileUrl: await resolveDocumentUrl(r),
             mimeType: "application/pdf",
             fileSize: null,
             siteName: r.siteName ?? null,
@@ -129,7 +171,9 @@ export const documentCenterRouter = router({
             hasJobIds ? inArray(attachments.jobId, companyJobIds) : undefined,
             hasSiteIds ? inArray(attachments.siteId, companySiteIds) : undefined
           );
-          const where = sp ? and(scopeWhere, like(attachments.fileName, sp)) : scopeWhere;
+          const where = sp
+            ? and(scopeWhere, like(attachments.fileName, sp))
+            : scopeWhere;
 
           const rows = await rawDb
             .select({
@@ -139,6 +183,8 @@ export const documentCenterRouter = router({
               mimeType: attachments.mimeType,
               fileSize: attachments.fileSize,
               entityType: attachments.entityType,
+              entityId: attachments.entityId,
+              deviceId: attachments.deviceId,
               caption: attachments.caption,
               jobId: attachments.jobId,
               siteId: attachments.siteId,
@@ -153,7 +199,7 @@ export const documentCenterRouter = router({
           const jobMap = new Map(companyJobRows.map(j => [j.id, j]));
           const siteMap = new Map(companySiteRows.map(s => [s.id, s]));
 
-          for (const r of rows) {
+          for (const r of await filterAuthorizedAttachments(rows, ctx.user)) {
             const jobInfo = r.jobId ? jobMap.get(r.jobId) : null;
             const siteInfo = r.siteId ? siteMap.get(r.siteId) : null;
             const resolvedSiteName = siteInfo?.name ?? null;
@@ -174,7 +220,11 @@ export const documentCenterRouter = router({
               entityType: r.entityType,
               status: null,
               date: r.createdAt,
-              href: r.jobId ? `/admin/jobs/${r.jobId}` :r.siteId ? `/admin/sites/${r.siteId}/files` : `/admin/documents`,
+              href: r.jobId
+                ? `/admin/jobs/${r.jobId}`
+                : r.siteId
+                  ? `/admin/sites/${r.siteId}/files`
+                  : `/admin/documents`,
             });
           }
         }
@@ -182,8 +232,13 @@ export const documentCenterRouter = router({
 
       // ── 3. Quotes (PDF only) ───────────────────────────────────────────────
       if (docType === "all" || docType === "quote") {
-        const baseWhere = and(eq(quotes.companyId, companyId), isNotNull(quotes.pdfUrl));
-        const where = sp ? and(baseWhere, like(quotes.quoteNumber, sp)) : baseWhere;
+        const baseWhere = and(
+          eq(quotes.companyId, companyId),
+          isNotNull(quotes.pdfUrl)
+        );
+        const where = sp
+          ? and(baseWhere, like(quotes.quoteNumber, sp))
+          : baseWhere;
 
         const rows = await rawDb
           .select({
@@ -207,10 +262,17 @@ export const documentCenterRouter = router({
           .limit(limit);
 
         // Build job number map for quotes
-        const quoteJobIds = Array.from(new Set(rows.map(r => r.jobId).filter((id): id is number => id != null)));
+        const quoteJobIds = Array.from(
+          new Set(
+            rows.map(r => r.jobId).filter((id): id is number => id != null)
+          )
+        );
         const jobNumMap = new Map<number, string>();
         if (quoteJobIds.length > 0) {
-          const qjRows = await rawDb.select({ id: jobs.id, jobNumber: jobs.jobNumber }).from(jobs).where(inArray(jobs.id, quoteJobIds));
+          const qjRows = await rawDb
+            .select({ id: jobs.id, jobNumber: jobs.jobNumber })
+            .from(jobs)
+            .where(inArray(jobs.id, quoteJobIds));
           for (const j of qjRows) jobNumMap.set(j.id, j.jobNumber);
         }
 
@@ -290,7 +352,8 @@ export const documentCenterRouter = router({
         report: items.filter(i => i.docType === "report").length,
         attachment: items.filter(i => i.docType === "attachment").length,
         quote: items.filter(i => i.docType === "quote").length,
-        knowledge_base: items.filter(i => i.docType === "knowledge_base").length,
+        knowledge_base: items.filter(i => i.docType === "knowledge_base")
+          .length,
       };
 
       return { items: limited, counts };
@@ -314,7 +377,8 @@ export const documentCenterRouter = router({
       if (!match) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Only attachments and knowledge base documents can be removed here. Manage reports and quotes from their own pages.",
+          message:
+            "Only attachments and knowledge base documents can be removed here. Manage reports and quotes from their own pages.",
         });
       }
       const kind = match[1];
@@ -322,30 +386,38 @@ export const documentCenterRouter = router({
 
       if (kind === "attachment") {
         const attachment = await assertAttachmentCompany(id, companyId);
-        if (attachment.jobId) {
-          const job = await db.getJobById(attachment.jobId);
-          if (job?.finalizedAt) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "This file belongs to a finalized job and cannot be removed.",
-            });
+        await withAttachmentWrite(
+          ctx,
+          "documentCenter.removeAttachment",
+          [attachment],
+          async () => {
+            await assertAttachmentLinksUnchanged(attachment);
+            await db.deleteAttachment(id);
           }
-        }
-        await db.deleteAttachment(id);
+        );
         void logActivity({
-          ctx, entityType: "attachment", entityId: id, eventType: "attachment.deleted",
-          title: `Document removed: ${attachment.fileName ?? `attachment ${id}`}`, metadata: {},
+          ctx,
+          entityType: "attachment",
+          entityId: id,
+          eventType: "attachment.deleted",
+          title: `Document removed: ${attachment.fileName ?? `attachment ${id}`}`,
+          metadata: {},
         });
         return { success: true as const, removed: "attachment" as const };
       }
 
       // knowledge_base: soft-delete (deactivate) — reversible from the Knowledge Base page.
       const kb = await db.getKnowledgeBaseById(id);
-      if (!kb || ( kb.companyId !== companyId && !callerIsPlatformOperator())) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!kb || (kb.companyId !== companyId && !callerIsPlatformOperator()))
+        throw new TRPCError({ code: "NOT_FOUND" });
       await db.updateKnowledgeBaseEntry(id, { isActive: false });
       void logActivity({
-        ctx, entityType: "knowledge_base", entityId: id, eventType: "knowledge_base.deactivated",
-        title: `Document removed from center: ${kb.title}`, metadata: {},
+        ctx,
+        entityType: "knowledge_base",
+        entityId: id,
+        eventType: "knowledge_base.deactivated",
+        title: `Document removed from center: ${kb.title}`,
+        metadata: {},
       });
       return { success: true as const, removed: "knowledge_base" as const };
     }),

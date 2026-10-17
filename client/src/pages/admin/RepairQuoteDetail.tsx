@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { DetailSkeleton } from "@/components/PageSkeleton";
@@ -29,6 +30,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getQuoteStatusLabel, getQuoteStatusBadgeClass } from "@/lib/statusLabels";
+import { DeliveryOperation, type DeliveryInput, type DeliveryReceipt, type SavedDelivery } from "@/lib/deliveryOperation";
+import { createPaymentJournal } from "@/lib/paymentJournal";
 
 const CAD = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
 const fmtDate = (d: Date | string | null | undefined) =>
@@ -110,13 +113,25 @@ function SendQuoteDialog({
   siteId,
   onSend,
   isPending,
+  quoteId,
+  companyId,
+  accountId,
+  accountCompanyId,
+  lookup,
+  onAccepted,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   customerOrgId?: number;
   siteId?: number;
-  onSend: (to: string[]) => void;
+  onSend: (input: DeliveryInput) => Promise<{ acceptance: "accepted" }>;
   isPending: boolean;
+  quoteId: number;
+  companyId: number;
+  accountId?: number;
+  accountCompanyId: number | null;
+  lookup: (requestId: string) => Promise<DeliveryReceipt | null>;
+  onAccepted: () => void;
 }) {
   const { data } = trpc.contact.getRecipientsForWorkflow.useQuery(
     { customerOrgId, siteId, workflowType: "repair_quote" },
@@ -125,6 +140,37 @@ function SendQuoteDialog({
   const suggestions = [...(data?.recommended ?? []), ...(data?.fallback ?? [])].filter((c) => c.email);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [extra, setExtra] = useState("");
+  const [saved, setSaved] = useState<SavedDelivery | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const operation = useMemo(() => accountId ? new DeliveryOperation({
+    accountId, accountCompanyId, companyId, route: "repairQuote.send", entityId: quoteId,
+  }, createPaymentJournal()) : null, [accountId, accountCompanyId, companyId, quoteId]);
+  const activeOperation = useRef(operation);
+
+  useEffect(() => {
+    activeOperation.current = operation;
+    return () => { activeOperation.current = null; };
+  }, [operation]);
+  useEffect(() => {
+    let active = true;
+    setSaved(null);
+    setError(null);
+    setRestoring(true);
+    if (!open) return () => { active = false; };
+    if (!operation) {
+      setError("Sign in before sending this quote.");
+      setRestoring(false);
+      return () => { active = false; };
+    }
+    operation.restore().then(value => {
+      if (active) setSaved(value);
+    }).catch(reason => {
+      if (active) setError(reason instanceof Error ? reason.message : "Unable to recover the saved email.");
+    }).finally(() => { if (active) setRestoring(false); });
+    return () => { active = false; };
+  }, [open, operation]);
 
   useEffect(() => {
     if (suggestions.length > 0 && selected.size === 0) {
@@ -140,20 +186,76 @@ function SendQuoteDialog({
     setSelected((prev) => { const s = new Set(prev); s.has(email) ? s.delete(email) : s.add(email); return s; });
 
   const extraEmails = extra.split(/[\s,;]+/).map((s) => s.trim()).filter((s) => s.includes("@") && s.includes("."));
-  const allTo = [...Array.from(selected), ...extraEmails];
+  const allTo = Array.from(new Set([...Array.from(selected), ...extraEmails]));
+  const working = busy || isPending || restoring;
+  const accepted = saved?.status === "accepted";
+  const canStartAnother = accepted || saved?.status === "rejected";
+
+  const run = async (action: (current: DeliveryOperation) => Promise<void>) => {
+    if (!operation || working) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await action(operation);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to confirm this email.");
+    } finally {
+      try {
+        const value = await operation.restore();
+        if (activeOperation.current === operation) setSaved(value);
+      } catch (reason) {
+        if (activeOperation.current === operation)
+          setError(reason instanceof Error ? reason.message : "Unable to recover the saved email.");
+      }
+      if (activeOperation.current === operation) setBusy(false);
+    }
+  };
+  const send = () => run(async current => {
+    await current.submit({ id: quoteId, to: saved?.input.to ?? allTo }, async input => {
+      if (activeOperation.current !== current) throw new Error("The signed-in account changed. Reopen the quote before sending.");
+      return onSend(input);
+    }, saved?.input.requestId);
+    onAccepted();
+    toast.success("Email provider accepted the quote email");
+  });
+  const checkStatus = () => run(async current => {
+    const value = await current.reconcile(lookup, async input => {
+      if (activeOperation.current !== current) throw new Error("The signed-in account changed. Reopen the quote before checking its status.");
+      return onSend(input);
+    });
+    if (value?.status === "accepted") onAccepted();
+  });
+  const startAnother = () => run(async current => {
+    if (!saved) return;
+    await current.startAnother(saved.input.requestId, lookup);
+    setSelected(new Set());
+    setExtra("");
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-4 w-4 text-primary" /> Send Quote to Customer
           </DialogTitle>
           <DialogDescription>
-            A PDF will be generated and emailed to the selected recipients with an accept link.
+            The repair quote PDF will be emailed to the selected recipients. Provider acceptance does not confirm delivery to the recipient.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
+          {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+          {restoring && <p role="status" className="text-sm text-muted-foreground">Checking saved email…</p>}
+          {saved && (
+            <div className="rounded-md border bg-muted/40 p-3 space-y-2 text-sm" role="status">
+              <p className="font-medium">{accepted ? "Email provider accepted this email" : saved.status === "rejected" ? "Provider rejected this email" : "An email send is saved for recovery"}</p>
+              <p>{accepted ? "This request remains saved so reopening the dialog cannot send it again." : saved.status === "rejected" ? "Check its status before deliberately starting another email." : saved.status === "unknown" || saved.status === "sending" ? "The outcome is unconfirmed. Check again before starting another email." : "Keep these recipients while checking the outcome or retrying the original request."}</p>
+              <ul className="list-disc pl-5 break-all">{saved.input.to.map(to => <li key={to}>{to}</li>)}</ul>
+              <Button variant="outline" size="sm" disabled={working} onClick={checkStatus}>Check email status</Button>
+            </div>
+          )}
+          <fieldset hidden={!!saved} disabled={working || !!saved || !!error} className="space-y-4">
+            <legend className="sr-only">Email recipients</legend>
           {(data?.warnings ?? []).map((w, i) => (
             <div key={i} className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />{w}
@@ -186,26 +288,28 @@ function SendQuoteDialog({
             <p className="text-sm text-muted-foreground">No contacts found for this site. Enter an email below.</p>
           )}
           <div className="space-y-1">
-            <Label className="text-xs">Additional recipients</Label>
+            <Label htmlFor="quote-extra-recipients" className="text-xs">Additional recipients</Label>
             <Input
+              id="quote-extra-recipients"
               placeholder="extra@example.com"
               value={extra}
               onChange={(e) => setExtra(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">Separate multiple with commas or spaces.</p>
           </div>
+          </fieldset>
         </div>
         <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Close</Button>
+          {canStartAnother ? <Button size="sm" disabled={working} onClick={startAnother}>Start another email</Button> : <Button
             size="sm"
-            disabled={allTo.length === 0 || isPending}
-            onClick={() => onSend(allTo)}
+            disabled={working || !operation || (!saved && (allTo.length === 0 || !!error))}
+            onClick={send}
             className="gap-1.5"
           >
-            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            Send to {allTo.length} recipient{allTo.length !== 1 ? "s" : ""}
-          </Button>
+            {working ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Send className="h-3.5 w-3.5" aria-hidden="true" />}
+            {saved ? "Retry original email" : `Send to ${allTo.length} recipient${allTo.length !== 1 ? "s" : ""}`}
+          </Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -253,6 +357,7 @@ type RepairQuoteDetailProps = {
 
 export default function RepairQuoteDetail({ id: quoteId }: RepairQuoteDetailProps) {
   const [, navigate] = useLocation();
+  const { user } = useAuth();
 
   const [showAddItem, setShowAddItem] = useState(false);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
@@ -265,8 +370,6 @@ export default function RepairQuoteDetail({ id: quoteId }: RepairQuoteDetailProp
   const [partsOpen, setPartsOpen] = useState(false);
   const [partsDefId, setPartsDefId] = useState<number | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
-  const [sendSelected, setSendSelected] = useState<Set<string>>(new Set());
-  const [sendExtra, setSendExtra] = useState("");
 
   // Approval workflow state
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
@@ -391,14 +494,7 @@ export default function RepairQuoteDetail({ id: quoteId }: RepairQuoteDetailProp
     onSuccess: () => { invalidate(); toast.success("Quote cancelled"); },
     onError: (e) => toast.error(e.message),
   });
-  const sendMut = trpc.repairQuote.send.useMutation({
-    onSuccess: () => {
-      invalidate();
-      setSendOpen(false);
-      toast.success("Quote sent to customer");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  const sendMut = trpc.repairQuote.send.useMutation();
 
   // Deficiency photos for linked job (populated after data loads)
   const linkedJobId = (data as any)?.job?.id as number | undefined;
@@ -737,9 +833,9 @@ export default function RepairQuoteDetail({ id: quoteId }: RepairQuoteDetailProp
                 <ClipboardCheck className="h-3.5 w-3.5" /> Mark Ready
               </Button>
             )}
-            {(q.status === "draft" || q.status === "ready_to_send") && isFinalized && (
+            {isFinalized && (
               <Button size="sm" onClick={() => setSendOpen(true)} className="gap-1.5">
-                <Send className="h-3.5 w-3.5" /> Send to Customer
+                <Send className="h-3.5 w-3.5" /> {q.status === "draft" || q.status === "ready_to_send" ? "Send to Customer" : "Quote Email"}
               </Button>
             )}
             {(q.status === "draft" || q.status === "ready_to_send") && isFinalized && (
@@ -1350,12 +1446,19 @@ export default function RepairQuoteDetail({ id: quoteId }: RepairQuoteDetailProp
 
       {/* Send to Customer dialog */}
       <SendQuoteDialog
+        key={`${user?.id}:${user?.companyId}:${quote.companyId}:${quoteId}`}
         open={sendOpen}
         onOpenChange={setSendOpen}
         customerOrgId={customer?.id}
         siteId={site?.id}
         isPending={sendMut.isPending}
-        onSend={(to) => sendMut.mutate({ id: quoteId, to })}
+        quoteId={quoteId}
+        companyId={quote.companyId}
+        accountId={user?.id}
+        accountCompanyId={user?.companyId ?? null}
+        lookup={requestId => utils.emailDelivery.lookup.fetch({ requestId })}
+        onAccepted={invalidate}
+        onSend={input => sendMut.mutateAsync(input)}
       />
 
       {/* Suggest Parts dialog */}

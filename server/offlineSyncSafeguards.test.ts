@@ -49,7 +49,7 @@ describe("Offline sync — finalized-job rejection across write paths", () => {
 
   it("rejects a replayed device-test batch on a finalized job", async () => {
     await expect(
-      A.caller.inspectionResult.syncBatch({ results: [{ jobId: finalizedJobId, deviceId: 1, result: "pass" }] }),
+      A.caller.inspectionResult.syncBatch({ results: [{ jobId: finalizedJobId, deviceId: 1, result: "pass", expectedDeviceRevision: "captured-device-revision" }] }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
@@ -101,7 +101,7 @@ describe("Offline sync — company scoping (no client-supplied company id)", () 
   it("rejects a device-test batch replayed against another company's job", async () => {
     // B's technician (company id comes from ctx, not the payload) cannot write to A's job.
     await expect(
-      B.caller.inspectionResult.syncBatch({ results: [{ jobId: A.job.id, deviceId: 1, result: "pass" }] }),
+      B.caller.inspectionResult.syncBatch({ results: [{ jobId: A.job.id, deviceId: 1, result: "pass", expectedDeviceRevision: "captured-device-revision" }] }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
@@ -143,6 +143,7 @@ describe("Offline sync — company scoping (no client-supplied company id)", () 
 describe("Offline sync — a reassigned technician's captured work is still accepted", () => {
   let T: Awaited<ReturnType<typeof tenant>>;
   let deviceId: number;
+  let deviceRevision: string;
   const TECH_USER_ID = 1; // matches techCtx default
 
   beforeAll(async () => {
@@ -151,6 +152,7 @@ describe("Offline sync — a reassigned technician's captured work is still acce
       companyId: T.company.id, siteId: T.site.id, deviceType: "Smoke Detector", category: "FIRE_ALARM_DEVICE",
     } as any);
     deviceId = device.id;
+    deviceRevision = (await db.getDeviceById(device.id))!.deviceRevision;
     // The technician WAS assigned, then is reassigned away (removed) while offline.
     await db.addJobAssignment({ jobId: T.job.id, userId: TECH_USER_ID, companyId: T.company.id, role: "lead" } as any);
     await db.removeJobAssignment(T.job.id, TECH_USER_ID);
@@ -160,7 +162,7 @@ describe("Offline sync — a reassigned technician's captured work is still acce
 
   it("accepts a queued device-test batch after reassignment", async () => {
     const res = await T.caller.inspectionResult.syncBatch({
-      results: [{ jobId: T.job.id, deviceId, result: "pass" }],
+      results: [{ jobId: T.job.id, deviceId, result: "pass", expectedDeviceRevision: deviceRevision }],
     });
     expect(res.synced).toBe(1);
   });

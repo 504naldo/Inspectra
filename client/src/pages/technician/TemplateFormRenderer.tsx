@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
+import { useOfflineScope } from "@/hooks/useOfflineScope";
+import { offlineScopeKey } from "@/lib/offlineScope";
+import { buildTemplateDraft, mergeTemplateAnswers, type TemplateQuestionView, type TemplateAnswer } from "@/lib/templateDrafts";
 
 type DeficiencyTrigger = {
   onValues: string[];
@@ -24,24 +28,8 @@ type DeficiencyTrigger = {
   defaultTitle?: string;
 };
 
-type Item = {
-  id: number;
-  sectionId: number;
-  itemCode: string | null;
-  questionText: string;
-  helpText: string | null;
-  responseType: string;
-  isRequired: number;
-  deficiencyTrigger: unknown;
-  options: unknown;
-  codeReference: string | null;
-};
-
-type ResponseState = {
-  responseValue: string;
-  responseText: string;
-  notes: string;
-};
+type Item = TemplateQuestionView;
+type ResponseState = TemplateAnswer;
 
 // ─── Pass/Fail/NA control ─────────────────────────────────────────────────────
 
@@ -224,25 +212,39 @@ function ItemRenderer({
 
   const renderControl = () => {
     if (readOnly) {
-      return <p className="text-sm text-muted-foreground italic">{response.responseValue || response.responseText || "—"}</p>;
+      return (
+        <p className="text-sm text-muted-foreground italic">{response.responseValue || response.responseText || "—"}</p>
+      );
     }
 
     const opts = item.options as string[] | null;
 
     switch (item.responseType) {
       case "pass_fail_na":
-        return <PassFailNa value={response.responseValue} onChange={handleValueChange} />;
+        return (
+          <PassFailNa value={response.responseValue} onChange={handleValueChange} />
+        );
       case "yes_no_na":
-        return <YesNoNa value={response.responseValue} onChange={handleValueChange} />;
+        return (
+          <YesNoNa value={response.responseValue} onChange={handleValueChange} />
+        );
       case "text":
-        return <Textarea value={response.responseText} onChange={(e) => onChange({ responseText: e.target.value })} rows={2} placeholder="Enter response…" />;
+        return (
+          <Textarea value={response.responseText} onChange={(e) => onChange({ responseText: e.target.value })} rows={2} placeholder="Enter response…" />
+        );
       case "number":
       case "pressure_reading":
-        return <Input type="number" value={response.responseValue} onChange={(e) => onChange({ responseValue: e.target.value })} className="max-w-[160px]" />;
+        return (
+          <Input type="number" value={response.responseValue} onChange={(e) => onChange({ responseValue: e.target.value })} className="max-w-[160px]" />
+        );
       case "date":
-        return <Input type="date" value={response.responseValue} onChange={(e) => onChange({ responseValue: e.target.value })} className="max-w-[180px]" />;
+        return (
+          <Input type="date" value={response.responseValue} onChange={(e) => onChange({ responseValue: e.target.value })} className="max-w-[180px]" />
+        );
       case "time_duration":
-        return <Input value={response.responseValue} onChange={(e) => onChange({ responseValue: e.target.value })} placeholder="e.g. 45 min" className="max-w-[160px]" />;
+        return (
+          <Input value={response.responseValue} onChange={(e) => onChange({ responseValue: e.target.value })} placeholder="e.g. 45 min" className="max-w-[160px]" />
+        );
       case "checkbox":
         return (
           <button
@@ -263,7 +265,9 @@ function ItemRenderer({
           <Select value={response.responseValue} onValueChange={handleValueChange}>
             <SelectTrigger className="max-w-[240px]"><SelectValue placeholder="Select…" /></SelectTrigger>
             <SelectContent>
-              {(opts ?? []).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+              {(opts ?? []).map((o) => (
+                <SelectItem key={o} value={o}>{o}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         );
@@ -292,7 +296,9 @@ function ItemRenderer({
           </div>
         );
       default:
-        return <Input value={response.responseValue} onChange={(e) => onChange({ responseValue: e.target.value })} />;
+        return (
+          <Input value={response.responseValue} onChange={(e) => onChange({ responseValue: e.target.value })} />
+        );
     }
   };
 
@@ -307,6 +313,8 @@ function ItemRenderer({
               <span className="text-xs text-destructive shrink-0">*</span>
             )}
           </div>
+          <p className="text-xs text-muted-foreground">{item.capturedTemplateName} · Version {item.capturedTemplateVersion} · {item.capturedSectionTitle}</p>
+          {item.capturedSectionDescription && <p className="text-xs text-muted-foreground">{item.capturedSectionDescription}</p>}
           {item.helpText && (
             <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
               <HelpCircle className="h-3 w-3" />
@@ -366,6 +374,8 @@ export default function TemplateFormRenderer({ jobId, templateId }: TemplateForm
   const tId = templateId;
 
   const isOnline = useOnlineStatus();
+  const scope = useOfflineScope();
+  const identity = `${scope ? offlineScopeKey(scope) : "signed-out"}:${jId}:${tId}`;
   const {
     getTemplateResponsesForJob,
     saveOfflineTemplateResponse,
@@ -373,109 +383,130 @@ export default function TemplateFormRenderer({ jobId, templateId }: TemplateForm
     clearSyncedTemplateResponses,
   } = useOfflineStorage();
 
-  const [responses, setResponses] = useState<Record<number, ResponseState & { deficiencyId?: number }>>({});
+  const [responseState, setResponseState] = useState<{ identity: string; values: Record<number, ResponseState> }>({ identity, values: {} });
+  const responses = responseState.identity === identity ? responseState.values : {};
+  const responsesRef = useRef({ identity, values: responses });
+  responsesRef.current = { identity, values: responses };
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
 
-  const { data, isLoading } = trpc.inspectionTemplate.getTemplateWithResponses.useQuery(
+  const { data: liveData, isLoading, error: formError } = trpc.inspectionTemplate.getTemplateWithResponses.useQuery(
     { templateId: tId, jobId: jId },
-    { enabled: !!tId && !!jId }
+    { enabled: !!tId && !!jId, retry: isOnline ? 2 : 0 }
   );
+  const [failedDrafts, setFailedDrafts] = useState<{ identity: string; data: NonNullable<typeof liveData>; itemIds: number[]; error: string } | null>(null);
+  const frozenForm = failedDrafts?.identity === identity ? failedDrafts : null;
+  const { packet } = useOfflineJobPacket(jId);
+  const cachedPacketKey = packet ? JSON.stringify(packet) : "";
+  const cachedForm = useMemo((): NonNullable<typeof liveData> | undefined => {
+    if (!cachedPacketKey) return undefined;
+    const cached = JSON.parse(cachedPacketKey);
+    const template = cached.templates?.find((template: any) => template.id === tId);
+    if (!template || !Array.isArray(cached.templateItems) || !Array.isArray(cached.templateSections)) return undefined;
+    const items = cached.templateItems.filter((item: any) => item.templateId === tId);
+    if (items.some((item: any) => !/^inspection-capture-v1:template-question:[a-f0-9]{64}$/.test(item.questionRevision ?? ""))) return undefined;
+    return { template, items, sections: cached.templateSections.filter((section: any) => section.templateId === tId),
+      responses: (cached.templateResponses ?? []).filter((response: any) => response.templateId === tId), finalized: !!cached.job?.finalizedAt };
+  }, [cachedPacketKey, tId]);
+  const data = frozenForm?.data ?? liveData ?? (!isOnline || formError ? cachedForm : undefined);
 
   const saveResponse = trpc.inspectionTemplate.saveResponse.useMutation();
+  const draftKey = JSON.stringify(getTemplateResponsesForJob(jId, tId));
+  const draftView = useMemo(() => data ? mergeTemplateAnswers(data.items, data.responses, JSON.parse(draftKey)) : { answers: {}, staleDrafts: [] }, [data, draftKey]);
+  const hasStaleOfflineAnswers = draftView.staleDrafts.length > 0;
 
   // Pre-fill from existing responses, then overlay any unsynced offline edits
   // for this job/template — those haven't reached the server yet, so they win.
   useEffect(() => {
-    if (!data?.responses) return;
-    const init: typeof responses = {};
-    for (const r of data.responses) {
-      init[r.itemId] = {
-        responseValue: r.responseValue ?? "",
-        responseText: r.responseText ?? "",
-        notes: r.notes ?? "",
-        deficiencyId: r.deficiencyId ?? undefined,
-      };
-    }
-    getTemplateResponsesForJob(jId, tId)
-      .filter((r) => !r.synced)
-      .forEach((r) => {
-        init[r.itemId] = {
-          responseValue: r.responseValue ?? "",
-          responseText: r.responseText ?? "",
-          notes: r.notes ?? "",
-          deficiencyId: r.deficiencyId ?? undefined,
-        };
-      });
-    setResponses(init);
-    // Expand all sections initially
-    if (data.sections) {
-      setExpandedSections(new Set(data.sections.map((s: any) => s.id)));
-    }
-  }, [data, jId, tId, getTemplateResponsesForJob]);
+    // A failed durable write keeps this exact form and the visible edits in
+    // memory. Refetching must not erase them or relabel them with newer wording.
+    if (!data || frozenForm) return;
+    responsesRef.current = { identity, values: draftView.answers };
+    setResponseState({ identity, values: draftView.answers });
+  }, [data, identity, draftView, frozenForm]);
+  useEffect(() => {
+    if (data) setExpandedSections(new Set(data.sections.map(section => section.id)));
+  }, [data, identity]);
 
   const handleChange = (itemId: number, partial: Partial<ResponseState>) => {
-    setResponses((prev) => ({
-      ...prev,
-      [itemId]: { ...{ responseValue: "", responseText: "", notes: "" }, ...prev[itemId], ...partial },
-    }));
+    if (!data || data.finalized || hasStaleOfflineAnswers) return;
+    const item = data.items.find(item => item.id === itemId);
+    if (!item) return;
+    const previous = responsesRef.current.identity === identity ? responsesRef.current.values : {};
+    const answer = { ...(previous[itemId] ?? { responseValue: "", responseText: "", notes: "", questionRevision: item.questionRevision }), ...partial };
+    try {
+      saveOfflineTemplateResponse(buildTemplateDraft(jId, tId, item, answer));
+      setFailedDrafts(failed => {
+        if (failed?.identity !== identity) return null;
+        const itemIds = failed.itemIds.filter(id => id !== itemId);
+        return itemIds.length ? { ...failed, itemIds } : null;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The response could not be saved on this device.";
+      setFailedDrafts(failed => ({ identity, data: failed?.identity === identity ? failed.data : data, itemIds: Array.from(new Set([...(failed?.identity === identity ? failed.itemIds : []), itemId])), error: message }));
+      toast.error(message);
+    }
+    const values = { ...previous, [itemId]: answer };
+    responsesRef.current = { identity, values };
+    setResponseState({ identity, values });
   };
 
   const handleDeficiencyLinked = (itemId: number, deficiencyId: number) => {
-    setResponses((prev) => ({ ...prev, [itemId]: { ...prev[itemId], deficiencyId } }));
+    handleChange(itemId, { deficiencyId });
+  };
+
+  const exportUnpersistedChanges = () => {
+    if (!data || !frozenForm) return;
+    const drafts = frozenForm.itemIds.flatMap(itemId => {
+      const item = data.items.find(item => item.id === itemId);
+      const answer = responses[itemId];
+      return item && answer ? [buildTemplateDraft(jId, tId, item, answer)] : [];
+    });
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ scope, jobId: jId, templateId: tId, reviewRequired: true, drafts }, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `template-unsaved-${jId}-${tId}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   const saveAll = async () => {
-    if (!data) return;
+    if (!data || data.finalized) return;
+    if (hasStaleOfflineAnswers) {
+      toast.error("Saved offline answers use a different form version. Export and review them before saving.");
+      return;
+    }
     setSaving(true);
     try {
       const items = data.items;
 
+      // Persist the exact displayed question identity and answer before any
+      // network call. A failed online save remains recoverable after reload.
+      const submittedIds = new Set<string>();
+      items.forEach((item) => {
+        const r = responses[item.id];
+        if (!r) return;
+        const localId = `${jId}-${tId}-${item.id}`;
+        submittedIds.add(localId);
+        saveOfflineTemplateResponse(buildTemplateDraft(jId, tId, item, r));
+      });
+      setFailedDrafts(null);
       if (!isOnline) {
-        items.forEach((item: any) => {
-          const r = responses[item.id];
-          if (!r || (!r.responseValue && !r.responseText)) return;
-          saveOfflineTemplateResponse({
-            localId: `${jId}-${tId}-${item.id}`,
-            jobId: jId,
-            templateId: tId,
-            sectionId: item.sectionId,
-            itemId: item.id,
-            responseValue: r.responseValue || null,
-            responseText: r.responseText || null,
-            notes: r.notes || null,
-            deficiencyId: r.deficiencyId ?? null,
-            synced: false,
-          });
-        });
         toast.success("Responses saved offline — will sync when you're back online");
         setLocation(`/tech/jobs/${jId}`);
         return;
       }
-
-      await Promise.all(
-        items.map((item: any) => {
-          const r = responses[item.id];
-          if (!r) return Promise.resolve();
-          return saveResponse.mutateAsync({
-            jobId: jId,
-            templateId: tId,
-            sectionId: item.sectionId,
-            itemId: item.id,
-            responseValue: r.responseValue || null,
-            responseText: r.responseText || null,
-            notes: r.notes || null,
-            deficiencyId: r.deficiencyId ?? null,
-          });
-        })
-      );
-      // Clear any stale offline copies for this template so a later sync can't
-      // overwrite these fresher, already-saved values.
-      const localIds = getTemplateResponsesForJob(jId, tId).map((r) => r.localId);
-      if (localIds.length > 0) {
-        markTemplateResponsesSynced(localIds);
-        clearSyncedTemplateResponses();
-      }
+      const sentDrafts = getTemplateResponsesForJob(jId, tId).filter(draft => submittedIds.has(draft.localId));
+      await Promise.all(sentDrafts.map(async draft => {
+        await saveResponse.mutateAsync({
+          jobId: draft.jobId, templateId: draft.templateId, sectionId: draft.sectionId,
+          itemId: draft.itemId, questionRevision: draft.questionRevision,
+          responseValue: draft.responseValue, responseText: draft.responseText,
+          notes: draft.notes, deficiencyId: draft.deficiencyId,
+        });
+        markTemplateResponsesSynced([draft]);
+      }));
+      clearSyncedTemplateResponses();
       toast.success("Responses saved");
       setLocation(`/tech/jobs/${jId}`);
     } catch {
@@ -493,7 +524,7 @@ export default function TemplateFormRenderer({ jobId, templateId }: TemplateForm
     });
   };
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <div className="min-h-screen bg-background p-4">
         <div className="text-center py-16 text-muted-foreground">Loading form…</div>
@@ -504,7 +535,7 @@ export default function TemplateFormRenderer({ jobId, templateId }: TemplateForm
   if (!data) {
     return (
       <div className="min-h-screen bg-background p-4">
-        <div className="text-center py-16 text-muted-foreground">Template not found.</div>
+        <div role="alert" className="text-center py-16 text-muted-foreground">{formError?.message ?? "Template not found."}</div>
       </div>
     );
   }
@@ -531,12 +562,19 @@ export default function TemplateFormRenderer({ jobId, templateId }: TemplateForm
           <p className="font-semibold text-sm truncate">{template.name}</p>
           <p className="text-xs text-muted-foreground">{answered}/{total} answered</p>
         </div>
-        <Button size="sm" onClick={saveAll} disabled={saving}>
+        <Button size="sm" onClick={saveAll} disabled={saving || data.finalized || hasStaleOfflineAnswers}>
           {saving ? "Saving…" : "Save & Done"}
         </Button>
       </div>
 
       <div className="max-w-2xl mx-auto p-4 space-y-4">
+        {frozenForm && <div role="alert" className="rounded-lg border border-destructive p-3 text-sm space-y-2"><p>Changes are still visible here but could not be saved on this device. Keep this form open and retry Save &amp; Done. {frozenForm.error}</p><Button variant="outline" size="sm" onClick={exportUnpersistedChanges}>Export unsaved changes</Button></div>}
+        {hasStaleOfflineAnswers && (
+          <div role="alert" className="rounded-lg border border-amber-300 p-3 space-y-2 text-sm">
+            <p>Saved offline answers belong to a different version of this form and are preserved for review.</p>
+            <Button variant="outline" size="sm" onClick={() => setLocation("/tech/sync")}>Review saved data</Button>
+          </div>
+        )}
         {!isOnline && (
           <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-800 dark:text-amber-300">
             <WifiOff className="h-4 w-4 shrink-0" />
@@ -561,7 +599,11 @@ export default function TemplateFormRenderer({ jobId, templateId }: TemplateForm
                     <Badge variant="outline" className="text-xs shrink-0">
                       {sectionAnswered}/{sectionItems.length}
                     </Badge>
-                    {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                    {isExpanded ? (
+                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    )}
                   </div>
                   {section.description && (
                     <p className="text-xs text-muted-foreground">{section.description}</p>
@@ -581,7 +623,7 @@ export default function TemplateFormRenderer({ jobId, templateId }: TemplateForm
                           onChange={(partial) => handleChange(item.id, partial)}
                           onDeficiencyLinked={(defId) => handleDeficiencyLinked(item.id, defId)}
                           jobId={jId}
-                          readOnly={false}
+                          readOnly={data.finalized || saving || hasStaleOfflineAnswers}
                           isOnline={isOnline}
                         />
                       </div>
@@ -595,7 +637,7 @@ export default function TemplateFormRenderer({ jobId, templateId }: TemplateForm
 
         {/* Bottom save */}
         <div className="py-4">
-          <Button className="w-full" onClick={saveAll} disabled={saving} size="lg">
+          <Button className="w-full" onClick={saveAll} disabled={saving || data.finalized || hasStaleOfflineAnswers} size="lg">
             {saving ? "Saving…" : "Save & Done"}
           </Button>
         </div>

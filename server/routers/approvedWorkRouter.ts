@@ -1,13 +1,16 @@
 import { toPublicUser } from "../publicUser";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
+import { router, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { callerIsPlatformOperator } from "../_core/actorContext";
-import { getQuoteForCompany, assertWorkOrderCompany } from "../tenantGuards";
+import { getQuoteForCompany } from "../tenantGuards";
 import { APPROVED_WORK_STATUSES } from "../../drizzle/schema";
 import { logActivity } from "../activityLogger";
 import { generateInvoiceNumber } from "../invoiceNumber.js";
+import { assertApprovedWorkLinks, assertApprovedWorkOpen, assertNoOverlappingQuoteApproval, markQuoteItemConverted, withApprovedWorkCreation, withLockedApprovedWork } from "../approvedWorkIntegrity";
+import { assertRepairQuoteFinalized } from "../repairQuoteIntegrity";
+import { assertInvoiceLinks } from "../invoiceLinks";
 
 const STATUS_ENUM = z.enum(APPROVED_WORK_STATUSES);
 
@@ -16,11 +19,6 @@ const APPROVAL_SOURCE_ENUM = z.enum([
 ]);
 
 const TYPE_ENUM = z.enum(["job_order", "repair_order"]);
-
-/** Approved work linked to a finalized job is part of its immutable record — block further changes. */
-async function assertApprovedWorkJobNotFinalized(jobId: number | null | undefined) {
-  if (jobId != null) await db.assertJobNotFinalized(jobId);
-}
 
 export const approvedWorkRouter = router({
 
@@ -36,7 +34,7 @@ export const approvedWorkRouter = router({
       status: STATUS_ENUM.optional(),
     }))
     .query(async ({ input, ctx }) => {
-      if (input.companyId !== ctx.user.companyId) {
+      if (input.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
@@ -46,6 +44,7 @@ export const approvedWorkRouter = router({
       );
 
       if (records.length === 0) return [];
+      await Promise.all(records.map(record => assertApprovedWorkLinks(record, record.companyId)));
 
       // Batch-enrich with site + customer org names
       const siteIds   = Array.from(new Set(records.map(r => r.siteId).filter(Boolean) as number[]));
@@ -81,7 +80,7 @@ export const approvedWorkRouter = router({
   /**
    * Get a single approved work record by ID, enriched with related entity info.
    */
-  get: protectedProcedure
+  get: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const record = await db.getApprovedWorkById(input.id);
@@ -90,6 +89,7 @@ export const approvedWorkRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
+      await assertApprovedWorkLinks(record, record.companyId);
       const [site, org, wo, job, deficiency, linkedInvoice] = await Promise.all([
         record.siteId       ? db.getSiteById(record.siteId)            : Promise.resolve(null),
         record.customerOrgId ? db.getCustomerOrgById(record.customerOrgId) : Promise.resolve(null),
@@ -133,105 +133,82 @@ export const approvedWorkRouter = router({
       quoteItemId:     z.number().int().positive().optional(),
       type:            TYPE_ENUM,
       approvedScope:   z.string().max(5000).optional(),
-      approvedAmount:  z.number().nonnegative().optional(),
+      approvedAmount:  z.number().nonnegative().multipleOf(0.01).optional(),
       approvedAt:      z.date().optional(),
       approvedByName:  z.string().max(255).optional(),
       approvedByEmail: z.string().email().max(320).optional(),
       approvalSource:  APPROVAL_SOURCE_ENUM.optional(),
       officeNotes:     z.string().max(5000).optional(),
     }))
-    .mutation(async ({ input, ctx }) => {
-      if (input.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
-      await assertApprovedWorkJobNotFinalized(input.jobId);
-
-      // Prevent duplicate from same quote item
-      if (input.quoteItemId) {
-        const existing = await db.getApprovedWorkByQuoteItem(input.quoteItemId);
-        if (existing) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "An Approved Work record already exists for this quote item.",
-          });
+    .mutation(async ({ input, ctx }) =>
+      withApprovedWorkCreation(ctx, "approvedWork.create", input.companyId, input, async tx => {
+        if (input.quoteId) await assertNoOverlappingQuoteApproval(tx, input.quoteId, input.quoteItemId);
+        if (input.quoteItemId) {
+          const item = await assertApprovedWorkLinks(input, input.companyId);
+          const quote = await db.getQuoteById(input.quoteId!);
+          assertRepairQuoteFinalized(quote!);
+          if (!["approved", "accepted", "partially_approved", "converted_to_approved_work"].includes(quote!.status) ||
+              !["approved", "converted_to_approved_work"].includes(item!.approvalStatus)) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Approve the quote item before creating approved work" });
+          }
+          if (await db.getApprovedWorkByQuoteItem(input.quoteItemId)) {
+            throw new TRPCError({ code: "CONFLICT", message: "An Approved Work record already exists for this quote item." });
+          }
+          // The selected approval's recorded scope/amount is authoritative.
+          const record = await db.createApprovedWork({ ...input, approvedAmount: item!.total,
+            approvedScope: item!.description, status: "approved", createdById: ctx.user.id });
+          await markQuoteItemConverted(tx, input.quoteId!, item!.id);
+          await logActivity({ ctx: { user: { ...ctx.user, companyId: record.companyId } }, entityType: "approved_work", entityId: record.id, eventType: "created", title: "Approved work record created" });
+          return record;
         }
-      }
+        let approvedAmount = input.approvedAmount != null ? input.approvedAmount.toFixed(2) : undefined;
+        if (input.quoteId) {
+          const quote = await db.getQuoteById(input.quoteId);
+          if (quote?.quoteType === "repair") assertRepairQuoteFinalized(quote);
+          if (!quote || !["approved", "accepted", "converted_to_approved_work"].includes(quote.status) ||
+              (approvedAmount != null && Number(approvedAmount) !== Number(quote.total))) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "A quote approval must preserve its approved scope and amount" });
+          }
+          approvedAmount = quote.total;
+        }
+        const record = await db.createApprovedWork({ ...input, approvedAmount,
+          status: "approved", createdById: ctx.user.id });
+        await logActivity({ ctx: { user: { ...ctx.user, companyId: record.companyId } }, entityType: "approved_work", entityId: record.id, eventType: "created", title: "Approved work record created" });
+        return record;
+      })),
 
-      const record = await db.createApprovedWork({
-        ...input,
-        approvedAmount: input.approvedAmount != null ? String(input.approvedAmount) : undefined,
-        status: "approved",
-        createdById: ctx.user.id,
-      });
-
-      void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "created",
-        title: "Approved work record created", });
-      return record;
-    }),
-
-  /**
-   * Create an Approved Work record from an approved repair quote item.
-   * Prevents duplicate creation from the same quote item.
-   */
   createFromQuoteItem: officeProcedure
     .input(z.object({
       quoteId:     z.number().int().positive(),
       quoteItemId: z.number().int().positive(),
     }))
     .mutation(async ({ input, ctx }) => {
-      // Dedup check
-      const existing = await db.getApprovedWorkByQuoteItem(input.quoteItemId);
-      if (existing) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "An Approved Work record already exists for this quote item.",
-        });
-      }
-
-      const item = await db.getRepairQuoteItemById(input.quoteItemId);
-      if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Quote item not found.", });
-
-      const quote = await getQuoteForCompany(input.quoteId, ctx.user.companyId!);
-
-      // Must be an approved quote; declined items must not create approved work
-      if (quote.status === "declined") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Cannot create Approved Work from a declined quote.",
-        });
-      }
-      if ((quote.status as string) === "pending" || quote.status === "draft") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Quote must be approved before creating Approved Work.",
-        });
-      }
-
-      const record = await db.createApprovedWork({
-        companyId:      quote.companyId,
-        customerOrgId:  quote.customerOrgId ?? undefined,
-        siteId:         quote.siteId ?? undefined,
-        quoteId:        input.quoteId,
-        quoteItemId:    input.quoteItemId,
-        type:           "repair_order",
-        status:         "approved",
-        // Snapshot the approved amount from the item — never recalculate later
-        approvedAmount: item.total ?? undefined,
-        approvedScope:  item.description ?? undefined,
-        approvedAt:     quote.approvedAt ?? new Date(),
-        approvalSource: "portal",
-        createdById:    ctx.user.id,
+      const candidate = await getQuoteForCompany(input.quoteId, ctx.user.companyId!);
+      const links = { quoteId: candidate.id, quoteItemId: input.quoteItemId, jobId: candidate.jobId,
+        siteId: candidate.siteId, customerOrgId: candidate.customerOrgId };
+      return withApprovedWorkCreation(ctx, "approvedWork.createFromQuoteItem", candidate.companyId, links, async tx => {
+        const quote = await db.getQuoteById(candidate.id);
+        assertRepairQuoteFinalized(quote!);
+        const item = await assertApprovedWorkLinks(links, candidate.companyId);
+        if (!["approved", "accepted", "partially_approved", "converted_to_approved_work"].includes(quote!.status) ||
+            !["approved", "converted_to_approved_work"].includes(item!.approvalStatus)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Approve the quote item before creating approved work" });
+        }
+        if (await db.getApprovedWorkByQuoteItem(item!.id)) {
+          throw new TRPCError({ code: "CONFLICT", message: "An Approved Work record already exists for this quote item." });
+        }
+        await assertNoOverlappingQuoteApproval(tx, quote!.id, item!.id);
+        const record = await db.createApprovedWork({ ...links, deficiencyId: item!.deficiencyId,
+          companyId: candidate.companyId, type: "repair_order", status: "approved",
+          approvedAmount: item!.total, approvedScope: item!.description,
+          approvedAt: quote!.approvedAt ?? new Date(), approvalSource: "portal", createdById: ctx.user.id });
+        await markQuoteItemConverted(tx, quote!.id, item!.id);
+        await logActivity({ ctx: { user: { ...ctx.user, companyId: record.companyId } }, entityType: "approved_work", entityId: record.id, eventType: "created",
+          title: "Approved work created from quote item", relatedEntityType: "repair_quote", relatedEntityId: quote!.id });
+        return record;
       });
-
-      void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "created",
-        title: "Approved work created from quote item",
-        relatedEntityType: "repair_quote", relatedEntityId: input.quoteId, });
-      return record;
     }),
 
-  /**
-   * Update editable fields on an approved work record.
-   */
   update: officeProcedure
     .input(z.object({
       id:              z.number().int().positive(),
@@ -240,7 +217,7 @@ export const approvedWorkRouter = router({
       jobId:           z.number().int().positive().optional().nullable(),
       deficiencyId:    z.number().int().positive().optional().nullable(),
       approvedScope:   z.string().max(5000).optional(),
-      approvedAmount:  z.number().nonnegative().optional().nullable(),
+      approvedAmount:  z.number().nonnegative().multipleOf(0.01).optional().nullable(),
       approvedAt:      z.date().optional().nullable(),
       approvedByName:  z.string().max(255).optional(),
       approvedByEmail: z.string().email().max(320).optional(),
@@ -253,69 +230,58 @@ export const approvedWorkRouter = router({
       officeNotes:     z.string().max(5000).optional(),
       technicianNotes: z.string().max(5000).optional(),
     }))
-    .mutation(async ({ input, ctx }) => {
-      const record = await db.getApprovedWorkById(input.id);
-      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
-      if (record.status === "closed" || record.status === "cancelled") {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Cannot edit a ${record.status} record.`,
-        });
-      }
-      await assertApprovedWorkJobNotFinalized(record.jobId);
-      await assertApprovedWorkJobNotFinalized(input.jobId);
+    .mutation(async ({ input, ctx }) =>
+      withLockedApprovedWork(ctx, "approvedWork.update", input.id, input, async record => {
+        assertApprovedWorkOpen(record);
+        if (input.invoiceNumber !== undefined || input.invoiceStatus !== undefined) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Use the invoice workflow to change invoice tracking" });
+        }
+        const scopeChanged = ["customerOrgId", "siteId", "jobId", "deficiencyId", "approvedScope", "approvedAmount"]
+          .some(key => (input as Record<string, unknown>)[key] !== undefined);
+        if (scopeChanged && (record.invoiceNumber || await db.getInvoiceByApprovedWork(record.id))) {
+          throw new TRPCError({ code: "CONFLICT", message: "Invoiced approved work scope and amount are locked" });
+        }
+        if (record.quoteId && (input.approvedScope !== undefined || input.approvedAmount !== undefined)) {
+          throw new TRPCError({ code: "CONFLICT", message: "Quote approval snapshots cannot be changed. Create a revision." });
+        }
+        if (input.assignedTechnicianIds) {
+          for (const id of input.assignedTechnicianIds) {
+            const technician = await db.getUserById(id);
+            if (!technician || technician.companyId !== record.companyId || technician.role !== "technician" || technician.isActive !== 1) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "Assigned technician is not active in the approved work company" });
+            }
+          }
+        }
+        const { id, approvedAmount, invoiceNumber, invoiceStatus, ...rest } = input;
+        await db.updateApprovedWork(id, { ...rest,
+          ...(approvedAmount !== undefined ? { approvedAmount: approvedAmount != null ? approvedAmount.toFixed(2) : null } : {}) });
+        return { success: true };
+      })),
 
-      const { id, approvedAmount, ...rest } = input;
-      await db.updateApprovedWork(id, {
-        ...rest,
-        ...(approvedAmount !== undefined
-          ? { approvedAmount: approvedAmount != null ? String(approvedAmount) : null, }
-          : {}),
-      });
-      return { success: true };
-    }),
-
-  /**
-   * Update the status of an approved work record.
-   */
   updateStatus: officeProcedure
     .input(z.object({
       id:     z.number().int().positive(),
       status: STATUS_ENUM,
     }))
-    .mutation(async ({ input, ctx }) => {
-      const record = await db.getApprovedWorkById(input.id);
-      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+    .mutation(async ({ input, ctx }) =>
+      withLockedApprovedWork(ctx, "approvedWork.updateStatus", input.id, {}, async record => {
+        assertApprovedWorkOpen(record);
+        if (input.status === "invoiced" && !record.invoiceNumber) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Create or record the invoice before marking this work invoiced" });
+        }
+        if (record.invoiceNumber && input.status !== "invoiced" && input.status !== "closed") {
+          throw new TRPCError({ code: "CONFLICT", message: "Invoiced work cannot return to an earlier approval state" });
+        }
+        const timestamps: Record<string, Date> = {};
+        if (input.status === "in_progress" && !record.startedAt) timestamps.startedAt = new Date();
+        if (input.status === "completed" && !record.completedAt) timestamps.completedAt = new Date();
+        if (input.status === "closed" && !record.closedAt) timestamps.closedAt = new Date();
+        await db.updateApprovedWork(input.id, { status: input.status, ...timestamps });
+        await logActivity({ ctx: { user: { ...ctx.user, companyId: record.companyId } }, entityType: "approved_work", entityId: input.id, eventType: "status_changed",
+          title: `Approved work status changed to ${input.status}`, oldValue: record.status, newValue: input.status });
+        return { success: true };
+      })),
 
-      const timestamps: Record<string, Date | null> = {};
-      if (input.status === "in_progress" && !record.startedAt) {
-        timestamps.startedAt = new Date();
-      }
-      if (input.status === "completed" && !record.completedAt) {
-        timestamps.completedAt = new Date();
-      }
-      if (input.status === "closed" && !record.closedAt) {
-        timestamps.closedAt = new Date();
-      }
-
-      await db.updateApprovedWork(input.id, { status: input.status, ...timestamps, });
-      void logActivity({ ctx, entityType: "approved_work", entityId: input.id, eventType: "status_changed",
-        title: `Approved work status changed to ${input.status}`,
-        oldValue: record.status, newValue: input.status, });
-      return { success: true };
-    }),
-
-  /**
-   * Mark an approved work record as invoiced.
-   * Captures invoice number, sets invoicedAt timestamp, and transitions status to "invoiced".
-   * Blocked on closed/cancelled records.
-   */
   markInvoiced: officeProcedure
     .input(z.object({
       id:            z.number().int().positive(),
@@ -323,293 +289,130 @@ export const approvedWorkRouter = router({
       invoiceStatus: z.string().max(100).optional(),
       officeNotes:   z.string().max(5000).optional(),
     }))
-    .mutation(async ({ input, ctx }) => {
-      const record = await db.getApprovedWorkById(input.id);
-      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
-      if (record.status === "closed" || record.status === "cancelled") {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Cannot invoice a ${record.status} record.`,
-        });
-      }
+    .mutation(async ({ input, ctx }) =>
+      withLockedApprovedWork(ctx, "approvedWork.markInvoiced", input.id, {}, async record => {
+        const linked = await db.getInvoiceByApprovedWork(record.id);
+        if (linked) {
+          if (linked.companyId !== record.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+          await assertInvoiceLinks(linked, record.companyId);
+        }
+        if ((record.invoiceNumber && record.invoiceNumber !== input.invoiceNumber) ||
+            (linked && linked.invoiceNumber !== input.invoiceNumber)) {
+          throw new TRPCError({ code: "CONFLICT", message: "This approved work already tracks a different invoice" });
+        }
+        if (record.invoiceNumber === input.invoiceNumber && ["invoiced", "closed"].includes(record.status)) return { success: true };
+        assertApprovedWorkOpen(record);
+        await db.updateApprovedWork(input.id, { invoiceNumber: input.invoiceNumber, invoicedAt: record.invoicedAt ?? new Date(),
+          invoiceStatus: input.invoiceStatus ?? "sent", status: "invoiced", ...(input.officeNotes ? { officeNotes: input.officeNotes } : {}) });
+        return { success: true };
+      }, { financialTracking: true })),
 
-      await db.updateApprovedWork(input.id, {
-        invoiceNumber: input.invoiceNumber,
-        invoicedAt:    new Date(),
-        invoiceStatus: input.invoiceStatus ?? "sent",
-        status:        "invoiced",
-        ...(input.officeNotes ? { officeNotes: input.officeNotes } : {}),
-      });
-      return { success: true };
-    }),
-
-  /**
-   * Link an existing work order to this approved work record.
-   * Prevents linking if a work order is already linked.
-   */
   linkWorkOrder: officeProcedure
     .input(z.object({
       id:          z.number().int().positive(),
       workOrderId: z.number().int().positive(),
     }))
-    .mutation(async ({ input, ctx }) => {
-      const record = await db.getApprovedWorkById(input.id);
-      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
-      if (record.workOrderId) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "A work order is already linked to this Approved Work record.",
-        });
-      }
+    .mutation(async ({ input, ctx }) =>
+      withLockedApprovedWork(ctx, "approvedWork.linkWorkOrder", input.id, { workOrderId: input.workOrderId }, async record => {
+        assertApprovedWorkOpen(record);
+        if (record.workOrderId) throw new TRPCError({ code: "CONFLICT", message: "A work order is already linked to this Approved Work record." });
+        const order = await db.getWorkOrderById(input.workOrderId);
+        await db.updateApprovedWork(record.id, { workOrderId: order!.id, jobId: record.jobId ?? order!.jobId,
+          siteId: record.siteId ?? order!.siteId, customerOrgId: record.customerOrgId ?? order!.customerOrgId });
+        return { success: true };
+      })),
 
-      await assertWorkOrderCompany(input.workOrderId, ctx.user.companyId!); // authorize the linked work order
-
-      await db.updateApprovedWork(input.id, { workOrderId: input.workOrderId });
-      return { success: true };
-    }),
-
-  /**
-   * Create a new work order from this approved work record.
-   * Requires the approved work to have a linked jobId (work_orders.jobId is NOT NULL).
-   * Prevents duplicate work orders from the same approved work record.
-   */
   createWorkOrder: officeProcedure
     .input(z.object({
       id:             z.number().int().positive(),
       title:          z.string().min(1).max(255),
       priority:       z.enum(["low", "medium", "high", "urgent"]).optional(),
-      estimatedHours: z.number().nonnegative().optional(),
+      estimatedHours: z.number().nonnegative().multipleOf(0.01).optional(),
       officeNotes:    z.string().optional(),
     }))
-    .mutation(async ({ input, ctx }) => {
-      const record = await db.getApprovedWorkById(input.id);
-      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+    .mutation(async ({ input, ctx }) =>
+      withLockedApprovedWork(ctx, "approvedWork.createWorkOrder", input.id, {}, async record => {
+        assertApprovedWorkOpen(record);
+        if (record.workOrderId) throw new TRPCError({ code: "CONFLICT", message: "A work order already exists for this Approved Work record." });
+        if (!record.jobId || !record.siteId || !record.customerOrgId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "A linked Job, Site and Customer are required to create a Work Order." });
+        }
+        const existing = await db.getWorkOrderByJob(record.jobId);
+        if (existing) {
+          if (existing.finalizedAt) throw new TRPCError({ code: "CONFLICT", message: "Work order is finalized. Reconcile its existing approval links instead of creating new execution links." });
+          await assertApprovedWorkLinks({ ...record, workOrderId: existing.id }, record.companyId);
+          await db.updateApprovedWork(record.id, { workOrderId: existing.id });
+          return existing;
+        }
+        const wo = await db.createWorkOrder({ companyId: record.companyId, siteId: record.siteId, customerOrgId: record.customerOrgId,
+          jobId: record.jobId, quoteId: record.quoteId ?? undefined, workOrderNumber: `WO-AW-${record.id}`,
+          title: input.title, workType: record.type === "repair_order" ? "repair" : "inspection", status: "pending",
+          priority: input.priority ?? "medium", estimatedHours: input.estimatedHours != null ? String(input.estimatedHours) : undefined,
+          officeNotes: input.officeNotes ?? record.officeNotes ?? undefined,
+          assignedTechnicianIds: (record.assignedTechnicianIds as number[] | null) ?? [], total: record.approvedAmount ?? "0" });
+        await db.updateApprovedWork(record.id, { workOrderId: wo.id });
+        await logActivity({ ctx: { user: { ...ctx.user, companyId: record.companyId } }, entityType: "approved_work", entityId: record.id, eventType: "linked",
+          title: `Work order created: ${wo.workOrderNumber}`, relatedEntityType: "work_order", relatedEntityId: wo.id });
+        return wo;
+      })),
 
-      // Dedup: one work order per approved work record
-      if (record.workOrderId) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "A work order already exists for this Approved Work record.",
-        });
-      }
-
-      if (!record.jobId) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "A linked Job is required to create a Work Order. Link a Job to this Approved Work first.",
-        });
-      }
-      await db.assertJobNotFinalized(record.jobId);
-
-      if (!record.siteId || !record.customerOrgId) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "A Site and Customer are required to create a Work Order.",
-        });
-      }
-
-      const wo = await db.createWorkOrder({
-        companyId:      record.companyId,
-        siteId:         record.siteId,
-        customerOrgId:  record.customerOrgId,
-        jobId:          record.jobId,
-        quoteId:        record.quoteId ?? undefined,
-        workOrderNumber: `WO-${Date.now().toString(36).toUpperCase()}`,
-        title:          input.title,
-        workType:       record.type === "repair_order" ? "repair" : "inspection",
-        status:         "pending",
-        priority:       input.priority ?? "medium",
-        estimatedHours: input.estimatedHours != null ? String(input.estimatedHours) : undefined,
-        officeNotes:    input.officeNotes ?? record.officeNotes ?? undefined,
-        assignedTechnicianIds: (record.assignedTechnicianIds as number[] | null) ?? [],
-        total:          record.approvedAmount ?? "0",
-      });
-
-      await db.updateApprovedWork(record.id, { workOrderId: wo.id });
-      void logActivity({ ctx, entityType: "work_order", entityId: wo.id, eventType: "created",
-        title: `Work order created: ${wo.workOrderNumber}`,
-        relatedEntityType: "approved_work", relatedEntityId: record.id, });
-      void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "linked",
-        title: `Work order created: ${wo.workOrderNumber}`,
-        relatedEntityType: "work_order", relatedEntityId: wo.id, });
-      return wo;
-    }),
-
-  /**
-   * Create an Invoice from a completed Approved Work record.
-   * Snapshots line items from the linked quote (preferred) or work order.
-   * Prevents duplicate invoices from the same Approved Work.
-   */
   createInvoice: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input, ctx }) => {
-      const record = await db.getApprovedWorkById(input.id);
-      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
-      if (record.status === "cancelled") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot invoice a cancelled record.", });
-      }
-
-      if (record.invoiceNumber) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "This Approved Work record already has an invoice number recorded. Use the existing invoice or void it before creating a new one.",
-        });
-      }
-
-      const existing = await db.getInvoiceByApprovedWork(input.id);
-      if (existing) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "An invoice already exists for this Approved Work record.",
-        });
-      }
-
-      const [customerOrg, settings] = await Promise.all([
-        record.customerOrgId ? db.getCustomerOrgById(record.customerOrgId) : Promise.resolve(null),
-        db.getCompanySettings(record.companyId),
-      ]);
-
-      const now = new Date();
-      const dueDate = new Date(now);
-      dueDate.setDate(dueDate.getDate() + (settings.invoiceDueDays ?? 30));
-
-      const invPrefix = settings.invoiceNumberPrefix ?? "INV";
-      const invoiceNumber = generateInvoiceNumber(invPrefix, now);
-
-      const inv = await db.createInvoice({
-        companyId: record.companyId,
-        invoiceNumber,
-        status: "draft",
-        customerOrgId: record.customerOrgId ?? undefined,
-        siteId: record.siteId ?? undefined,
-        jobId: record.jobId ?? undefined,
-        approvedWorkId: record.id,
-        workOrderId: record.workOrderId ?? undefined,
-        quoteId: record.quoteId ?? undefined,
-        billToName: customerOrg?.name ?? undefined,
-        billToEmail: customerOrg?.contactEmail ?? undefined,
-        billToAddress: customerOrg?.address ?? undefined,
-        invoiceDate: now,
-        dueDate,
-        taxRate: settings.gstRate as any,
-        sageGlCode: settings.sageDefaultGlCode ?? undefined,
-        sageDepartment: settings.sageDefaultDepartment ?? undefined,
-        sageCustomerCode: settings.sageCustomerCodeDefault ?? undefined,
-        createdById: ctx.user.id,
-        internalNotes: record.officeNotes ?? undefined,
-      });
-
-      // Snapshot line items — prefer repair quote items, then WO line items, then AW summary.
-      //
-      // Tax treatment: snapshotted lines are stored `taxable: false` because the
-      // source amounts here are already tax-INCLUSIVE — repair-quote item totals
-      // are `lineSubtotal + GST + PST` (see repairQuoteRouter), and the AW summary
-      // fallback derives from those quote totals too. Re-flagging them taxable would
-      // double-charge against the invoice's `taxRate`.
-      //   ⚠️ The WO branch below relies on the SAME tax-inclusive assumption, but
-      //   work-order `lineItems` carry no tax flag of their own and today no code
-      //   path populates `wo.lineItems` (createWorkOrder only sets `total`), so this
-      //   branch is effectively unreachable. If WO line items ever start carrying
-      //   PRE-tax amounts, revisit the `taxable` flag here before trusting it.
-      let linesSaved = 0;
-      if (record.quoteId) {
-        const quoteItems = await db.getRepairQuoteItemsByQuote(record.quoteId);
-        for (let i = 0; i < quoteItems.length; i++) {
-          const qi = quoteItems[i];
-          const lineTotal = parseFloat(String(qi.total ?? "0"));
-          await db.createInvoiceLineItem({
-            invoiceId: inv.id,
-            description: qi.description ?? "Repair item",
-            quantity: "1" as any,
-            unitPrice: String(lineTotal) as any,
-            total: String(lineTotal) as any,
-            taxable: false,
-            sortOrder: i,
-          });
-          linesSaved++;
+    .mutation(async ({ input, ctx }) =>
+      withLockedApprovedWork(ctx, "approvedWork.createInvoice", input.id, {}, async record => {
+        const existing = await db.getInvoiceByApprovedWork(record.id);
+        if (existing) {
+          if (existing.companyId !== record.companyId || record.invoiceNumber !== existing.invoiceNumber) {
+            throw new TRPCError({ code: "CONFLICT", message: "Existing invoice tracking needs reconciliation" });
+          }
+          await assertInvoiceLinks(existing, record.companyId);
+          return { invoiceId: existing.id, invoiceNumber: existing.invoiceNumber };
         }
-      } else if (record.workOrderId) {
-        const wo = await db.getWorkOrderById(record.workOrderId);
-        const woLines = (wo?.lineItems as Array<{ description: string; quantity: number; unitPrice: number; total?: number; }> | null) ?? [];
-        for (let i = 0; i < woLines.length; i++) {
-          const wl = woLines[i];
-          const lineTotal = wl.total ?? wl.quantity * wl.unitPrice;
-          await db.createInvoiceLineItem({
-            invoiceId: inv.id,
-            description: wl.description,
-            quantity: String(wl.quantity) as any,
-            unitPrice: String(wl.unitPrice) as any,
-            total: String(lineTotal) as any,
-            taxable: false,
-            sortOrder: i,
-          });
-          linesSaved++;
+        assertApprovedWorkOpen(record);
+        if (record.invoiceNumber) {
+          throw new TRPCError({ code: "CONFLICT", message: "An invoice already exists for this Approved Work record." });
         }
-      }
+        if (record.approvedAmount == null || !/^\d+(?:\.\d{1,2})?$/.test(record.approvedAmount)) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Record the approved amount before creating an invoice" });
+        }
+        const [customerOrg, settings] = await Promise.all([
+          record.customerOrgId ? db.getCustomerOrgById(record.customerOrgId) : null, db.getCompanySettings(record.companyId),
+        ]);
+        const now = new Date(); const dueDate = new Date(now);
+        dueDate.setDate(dueDate.getDate() + (settings.invoiceDueDays ?? 30));
+        const inv = await db.createInvoice({ companyId: record.companyId,
+          invoiceNumber: generateInvoiceNumber(settings.invoiceNumberPrefix ?? "INV", now), status: "draft",
+          customerOrgId: record.customerOrgId, siteId: record.siteId, jobId: record.jobId,
+          approvedWorkId: record.id, workOrderId: record.workOrderId, quoteId: record.quoteId,
+          billToName: customerOrg?.name, billToEmail: customerOrg?.contactEmail, billToAddress: customerOrg?.address,
+          invoiceDate: now, dueDate, taxRate: settings.gstRate,
+          sageGlCode: settings.sageDefaultGlCode, sageDepartment: settings.sageDefaultDepartment,
+          sageCustomerCode: settings.sageCustomerCodeDefault, createdById: ctx.user.id, internalNotes: record.officeNotes });
+        // Bill exactly this immutable approval snapshot. A selected quote item
+        // never expands into every quote line, and later source edits cannot
+        // replace the approved amount or add tax a second time.
+        await db.createInvoiceLineItem({ invoiceId: inv.id, description: record.approvedScope ?? `Approved work #${record.id}`,
+          quantity: "1", unitPrice: record.approvedAmount, total: record.approvedAmount, taxable: false, sortOrder: 0 });
+        await db.recalculateInvoiceTotals(inv.id);
+        await db.updateApprovedWork(record.id, { invoiceNumber: inv.invoiceNumber, invoicedAt: now, invoiceStatus: "draft", status: "invoiced" });
+        await logActivity({ ctx: { user: { ...ctx.user, companyId: record.companyId } }, entityType: "approved_work", entityId: record.id, eventType: "converted",
+          title: `Invoice created: ${inv.invoiceNumber}`, relatedEntityType: "invoice", relatedEntityId: inv.id });
+        return { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber };
+      }, { financialTracking: true })),
 
-      if (linesSaved === 0) {
-        const amount = parseFloat(String(record.approvedAmount ?? "0"));
-        await db.createInvoiceLineItem({
-          invoiceId: inv.id,
-          description: record.approvedScope ?? "Repair/Service",
-          quantity: "1" as any,
-          unitPrice: String(amount) as any,
-          total: String(amount) as any,
-          taxable: false,
-          sortOrder: 0,
-        });
-      }
-
-      await db.recalculateInvoiceTotals(inv.id);
-
-      await db.updateApprovedWork(record.id, {
-        invoiceNumber: inv.invoiceNumber,
-        invoicedAt: now,
-        invoiceStatus: "draft",
-        status: "invoiced",
-      });
-
-      void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "converted",
-        title: `Invoice created: ${inv.invoiceNumber}`,
-        relatedEntityType: "invoice", relatedEntityId: inv.id, });
-      return { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber };
-    }),
-
-  /**
-   * Close out an approved work record.
-   */
   close: officeProcedure
     .input(z.object({
       id:          z.number().int().positive(),
       officeNotes: z.string().optional(),
     }))
-    .mutation(async ({ input, ctx }) => {
-      const record = await db.getApprovedWorkById(input.id);
-      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
-      if (record.status === "closed") {
-        throw new TRPCError({ code: "CONFLICT", message: "Already closed." });
-      }
+    .mutation(async ({ input, ctx }) =>
+      withLockedApprovedWork(ctx, "approvedWork.close", input.id, {}, async record => {
+        if (record.status === "closed") return { success: true };
+        assertApprovedWorkOpen(record);
+        await db.updateApprovedWork(record.id, { status: "closed", closedAt: new Date(), ...(input.officeNotes ? { officeNotes: input.officeNotes } : {}) });
+        await logActivity({ ctx: { user: { ...ctx.user, companyId: record.companyId } }, entityType: "approved_work", entityId: record.id, eventType: "closed", title: "Approved work closed" });
+        return { success: true };
+      }, { financialTracking: true })),
 
-      await db.updateApprovedWork(input.id, {
-        status: "closed",
-        closedAt: new Date(),
-        ...(input.officeNotes ? { officeNotes: input.officeNotes } : {}),
-      });
-      void logActivity({ ctx, entityType: "approved_work", entityId: input.id, eventType: "closed",
-        title: "Approved work closed", });
-      return { success: true };
-    }),
+
 });

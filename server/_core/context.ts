@@ -2,6 +2,7 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
 import { randomUUID } from "crypto";
+import { EXPECTED_ACCOUNT_HEADER, parseExpectedAccountHeader, type ExpectedAccount } from "../../shared/accountBinding";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -11,6 +12,10 @@ export type TrpcContext = {
   requestId: string;
   ipAddress: string;
   userAgent: string;
+  /** Set by the HTTP adapter, never by procedure input. Internal callers omit it. */
+  requireAccountBinding?: boolean;
+  expectedAccount?: ExpectedAccount | null;
+  expectedAccountProvided?: boolean;
 };
 
 export async function createContext(
@@ -39,5 +44,8 @@ export async function createContext(
     requestId,
     ipAddress,
     userAgent,
+    requireAccountBinding: true,
+    expectedAccount: parseExpectedAccountHeader(opts.req.headers[EXPECTED_ACCOUNT_HEADER]),
+    expectedAccountProvided: opts.req.headers[EXPECTED_ACCOUNT_HEADER] !== undefined,
   };
 }

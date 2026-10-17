@@ -1,3 +1,4 @@
+import { useOfflineRecovery } from "@/hooks/useOfflineRecovery";
 import {
   fireAlarmDraftKey,
   pendingFireAlarmDraftCount,
@@ -15,6 +16,7 @@ import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { pendingSyncItemCount, isQaSubmitBlocked, pendingSyncCountsForJob, } from "@/lib/qaPreflight";
 import { usePendingFireAlarmResults } from "@/hooks/usePendingFireAlarmResults";
 import { usePendingSmokeAlarmTests } from "@/hooks/usePendingSmokeAlarmTests";
+import { useJobPhotoPreflight } from "@/hooks/useJobPhotoPreflight";
 import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
 import { InspectionSummary } from "@/components/InspectionSummary";
 import { SiteDetails } from "@/components/SiteDetails";
@@ -84,16 +86,22 @@ import { getDeficiencyStatusLabel, getDeficiencyStatusBadgeClass, } from "@/lib/
 function TemplateInspectionCards({
   jobId,
   setLocation,
+  packet,
+  isOnline,
 }: {
   jobId: number;
   setLocation: (path: string) => void;
+  packet: { templates?: { id: number; name: string; description?: string | null }[]; job?: { finalizedAt?: unknown } } | null;
+  isOnline: boolean;
 }) {
-  const { data: templates = [], isLoading } = trpc.inspectionTemplate.getTemplatesForJob.useQuery(
+  const { data: liveTemplates, isLoading, error, fetchStatus } = trpc.inspectionTemplate.getTemplatesForJob.useQuery(
     { jobId },
-    { enabled: !!jobId }
+    { enabled: !!jobId, retry: isOnline ? 2 : 0 }
   );
+  const useCached = !isOnline || !!error || fetchStatus === "paused" || !!packet?.job?.finalizedAt;
+  const templates = useCached && Array.isArray(packet?.templates) ? packet.templates : liveTemplates ?? [];
 
-  if (isLoading || templates.length === 0) return null;
+  if ((isLoading && !useCached) || templates.length === 0) return null;
 
   return (
     <>
@@ -141,7 +149,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     return () => window.removeEventListener("inspectra:field-drafts", changed);
   }, []);
   const [location, setLocation] = useLocation();
-  const { isOnline, getCachedJobData, syncStatus, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses, } = useOfflineStorage();
+  const { isOnline, getCachedJobData,
+    criticalRecoveryCount, syncStatus, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses, } = useOfflineStorage();
   const { status: packetStatus, cachedAt: packetCachedAt, packet, isCaching, preload, refresh: refreshPacket, remove: removePacket, checkStale, } = useOfflineJobPacket(jobId);
   const [openGridSection, setOpenGridSection] = useState<string | null>(null);
   const [showFullSummary, setShowFullSummary] = useState(false);
@@ -397,6 +406,8 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
   // for the QA preflight below. Both return only unsynced items.
   const pendingFireAlarmResults = usePendingFireAlarmResults();
   const pendingSmokeTests = usePendingSmokeAlarmTests();
+  const photoQa = useJobPhotoPreflight(jobId);
+  const qaSubmissionInFlight = useRef(false);
 
   // Unsynced field data for THIS job across all critical offline stores. QA
   // submission is blocked while this is > 0 unless the technician explicitly
@@ -425,8 +436,14 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [jobId, syncStatus, pendingFireAlarmResults, pendingSmokeTests, getOfflineResults, getOfflineDeficiencies, getOfflineChecklistResponses, getOfflineTemplateResponses,]
   );
+  const { summary: offlineRecovery, error: offlineRecoveryError } =
+    useOfflineRecovery();
+  jobSyncCounts.pendingPhotos = photoQa.count;
   jobSyncCounts.pendingLegacyRequests =
     mutationQueue.count() +
+    criticalRecoveryCount +
+    Math.max(offlineRecovery.legacy + offlineRecovery.invalid, photoQa.blockers) +
+    (offlineRecoveryError || photoQa.checking || photoQa.error ? 1 : 0) +
     (user?.id
       ? pendingFireAlarmDraftCount(
           fireAlarmDraftKey(user.id, user.companyId, jobId)
@@ -446,6 +463,22 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
     },
     onError:err => toast.error(err.message || 'Failed to submit for QA'),
   });
+  const handleSubmitForQA = async () => {
+    if (qaSubmissionInFlight.current) return;
+    qaSubmissionInFlight.current = true;
+    try {
+      let photos;
+      try { photos = await photoQa.refresh(); }
+      catch { toast.error("Saved evidence could not be checked. Recover offline data before submitting for QA."); return; }
+      const freshCounts = { ...jobSyncCounts, pendingPhotos: photos.count,
+        pendingLegacyRequests: Math.max(jobSyncCounts.pendingLegacyRequests ?? 0, photos.blockers) };
+      if (isQaSubmitBlocked(freshCounts, qaOverride)) {
+        toast.error(photos.blockers ? "Recover unreadable offline data before submitting for QA." : "Sync saved field data and photos before submitting for QA.");
+        return;
+      }
+      await submitForQA.mutateAsync({ jobId }).catch(() => {});
+    } finally { qaSubmissionInFlight.current = false; }
+  };
 
   if (isLoading && !cachedData && !packetAsJobData) {
     return <MobileDetailSkeleton />;
@@ -1218,7 +1251,7 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
         </Card>
 
         {/* Inspection Templates — dynamic templates assigned to this job */}
-        <TemplateInspectionCards jobId={jobId} setLocation={setLocation} />
+        <TemplateInspectionCards jobId={jobId} setLocation={setLocation} packet={packet} isOnline={isOnline} />
 
         {/* Work Order */}
         {workOrder && (
@@ -1959,6 +1992,9 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
                       {jobSyncCounts.pendingSmokeTests !== 1 ? "s" : ""}
                     </li>
                   )}
+                  {(jobSyncCounts.pendingPhotos ?? 0) > 0 && <li>
+                    {jobSyncCounts.pendingPhotos} deficiency photo{jobSyncCounts.pendingPhotos !== 1 ? "s" : ""}
+                  </li>}
                 </ul>
                 <p className="text-amber-700 dark:text-amber-400 text-xs">
                   These are stored on this device only. Sync first so the report
@@ -1980,13 +2016,15 @@ export default function JobDetails({ jobId }: JobDetailsProps) {
               The job will remain in progress. You can still make changes after
               submitting.
             </p>
+            {photoQa.checking && <p role="status" className="text-xs text-muted-foreground">Checking saved photos…</p>}
+            {photoQa.error && <p role="alert" className="text-xs text-destructive">{photoQa.error}</p>}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setQaDialogOpen(false)}>
               Cancel
             </Button>
             <Button
-              onClick={() => submitForQA.mutate({ jobId })}
+              onClick={handleSubmitForQA}
               disabled={submitForQA.isPending || isQaSubmitBlocked(jobSyncCounts, qaOverride)}
               title={isQaSubmitBlocked(jobSyncCounts, qaOverride) ? "Sync your field data first, or check the box to submit anyway" : undefined}
             >

@@ -1,19 +1,21 @@
-/**
- * IndexedDB wrapper for offline storage of inspection results
- * Stores pending changes when offline and syncs when connection returns
- */
-
+/** Typed account/company-scoped offline capture. Legacy data is preserved, never replayed. */
+import { z } from "zod";
+import {
+  belongsToOfflineScope,
+  requireOfflineScope,
+  type OfflineScope,
+} from "./offlineScope";
 const DB_NAME = "FireInspectOffline";
 const DB_VERSION = 3;
 const STORE_NAME = "pendingInspectionResults";
 const PHOTO_STORE_NAME = "pendingDeficiencyPhotos";
 const SMOKE_TEST_STORE_NAME = "pendingSmokeAlarmTests";
-
 export interface PendingInspectionResult {
   id: string; // Unique ID for this pending item (timestamp-based)
   jobId: number;
   fireAlarmSystemId: number;
   checklistItemId: number;
+  questionRevision: string;
   result: "pass" | "fail" | "na" | "not_tested";
   notes?: string;
   numericValue?: string;
@@ -26,6 +28,7 @@ export interface PendingSmokeAlarmTest {
   id: string; // Unique ID for this pending item (timestamp-based)
   jobId: number; // For grouping/display in SyncScreen (not sent to the server)
   alarmId: number; // The smoke-alarm device id the test result applies to
+  expectedDeviceRevision: string;
   testResult: "pass" | "fail" | "no_access" | "na";
   notes?: string;
   timestamp: number; // When this was saved offline
@@ -33,6 +36,7 @@ export interface PendingSmokeAlarmTest {
 }
 
 export interface PendingDeficiencyPhoto {
+  jobId: number; // Required parent job; unscoped legacy photos are preserved for review
   id: string; // Unique ID for this pending item (timestamp-based)
   deficiencyLocalId: string; // Links to OfflineDeficiency.localId until it's synced
   resolvedDeficiencyId?: number; // Set once the parent deficiency has synced and we know its server id
@@ -50,7 +54,7 @@ export interface PendingDeficiencyPhoto {
 const pendingPhotoListeners = new Set<() => void>();
 
 function notifyPendingPhotoListeners() {
-  pendingPhotoListeners.forEach((l) => l());
+  pendingPhotoListeners.forEach(l => l());
 }
 
 export function subscribePendingPhotos(listener: () => void): () => void {
@@ -63,7 +67,7 @@ export function subscribePendingPhotos(listener: () => void): () => void {
 const pendingResultListeners = new Set<() => void>();
 
 function notifyPendingResultListeners() {
-  pendingResultListeners.forEach((l) => l());
+  pendingResultListeners.forEach(l => l());
 }
 
 export function subscribePendingResults(listener: () => void): () => void {
@@ -76,7 +80,7 @@ export function subscribePendingResults(listener: () => void): () => void {
 const pendingSmokeTestListeners = new Set<() => void>();
 
 function notifyPendingSmokeTestListeners() {
-  pendingSmokeTestListeners.forEach((l) => l());
+  pendingSmokeTestListeners.forEach(l => l());
 }
 
 export function subscribePendingSmokeTests(listener: () => void): () => void {
@@ -84,446 +88,394 @@ export function subscribePendingSmokeTests(listener: () => void): () => void {
   return () => pendingSmokeTestListeners.delete(listener);
 }
 
-class OfflineStorage {
+const positiveId = z.number().int().positive();
+const recordBase = {
+  id: z.string().min(1),
+  userId: positiveId,
+  companyId: positiveId.nullable(),
+  timestamp: z.number().finite().nonnegative(),
+  jobId: positiveId,
+};
+const text = z.string().optional();
+export const pendingOfflineSchemas = {
+  [STORE_NAME]: z
+    .object({
+      ...recordBase,
+      synced: z.boolean(),
+      fireAlarmSystemId: positiveId,
+      checklistItemId: positiveId,
+    questionRevision: z.string().regex(/^inspection-capture-v1:fire-alarm-question:[a-f0-9]{64}$/),
+      result: z.enum(["pass", "fail", "na", "not_tested"]),
+      notes: text,
+      numericValue: text,
+      textValue: text,
+    })
+    .passthrough(),
+  [SMOKE_TEST_STORE_NAME]: z
+    .object({
+      ...recordBase,
+      synced: z.boolean(),
+      alarmId: positiveId,
+      expectedDeviceRevision: z.string().min(1),
+      testResult: z.enum(["pass", "fail", "no_access", "na"]),
+      notes: text,
+    })
+    .passthrough(),
+  [PHOTO_STORE_NAME]: z
+    .object({
+      ...recordBase,
+      deficiencyLocalId: z.string().min(1),
+      resolvedDeficiencyId: positiveId.optional(),
+      fileName: z.string().min(1),
+      mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+      fileSize: z.number().int().positive(),
+      fileData: z
+        .string()
+        .min(1)
+        .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+      caption: text,
+      locationNote: text,
+    })
+    .passthrough(),
+};
+type StoreName = keyof typeof pendingOfflineSchemas;
+export function isOwnedOfflineRecord(
+  store: StoreName,
+  value: unknown,
+  scope: OfflineScope | null
+): boolean {
+  return (
+    belongsToOfflineScope(value, scope) &&
+    pendingOfflineSchemas[store].safeParse(value).success
+  );
+}
+export function canExportOfflineRecord(
+  item: unknown,
+  scope: OfflineScope | null
+) {
+  if (!scope) return false;
+  if (!item || typeof item !== "object") return true;
+  const record = item as Record<string, unknown>;
+  return (
+    (!Object.hasOwn(record, "userId") || record.userId === scope.userId) &&
+    (!Object.hasOwn(record, "companyId") ||
+      record.companyId === scope.companyId)
+  );
+}
+export interface OfflineRecoverySummary {
+  legacy: number;
+  invalid: number;
+  foreign: number;
+}
+export class OfflineStorage {
   private db: IDBDatabase | null = null;
-
-  /**
-   * Initialize IndexedDB connection
-   */
+  private opening: Promise<void> | null = null;
   async init(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    if (this.db) return;
+    if (this.opening) return this.opening;
+    this.opening = new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onerror = () => {
-        console.error("Failed to open IndexedDB:", request.error);
-        reject(request.error);
-      };
-
+      request.onerror = () => reject(request.error);
+      request.onblocked = () =>
+        reject(new Error("Close other Inspectra tabs to open offline storage"));
       request.onsuccess = () => {
         this.db = request.result;
+        this.db.onversionchange = () => {
+          this.db?.close();
+          this.db = null;
+        };
         resolve();
       };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-
-        // Create object store for pending inspection results
+      request.onupgradeneeded = () => {
+        const db = request.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
-          store.createIndex("jobId", "jobId", { unique: false });
-          store.createIndex("synced", "synced", { unique: false });
-          store.createIndex("timestamp", "timestamp", { unique: false });
+          store.createIndex("jobId", "jobId");
+          store.createIndex("synced", "synced");
+          store.createIndex("timestamp", "timestamp");
         }
-
-        // Create object store for pending smoke-alarm test results (queued offline).
-        // Added in DB_VERSION 3; the contains() guard keeps the v2 upgrade idempotent.
         if (!db.objectStoreNames.contains(SMOKE_TEST_STORE_NAME)) {
-          const smokeStore = db.createObjectStore(SMOKE_TEST_STORE_NAME, { keyPath: "id" });
-          smokeStore.createIndex("jobId", "jobId", { unique: false });
-          smokeStore.createIndex("alarmId", "alarmId", { unique: false });
-          smokeStore.createIndex("synced", "synced", { unique: false });
+          const store = db.createObjectStore(SMOKE_TEST_STORE_NAME, {
+            keyPath: "id",
+          });
+          store.createIndex("jobId", "jobId");
+          store.createIndex("alarmId", "alarmId");
+          store.createIndex("synced", "synced");
         }
-
-        // Create object store for pending deficiency photos (queued offline)
         if (!db.objectStoreNames.contains(PHOTO_STORE_NAME)) {
-          const photoStore = db.createObjectStore(PHOTO_STORE_NAME, { keyPath: "id" });
-          photoStore.createIndex("deficiencyLocalId", "deficiencyLocalId", { unique: false });
-          // IndexedDB indexes skip records that lack the indexed property, so this
-          // index naturally contains only photos whose parent deficiency has synced
-          photoStore.createIndex("resolvedDeficiencyId", "resolvedDeficiencyId", { unique: false });
+          const store = db.createObjectStore(PHOTO_STORE_NAME, {
+            keyPath: "id",
+          });
+          store.createIndex("deficiencyLocalId", "deficiencyLocalId");
+          store.createIndex("resolvedDeficiencyId", "resolvedDeficiencyId");
         }
       };
     });
-  }
-
-  /**
-   * Save inspection result to local storage
-   */
-  async savePendingResult(data: Omit<PendingInspectionResult, "id" | "timestamp" | "synced">): Promise<string> {
-    if (!this.db) await this.init();
-
-    const id = `pending-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const item: PendingInspectionResult = {
-      ...data,
-      id,
-      timestamp: Date.now(),
-      synced: false,
-    };
-
-    await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], "readwrite");
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.add(item);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-    notifyPendingResultListeners();
-    return id;
-  }
-
-  /**
-   * Get all pending (unsynced) results
-   */
-  async getPendingResults(): Promise<PendingInspectionResult[]> {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], "readonly");
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll();
-
-      request.onsuccess = () => {
-        // Filter for unsynced items
-        const results = request.result.filter((item: PendingInspectionResult) => !item.synced);
-        resolve(results);
-      };
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  /**
-   * Get all pending results for a specific job
-   */
-  async getPendingResultsForJob(jobId: number): Promise<PendingInspectionResult[]> {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], "readonly");
-      const store = transaction.objectStore(STORE_NAME);
-      const index = store.index("jobId");
-      const request = index.getAll(jobId);
-
-      request.onsuccess = () => {
-        // Filter for unsynced items only
-        const results = request.result.filter((item: PendingInspectionResult) => !item.synced);
-        resolve(results);
-      };
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  /**
-   * Mark a pending result as synced
-   */
-  async markAsSynced(id: string): Promise<void> {
-    if (!this.db) await this.init();
-
-    await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], "readwrite");
-      const store = transaction.objectStore(STORE_NAME);
-      const getRequest = store.get(id);
-
-      getRequest.onsuccess = () => {
-        const item = getRequest.result;
-        if (item) {
-          item.synced = true;
-          const updateRequest = store.put(item);
-          updateRequest.onsuccess = () => resolve();
-          updateRequest.onerror = () => reject(updateRequest.error);
-        } else {
-          resolve(); // Item doesn't exist, consider it synced
-        }
-      };
-
-      getRequest.onerror = () => reject(getRequest.error);
-    });
-    notifyPendingResultListeners();
-  }
-
-  /**
-   * Delete a synced result from local storage
-   */
-  async deleteSyncedResult(id: string): Promise<void> {
-    if (!this.db) await this.init();
-
-    await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], "readwrite");
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.delete(id);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-    notifyPendingResultListeners();
-  }
-
-  /**
-   * Clear all synced results (cleanup)
-   */
-  async clearSyncedResults(): Promise<void> {
-    if (!this.db) await this.init();
-
-    const allResults = await this.getAllResults();
-    const syncedResults = allResults.filter((item) => item.synced);
-
-    for (const item of syncedResults) {
-      await this.deleteSyncedResult(item.id);
+    try {
+      await this.opening;
+    } finally {
+      this.opening = null;
     }
   }
-
-  /**
-   * Get all results (for debugging)
-   */
-  async getAllResults(): Promise<PendingInspectionResult[]> {
-    if (!this.db) await this.init();
-
+  private async read(store: StoreName): Promise<any[]> {
+    await this.init();
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], "readonly");
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll();
-
+      const tx = this.db!.transaction(store, "readonly");
+      const request = tx.objectStore(store).getAll();
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
+      tx.onabort = () => reject(tx.error ?? new Error("Offline read aborted"));
     });
   }
-
-  /**
-   * Get count of pending results
-   */
-  async getPendingCount(): Promise<number> {
-    const pending = await this.getPendingResults();
-    return pending.length;
-  }
-
-  /**
-   * Delete all pending (unsynced) results — used by "Clear All Offline Data"
-   */
-  async clearAllResults(): Promise<void> {
-    if (!this.db) await this.init();
-
+  private async write(
+    store: StoreName,
+    update: (store: IDBObjectStore) => void
+  ): Promise<void> {
+    await this.init();
     await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], "readwrite");
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.clear();
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      const tx = this.db!.transaction(store, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Offline save failed"));
+      tx.onabort = () =>
+        reject(tx.error ?? new Error("Offline save was not committed"));
+      try {
+        update(tx.objectStore(store));
+      } catch (error) {
+        tx.abort();
+        reject(error);
+      }
     });
-    notifyPendingResultListeners();
+    if (store === STORE_NAME) notifyPendingResultListeners();
+    if (store === SMOKE_TEST_STORE_NAME) notifyPendingSmokeTestListeners();
+    if (store === PHOTO_STORE_NAME) notifyPendingPhotoListeners();
   }
-
-  /**
-   * Queue a smoke-alarm test result captured while offline. Upserts by alarmId so
-   * re-recording the same alarm replaces the prior queued result rather than
-   * stacking duplicates (the server's recordTest is an update-by-id, so only the
-   * latest result matters). Runs the delete-then-add in a single transaction.
-   */
-  async savePendingSmokeTest(data: Omit<PendingSmokeAlarmTest, "id" | "timestamp" | "synced">): Promise<string> {
-    if (!this.db) await this.init();
-
-    const id = `smoke-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const item: PendingSmokeAlarmTest = {
+  private async owned<T>(
+    store: StoreName,
+    scope: OfflineScope | null
+  ): Promise<T[]> {
+    if (!scope) return [];
+    requireOfflineScope(scope);
+    return (await this.read(store)).filter(item =>
+      isOwnedOfflineRecord(store, item, scope)
+    );
+  }
+  private async updateOwned(
+    store: StoreName,
+    id: string,
+    scope: OfflineScope | null,
+    update: (item: any, objectStore: IDBObjectStore) => void
+  ) {
+    requireOfflineScope(scope);
+    await this.write(store, objectStore => {
+      const request = objectStore.get(id);
+      request.onsuccess = () => {
+        if (isOwnedOfflineRecord(store, request.result, scope))
+          update(request.result, objectStore);
+      };
+    });
+  }
+  async savePendingResult(
+    data: Omit<PendingInspectionResult, "id" | "timestamp" | "synced">,
+    scope: OfflineScope | null
+  ): Promise<string> {
+    requireOfflineScope(scope);
+    const item = {
       ...data,
-      id,
+      ...scope,
+      id: crypto.randomUUID(),
       timestamp: Date.now(),
       synced: false,
     };
-
-    await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([SMOKE_TEST_STORE_NAME], "readwrite");
-      const store = transaction.objectStore(SMOKE_TEST_STORE_NAME);
-
-      // Remove any still-unsynced result already queued for this alarm
-      const existingKeysReq = store.index("alarmId").getAllKeys(data.alarmId);
-      existingKeysReq.onsuccess = () => {
-        for (const key of existingKeysReq.result) store.delete(key);
+    pendingOfflineSchemas[STORE_NAME].parse(item);
+    await this.write(STORE_NAME, store => store.add(item));
+    return item.id;
+  }
+  async getAllResults(
+    scope: OfflineScope | null
+  ): Promise<PendingInspectionResult[]> {
+    return this.owned(STORE_NAME, scope);
+  }
+  async getPendingResults(
+    scope: OfflineScope | null
+  ): Promise<PendingInspectionResult[]> {
+    return (await this.getAllResults(scope)).filter(item => !item.synced);
+  }
+  async getPendingResultsForJob(
+    jobId: number,
+    scope: OfflineScope | null
+  ): Promise<PendingInspectionResult[]> {
+    return (await this.getPendingResults(scope)).filter(
+      item => item.jobId === jobId
+    );
+  }
+  async getPendingCount(scope: OfflineScope | null) {
+    return (await this.getPendingResults(scope)).length;
+  }
+  async markAsSynced(id: string, scope: OfflineScope | null) {
+    await this.updateOwned(STORE_NAME, id, scope, (item, store) =>
+      store.put({ ...item, synced: true })
+    );
+  }
+  async deleteSyncedResult(id: string, scope: OfflineScope | null) {
+    await this.updateOwned(STORE_NAME, id, scope, (item, store) => {
+      if (item.synced) store.delete(id);
+    });
+  }
+  async clearSyncedResults(scope: OfflineScope | null) {
+    for (const item of await this.getAllResults(scope))
+      if (item.synced) await this.deleteSyncedResult(item.id, scope);
+  }
+  async clearAllResults(scope: OfflineScope | null) {
+    await this.clearSyncedResults(scope);
+  }
+  async savePendingSmokeTest(
+    data: Omit<PendingSmokeAlarmTest, "id" | "timestamp" | "synced">,
+    scope: OfflineScope | null
+  ): Promise<string> {
+    requireOfflineScope(scope);
+    const item = {
+      ...data,
+      ...scope,
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      synced: false,
+    };
+    pendingOfflineSchemas[SMOKE_TEST_STORE_NAME].parse(item);
+    await this.write(SMOKE_TEST_STORE_NAME, store => {
+      const request = store.index("alarmId").getAll(data.alarmId);
+      request.onsuccess = () => {
+        for (const old of request.result)
+          if (
+            isOwnedOfflineRecord(SMOKE_TEST_STORE_NAME, old, scope) &&
+            old.jobId === data.jobId
+          )
+            store.delete(old.id);
         store.add(item);
       };
-      existingKeysReq.onerror = () => reject(existingKeysReq.error);
-
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
     });
-    notifyPendingSmokeTestListeners();
-    return id;
+    return item.id;
   }
-
-  /**
-   * Get all pending (unsynced) smoke-alarm test results
-   */
-  async getPendingSmokeTests(): Promise<PendingSmokeAlarmTest[]> {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([SMOKE_TEST_STORE_NAME], "readonly");
-      const store = transaction.objectStore(SMOKE_TEST_STORE_NAME);
-      const request = store.getAll();
-
-      request.onsuccess = () => {
-        const results = request.result.filter((item: PendingSmokeAlarmTest) => !item.synced);
-        resolve(results);
-      };
-      request.onerror = () => reject(request.error);
-    });
+  async getPendingSmokeTests(
+    scope: OfflineScope | null
+  ): Promise<PendingSmokeAlarmTest[]> {
+    return (
+      await this.owned<PendingSmokeAlarmTest>(SMOKE_TEST_STORE_NAME, scope)
+    ).filter(item => !item.synced);
   }
-
-  /**
-   * Delete a queued smoke-alarm test once it has synced to the server.
-   * Safe no-op if the record is already gone (so SyncScreen and a per-page
-   * auto-sync can operate on the same queue without conflict).
-   */
-  async deleteSmokeTest(id: string): Promise<void> {
-    if (!this.db) await this.init();
-
-    await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([SMOKE_TEST_STORE_NAME], "readwrite");
-      const store = transaction.objectStore(SMOKE_TEST_STORE_NAME);
-      const request = store.delete(id);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-    notifyPendingSmokeTestListeners();
+  async deleteSmokeTest(id: string, scope: OfflineScope | null) {
+    await this.updateOwned(SMOKE_TEST_STORE_NAME, id, scope, (_item, store) =>
+      store.delete(id)
+    );
   }
-
-  /**
-   * Get count of pending smoke-alarm test results
-   */
-  async getPendingSmokeTestCount(): Promise<number> {
-    const pending = await this.getPendingSmokeTests();
-    return pending.length;
+  async getPendingSmokeTestCount(scope: OfflineScope | null) {
+    return (await this.getPendingSmokeTests(scope)).length;
   }
-
-  /**
-   * Delete all pending (unsynced) smoke-alarm tests — used by "Clear All Offline Data"
-   */
-  async clearAllSmokeTests(): Promise<void> {
-    if (!this.db) await this.init();
-
-    await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([SMOKE_TEST_STORE_NAME], "readwrite");
-      const store = transaction.objectStore(SMOKE_TEST_STORE_NAME);
-      const request = store.clear();
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-    notifyPendingSmokeTestListeners();
+  async clearAllSmokeTests(scope: OfflineScope | null) {
+    for (const item of await this.owned<PendingSmokeAlarmTest>(
+      SMOKE_TEST_STORE_NAME,
+      scope
+    ))
+      if (item.synced) await this.deleteSmokeTest(item.id, scope);
   }
-
-  /**
-   * Queue a deficiency photo captured while offline (linked by the
-   * deficiency's localId until the deficiency itself has synced)
-   */
-  async savePendingPhoto(data: Omit<PendingDeficiencyPhoto, "id" | "timestamp">): Promise<string> {
-    if (!this.db) await this.init();
-
-    const id = `photo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const item: PendingDeficiencyPhoto = {
+  async savePendingPhoto(
+    data: Omit<PendingDeficiencyPhoto, "id" | "timestamp">,
+    scope: OfflineScope | null,
+    stableId?: string
+  ): Promise<string> {
+    requireOfflineScope(scope);
+    const item = {
       ...data,
-      id,
+      ...scope,
+      id: stableId ?? crypto.randomUUID(),
       timestamp: Date.now(),
     };
-
-    await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readwrite");
-      const store = transaction.objectStore(PHOTO_STORE_NAME);
-      const request = store.add(item);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-    notifyPendingPhotoListeners();
-    return id;
-  }
-
-  /**
-   * Record the server-side deficiency id once the parent offline deficiency has synced,
-   * so a queued photo can still be uploaded (and retried) even after its local record is cleared
-   */
-  async setPhotoResolvedDeficiencyId(id: string, deficiencyId: number): Promise<void> {
-    if (!this.db) await this.init();
-
-    await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readwrite");
-      const store = transaction.objectStore(PHOTO_STORE_NAME);
-      const getRequest = store.get(id);
-
-      getRequest.onsuccess = () => {
-        const item = getRequest.result;
-        if (item) {
-          item.resolvedDeficiencyId = deficiencyId;
-          const updateRequest = store.put(item);
-          updateRequest.onsuccess = () => resolve();
-          updateRequest.onerror = () => reject(updateRequest.error);
-        } else {
-          resolve();
-        }
+    pendingOfflineSchemas[PHOTO_STORE_NAME].parse(item);
+    await this.write(PHOTO_STORE_NAME, store => {
+      const request = store.get(item.id);
+      request.onsuccess = () => {
+        if (request.result === undefined) store.add(item);
+        else if (
+          !isOwnedOfflineRecord(PHOTO_STORE_NAME, request.result, scope) ||
+          Object.entries(data).some(
+            ([key, value]) => request.result[key] !== value
+          )
+        )
+          store.transaction.abort();
       };
-      getRequest.onerror = () => reject(getRequest.error);
     });
-    notifyPendingPhotoListeners();
+    return item.id;
   }
-
-  /**
-   * Get all photos queued for a given offline deficiency (by local id)
-   */
-  async getPendingPhotosForDeficiency(deficiencyLocalId: string): Promise<PendingDeficiencyPhoto[]> {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readonly");
-      const store = transaction.objectStore(PHOTO_STORE_NAME);
-      const index = store.index("deficiencyLocalId");
-      const request = index.getAll(deficiencyLocalId);
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+  async setPhotoResolvedDeficiencyId(
+    id: string,
+    deficiencyId: number,
+    scope: OfflineScope | null,
+    jobId: number
+  ) {
+    positiveId.parse(deficiencyId);
+    await this.updateOwned(PHOTO_STORE_NAME, id, scope, (item, store) => {
+      if (item.jobId !== jobId) {
+        store.transaction.abort();
+        return;
+      }
+      store.put({ ...item, resolvedDeficiencyId: deficiencyId });
     });
   }
-
-  /**
-   * Get queued photos whose parent deficiency has synced and is ready to upload to.
-   * Queries the resolvedDeficiencyId index directly so unresolved photos (whose base64
-   * payload may be several MB) are never pulled into memory.
-   */
-  async getPhotosReadyToUpload(): Promise<PendingDeficiencyPhoto[]> {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readonly");
-      const store = transaction.objectStore(PHOTO_STORE_NAME);
-      const request = store.index("resolvedDeficiencyId").getAll();
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+  async getPendingPhotosForDeficiency(
+    deficiencyLocalId: string,
+    scope: OfflineScope | null
+  ): Promise<PendingDeficiencyPhoto[]> {
+    return (
+      await this.owned<PendingDeficiencyPhoto>(PHOTO_STORE_NAME, scope)
+    ).filter(item => item.deficiencyLocalId === deficiencyLocalId);
   }
-
-  /**
-   * Delete a queued photo once it has been uploaded to the server
-   */
-  async deletePendingPhoto(id: string): Promise<void> {
-    if (!this.db) await this.init();
-
-    await new Promise<void>((resolve, reject) => {
-      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readwrite");
-      const store = transaction.objectStore(PHOTO_STORE_NAME);
-      const request = store.delete(id);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-    notifyPendingPhotoListeners();
+  async getPhotosReadyToUpload(
+    scope: OfflineScope | null
+  ): Promise<PendingDeficiencyPhoto[]> {
+    return (
+      await this.owned<PendingDeficiencyPhoto>(PHOTO_STORE_NAME, scope)
+    ).filter(item => item.resolvedDeficiencyId !== undefined);
   }
-
-  /**
-   * Get count of queued deficiency photos, without loading their base64 payloads
-   */
-  async getPendingPhotoCount(): Promise<number> {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([PHOTO_STORE_NAME], "readonly");
-      const store = transaction.objectStore(PHOTO_STORE_NAME);
-      const request = store.count();
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+  async deletePendingPhoto(id: string, scope: OfflineScope | null) {
+    await this.updateOwned(PHOTO_STORE_NAME, id, scope, (_item, store) =>
+      store.delete(id)
+    );
+  }
+  async getPendingPhotoCount(scope: OfflineScope | null) {
+    return (await this.owned(PHOTO_STORE_NAME, scope)).length;
+  }
+  async getPendingPhotosForJob(jobId: number, scope: OfflineScope | null): Promise<PendingDeficiencyPhoto[]> {
+    positiveId.parse(jobId);
+    return (await this.owned<PendingDeficiencyPhoto>(PHOTO_STORE_NAME, scope)).filter(item => item.jobId === jobId);
+  }
+  async recoverySummary(
+    scope: OfflineScope | null
+  ): Promise<OfflineRecoverySummary> {
+    const summary = { legacy: 0, invalid: 0, foreign: 0 };
+    for (const store of Object.keys(pendingOfflineSchemas) as StoreName[]) {
+      for (const item of await this.read(store)) {
+        if (!canExportOfflineRecord(item, scope)) summary.foreign++;
+        else if (
+          !item ||
+          typeof item !== "object" ||
+          !Object.hasOwn(item, "userId") ||
+          !Object.hasOwn(item, "companyId")
+        )
+          summary.legacy++;
+        else if (!isOwnedOfflineRecord(store, item, scope)) summary.invalid++;
+      }
+    }
+    return summary;
+  }
+  async exportRecovery(scope: OfflineScope | null, includeUnowned = false) {
+    requireOfflineScope(scope);
+    const records: Record<string, unknown[]> = {};
+    for (const store of Object.keys(pendingOfflineSchemas) as StoreName[]) {
+      records[store] = (await this.read(store)).filter(item =>
+        canExportOfflineRecord(item, scope) &&
+          (includeUnowned || belongsToOfflineScope(item, scope))
+      );
+    }
+    return records;
   }
 }
-
-// Export singleton instance
 export const offlineStorage = new OfflineStorage();

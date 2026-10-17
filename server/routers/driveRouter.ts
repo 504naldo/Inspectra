@@ -3,9 +3,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, adminOrOfficeProcedure } from "../_core/trpc";
 import * as db from "../db";
-import {
-  assertSiteCompany,
-  assertCustomerOrgCompany, getJobForCompany, } from "../tenantGuards";
+import { assertSiteCompany, getJobForCompany } from "../tenantGuards";
+import { assertImportDestination } from "../importDestination";
 import { getValidGoogleToken } from "../_core/googleAuth";
 import { uploadReportToDrive } from "../_core/driveUpload";
 import { escapeDriveQueryValue } from "../_core/driveQuery";
@@ -26,14 +25,6 @@ export const driveRouter = router({
       jobId: z.number(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const accessToken = await getValidGoogleToken(ctx.user.id);
-      if (!accessToken) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Google account not connected. Please log out and log back in.",
-        });
-      }
-
       // Get report
       const report = await db.getReportById(input.reportId);
       if (!report) {
@@ -51,6 +42,14 @@ export const driveRouter = router({
           alreadySaved: true,
           driveUrl: report.googleDriveUrl,
         };
+      }
+
+      const accessToken = await getValidGoogleToken(ctx.user.id);
+      if (!accessToken) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Google account not connected. Please log out and log back in.",
+        });
       }
 
       if (!report.fileUrl && !report.fileKey) {
@@ -311,21 +310,15 @@ export const driveRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      if (input.siteId)
-        await assertSiteCompany(input.siteId, ctx.user.companyId!);
-      if ("customerOrgId" in input && typeof input.customerOrgId === "number") {
-        await assertCustomerOrgCompany(
-          input.customerOrgId,
-          ctx.user.companyId!
-        );
-        if (input.siteId) {
-          const site = await db.getSiteById(input.siteId);
-          if (site?.customerOrgId !== input.customerOrgId)
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "Site and customer organization do not match",
-            });
-        }
+      if (input.companyId !== undefined && input.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot access data for another company.", });
+      }
+      if (input.siteId != null) {
+        const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
+        await assertImportDestination({
+          companyId: input.companyId ?? site.companyId,
+          siteId: input.siteId,
+        });
       }
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
@@ -333,10 +326,6 @@ export const driveRouter = router({
           code: "PRECONDITION_FAILED",
           message: "Google account not connected. Please log out and log back in.",
         });
-      }
-
-      if (input.companyId !== undefined && input.companyId !== ctx.user.companyId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot access data for another company.", });
       }
 
       // 1. Fetch file metadata
@@ -444,22 +433,7 @@ export const driveRouter = router({
       if (input.companyId !== ctx.user.companyId) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company.", });
       }
-      if (input.siteId)
-        await assertSiteCompany(input.siteId, ctx.user.companyId!);
-      if ("customerOrgId" in input && typeof input.customerOrgId === "number") {
-        await assertCustomerOrgCompany(
-          input.customerOrgId,
-          ctx.user.companyId!
-        );
-        if (input.siteId) {
-          const site = await db.getSiteById(input.siteId);
-          if (site?.customerOrgId !== input.customerOrgId)
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "Site and customer organization do not match",
-            });
-        }
-      }
+      const destination = await assertImportDestination(input);
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
         throw new TRPCError({
@@ -550,10 +524,7 @@ export const driveRouter = router({
       }
 
       // 4. Upsert customer org
-      let customerOrgId = input.customerOrgId ??
-        (input.siteId
-          ? (await db.getSiteById(input.siteId))?.customerOrgId
-          : undefined);
+      let customerOrgId = destination.customerOrgId;
       if (!customerOrgId) {
         const orgName =
           siteInfo.customerOrgName ||
@@ -591,6 +562,11 @@ export const driveRouter = router({
         );
 
         if (existingSite) {
+          await assertImportDestination({
+            companyId: input.companyId,
+            customerOrgId,
+            siteId: existingSite.id,
+          });
           siteId = existingSite.id;
         } else {
           const newSite = await db.createSite({
@@ -662,22 +638,7 @@ export const driveRouter = router({
       if (input.companyId !== ctx.user.companyId) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company.", });
       }
-      if (input.siteId)
-        await assertSiteCompany(input.siteId, ctx.user.companyId!);
-      if ("customerOrgId" in input && typeof input.customerOrgId === "number") {
-        await assertCustomerOrgCompany(
-          input.customerOrgId,
-          ctx.user.companyId!
-        );
-        if (input.siteId) {
-          const site = await db.getSiteById(input.siteId);
-          if (site?.customerOrgId !== input.customerOrgId)
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "Site and customer organization do not match",
-            });
-        }
-      }
+      const destination = await assertImportDestination(input);
       const accessToken = await getValidGoogleToken(ctx.user.id);
       if (!accessToken) {
         throw new TRPCError({
@@ -706,10 +667,11 @@ export const driveRouter = router({
           fileName: input.fileName,
           companyId: input.companyId,
           userId: ctx.user.id,
-          customerOrgId: input.customerOrgId,
+          customerOrgId: destination.customerOrgId,
           siteId: input.siteId,
         });
       } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
         throw new TRPCError({
           code: err.message?.includes("extract text") ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
           message: err.message || "Failed to import PDF.",
@@ -735,6 +697,7 @@ export const driveRouter = router({
       if (input.companyId !== ctx.user.companyId) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Cannot import data for another company.", });
       }
+      const destination = await assertImportDestination(input);
       const pdfBuffer = Buffer.from(input.fileData, "base64");
       const { importPdfData } = await import("../_core/pdfImport");
 
@@ -744,10 +707,11 @@ export const driveRouter = router({
           fileName: input.fileName,
           companyId: input.companyId,
           userId: ctx.user.id,
-          customerOrgId: input.customerOrgId,
+          customerOrgId: destination.customerOrgId,
           siteId: input.siteId,
         });
       } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
         throw new TRPCError({
           code: err.message?.includes("extract text") ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
           message: err.message || "Failed to import PDF.",

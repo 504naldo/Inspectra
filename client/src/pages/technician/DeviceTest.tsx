@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { trpc } from "@/lib/trpc";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
+import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
+import { displayedDeviceRevision } from "@/lib/deviceEvidence";
 import { takePhoto, vibrate, vibrateSuccess, vibrateError, isNative } from "@/lib/native";
 import {
   ArrowLeft,
@@ -39,7 +41,11 @@ interface DeviceTestProps {
   deviceId: number;
 }
 
-export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
+export default function DeviceTest(props: DeviceTestProps) {
+  return <DeviceTestEditor key={`${props.jobId}:${props.deviceId}`} {...props} />;
+}
+
+function DeviceTestEditor({ jobId, deviceId }: DeviceTestProps) {
   const [location, setLocation] = useLocation();
   const { isOnline, saveOfflineResult, getResultsForJob } = useOfflineStorage();
   
@@ -69,10 +75,24 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
   const searchParams = new URLSearchParams(window.location.search);
   const category = searchParams.get('category');
 
-  const { data: device, isLoading: deviceLoading } = trpc.device.get.useQuery(
+  const { data: serverDevice, isLoading: deviceLoading } = trpc.device.get.useQuery(
     { id: deviceId },
     { enabled: true, retry: isOnline ? 2 : 0 }
   );
+
+  const { packet } = useOfflineJobPacket(jobId);
+  const device = serverDevice ?? packet?.devices?.find((row: { id: number }) => row.id === deviceId) as typeof serverDevice;
+  const capturedRevision = useRef<string | undefined>(undefined);
+  const edited = useRef(false);
+  const captureRevision = () => capturedRevision.current ??= displayedDeviceRevision(device, deviceId);
+  const changeResult = (value: typeof result) => {
+    try { captureRevision(); edited.current = true; setResult(value); }
+    catch (error) { toast.error((error as Error).message); }
+  };
+  const changeNotes = (value: string) => {
+    try { captureRevision(); edited.current = true; setNotes(value); }
+    catch (error) { toast.error((error as Error).message); }
+  };
 
   const { data: existingResult } = trpc.inspectionResult.getByJobAndDevice.useQuery(
     { jobId, deviceId },
@@ -120,64 +140,42 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
     setLocation(`/tech/jobs/${jobId}/device/${targetDeviceId}${categoryParam}`, { replace: true });
   };
 
-  // Load existing result
+  // A saved offline answer retains the device revision originally shown.
   useEffect(() => {
-    if (existingResult) {
-      setResult(existingResult.result as any);
-      setNotes(existingResult.notes || "");
-    } else {
-      // Check offline storage
-      const offlineResults = getResultsForJob(jobId);
-      const offlineResult = offlineResults.find(r => r.deviceId === deviceId);
-      if (offlineResult) {
-        setResult(offlineResult.result);
-        setNotes(offlineResult.notes || "");
-      }
+    if (edited.current) return;
+    const saved = getResultsForJob(jobId).find(row => row.deviceId === deviceId);
+    if (saved) {
+      setResult(saved.result); setNotes(saved.notes ?? ""); capturedRevision.current = saved.expectedDeviceRevision;
+    } else if (existingResult) {
+      setResult(existingResult.result as typeof result); setNotes(existingResult.notes ?? "");
     }
   }, [existingResult, jobId, deviceId, getResultsForJob]);
 
   const upsertResult = trpc.inspectionResult.upsert.useMutation({
-    onSuccess: () => {
-      toast.success('Result saved');
-      setLocation(`/tech/jobs/${jobId}`);
+    onSuccess: () => { toast.success("Result saved"); setLocation(`/tech/jobs/${jobId}`); },
+    onError: (error, input) => {
+      try {
+        saveOfflineResult({ ...input, expectedDeviceRevision: input.expectedDeviceRevision!,
+          localId: nanoid(), testedAt: new Date(), synced: false });
+        toast.info("Result preserved on this device. Sync or review it before submitting the job.");
+        setLocation(`/tech/jobs/${jobId}`);
+      } catch (storageError) {
+        toast.error(storageError instanceof Error ? storageError.message : error.message);
+      }
     },
-    onError: () => {
-      // Save offline if online save fails
-      saveOfflineResult({
-        localId: nanoid(),
-        jobId,
-        deviceId,
-        result,
-        notes,
-        testedAt: new Date(),
-        synced: false
-      });
-      toast.success('Saved offline - will sync when online');
-      setLocation(`/tech/jobs/${jobId}`);
-    }
   });
 
   const handleSave = async () => {
     setIsSaving(true);
-    
-    if (isOnline) {
-      upsertResult.mutate({ jobId, deviceId, result, notes });
-    } else {
-      // Save offline
-      saveOfflineResult({
-        localId: nanoid(),
-        jobId,
-        deviceId,
-        result,
-        notes,
-        testedAt: new Date(),
-        synced: false
-      });
-      toast.success('Saved offline - will sync when online');
-      setLocation(`/tech/jobs/${jobId}`);
-    }
-    
-    setIsSaving(false);
+    try {
+      const input = { jobId, deviceId, result, notes, expectedDeviceRevision: captureRevision() };
+      if (isOnline) await upsertResult.mutateAsync(input).catch(() => {});
+      else {
+        saveOfflineResult({ ...input, localId: nanoid(), testedAt: new Date(), synced: false });
+        toast.info("Result saved on this device for sync."); setLocation(`/tech/jobs/${jobId}`);
+      }
+    } catch (error) { toast.error((error as Error).message); }
+    finally { setIsSaving(false); }
   };
 
   const createDeficiencyMutation = trpc.deficiency.create.useMutation({
@@ -212,17 +210,18 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
 
   const handleCreateDeficiency = () => {
     // Save current result first
-    if (result === 'fail') {
+    try { if (result === 'fail') {
       saveOfflineResult({
         localId: nanoid(),
         jobId,
         deviceId,
+        expectedDeviceRevision: captureRevision(),
         result,
         notes,
         testedAt: new Date(),
         synced: false
       });
-    }
+    } } catch (error) { toast.error((error as Error).message); return; }
     setLocation(`/tech/deficiency/new/${jobId}?deviceId=${deviceId}`);
   };
 
@@ -231,9 +230,13 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
       toast.error("Please enter a title for the deficiency");
       return;
     }
+    let expectedDeviceRevision;
+    try { expectedDeviceRevision = captureRevision(); }
+    catch (error) { toast.error((error as Error).message); return; }
     createDeficiencyMutation.mutate({
       jobId,
       deviceId,
+      expectedDeviceRevision,
       title: flagTitle.trim(),
       severity: flagSeverity,
       observedIssue: flagDescription.trim() || undefined,
@@ -297,21 +300,21 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
           <div className="grid grid-cols-3 gap-3">
             <Button
               className={`action-btn ${result === 'pass' ? 'bg-[var(--success)] hover:bg-[var(--success)]/90 text-white' : 'bg-[var(--success)]/10 text-[var(--success)] hover:bg-[var(--success)]/20'}`}
-              onClick={() => { setResult('pass'); vibrateSuccess(); }}
+              onClick={() => { changeResult('pass'); vibrateSuccess(); }}
             >
               <Check className="h-6 w-6 mr-2" />
               PASS
             </Button>
             <Button
               className={`action-btn ${result === 'fail' ? 'bg-destructive hover:bg-destructive/90 text-white' : 'bg-destructive/10 text-destructive hover:bg-destructive/20'}`}
-              onClick={() => { setResult('fail'); vibrateError(); }}
+              onClick={() => { changeResult('fail'); vibrateError(); }}
             >
               <X className="h-6 w-6 mr-2" />
               FAIL
             </Button>
             <Button
               className={`action-btn ${result === 'na' ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'bg-muted text-muted-foreground hover:bg-muted'}`}
-              onClick={() => { setResult('na'); vibrate('light'); }}
+              onClick={() => { changeResult('na'); vibrate('light'); }}
             >
               <Minus className="h-6 w-6 mr-2" />
               N/A
@@ -334,7 +337,7 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
                   size="sm"
                   variant="outline"
                   className="h-6 shrink-0 border-blue-300 text-blue-800 hover:bg-blue-100 text-xs px-2"
-                  onClick={() => { setResult(historical.result); vibrate("light"); }}
+                  onClick={() => { changeResult(historical.result); vibrate("light"); }}
                 >
                   Apply
                 </Button>
@@ -370,7 +373,7 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
           <Textarea
             placeholder="Add inspection notes..."
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={(e) => changeNotes(e.target.value)}
             className="min-h-[120px] text-base"
           />
         </div>
@@ -386,7 +389,10 @@ export default function DeviceTest({ jobId, deviceId }: DeviceTestProps) {
             <Button
               variant="outline"
               className="h-14 border-destructive text-destructive hover:bg-destructive/10"
-              onClick={() => setShowFlagPanel(true)}
+              onClick={() => {
+                try { captureRevision(); setShowFlagPanel(true); }
+                catch (error) { toast.error((error as Error).message); }
+              }}
             >
               <Flag className="h-5 w-5 mr-2" />
               Flag Deficiency

@@ -18,6 +18,10 @@ export function runWithDb<T>(db: Db, fn: () => Promise<T>): Promise<T> {
   return transactionContext.run(db, fn);
 }
 
+export function getTransactionDb(): Db | undefined {
+  return transactionContext.getStore();
+}
+
 export async function getDb() {
   const transaction = transactionContext.getStore();
   if (transaction) return transaction;

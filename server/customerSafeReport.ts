@@ -236,6 +236,7 @@ export function buildCustomerSafeComplianceData(input: ComplianceReportData): Co
     fireSignalReceivingCentre: input.fireSignalReceivingCentre,
     connectedToFireSignalReceivingCentre: input.connectedToFireSignalReceivingCentre,
     systemFullyFunctional: input.systemFullyFunctional,
+    completeSystemInspection: input.completeSystemInspection,
     deficienciesIdentified: input.deficienciesIdentified,
     deficienciesCorrectedDate: input.deficienciesCorrectedDate,
     recommendationsIdentified: input.recommendationsIdentified,

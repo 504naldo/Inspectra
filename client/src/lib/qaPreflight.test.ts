@@ -105,3 +105,11 @@ it("legacy unscoped POST batches block QA even if the user checks override", () 
     )
   ).toBe(true);
 });
+
+it("blocks QA when a synced deficiency still has locally pending evidence photos", () => {
+  const counts = { pendingResults: 0, pendingDeficiencies: 0, pendingPhotos: 2 };
+  expect(pendingSyncItemCount(counts)).toBe(2);
+  expect(isQaSubmitBlocked(counts, false)).toBe(true);
+  expect(isQaSubmitBlocked(counts, true)).toBe(false);
+  expect(isQaSubmitBlocked({ ...counts, pendingLegacyRequests: 1 }, true)).toBe(true);
+});

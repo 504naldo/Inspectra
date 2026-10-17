@@ -1,4 +1,5 @@
 import { toPublicUser } from "./publicUser";
+import { assertAccountBinding } from "./_core/accountBinding";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -27,6 +28,7 @@ import { userRouter as userManagementRouter } from "./userRouter";
 import { assetImportRouter } from "./routers/assetImportRouter";
 import { filesRouter } from "./routers/filesRouter";
 import { gmailRouter } from "./routers/gmailRouter";
+import { emailDeliveryRouter } from "./routers/emailDeliveryRouter";
 import { calendarRouter } from "./routers/calendarRouter";
 import { driveRouter } from "./routers/driveRouter";
 import { fireAlarmFormRouter } from "./routers/fireAlarmFormRouter";
@@ -73,12 +75,14 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => {
+      assertAccountBinding(opts.ctx, false);
       opts.ctx.res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
       opts.ctx.res.setHeader('Pragma', 'no-cache');
       opts.ctx.res.setHeader('Expires', '0');
-      return opts.ctx.user ? toPublicUser(opts.ctx.user) : null;
+      return opts.ctx.user ? { ...toPublicUser(opts.ctx.user), sessionVersion: opts.ctx.user.sessionVersion } : null;
     }),
     logout: publicProcedure.mutation(async ({ ctx }) => {
+      assertAccountBinding(ctx, false);
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       ctx.res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -125,6 +129,7 @@ export const appRouter = router({
   files: filesRouter,
   compliance: complianceRouter,
   gmail: gmailRouter,
+  emailDelivery: emailDeliveryRouter,
   calendar: calendarRouter,
   drive: driveRouter,
   customerRecords: customerRecordsRouter,

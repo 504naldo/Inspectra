@@ -1,19 +1,22 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { getDb } from './db';
-import { jobs, sites, companies, attachments, devices } from '../drizzle/schema';
+import { jobs, sites, companies, customerOrgs, attachments, devices } from '../drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import { storagePut } from './storage';
 import * as fs from 'fs';
 import * as path from 'path';
+import { assertDisposableS3Environment } from '../scripts/disposableS3Config.mjs';
 
-// Requires a real S3/R2 bucket — skips gracefully when credentials aren't configured.
-describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => {
+// Runs only against the explicitly enabled, disposable MinIO + MySQL environment.
+describe.skipIf(process.env.DISPOSABLE_S3_ACCEPTANCE !== 'true')('Asset Import from Excel', () => {
   let testCompanyId: number;
+  let testCustomerOrgId: number;
   let testSiteId: number;
   let testJobId: number;
   let testAttachmentId: number;
 
   beforeAll(async () => {
+    assertDisposableS3Environment();
     const db = await getDb();
     if (!db) throw new Error('Database not available');
 
@@ -23,11 +26,13 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
       email: 'test@import.com',
     }).$returningId();
     testCompanyId = company.id;
+    const [customerOrg] = await db.insert(customerOrgs).values({ companyId: testCompanyId, name: 'Test Import Customer' }).$returningId();
+    testCustomerOrgId = customerOrg.id;
 
     // Create test site
     const [site] = await db.insert(sites).values({
       companyId: testCompanyId,
-      customerOrgId: 1,
+      customerOrgId: testCustomerOrgId,
       name: 'Test Import Site',
       address: '123 Test St',
     }).$returningId();
@@ -37,7 +42,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
     const [job] = await db.insert(jobs).values({
       companyId: testCompanyId,
       siteId: testSiteId,
-      customerOrgId: 1,
+      customerOrgId: testCustomerOrgId,
       jobNumber: 'TEST-IMPORT-001',
       title: 'Test Import Job',
       status: 'pending',
@@ -58,6 +63,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
 
     // Create attachment record
     const [attachment] = await db.insert(attachments).values({
+      companyId: testCompanyId,
       entityType: 'job',
       entityId: testJobId,
       jobId: testJobId,
@@ -74,6 +80,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
   });
 
   afterAll(async () => {
+    if (!testCompanyId) return;
     const db = await getDb();
     if (!db) return;
 
@@ -82,6 +89,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
     await db.delete(attachments).where(eq(attachments.id, testAttachmentId));
     await db.delete(jobs).where(eq(jobs.id, testJobId));
     await db.delete(sites).where(eq(sites.id, testSiteId));
+    await db.delete(customerOrgs).where(eq(customerOrgs.id, testCustomerOrgId));
     await db.delete(companies).where(eq(companies.id, testCompanyId));
   });
 
@@ -109,11 +117,9 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
 
     // Verify result
     expect(result.success).toBe(true);
-    expect(result.extinguisherCount).toBe(15);
-    expect(result.emergencyLightCount).toBe(23);
-    expect(result.totalCount).toBe(38);
-    expect(result.message).toContain('15 fire extinguishers');
-    expect(result.message).toContain('23 emergency lights');
+    expect(result.deviceCounts.extinguishers).toBe(15);
+    expect(result.deviceCounts.emergencyLights).toBe(23);
+    expect(result.deviceCounts.total).toBe(38);
 
     // Verify devices were created in database
     const extinguishers = await db
@@ -179,8 +185,8 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
 
     // Should still report same counts (updates, not new inserts)
     expect(result.success).toBe(true);
-    expect(result.extinguisherCount).toBe(15);
-    expect(result.emergencyLightCount).toBe(23);
+    expect(result.deviceCounts.extinguishers).toBe(15);
+    expect(result.deviceCounts.emergencyLights).toBe(23);
 
     // Verify device count hasn't increased
     const extinguishers = await db
@@ -218,7 +224,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
     const [jobWithoutFile] = await db.insert(jobs).values({
       companyId: testCompanyId,
       siteId: testSiteId,
-      customerOrgId: 1,
+      customerOrgId: testCustomerOrgId,
       jobNumber: 'TEST-NO-FILE',
       title: 'Test Job Without File',
       status: 'pending',
@@ -248,14 +254,14 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
     await db.delete(jobs).where(eq(jobs.id, jobWithoutFile.id));
   });
 
-  it('should throw error if user does not have companyId', async () => {
+  it('rejects a non-admin user without company assignment', async () => {
     const { assetImportRouter } = await import('./routers/assetImportRouter');
     
     const mockCtx = {
       user: {
         id: 1,
         companyId: null,
-        role: 'admin' as const,
+        role: 'office' as const,
       },
       req: {} as any,
       res: {} as any,
@@ -265,6 +271,6 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)('Asset Import from Excel', () => 
     
     await expect(
       caller.importAssetsFromExcel({ jobId: testJobId })
-    ).rejects.toThrow('User must belong to a company');
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });

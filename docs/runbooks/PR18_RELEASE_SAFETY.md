@@ -1,8 +1,14 @@
 # PR #18 migration and recovery procedure
 
-Prepared code and isolated tests only. Do not merge or deploy this draft.
-Main auto-deploys on merge before CI completes. This procedure requires separate
-release authorization, verified backups and access; none was executed live.
+Current continuation: 2026-10-17, based on merged PR #18 (`179e8c8`). The
+additional audit fixes remain local. Main auto-deploys on merge before CI
+completes. Release requires separate authorization, verified backups and access;
+no live migration or deployment was performed during this continuation.
+
+Railway's October 4 deployment failed its startup schema check because
+`jobs.googleCalendarOwnerId` was missing. Increasing the health timeout cannot
+resolve that failure. Verify and rehearse the appropriate schema history before
+releasing; do not remove the startup guard to make an incompatible image start.
 
 ## Acceptance and historical evidence
 
@@ -47,16 +53,16 @@ trustworthy evidence require a visible exception and inspection-owner review.
 
 ## Apply and resume
 
-Fresh installs use **only the journal** (`pnpm exec drizzle-kit migrate`), which
-includes 0036 schema additions and 0037 protocol guards. Do not replay manual
-history onto a journal installation. Repeat journal execution is recorded by
-Drizzle. Journal replay onto a populated unrelated legacy schema is unsupported.
+Fresh installs use **only the journal** (`pnpm exec drizzle-kit migrate`), now
+through **0041**. Do not replay manual history onto a journal installation.
+Repeat journal execution is recorded by Drizzle. Journal replay onto a populated
+unrelated legacy schema is unsupported.
 
 Legacy/manual installations use their verified manual history. Confirm actual
 0014 NOT NULL and 0044 sessionVersion prerequisites from live DDL/evidence;
 missing/null captures require reviewed remediation, not 0011 inference. Under
-the write freeze, apply reviewed **0086** and **0087** only through explicit
-maintenance, from a directory containing only the selected reviewed files:
+the write freeze, apply the missing reviewed files from **0086–0091** only through
+explicit maintenance, from a directory containing the selected reviewed files:
 
 ```ts
 await runMigrations({ databaseUrl: authorizedMaintenanceUrl,
@@ -70,6 +76,24 @@ startup: manual startup checks require the full recorded history; journal startu
 uses required-schema/trigger preflight. Record selected files as applied only
 after every statement succeeded. Required preflight checks block missing columns,
 null captures and missing protocol guards before traffic is served.
+
+The current additive migration pairs are:
+
+| Journal | Manual history | Required behavior |
+|---|---|---|
+| 0036 | 0086 | Session epoch, receipt/outbox and Calendar owner schema prerequisites. |
+| 0037 | 0087 | Four protocol-v2 payment/history guards. |
+| 0038 | 0088 | Nullable generic-template item captures; missing history stays unknown. |
+| 0039 | 0089 | Historical finalization hashes retain version 1; new seals use version 2. |
+| 0040 | 0090 | Nullable device captures on inspection results and deficiencies. |
+| 0041 | 0091 | Two additional unpaid-insert and invoice-state guards. |
+
+Inspect the exact DDL and prerequisites rather than treating this table as a
+complete historical migration plan. Manual 0091 uses `DELIMITER` directives so
+the maintenance runner sends each entire trigger body to MySQL. Startup requires
+all six payment guards and the new capture/hash columns. Missing generic/device
+captures remain nullable; report generation and sealing require proven evidence.
+No migration reconstructs missing captures from today's templates or devices.
 
 MySQL DDL auto-commits. If interrupted, retain the freeze, inspect committed DDL
 and ledger state, and resume the **same reviewed SQL**. The runner recognizes
@@ -140,15 +164,17 @@ for passed, failed/resolved, skipped and unrun checks and independent review.
 After building, use Node 22 and an explicitly disposable loopback database URL:
 
 ```sh
-DATABASE_URL=mysql://root@127.0.0.1:3306/inspectra_disposable node scripts/checkPaymentBrowser.mjs
-DATABASE_URL=mysql://root@127.0.0.1:3306/inspectra_disposable node scripts/checkPaymentRestore.mjs
+DISPOSABLE_DB_ACCEPTANCE=true DATABASE_URL=mysql://root@127.0.0.1:3306/inspectra_disposable node scripts/checkPaymentBrowser.mjs
+DISPOSABLE_DB_ACCEPTANCE=true DISPOSABLE_MYSQL_CONTAINER=inspectra-onboarding-mysql DATABASE_URL=mysql://root@127.0.0.1:3306/inspectra_disposable node scripts/checkPaymentRestore.mjs
 ```
 
 The scripts create and drop their own uniquely named databases; the URL selects
 the local MySQL server, not production. Browser checks require Chromium
 (`CHROMIUM_BIN` may select it), intercept external requests, use fake session
 credentials and leave automatic email disabled. Restore checks require the local
-`inspectra-onboarding-mysql` Docker container and MySQL native dump/restore tools.
-They preserve all four trigger definitions and expose the post-backup payment
+Docker container named by `DISPOSABLE_MYSQL_CONTAINER` and its native MySQL 8
+dump/restore tools. These rehearsals require explicit disposable intent, reject
+non-loopback targets and URL query overrides, and use synthetic records only.
+They must preserve all six current trigger definitions and expose the post-backup payment
 gap before replaying a known synthetic receipt exactly once. This is a synthetic
 rehearsal, not a certified production backup, PITR or accounting reconciliation.

@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
+import { displayedDeviceRevision } from "@/lib/deviceEvidence";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -44,6 +46,7 @@ import { useTrackInspectionProgress } from "@/hooks/useInspectionProgress";
 import { ImageLightbox } from "@/components/ImageLightbox";
 
 type PendingPhoto = {
+  id: string;
   file: File;
   localUrl: string;
   caption: string;
@@ -66,14 +69,18 @@ async function processPendingPhotos(
   handOff: (base64: string, photo: PendingPhoto) => Promise<unknown>,
   failureMessage: (fileName: string) => string,
 ) {
+  const failed: PendingPhoto[] = [];
   for (const p of photos) {
     try {
       const base64 = await readFileAsBase64(p.file);
       await handOff(base64, p);
+      URL.revokeObjectURL(p.localUrl);
     } catch {
+      failed.push(p);
       toast.error(failureMessage(p.file.name));
     }
   }
+  return failed;
 }
 
 type DraftResult = {
@@ -111,10 +118,14 @@ interface DeficiencyEditorProps {
   jobId?: number;
 }
 
-export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEditorProps) {
+export default function DeficiencyEditor(props: DeficiencyEditorProps) {
+  return <ScopedDeficiencyEditor key={`${props.deficiencyId ?? "new"}:${props.jobId ?? "existing"}`} {...props} />;
+}
+
+function ScopedDeficiencyEditor({ deficiencyId, jobId }: DeficiencyEditorProps) {
   const [location, setLocation] = useLocation();
   const isOnline = useOnlineStatus();
-  const { saveOfflineDeficiency } = useOfflineStorage();
+  const { saveOfflineDeficiency, scope } = useOfflineStorage();
   const isEditing = !!deficiencyId;
   
   // Track inspection progress for resume functionality
@@ -156,10 +167,25 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
   );
 
   // Load device info
-  const { data: device } = trpc.device.get.useQuery(
+  const { data: serverDevice } = trpc.device.get.useQuery(
     { id: deviceId! },
     { enabled: !!deviceId }
   );
+
+  const { packet } = useOfflineJobPacket(jobId ?? 0);
+  const device = serverDevice ?? packet?.devices?.find((row: { id: number }) => row.id === deviceId) as typeof serverDevice;
+  const capturedDevice = useRef<{ id: number; revision: string } | null>(null);
+  useEffect(() => {
+    if (device && capturedDevice.current?.id !== device.id && typeof device.deviceRevision === "string")
+      capturedDevice.current = { id: device.id, revision: device.deviceRevision };
+  }, [device]);
+  const expectedDeviceRevision = () => {
+    if (!deviceId) return undefined;
+    if (capturedDevice.current?.id === deviceId) return capturedDevice.current.revision;
+    const revision = displayedDeviceRevision(device, deviceId);
+    capturedDevice.current = { id: deviceId, revision };
+    return revision;
+  };
 
   useEffect(() => {
     if (existingDef?.deficiency) {
@@ -346,7 +372,9 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       } else {
         // Create mode: queue for upload after save
         const localUrl = URL.createObjectURL(file);
-        setPendingPhotos((prev) => [...prev, { file, localUrl, caption: "", locationNote: "" }]);
+        setPendingPhotos((prev) => [...prev, {
+            id: crypto.randomUUID(),
+            file, localUrl, caption: "", locationNote: "" }]);
       }
     });
   }
@@ -370,7 +398,14 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
   // Save & Add Another mode
   const [addAnother, setAddAnother] = useState(false);
 
+  const offlineDeficiencyLocalId = useRef<string | null>(null);
+  const [createdDeficiencyId, setCreatedDeficiencyId] = useState<number | null>(
+    null
+  );
   const resetForm = () => {
+    offlineDeficiencyLocalId.current = null;
+    setCreatedDeficiencyId(null);
+    capturedDevice.current = null;
     setTitle("");
     setSeverity("major");
     setStatus("open");
@@ -385,40 +420,70 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
   };
 
   // Create deficiency
-  const createDeficiency = trpc.deficiency.create.useMutation({
-    onSuccess: async (newDef) => {
-      // Upload any pending photos after the deficiency is created
-      if (pendingPhotos.length > 0 && isOnline) {
+  const finishCreatedDeficiency = async (
+    newDef: { id: number },
+    andAnother = addAnother
+  ) => {
+    setCreatedDeficiencyId(newDef.id);
+    if (pendingPhotos.length > 0) {
         setIsUploadingPhotos(true);
-        await processPendingPhotos(
+      const failed = await processPendingPhotos(
           pendingPhotos,
-          (base64, p) => uploadMediaMut.mutateAsync({
+        async (base64, p) => {
+          try {
+            await uploadMediaMut.mutateAsync({
             deficiencyId: newDef.id,
             fileName: p.file.name,
-            mimeType: p.file.type as "image/jpeg" | "image/png" | "image/webp",
+            mimeType: p.file.type as
+                | "image/jpeg"
+                | "image/png"
+                | "image/webp",
+              fileSize: p.file.size,
+              fileData: base64,
+              caption: p.caption || undefined,
+              locationNote: p.locationNote || undefined,
+              idempotencyKey: p.id,
+            });
+          } catch {
+            await offlineStorage.savePendingPhoto(
+              {
+                jobId: jobId!,
+                deficiencyLocalId: `server-${newDef.id}`,
+                resolvedDeficiencyId: newDef.id,
+                fileName: p.file.name,
+                mimeType: p.file.type as
+                  | "image/jpeg" | "image/png" | "image/webp",
             fileSize: p.file.size,
             fileData: base64,
             caption: p.caption || undefined,
             locationNote: p.locationNote || undefined,
-          }),
-          (fileName) => `Photo "${fileName}" failed to upload`,
-        );
+          },
+              scope,
+              p.id
+            );
+          }
+        },
+          (fileName) => `Photo "${fileName}" is still on this screen; retry saving before leaving`
+      );
         setIsUploadingPhotos(false);
-        setPendingPhotos([]);
+        setPendingPhotos(failed);
+      if (failed.length > 0) {
+        toast.error("Deficiency saved, but some photos still need saving");
+        return;
       }
-      if (addAnother) {
+    }
+      if (andAnother) {
         toast.success('Deficiency saved — add another');
         resetForm();
-        setPendingPhotos([]);
-        setAddAnother(false);
+      setAddAnother(false);
       } else {
-        toast.success('Deficiency created');
+        toast.success("Deficiency saved; any queued photos remain in Sync Data");
         setLocation(`/tech/jobs/${jobId}`);
       }
-    },
-    onError: () => {
-      toast.error('Failed to create deficiency');
-    }
+    };
+  const createDeficiency = trpc.deficiency.create.useMutation({
+    onSuccess: newDef => finishCreatedDeficiency(newDef),
+    onError: error => toast.error(error.message || 'Failed to create deficiency'),
   });
 
   // Update deficiency
@@ -441,11 +506,13 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
   const saveDeficiencyOffline = async (andAnother: boolean) => {
     setIsSavingOffline(true);
     try {
-      const localId = `def-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const localId = offlineDeficiencyLocalId.current ?? crypto.randomUUID();
+      offlineDeficiencyLocalId.current = localId;
       saveOfflineDeficiency({
         localId,
         jobId: jobId!,
         deviceId,
+        expectedDeviceRevision: expectedDeviceRevision(),
         title,
         severity: severity as any,
         description: description || undefined,
@@ -458,21 +525,31 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         synced: false,
       });
 
-      await processPendingPhotos(
+      const failed = await processPendingPhotos(
         pendingPhotos,
         (base64, p) => offlineStorage.savePendingPhoto({
-          deficiencyLocalId: localId,
+              jobId: jobId!,
+              deficiencyLocalId: localId,
           fileName: p.file.name,
-          mimeType: p.file.type as "image/jpeg" | "image/png" | "image/webp",
+          mimeType: p.file.type as
+                | "image/jpeg" | "image/png" | "image/webp",
           fileSize: p.file.size,
           fileData: base64,
           caption: p.caption || undefined,
           locationNote: p.locationNote || undefined,
-        }),
+        },
+            scope,
+            p.id
+          ),
         (fileName) => `Photo "${fileName}" could not be queued for upload`,
       );
-      pendingPhotos.forEach((p) => URL.revokeObjectURL(p.localUrl));
-      setPendingPhotos([]);
+      setPendingPhotos(failed);
+      if (failed.length > 0) {
+        toast.error(
+          "Deficiency saved offline; keep this screen open and retry the remaining photos"
+        );
+        return;
+      }
 
       if (andAnother) {
         toast.success('Deficiency saved offline — add another');
@@ -482,6 +559,12 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         toast.success('Deficiency saved offline — will sync when you\'re back online');
         setLocation(`/tech/jobs/${jobId}`);
       }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not save offline; keep this screen open and retry"
+      );
     } finally {
       setIsSavingOffline(false);
     }
@@ -492,7 +575,15 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       toast.error('Please enter a title');
       return;
     }
+    if (!isEditing && deviceId) {
+      try { expectedDeviceRevision(); }
+      catch (error) { toast.error((error as Error).message); return; }
+    }
     setAddAnother(andAnother);
+    if (createdDeficiencyId) {
+      void finishCreatedDeficiency({ id: createdDeficiencyId }, andAnother);
+      return;
+    }
 
     if (isEditing) {
       updateDeficiency.mutate({
@@ -514,6 +605,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
       createDeficiency.mutate({
         jobId: jobId!,
         deviceId,
+        expectedDeviceRevision: expectedDeviceRevision(),
         title,
         severity: severity as any,
         observedIssue,
@@ -600,7 +692,11 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
             <CardContent className="p-4">
               <p className="text-sm">
                 <span className="font-medium">{device.deviceType}</span>
-                {device.location && <span className="text-muted-foreground"> - {device.location}</span>}
+                {device.location && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    - {device.location}</span>
+                )}
               </p>
             </CardContent>
           </Card>
@@ -716,7 +812,11 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
                 onClick={handleGenerateNarrative}
                 disabled={generateNarrative.isPending || !observedIssue}
               >
-                {generateNarrative.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {generateNarrative.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
                 Generate Narrative
                 <span className="text-xs text-muted-foreground ml-auto">(needs observed issue + device)</span>
               </Button>
@@ -739,7 +839,11 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
                   onClick={() => { setImproveResult(null); setImproveOpen(true); improveText.mutate({ deficiencyId: deficiencyId!, currentTitle: title, currentDescription: description || undefined, currentObservedIssue: observedIssue || undefined, currentCorrectiveAction: correctiveAction || undefined, currentCustomerExplanation: customerExplanation || undefined }); }}
                   disabled={improveText.isPending || !title}
                 >
-                  {improveText.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {improveText.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
                   Improve Wording
                 </Button>
               )}
@@ -975,7 +1079,7 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
                 onClick={() => cameraInputRef.current?.click()}
                 disabled={isUploadingPhotos || uploadMediaMut.isPending}
               >
-                {(isUploadingPhotos || uploadMediaMut.isPending) ? (
+                {isUploadingPhotos || uploadMediaMut.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Camera className="h-4 w-4" />
@@ -997,7 +1101,9 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
         </div>
       </main>
 
-      {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
+      {lightboxUrl && (
+        <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
+      )}
 
       {/* Draft from Notes dialog */}
       <Dialog open={draftOpen} onOpenChange={setDraftOpen}>
@@ -1030,7 +1136,11 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
                 deviceId: deviceId || undefined,
               })}
             >
-              {draftFromNotes.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+              {draftFromNotes.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4 mr-2" />
+              )}
               Generate Draft
             </Button>
 
@@ -1047,9 +1157,13 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
                   </div>
                 )}
                 <div className="space-y-2 text-sm">
-                  <div><span className="font-medium">Title:</span> {draftResult.suggestedTitle}</div>
-                  <div><span className="font-medium">Severity:</span> {draftResult.suggestedSeverity} (confidence: {draftResult.confidence})</div>
-                  <div><span className="font-medium">System:</span> {draftResult.systemCategory}</div>
+                  <div><span className="font-medium">Title:</span> {" "}
+                    {draftResult.suggestedTitle}</div>
+                  <div><span className="font-medium">Severity:</span> {" "}
+                    {draftResult.suggestedSeverity} (confidence: {" "}
+                    {draftResult.confidence})</div>
+                  <div><span className="font-medium">System:</span>{" "}
+                    {draftResult.systemCategory}</div>
                   <div className="border rounded p-2 bg-muted/30 text-xs">
                     <p className="font-medium mb-1">Description:</p>
                     <p>{draftResult.professionalDescription}</p>
@@ -1102,7 +1216,8 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
                 </div>
               )}
               <div className="space-y-2 text-sm">
-                <div><span className="font-medium">Title:</span> {improveResult.improvedTitle}</div>
+                <div><span className="font-medium">Title:</span> {" "}
+                  {improveResult.improvedTitle}</div>
                 <div className="border rounded p-2 bg-muted/30 text-xs">
                   <p className="font-medium mb-1">Description:</p>
                   <p>{improveResult.improvedDescription}</p>
@@ -1154,13 +1269,18 @@ export default function DeficiencyEditor({ deficiencyId, jobId }: DeficiencyEdit
                 </div>
               )}
               <div className="space-y-2 text-sm">
-                <div><span className="font-medium">Suggested title:</span> {analyzeResult.suggestedTitle}</div>
-                <div><span className="font-medium">Suggested severity:</span> {analyzeResult.suggestedSeverity} (confidence: {analyzeResult.confidence})</div>
+                <div><span className="font-medium">Suggested title:</span> {" "}
+                  {analyzeResult.suggestedTitle}</div>
+                <div><span className="font-medium">Suggested severity:</span> {" "}
+                  {analyzeResult.suggestedSeverity} (confidence: {" "}
+                  {analyzeResult.confidence})</div>
                 {analyzeResult.visualFindings.length > 0 && (
                   <div className="border rounded p-2 bg-muted/30 text-xs">
                     <p className="font-medium mb-1">What the AI sees in the photo:</p>
                     <ul className="space-y-0.5">
-                      {analyzeResult.visualFindings.map((f, i) => <li key={i}>• {f}</li>)}
+                      {analyzeResult.visualFindings.map((f, i) => (
+                        <li key={i}>• {f}</li>
+                      ))}
                     </ul>
                   </div>
                 )}

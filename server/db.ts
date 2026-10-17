@@ -1,3 +1,5 @@
+import { calculateInvoiceTotals } from "./invoiceIntegrity";
+import { buildCapturedDeviceSnapshot, readCapturedDevice, getDeviceRevision, assertDeviceRevision } from "./canonicalDeviceEvidence";
 import { eq, and, desc, asc, sql, inArray, like, or, isNull, isNotNull, lt, lte, ne, gt, } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
@@ -450,7 +452,8 @@ export async function createDevice(data: InsertDevice) {
 export async function getDevicesBySite(siteId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true))).orderBy(asc(devices.sortOrder), asc(devices.id));
+  const rows = await db.select().from(devices).where(and(eq(devices.siteId, siteId), eq(devices.isActive, true))).orderBy(asc(devices.sortOrder), asc(devices.id));
+  return rows.map(row => ({ ...row, deviceRevision: getDeviceRevision(row) }));
 }
 
 export async function reorderDevices(orderedIds: number[]) {
@@ -470,14 +473,15 @@ export async function clearDeviceSortOrder(siteId: number) {
 export async function getDevicesByArea(areaId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(devices).where(and(eq(devices.areaId, areaId), eq(devices.isActive, true))).orderBy(asc(devices.deviceType));
+  const rows = await db.select().from(devices).where(and(eq(devices.areaId, areaId), eq(devices.isActive, true))).orderBy(asc(devices.deviceType));
+  return rows.map(row => ({ ...row, deviceRevision: getDeviceRevision(row) }));
 }
 
 export async function getDeviceById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(devices).where(eq(devices.id, id)).limit(1);
-  return result[0];
+  return result[0] ? { ...result[0], deviceRevision: getDeviceRevision(result[0]) } : undefined;
 }
 
 export async function updateDevice(id: number, data: Partial<InsertDevice>) {
@@ -526,13 +530,14 @@ export async function getMaxDeviceSortOrder(siteId: number): Promise<number> {
 export async function getSmokeAlarmsBySite(siteId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(devices).where(
+  const rows = await db.select().from(devices).where(
     and(
       eq(devices.siteId, siteId),
       eq(devices.category, 'SMOKE_ALARM'),
       eq(devices.isActive, true)
     )
   ).orderBy(asc(devices.suiteNumber), asc(devices.location));
+  return rows.map(row => ({ ...row, deviceRevision: getDeviceRevision(row) }));
 }
 
 export async function getSmokeAlarmsByJob(jobId: number) {
@@ -543,7 +548,24 @@ export async function getSmokeAlarmsByJob(jobId: number) {
   const job = await getJobById(jobId);
   if (!job) return [];
   
-  return getSmokeAlarmsBySite(job.siteId);
+  const [alarms, results] = await Promise.all([
+    getSmokeAlarmsBySite(job.siteId),
+    getInspectionResultsByJob(jobId),
+  ]);
+  const byDevice = new Map(results.map(result => [result.deviceId, result]));
+  return alarms.map(alarm => {
+    const result = byDevice.get(alarm.id);
+    return {
+      ...alarm,
+      // Device master state belongs to the latest visit. Historical and newly
+      // opened jobs must show only results captured for this particular job.
+      testResult: result?.result === "not_tested"
+        ? result.testedAt ? "no_access" as const : null
+        : result?.result ?? null,
+      lastInspectionDate: result?.testedAt ?? null,
+      notes: result?.notes ?? alarm.notes,
+    };
+  });
 }
 
 export async function getSmokeAlarmCountBySite(siteId: number) {
@@ -588,11 +610,12 @@ export async function updateSmokeAlarmTestResult(
 // ============================================
 // INSPECTION RESULT QUERIES
 // ============================================
-export async function createInspectionResult(data: InsertInspectionResult) {
+type InspectionResultCaptureInput = InsertInspectionResult & { expectedDeviceRevision?: string };
+export async function createInspectionResult(data: InspectionResultCaptureInput) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   // Defense-in-depth: populate companyId from the parent job when not already supplied.
-  let insertData = data;
+  let insertData = await captureInspectionDeviceData(data);
   if (insertData.companyId == null) {
     const job = await getJobById(insertData.jobId);
     if (job) insertData = { ...insertData, companyId: job.companyId };
@@ -612,7 +635,8 @@ export async function getInspectionResultsByJob(jobId: number) {
   const db = await getDb();
   if (!db) return [];
   
-  // Join with devices to get device info
+  // Device labels/locations are evidence captured for this job. The current
+  // equipment master may have changed during a later visit.
   const results = await db
     .select({
       id: inspectionResults.id,
@@ -627,16 +651,67 @@ export async function getInspectionResultsByJob(jobId: number) {
       carriedForward: inspectionResults.carriedForward,
       createdAt: inspectionResults.createdAt,
       updatedAt: inspectionResults.updatedAt,
-      deviceType: devices.deviceType,
-      location: devices.location,
-      serialNumber: devices.serialNumber,
+      companyId: inspectionResults.companyId,
+      deviceSnapshot: inspectionResults.deviceSnapshot,
     })
     .from(inspectionResults)
-    .leftJoin(devices, eq(inspectionResults.deviceId, devices.id))
     .where(eq(inspectionResults.jobId, jobId))
     .orderBy(desc(inspectionResults.testedAt));
   
-  return results;
+  const job = await getJobById(jobId);
+  return results.map(row => {
+    const captured = job ? readCapturedDevice(row, job) : undefined;
+    return { ...row, deviceType: captured?.deviceType ?? null, location: captured?.location ?? null, serialNumber: captured?.serialNumber ?? null };
+  });
+}
+
+/** Lock current equipment after the job lock and capture only an actual save. */
+async function readLockedDeviceForJob(jobId: number, deviceId: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const job = await getJobById(jobId);
+  if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+  const [device] = await database.select().from(devices).where(eq(devices.id, deviceId)).for("update");
+  if (!device) throw new TRPCError({ code: "NOT_FOUND", message: "Device not found" });
+  if (device.companyId !== job.companyId || device.siteId !== job.siteId)
+    throw new TRPCError({ code: "FORBIDDEN", message: "Device does not belong to this job." });
+  return { device, job };
+}
+
+export async function assertDeviceCaptureRevision(jobId: number, deviceId: number, expectedRevision: string | undefined) {
+  const { device } = await readLockedDeviceForJob(jobId, deviceId);
+  assertDeviceRevision(device, expectedRevision);
+  return device;
+}
+
+export async function captureDeviceSnapshotForJob(jobId: number, deviceId: number, actorId: number, expectedRevision: string | undefined) {
+  const { device, job } = await readLockedDeviceForJob(jobId, deviceId);
+  assertDeviceRevision(device, expectedRevision);
+  return buildCapturedDeviceSnapshot(device, job, actorId);
+}
+
+async function captureInspectionDeviceData(input: InspectionResultCaptureInput): Promise<InsertInspectionResult> {
+  const { expectedDeviceRevision, ...data } = input;
+  if (data.technicianId == null || data.testedAt == null)
+    return { ...data, deviceSnapshot: null };
+  return { ...data, carriedForward: 0, deviceSnapshot: await captureDeviceSnapshotForJob(data.jobId, data.deviceId, data.technicianId, expectedDeviceRevision) };
+}
+
+/** An explicit field correction updates this open job's evidence, never other visits. */
+export async function refreshJobDeviceEvidence(jobId: number, deviceId: number, actorId: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const { device, job } = await readLockedDeviceForJob(jobId, deviceId);
+  const deviceSnapshot = buildCapturedDeviceSnapshot(device, job, actorId);
+  const resultRows = await database.select().from(inspectionResults).where(and(eq(inspectionResults.jobId, jobId), eq(inspectionResults.deviceId, deviceId)));
+  const deficiencyRows = await database.select().from(deficiencies).where(and(eq(deficiencies.jobId, jobId), eq(deficiencies.deviceId, deviceId)));
+  // Correct only evidence already captured for this job. A metadata edit cannot
+  // turn an unverified legacy/carried-forward answer into historical proof.
+  for (const row of resultRows)
+    if (readCapturedDevice(row, job)) await database.update(inspectionResults).set({ deviceSnapshot }).where(eq(inspectionResults.id, row.id));
+  for (const row of deficiencyRows)
+    if (readCapturedDevice(row, job)) await database.update(deficiencies).set({ deviceSnapshot }).where(eq(deficiencies.id, row.id));
+  return getDeviceRevision(device);
 }
 
 export async function getInspectionResultByJobAndDevice(jobId: number, deviceId: number) {
@@ -679,7 +754,7 @@ export async function getNextWalkOrder(jobId: number): Promise<number> {
 export async function bulkUpsertInspectionResults(
   jobId: number,
   deviceIds: number[],
-  shared: { result: 'pass' | 'fail' | 'na' | 'not_tested'; notes?: string; technicianId: number; }
+  shared: { result: 'pass' | 'fail' | 'na' | 'not_tested'; notes?: string; technicianId: number; expectedDeviceRevisions?: Record<string, string>; }
 ): Promise<{ count: number }> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -721,6 +796,8 @@ export async function bulkUpsertInspectionResults(
       technicianId: shared.technicianId,
       testedAt: now,
       syncedAt: now,
+      carriedForward: 0,
+      deviceSnapshot: await captureDeviceSnapshotForJob(jobId, deviceId, shared.technicianId, shared.expectedDeviceRevisions?.[deviceId]),
     };
 
     if (row) {
@@ -744,14 +821,14 @@ export async function bulkUpsertInspectionResults(
   return { count: toUpdate.length + toInsert.length };
 }
 
-export async function upsertInspectionResult(data: InsertInspectionResult) {
+export async function upsertInspectionResult(data: InspectionResultCaptureInput) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
   const existing = await getInspectionResultByJobAndDevice(data.jobId, data.deviceId);
   if (existing) {
     // Update existing result, preserve walkOrder if already set
-    const updateData = { ...data };
+    const updateData = await captureInspectionDeviceData(data);
     if (existing.walkOrder !== null && !data.walkOrder) {
       updateData.walkOrder = existing.walkOrder;
     }
@@ -825,13 +902,13 @@ export async function getDeficiencyById(id: number) {
  * idempotency key. Used for find-or-create so a replayed offline create does not
  * duplicate the record.
  */
-export async function getDeficiencyByIdempotencyKey(idempotencyKey: string) {
+export async function getDeficiencyByIdempotencyKey(idempotencyKey: string, jobId?: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db
     .select()
     .from(deficiencies)
-    .where(eq(deficiencies.idempotencyKey, idempotencyKey))
+    .where(and(eq(deficiencies.idempotencyKey, idempotencyKey), jobId == null ? undefined : eq(deficiencies.jobId, jobId)))
     .limit(1);
   return result[0];
 }
@@ -1555,18 +1632,14 @@ export async function getDeviceSummariesByJob(jobId: number) {
   const db = await getDb();
   if (!db) return [];
   
-  const results = await db
-    .select()
-    .from(inspectionResults)
-    .leftJoin(devices, eq(inspectionResults.deviceId, devices.id))
-    .where(eq(inspectionResults.jobId, jobId));
+  const results = await getInspectionResultsByJob(jobId);
   
   // Group by device type
   const summaryMap = new Map<string, { total: number; passed: number; failed: number; na: number }>();
   
   results.forEach(row => {
-    const deviceType = row.devices?.deviceType || 'Unknown';
-    const result = row.inspection_results.result;
+    const deviceType = row.deviceType || 'Unknown';
+    const result = row.result;
     
     if (!summaryMap.has(deviceType)) {
       summaryMap.set(deviceType, { total: 0, passed: 0, failed: 0, na: 0 });
@@ -2439,21 +2512,8 @@ export async function recalculateInvoiceTotals(invoiceId: number): Promise<void>
   const items = await getLineItemsByInvoice(invoiceId);
   const inv = await getInvoiceById(invoiceId);
   if (!inv) return;
-  const subtotal = items.reduce((sum, item) => sum + parseFloat(String(item.total ?? "0")), 0);
-  const taxRate = parseFloat(String(inv.taxRate ?? "0"));
-  const taxableSubtotal = items
-    .filter(i => i.taxable)
-    .reduce((sum, i) => sum + parseFloat(String(i.total ?? "0")), 0);
-  const taxAmount = taxableSubtotal * taxRate;
-  const total = subtotal + taxAmount;
-  const amountPaid = parseFloat(String(inv.amountPaid ?? "0"));
-  const balanceDue = total - amountPaid;
-  await db.update(invoices).set({
-    subtotal: subtotal.toFixed(2) as any,
-    taxAmount: taxAmount.toFixed(2) as any,
-    total: total.toFixed(2) as any,
-    balanceDue: balanceDue.toFixed(2) as any,
-  }).where(eq(invoices.id, invoiceId));
+  const totals = calculateInvoiceTotals(inv, items);
+  await db.update(invoices).set(totals).where(eq(invoices.id, invoiceId));
 }
 
 // ============================================

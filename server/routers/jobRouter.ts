@@ -1,3 +1,4 @@
+import { buildTemplatePacketData } from "../canonicalTemplateReport";
 import {
   toCustomerSafeJob,
   toCustomerSafeSite,
@@ -11,6 +12,8 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, officeProcedure, technicianProcedure, } from "../_core/trpc";
 import * as db from "../db";
 import { withAudit } from "../db";
+import { withMutableJob } from "../jobWriteTransaction";
+import { assertJobTechnician, syncLinkedWorkOrders } from "../jobLifecycleSync";
 import { getJobForCompany, assertSiteCompany, assertCustomerOrgCompany, } from "../tenantGuards";
 import { logActivity } from "../activityLogger";
 import { JOB_FINALIZED_IMMUTABLE } from "../../shared/_core/errors";
@@ -42,16 +45,6 @@ function jobTypeToWorkType(
     case "service_call": return "service_call";
     case "repair":       return "repair";
     default:             return "inspection";
-  }
-}
-
-/** Fire-and-forget work-order sync — never throws. */
-async function syncWorkOrder(jobId: number, patch: Partial<schema.InsertWorkOrder>) {
-  try {
-    const wo = await db.getWorkOrderByJob(jobId);
-    if (wo) await db.updateWorkOrder(wo.id, patch);
-  } catch (err) {
-    console.warn(`[WorkOrder] Failed to sync for job ${jobId}:`, err);
   }
 }
 
@@ -182,7 +175,8 @@ const jobRouter = router({
       // must not link a site or customer org from a different company.
       if (
         site.companyId !== input.companyId ||
-        customerOrg.companyId !== input.companyId
+        customerOrg.companyId !== input.companyId ||
+        site.customerOrgId !== input.customerOrgId
       ) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -190,7 +184,7 @@ const jobRouter = router({
         });
       }
 
-      const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
+      const jobNumber = `JOB-${nanoid(12).toUpperCase()}`;
 
       // Find the last finalized job for this site so we can copy its inspection_results
       const lastJob = await db.getLastCompletedJobForSite(input.siteId);
@@ -239,7 +233,7 @@ const jobRouter = router({
           siteId: input.siteId,
           customerOrgId: input.customerOrgId,
           jobId: newJobId,
-          workOrderNumber: `WO-${Date.now().toString(36).toUpperCase()}`,
+          workOrderNumber: `WO-${nanoid(12).toUpperCase()}`,
           title: input.title,
           workType: jobTypeToWorkType(input.jobType),
           status: "pending",
@@ -265,45 +259,14 @@ const jobRouter = router({
         return row;
       });
 
-      // Auto-create Google Calendar event if job has a scheduled date (best-effort)
-      if (input.scheduledDate && ctx.user) {
+      // A visit needs explicit instants; a date alone never invents an 8am visit.
+      if (input.scheduledStartAt && input.scheduledEndAt) {
         try {
           const { getValidGoogleToken } = await import("../_core/googleAuth");
           const accessToken = await getValidGoogleToken(ctx.user.id);
           if (accessToken) {
-            const startDate = new Date(input.scheduledDate);
-            if (startDate.getHours() === 0 && startDate.getMinutes() === 0) {
-              startDate.setHours(8, 0, 0, 0);
-            }
-            // Use the scheduled window's duration when start+end were provided,
-            // else default to a 4-hour block.
-            const durationMs =
-              input.scheduledStartAt && input.scheduledEndAt
-                ? input.scheduledEndAt.getTime() -
-                  input.scheduledStartAt.getTime()
-                : 4 * 60 * 60 * 1000;
-            const endDate = new Date(
-              startDate.getTime() + Math.max(durationMs, 30 * 60 * 1000)
-            );
-            const eventBody = {
-              summary: `🔥 Inspection: ${input.title}`,
-              start: {
-                dateTime: startDate.toISOString(),
-                timeZone: "America/Toronto",
-              },
-              end: {
-                dateTime: endDate.toISOString(),
-                timeZone: "America/Toronto",
-              },
-              reminders: {
-                useDefault: false,
-                overrides: [
-                  { method: "popup", minutes: 60 },
-                  { method: "popup", minutes: 1440 },
-                ],
-              },
-              colorId: "11",
-            };
+            const { buildEventBody } = await import("./calendarRouter");
+            const eventBody = await buildEventBody(newJob.id);
             const response = await fetch(
               "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all",
               {
@@ -316,9 +279,17 @@ const jobRouter = router({
               }
             );
             if (response.ok) {
-              const event = (await response.json()) as { id: string };
-              await db.updateJob(newJob.id, {
-                googleCalendarEventId: event.id,
+              const event = (await response.json()) as { id?: unknown };
+              if (typeof event.id !== "string" || !event.id.trim()) throw new Error("Calendar provider returned no event ID");
+              await withMutableJob(ctx, "job.create.calendarLink", newJob.id, async current => {
+                if (current.googleCalendarEventId || current.scheduledStartAt?.toISOString() !== eventBody.start.dateTime || current.scheduledEndAt?.toISOString() !== eventBody.end.dateTime) {
+                  throw new TRPCError({ code: "CONFLICT", message: "The job schedule changed while its calendar event was being created; reconcile the event before retrying." });
+                }
+                await db.updateJob(newJob.id, {
+                  googleCalendarEventId: event.id as string,
+                  googleCalendarOwnerId: ctx.user.id,
+                  googleCalendarId: "primary",
+                });
               });
             } else {
               console.warn(
@@ -403,8 +374,11 @@ const jobRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const site = await assertSiteCompany(input.siteId, ctx.user.companyId!);
+      if (site.companyId !== ctx.user.companyId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "The emergency call site must belong to the selected company." });
+      }
 
-      const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
+      const jobNumber = `JOB-${nanoid(12).toUpperCase()}`;
       const title = `Emergency Call - ${site.name}`;
       const noteParts = [input.description];
       if (input.callerName) noteParts.push(`Caller: ${input.callerName}`);
@@ -431,7 +405,7 @@ const jobRouter = router({
             siteId: input.siteId,
             customerOrgId: site.customerOrgId,
             jobId: newJobId,
-            workOrderNumber: `WO-${Date.now().toString(36).toUpperCase()}`,
+            workOrderNumber: `WO-${nanoid(12).toUpperCase()}`,
             title,
             workType: "emergency",
             status: "pending",
@@ -523,20 +497,25 @@ const jobRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const job = await getJobForCompany(input.id, ctx.user.companyId!);
-      // Block updates to finalized jobs
-      if (job.finalizedAt) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: JOB_FINALIZED_IMMUTABLE,
-        });
-      }
       const { id, ...data } = input;
-      await db.updateJob(id, data);
-      // Best-effort: sync scheduledDate to work order
-      if (input.scheduledDate !== undefined) {
-        void syncWorkOrder(id, { scheduledDate: input.scheduledDate });
-      }
+      const job = await withMutableJob(ctx, "job.update", id, async job => {
+        if (input.assignedTechnicianId !== undefined) await assertJobTechnician(job, input.assignedTechnicianId);
+        await db.updateJob(id, {
+          ...data,
+          ...(input.assignedTechnicianId !== undefined && {
+            leadTechnicianId: input.assignedTechnicianId, assignedAt: new Date(), assignedByUserId: ctx.user.id,
+          }),
+        });
+        if (input.assignedTechnicianId !== undefined) {
+          if (job.leadTechnicianId && job.leadTechnicianId !== input.assignedTechnicianId) await db.removeJobAssignment(id, job.leadTechnicianId);
+          await db.removeJobAssignment(id, input.assignedTechnicianId);
+          await db.addJobAssignment({ jobId: id, userId: input.assignedTechnicianId, role: "LEAD", assignedByUserId: ctx.user.id });
+          const assignments = await db.getJobTechnicians(id);
+          await syncLinkedWorkOrders(job, { assignedTechnicianIds: [input.assignedTechnicianId, ...assignments.additional.map(tech => tech.id)] });
+        }
+        if (input.scheduledDate !== undefined) await syncLinkedWorkOrders(job, { scheduledDate: input.scheduledDate });
+        return job;
+      });
 
       if (input.status && input.status !== job?.status) {
         void logActivity({
@@ -597,16 +576,11 @@ const jobRouter = router({
   start: technicianProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const job = await getJobForCompany(input.id, ctx.user.companyId!);
-      if (job.finalizedAt) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: JOB_FINALIZED_IMMUTABLE,
-        });
-      }
-      const now = new Date();
-      await db.updateJob(input.id, { status: "in_progress", startedAt: now });
-      void syncWorkOrder(input.id, { status: "in_progress", startedAt: now });
+      await withMutableJob(ctx, "job.start", input.id, async job => {
+        const now = new Date();
+        await db.updateJob(input.id, { status: "in_progress", startedAt: now });
+        await syncLinkedWorkOrders(job, { status: "in_progress", startedAt: now });
+      });
       void logActivity({
         ctx,
         entityType: "job",
@@ -620,34 +594,17 @@ const jobRouter = router({
   complete: technicianProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const job = await getJobForCompany(input.id, ctx.user.companyId!);
-      if (job.finalizedAt) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: JOB_FINALIZED_IMMUTABLE,
-        });
-      }
-      if (job.status !== "in_progress") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Only in-progress jobs can be completed",
-        });
-      }
-      if (!job.techSignatureUrl) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "Technician signature is required before completing the job.",
-        });
-      }
       const completedNow = new Date();
-      await db.updateJob(input.id, {
-        status: "completed",
-        completedAt: completedNow,
-      });
-      void syncWorkOrder(input.id, {
-        status: "completed",
-        completedAt: completedNow,
+      const job = await withMutableJob(ctx, "job.complete", input.id, async job => {
+        if (job.status !== "in_progress") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Only in-progress jobs can be completed" });
+        }
+        if (!job.techSignatureUrl) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Technician signature is required before completing the job." });
+        }
+        await db.updateJob(input.id, { status: "completed", completedAt: completedNow });
+        await syncLinkedWorkOrders(job, { status: "completed", completedAt: completedNow });
+        return job;
       });
       void logActivity({
         ctx,
@@ -749,7 +706,9 @@ const jobRouter = router({
         updates.contactSignedAt = now;
       }
 
-      await db.updateJob(input.jobId, updates);
+      await withMutableJob(ctx, "job.saveSignatures", input.jobId, async () => {
+        await db.updateJob(input.jobId, updates);
+      });
       return { success: true };
     }),
 
@@ -783,27 +742,17 @@ const jobRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await db.assertJobCompany(input.jobId, ctx.user.companyId!);
-      // Verify technician exists and is active
-      const technician = await db.getUserById(input.technicianId);
-      if (
-        !technician ||
-        !["technician", "admin", "office"].includes(technician.role) ||
-        !technician.isActive
-      ) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid technician",
+      const technician = await withMutableJob(ctx, "job.assignLeadTechnician", input.jobId, async job => {
+        const technician = await assertJobTechnician(job, input.technicianId);
+        if (job.leadTechnicianId && job.leadTechnicianId !== input.technicianId) await db.removeJobAssignment(input.jobId, job.leadTechnicianId);
+        await db.removeJobAssignment(input.jobId, input.technicianId);
+        await db.addJobAssignment({ jobId: input.jobId, userId: input.technicianId, role: "LEAD", assignedByUserId: ctx.user.id });
+        await db.updateJob(input.jobId, {
+          leadTechnicianId: input.technicianId, assignedTechnicianId: input.technicianId, assignedAt: new Date(), assignedByUserId: ctx.user.id,
         });
-      }
-
-      await db.updateJob(input.jobId, {
-        leadTechnicianId: input.technicianId,
-        assignedAt: new Date(),
-        assignedByUserId: ctx.user.id,
-      });
-      void syncWorkOrder(input.jobId, {
-        assignedTechnicianIds: [input.technicianId],
+        const assignments = await db.getJobTechnicians(input.jobId);
+        await syncLinkedWorkOrders(job, { assignedTechnicianIds: Array.from(new Set([input.technicianId, ...assignments.additional.map(tech => tech.id)])) });
+        return technician;
       });
       void logActivity({
         ctx,
@@ -826,24 +775,15 @@ const jobRouter = router({
     jobId: z.number(),
     technicianId: z.number(),
   })).mutation(async ({ input, ctx }) => {
-    const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
-
-    // Cannot add lead as additional
-    if (job.leadTechnicianId === input.technicianId) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Lead technician cannot be added as additional', });
-    }
-    
-    // Verify technician exists and is active
-    const technician = await db.getUserById(input.technicianId);
-    if (!technician || !['technician', 'admin', 'office'].includes(technician.role) || !technician.isActive) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid technician', });
-    }
-    
-    await db.addJobAssignment({
-      jobId: input.jobId,
-      userId: input.technicianId,
-      role: 'ASSIST',
-      assignedByUserId: ctx.user.id,
+    await withMutableJob(ctx, "job.addAdditionalTechnician", input.jobId, async job => {
+      if (job.leadTechnicianId === input.technicianId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Lead technician cannot be added as additional" });
+      }
+      await assertJobTechnician(job, input.technicianId);
+      if (await db.isUserAssignedToJob(input.jobId, input.technicianId)) return;
+      await db.addJobAssignment({ jobId: input.jobId, userId: input.technicianId, role: "ASSIST", assignedByUserId: ctx.user.id });
+      const assignments = await db.getJobTechnicians(input.jobId);
+      await syncLinkedWorkOrders(job, { assignedTechnicianIds: [job.leadTechnicianId, ...assignments.additional.map(tech => tech.id)].filter((id): id is number => id != null) });
     });
     void sendPushToUser(input.technicianId, "New Job Assigned", `You've been assigned as additional technician for job #${input.jobId}.`,
         { jobId: String(input.jobId) }
@@ -860,8 +800,14 @@ const jobRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await db.assertJobCompany(input.jobId, ctx.user.companyId!);
-      await db.removeJobAssignment(input.jobId, input.technicianId);
+      await withMutableJob(ctx, "job.removeAdditionalTechnician", input.jobId, async job => {
+        if (job.leadTechnicianId === input.technicianId || job.assignedTechnicianId === input.technicianId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Use the lead assignment workflow to remove the lead technician." });
+        }
+        await db.removeJobAssignment(input.jobId, input.technicianId);
+        const assignments = await db.getJobTechnicians(input.jobId);
+        await syncLinkedWorkOrders(job, { assignedTechnicianIds: [job.leadTechnicianId, ...assignments.additional.map(tech => tech.id)].filter((id): id is number => id != null) });
+      });
       return { success: true };
     }),
 
@@ -874,61 +820,18 @@ const jobRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await db.assertJobCompany(input.jobId, ctx.user.companyId!);
-      // Verify lead technician
-      const leadTech = await db.getUserById(input.leadTechnicianId);
-      if (
-        !leadTech ||
-        !["technician", "admin", "office"].includes(leadTech.role) ||
-        !leadTech.isActive
-      ) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid lead technician",
-        });
-      }
-
-      // Remove lead from additional list if present
-      const additionalIds = input.additionalTechnicianIds.filter(
-        id => id !== input.leadTechnicianId
-      );
-
-      // Verify all additional technicians
-      for (const techId of additionalIds) {
-        const tech = await db.getUserById(techId);
-        if (
-          !tech ||
-          !["technician", "admin", "office"].includes(tech.role) ||
-          !tech.isActive
-        ) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid technician: ${techId}`,
-          });
+      const additionalIds = Array.from(new Set(input.additionalTechnicianIds.filter(id => id !== input.leadTechnicianId)));
+      const leadTech = await withMutableJob(ctx, "job.setTechnicians", input.jobId, async job => {
+        const leadTech = await assertJobTechnician(job, input.leadTechnicianId);
+        for (const techId of additionalIds) await assertJobTechnician(job, techId);
+        await db.updateJob(input.jobId, { leadTechnicianId: input.leadTechnicianId, assignedTechnicianId: input.leadTechnicianId, assignedAt: new Date(), assignedByUserId: ctx.user.id });
+        await db.clearJobAssignments(input.jobId);
+        await db.addJobAssignment({ jobId: input.jobId, userId: input.leadTechnicianId, role: "LEAD", assignedByUserId: ctx.user.id });
+        for (const techId of additionalIds) {
+          await db.addJobAssignment({ jobId: input.jobId, userId: techId, role: "ASSIST", assignedByUserId: ctx.user.id });
         }
-      }
-
-      // Update lead
-      await db.updateJob(input.jobId, {
-        leadTechnicianId: input.leadTechnicianId,
-        assignedAt: new Date(),
-        assignedByUserId: ctx.user.id,
-      });
-
-      // Clear existing additional technicians
-      await db.clearJobAssignments(input.jobId);
-
-      // Add new additional technicians
-      for (const techId of additionalIds) {
-        await db.addJobAssignment({
-          jobId: input.jobId,
-          userId: techId,
-          role: "ASSIST",
-          assignedByUserId: ctx.user.id,
-        });
-      }
-      void syncWorkOrder(input.jobId, {
-        assignedTechnicianIds: [input.leadTechnicianId, ...additionalIds],
+        await syncLinkedWorkOrders(job, { assignedTechnicianIds: [input.leadTechnicianId, ...additionalIds] });
+        return leadTech;
       });
       void logActivity({
         ctx,
@@ -943,17 +846,11 @@ const jobRouter = router({
   unassignJob: officeProcedure.input(z.object({
     jobId: z.number(),
   })).mutation(async ({ input, ctx }) => {
-    const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
-    if (job.finalizedAt) {
-      throw new TRPCError({ code: 'CONFLICT', message: JOB_FINALIZED_IMMUTABLE, });
-    }
-    await db.updateJob(input.jobId, {
-      leadTechnicianId: null,
-      assignedAt: null,
-      assignedByUserId: null,
-      status: 'pending',
+    await withMutableJob(ctx, "job.unassignJob", input.jobId, async job => {
+      await db.updateJob(input.jobId, { leadTechnicianId: null, assignedTechnicianId: null, assignedAt: null, assignedByUserId: null, status: "pending" });
+      await db.clearJobAssignments(input.jobId);
+      await syncLinkedWorkOrders(job, { assignedTechnicianIds: [], status: "pending" });
     });
-    await db.clearJobAssignments(input.jobId);
     void logActivity({ ctx, entityType: "job", entityId: input.jobId, eventType: "updated",
       title: "Job unassigned", });
     return { success: true };
@@ -978,68 +875,38 @@ const jobRouter = router({
     jobId: z.number(),
     scheduledDate: z.date().optional(),
   })).mutation(async ({ input, ctx }) => {
-    // Load the source job (scoped to the caller's company)
-    const sourceJob = await getJobForCompany(input.jobId, ctx.user.companyId!);
-
-    // Only allow cloning finalized or completed jobs
-    if (!['completed', 'finalized'].includes(sourceJob.status)) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only completed or finalized jobs can be re-inspected', });
-    }
-
-    // Generate a new job number
-    const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
-
-      // Create the new draft job copying key fields from the source
+    const authorizedSource = await getJobForCompany(input.jobId, ctx.user.companyId!);
+    const jobNumber = `JOB-${nanoid(12).toUpperCase()}`;
+    const newJob = await withAudit(ctx, "job.clone", async tx => {
+      const [sourceJob] = await tx.select().from(schema.jobs).where(eq(schema.jobs.id, input.jobId)).for("update");
+      if (!sourceJob) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+      if (sourceJob.companyId !== authorizedSource.companyId) throw new TRPCError({ code: "FORBIDDEN" });
+      if (!sourceJob.finalizedAt && !["completed", "finalized"].includes(sourceJob.status)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only completed or finalized jobs can be re-inspected" });
+      }
+      const site = await assertSiteCompany(sourceJob.siteId, sourceJob.companyId);
+      const org = await assertCustomerOrgCompany(sourceJob.customerOrgId, sourceJob.companyId);
+      if (site.companyId !== sourceJob.companyId || org.companyId !== sourceJob.companyId || site.customerOrgId !== sourceJob.customerOrgId) {
+        throw new TRPCError({ code: "CONFLICT", message: "Source job links are inconsistent; reconcile them before cloning." });
+      }
+      if (sourceJob.assignedTechnicianId) await assertJobTechnician(sourceJob, sourceJob.assignedTechnicianId);
       const newJob = await db.createJob({
-        companyId: sourceJob.companyId,
-        siteId: sourceJob.siteId,
-        customerOrgId: sourceJob.customerOrgId,
+        companyId: sourceJob.companyId, siteId: sourceJob.siteId, customerOrgId: sourceJob.customerOrgId,
         assignedTechnicianId: sourceJob.assignedTechnicianId ?? undefined,
-        title: `Re-inspect: ${sourceJob.title}`,
-        description: sourceJob.description ?? undefined,
-        jobType: sourceJob.jobType ?? undefined,
-        priority: sourceJob.priority ?? undefined,
-        scheduledDate: input.scheduledDate,
-        jobNumber,
+        title: `Re-inspect: ${sourceJob.title}`, description: sourceJob.description ?? undefined,
+        jobType: sourceJob.jobType ?? undefined, priority: sourceJob.priority ?? undefined,
+        scheduledDate: input.scheduledDate, jobNumber,
       });
-      await withAudit(ctx, "job.clone", async () => {});
-
-      // Best-effort: create work order for the cloned job
-      try {
-        await db.createWorkOrder({
-          companyId: sourceJob.companyId,
-          siteId: sourceJob.siteId,
-          customerOrgId: sourceJob.customerOrgId,
-          jobId: newJob.id,
-          workOrderNumber: `WO-${Date.now().toString(36).toUpperCase()}`,
-          title: `Re-inspect: ${sourceJob.title}`,
-          workType: jobTypeToWorkType(sourceJob.jobType),
-          status: "pending",
-          priority: (sourceJob.priority ??
-            "medium") as schema.InsertWorkOrder["priority"],
-          scheduledDate: input.scheduledDate ?? null,
-          assignedTechnicianIds: sourceJob.assignedTechnicianId
-            ? [sourceJob.assignedTechnicianId]
-            : [],
-        });
-      } catch (err) {
-        console.warn(
-          "[WorkOrder] Failed to create WO for cloned job",
-          newJob.id,
-          err
-        );
-      }
-
-      // Auto-populate fire alarm checklist (best-effort)
-      try {
-        await populateJobFireAlarmChecklist(newJob.id, newJob.siteId);
-      } catch (err) {
-        console.warn(
-          "[FireAlarmChecklist] Auto-populate failed for cloned job",
-          newJob.id,
-          err
-        );
-      }
+      await db.createWorkOrder({
+        companyId: sourceJob.companyId, siteId: sourceJob.siteId, customerOrgId: sourceJob.customerOrgId,
+        jobId: newJob.id, workOrderNumber: `WO-${nanoid(12).toUpperCase()}`,
+        title: `Re-inspect: ${sourceJob.title}`, workType: jobTypeToWorkType(sourceJob.jobType),
+        status: "pending", priority: sourceJob.priority ?? "medium", scheduledDate: input.scheduledDate ?? null,
+        assignedTechnicianIds: sourceJob.assignedTechnicianId ? [sourceJob.assignedTechnicianId] : [],
+      });
+      await populateJobFireAlarmChecklist(newJob.id, newJob.siteId);
+      return newJob;
+    });
 
       return { newJobId: newJob.id, jobNumber };
     }),
@@ -1047,21 +914,19 @@ const jobRouter = router({
   delete: officeProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const job = await getJobForCompany(input.id, ctx.user.companyId!);
-      if (job.finalizedAt)
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: JOB_FINALIZED_IMMUTABLE,
-        });
+      const job = await withMutableJob(ctx, "job.delete", input.id, async job => {
+        await db.deleteJobCascade(input.id);
+        return job;
+      });
 
       // Best-effort: remove Google Calendar event
-      if (job.googleCalendarEventId && ctx.user) {
+      if (job.googleCalendarEventId && job.googleCalendarOwnerId === ctx.user.id && job.googleCalendarId) {
         try {
           const { getValidGoogleToken } = await import("../_core/googleAuth");
           const accessToken = await getValidGoogleToken(ctx.user.id);
           if (accessToken) {
             await fetch(
-              `https://www.googleapis.com/calendar/v3/calendars/primary/events/${job.googleCalendarEventId}?sendUpdates=all`,
+              `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(job.googleCalendarId)}/events/${encodeURIComponent(job.googleCalendarEventId)}?sendUpdates=all`,
             { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` },
               }
             );
@@ -1075,9 +940,6 @@ const jobRouter = router({
         }
       }
 
-      await withAudit(ctx, "job.delete", async () => {
-        await db.deleteJobCascade(input.id);
-      });
       return { success: true };
     }),
 
@@ -1108,7 +970,6 @@ const jobRouter = router({
   getOfflineJobPacket: technicianProcedure
     .input(z.object({ jobId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId!;
       const rawDb = await db.getDb();
       if (!rawDb)
         throw new TRPCError({
@@ -1117,6 +978,7 @@ const jobRouter = router({
         });
 
       const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
+      const companyId = job.companyId;
 
       // Technicians must be assigned to the job
       if (ctx.user.role === "technician") {
@@ -1153,8 +1015,10 @@ const jobRouter = router({
         );
       }
 
-      // Inspection template list for this job (metadata only — no sections/items in v1)
-      const assignments = await rawDb
+      const templateResponses = await rawDb.select().from(schema.inspectionTemplateResponses)
+        .where(eq(schema.inspectionTemplateResponses.jobId, job.id));
+      // Sealed jobs use captured questions only, including archived/deleted definitions.
+      const assignments = job.finalizedAt ? [] : await rawDb
         .select({
           templateId: schema.inspectionTemplateAssignments.templateId,
           jobType: schema.inspectionTemplateAssignments.jobType,
@@ -1180,12 +1044,7 @@ const jobRouter = router({
       const templates =
         matchingIds.size > 0
           ? await rawDb
-              .select({
-                id: schema.inspectionTemplates.id,
-                name: schema.inspectionTemplates.name,
-                description: schema.inspectionTemplates.description,
-                systemType: schema.inspectionTemplates.systemType,
-              })
+              .select()
               .from(schema.inspectionTemplates)
               .where(
                 and(
@@ -1237,9 +1096,14 @@ const jobRouter = router({
             ])
           : [[], []];
 
+      const templateData = buildTemplatePacketData({ job, templates, sections: templateSections, items: templateItems, responses: templateResponses, actorId: ctx.user.id });
+
       // lastUpdatedAt = latest of job.updatedAt and site.updatedAt
       const timestamps: Date[] = [new Date(job.updatedAt)];
       if (site?.updatedAt) timestamps.push(new Date(site.updatedAt));
+      for (const record of [...templates, ...templateSections, ...templateItems, ...templateResponses]) {
+        if (record.updatedAt && Number.isFinite(new Date(record.updatedAt).getTime())) timestamps.push(new Date(record.updatedAt));
+      }
       const lastUpdatedAt = new Date(
         Math.max(...timestamps.map(t => t.getTime()))
       );
@@ -1306,9 +1170,7 @@ const jobRouter = router({
             }
           : null,
         devices,
-        templates,
-        templateSections,
-        templateItems,
+        ...templateData,
         deficiencies: currentDeficiencies.filter(
           d => d.status === "open" || d.status === "in_progress"
         ),
@@ -1327,16 +1189,12 @@ const jobRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const job = await db.getJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND" });
-      if (job.companyId !== ctx.user.companyId!)
-        throw new TRPCError({ code: "FORBIDDEN" });
-
-      await db.updateJob(input.jobId, {
-        customerDeclinedAt: new Date(),
-        customerDeclinedReason: input.reason ?? null,
-        customerDeclinedByName: input.customerName ?? null,
-      } as any);
+      await withMutableJob(ctx, "job.recordCustomerDecline", input.jobId, async () => {
+        await db.updateJob(input.jobId, {
+          customerDeclinedAt: new Date(), customerDeclinedReason: input.reason ?? null,
+          customerDeclinedByName: input.customerName ?? null,
+        });
+      });
 
       void logActivity({
         ctx,

@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { ACCOUNT_CHANGED_MESSAGE, EXPECTED_ACCOUNT_HEADER, expectedAccount, serializeExpectedAccount } from "@shared/accountBinding";
 import FinalizeJobDialog from "@/components/FinalizeJobDialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -324,6 +325,9 @@ export default function AdminJobDetails({ jobId }: AdminJobDetailsProps) {
 
   const handleUpload = async () => {
     if (!selectedFile || !job || !user || !user.companyId) return;
+    const displayedAccount = expectedAccount(user);
+    if (!displayedAccount) { toast.error(ACCOUNT_CHANGED_MESSAGE); return; }
+    const accountHeader = serializeExpectedAccount(displayedAccount);
 
     setIsUploading(true);
     try {
@@ -340,6 +344,7 @@ export default function AdminJobDetails({ jobId }: AdminJobDetailsProps) {
       // Upload via multipart API endpoint
       const response = await fetch("/api/upload", {
         method: "POST",
+        headers: { [EXPECTED_ACCOUNT_HEADER]: accountHeader },
         body: formData,
         credentials: "include",
       });

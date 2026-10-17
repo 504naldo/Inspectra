@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { scanBarcode } from "@/lib/native";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
 import { SearchInput } from "./SearchInput";
+import { acknowledgedDevicePatch, GridWriteGuard, RevisionBoundInput, RevisionBoundSelect, useGridWriteBarrier } from "./gridWriteSafety";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ interface EditState {
   deviceId: number;
   field: string;
   value: string;
+  revision: string;
 }
 
 const TEXT_EDITABLE_FIELDS = ["location", "label", "circuitAddress", "zone"];
@@ -67,6 +69,7 @@ const LEGEND_ITEMS = [
 
 interface DeviceRow {
   id: number;
+  deviceRevision?: string;
   deviceType: string;
   location?: string | null;
   label?: string | null;
@@ -201,34 +204,30 @@ function MobileCard({
   device,
   idx,
   checks,
-  localEdits,
   onCheckChange,
   onFChange,
   onRemarksChange,
-  onFieldChange,
-  onFieldBlur,
+  onFieldCommit,
   isFinalized,
   isCarriedForward,
 }: {
   device: DeviceRow;
   idx: number;
   checks: CheckData;
-  localEdits: Partial<DeviceRow>;
   onCheckChange: (key: keyof CheckData, value: CheckState) => void;
   onFChange: (val: string) => void;
   onRemarksChange: (val: string) => void;
-  onFieldChange: (field: keyof DeviceRow, value: string) => void;
-  onFieldBlur?: (field: keyof DeviceRow, value: string) => void;
+  onFieldCommit: (field: keyof DeviceRow, value: string, revision: string) => Promise<unknown>;
   isFinalized?: boolean;
   isCarriedForward?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  const location = (localEdits.location ?? device.location) || "";
-  const label = (localEdits.label ?? device.label) || "";
-  const deviceType = (localEdits.deviceType ?? device.deviceType) || "";
-  const circuitAddress = (localEdits.circuitAddress ?? device.circuitAddress) || "";
-  const zone = (localEdits.zone ?? device.zone) || "";
+  const location = device.location || "";
+  const label = device.label || "";
+  const deviceType = device.deviceType || "";
+  const circuitAddress = device.circuitAddress || "";
+  const zone = device.zone || "";
 
   return (
     <div className="border rounded-lg mb-2 overflow-hidden">
@@ -263,30 +262,30 @@ function MobileCard({
             <div className="grid grid-cols-2 gap-2">
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-muted-foreground">Location</span>
-                <input className="text-xs border rounded px-2 py-1 bg-background" value={location} onChange={(e) => onFieldChange("location", e.target.value)} onBlur={(e) => onFieldBlur?.("location", e.target.value)} placeholder="—" />
+                <RevisionBoundInput className="text-xs border rounded px-2 py-1 bg-background" value={location} revision={device.deviceRevision ?? ""} onCommit={(value, revision) => onFieldCommit("location", value, revision)} placeholder="—" />
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-muted-foreground">Label/LCD</span>
-                <input className="text-xs border rounded px-2 py-1 bg-background" value={label} onChange={(e) => onFieldChange("label", e.target.value)} onBlur={(e) => onFieldBlur?.("label", e.target.value)} placeholder="—" />
+                <RevisionBoundInput className="text-xs border rounded px-2 py-1 bg-background" value={label} revision={device.deviceRevision ?? ""} onCommit={(value, revision) => onFieldCommit("label", value, revision)} placeholder="—" />
               </div>
               <div className="flex flex-col gap-0.5 col-span-2">
                 <span className="text-[10px] font-medium text-muted-foreground">Device Type</span>
-                <select className="text-xs border rounded px-2 py-1 bg-background" value={deviceType} onChange={(e) => onFieldChange("deviceType", e.target.value)}>
+                <RevisionBoundSelect className="text-xs border rounded px-2 py-1 bg-background" value={deviceType} revision={device.deviceRevision ?? ""} onCommit={(value, revision) => onFieldCommit("deviceType", value, revision)}>
                   {/* Keep the device's own stored type visible even when it isn't
                       one of the standard fire-alarm types. */}
                   {deviceType && !FIRE_ALARM_DEVICE_TYPES.includes(deviceType) && (
                     <option value={deviceType}>{deviceType}</option>
                   )}
                   {FIRE_ALARM_DEVICE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
+                </RevisionBoundSelect>
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-muted-foreground">Address</span>
-                <input className="text-xs border rounded px-2 py-1 bg-background" value={circuitAddress} onChange={(e) => onFieldChange("circuitAddress", e.target.value)} onBlur={(e) => onFieldBlur?.("circuitAddress", e.target.value)} placeholder="—" />
+                <RevisionBoundInput className="text-xs border rounded px-2 py-1 bg-background" value={circuitAddress} revision={device.deviceRevision ?? ""} onCommit={(value, revision) => onFieldCommit("circuitAddress", value, revision)} placeholder="—" />
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-muted-foreground">Zone</span>
-                <input className="text-xs border rounded px-2 py-1 bg-background" value={zone} onChange={(e) => onFieldChange("zone", e.target.value)} onBlur={(e) => onFieldBlur?.("zone", e.target.value)} placeholder="—" />
+                <RevisionBoundInput className="text-xs border rounded px-2 py-1 bg-background" value={zone} revision={device.deviceRevision ?? ""} onCommit={(value, revision) => onFieldCommit("zone", value, revision)} placeholder="—" />
               </div>
             </div>
           ) : (
@@ -348,7 +347,11 @@ function MobileCard({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function IndividualDeviceGrid({
+export function IndividualDeviceGrid(props: IndividualDeviceGridProps) {
+  return <ScopedIndividualDeviceGrid key={`${props.companyId}:${props.siteId}:${props.jobId}`} {...props} />;
+}
+
+function ScopedIndividualDeviceGrid({
   jobId,
   siteId,
   companyId,
@@ -361,15 +364,22 @@ export function IndividualDeviceGrid({
   const [legendOpen, setLegendOpen] = useState(false);
   const [localChecks, setLocalChecks] = useState<Record<number, CheckData>>({});
   const [pendingChecks, setPendingChecks] = useState<Record<number, CheckData>>({});
-  const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<DeviceRow>>>({});
   const [editing, setEditing] = useState<EditState | null>(null);
   const isMobile = useIsMobile();
+  const barrier = useGridWriteBarrier();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ location: "", deviceType: "Smoke Detector" });
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
+  // Bind each pending observation to the definition actually shown when edited.
+  const draftRevisions = useRef<Record<number, string>>({});
+  const displayedRevision = useCallback((id: number) => rows.find(row => row.id === id)?.deviceRevision ?? "", [rows]);
+  const rememberRevision = useCallback((id: number) => {
+    draftRevisions.current[id] ??= displayedRevision(id);
+  }, [displayedRevision]);
+
 
   const rowIdxMap = useMemo(() => {
     const m = new Map<number, number>();
@@ -396,7 +406,7 @@ export function IndividualDeviceGrid({
   });
 
   const updateDevice = trpc.device.technicianUpdate.useMutation({
-    onError: () => toast.error("Failed to save field"),
+    onError: (error) => toast.error(error.message || "Failed to save field"),
   });
 
   const addDevice = trpc.device.addDuringInspection.useMutation({
@@ -419,6 +429,7 @@ export function IndividualDeviceGrid({
   });
 
   const handleAddSubmit = () => {
+    if (barrier.isLockedNow()) return;
     if (!addForm.location.trim() && !addForm.deviceType.trim()) {
       toast.error("Location or device type required");
       return;
@@ -433,37 +444,31 @@ export function IndividualDeviceGrid({
     });
   };
 
+  const saveMetadata = useCallback(async (deviceId: number, patch: Record<string, unknown>, revision: string) => {
+    if (isFinalized) return;
+    try {
+      await barrier.run(async () => {
+        const saved = await updateDevice.mutateAsync({ jobId, id: deviceId, ...patch,
+          expectedDeviceRevision: revision } as Parameters<typeof updateDevice.mutate>[0]);
+        setRows(previous => acknowledgedDevicePatch(previous, deviceId, patch, saved.deviceRevision, revision));
+        if (draftRevisions.current[deviceId] === revision) draftRevisions.current[deviceId] = saved.deviceRevision;
+        onRefresh?.();
+      });
+    } catch { /* The displayed row remains the last acknowledged definition. */ }
+  }, [isFinalized, barrier.run, updateDevice, jobId, setRows, onRefresh]);
+
   const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
-    if (isFinalized || !TEXT_EDITABLE_FIELDS.includes(field)) return;
-    setEditing({ deviceId, field, value: currentValue ?? "" });
+    if (isFinalized || barrier.isLockedNow() || !TEXT_EDITABLE_FIELDS.includes(field)) return;
+    if (editing?.deviceId === deviceId && editing.field === field) return;
+    setEditing({ deviceId, field, value: currentValue ?? "", revision: displayedRevision(deviceId) });
   };
 
   const handleEditBlur = () => {
-    if (!editing) return;
-    const { deviceId, field, value } = editing;
-    setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), [field]: value } }));
-    updateDevice.mutate({ id: deviceId, [field]: value || undefined } as Parameters<typeof updateDevice.mutate>[0]);
+    if (!editing || barrier.isLockedNow()) return;
+    const { deviceId, field, value, revision } = editing;
     setEditing(null);
+    void saveMetadata(deviceId, { [field]: value }, revision);
   };
-
-  const handleDeviceTypeChange = (deviceId: number, value: string) => {
-    if (isFinalized) return;
-    setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), deviceType: value } }));
-    updateDevice.mutate({ id: deviceId, deviceType: value } as Parameters<typeof updateDevice.mutate>[0]);
-  };
-
-  const handleMobileFieldChange = useCallback((deviceId: number, field: keyof DeviceRow, value: string) => {
-    if (isFinalized) return;
-    setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), [field]: value } }));
-    if (field === "deviceType") {
-      updateDevice.mutate({ id: deviceId, deviceType: value } as Parameters<typeof updateDevice.mutate>[0]);
-    }
-  }, [isFinalized, updateDevice]);
-
-  const handleMobileFieldBlur = useCallback((deviceId: number, field: keyof DeviceRow, value: string) => {
-    if (isFinalized || field === "deviceType") return;
-    updateDevice.mutate({ id: deviceId, [field]: value || undefined } as Parameters<typeof updateDevice.mutate>[0]);
-  }, [isFinalized, updateDevice]);
 
   const getChecks = useCallback(
     (device: DeviceRow): CheckData => {
@@ -474,6 +479,8 @@ export function IndividualDeviceGrid({
 
   const handleCheckChange = useCallback(
     (deviceId: number, key: keyof CheckData, value: CheckState | string) => {
+      if (isFinalized || barrier.isLockedNow()) return;
+      rememberRevision(deviceId);
       setLocalChecks((prev) => {
         const current = prev[deviceId] ?? parseChecks(devices.find((d) => d.id === deviceId)?.inspectionNotes);
         const updated = { ...current, [key]: value };
@@ -481,31 +488,33 @@ export function IndividualDeviceGrid({
         return { ...prev, [deviceId]: updated };
       });
     },
-    [devices]
+    [devices, rememberRevision, isFinalized, barrier.isLockedNow]
   );
 
   const hasUnsavedChanges = Object.keys(pendingChecks).length > 0;
 
   const handleSaveSection = useCallback(async () => {
+    if (isFinalized) return;
     try {
-      const checkTasks = Object.entries(pendingChecks).map(([deviceId, checks]) => {
-        const result = computeResult(checks);
-        return upsertResult.mutateAsync({
-          jobId,
-          deviceId: Number(deviceId),
-          result,
-          notes: serializeChecks(checks),
-        });
+      await barrier.run(async () => {
+        // Sequential writes keep the barrier held until every dispatched request settles.
+        for (const [deviceId, checks] of Object.entries(pendingChecks)) {
+          await upsertResult.mutateAsync({ jobId, deviceId: Number(deviceId),
+            expectedDeviceRevision: draftRevisions.current[Number(deviceId)] ?? "",
+            result: computeResult(checks), notes: serializeChecks(checks) });
+          setPendingChecks(previous => { const next = { ...previous }; delete next[Number(deviceId)]; return next; });
+          delete draftRevisions.current[Number(deviceId)];
+        }
+        setPendingChecks({});
+        draftRevisions.current = {};
+        onRefresh?.();
+        toast.success("Fire alarm device changes saved");
       });
-      await Promise.all(checkTasks);
-      setPendingChecks({});
-      toast.success("Fire alarm device changes saved");
-    } catch {
-      toast.error("Failed to save fire alarm device changes");
-    }
-  }, [pendingChecks, upsertResult, jobId]);
+    } catch { toast.error("Failed to save fire alarm device changes"); }
+  }, [pendingChecks, upsertResult, jobId, onRefresh, isFinalized, barrier.run]);
 
   const handleSort = (dir: "asc" | "desc") => {
+    if (barrier.isLockedNow()) return;
     setSortDir(dir);
     const sorted = [...rows].sort((a, b) => {
       const aKey = (a.location || "").toLowerCase();
@@ -518,17 +527,18 @@ export function IndividualDeviceGrid({
   };
 
   const handleAllPass = useCallback(() => {
-    if (isFinalized) return;
+    if (isFinalized || barrier.isLockedNow()) return;
     const allPass: CheckData = { a: true, b: true, c: true, d: true, e: true, f: "", g: true, remarks: "" };
     const updates: Record<number, CheckData> = {};
     devices.forEach((device) => { updates[device.id] = allPass; });
     setLocalChecks((prev) => ({ ...prev, ...updates }));
     devices.forEach((device) => {
+      rememberRevision(device.id);
       setPendingChecks((prev) => ({ ...prev, [device.id]: allPass }));
       onResultChange?.(device.id, "pass");
     });
     toast.success(`Marked ${devices.length} device${devices.length !== 1 ? "s" : ""} as all pass`);
-  }, [devices, isFinalized, onResultChange]);
+  }, [devices, isFinalized, onResultChange, rememberRevision, barrier.isLockedNow]);
 
   if (devices.length === 0 && isFinalized) {
     return (
@@ -538,7 +548,7 @@ export function IndividualDeviceGrid({
 
   if (isMobile) {
     return (
-      <div>
+      <GridWriteGuard barrier={barrier}>
         <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
         {devices.length > 1 && (
           <div className="mb-2">
@@ -549,7 +559,7 @@ export function IndividualDeviceGrid({
           <div className="mb-2 flex items-center gap-2">
             <button
               onClick={handleSaveSection}
-              disabled={!hasUnsavedChanges}
+              disabled={!hasUnsavedChanges || barrier.isLocked}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save
@@ -574,12 +584,10 @@ export function IndividualDeviceGrid({
                 device={device}
                 idx={idx}
                 checks={checks}
-                localEdits={localDeviceEdits[device.id] ?? {}}
                 onCheckChange={(key, val) => handleCheckChange(device.id, key, val)}
                 onFChange={(val) => handleCheckChange(device.id, "f", val)}
                 onRemarksChange={(val) => handleCheckChange(device.id, "remarks", val)}
-                onFieldChange={(field, val) => handleMobileFieldChange(device.id, field, val)}
-                onFieldBlur={(field, val) => handleMobileFieldBlur(device.id, field, val)}
+                onFieldCommit={(field, value, revision) => saveMetadata(device.id, { [field]: value }, revision)}
                 isFinalized={isFinalized}
                 isCarriedForward={carriedForwardDeviceIds?.has(device.id)}
               />
@@ -621,13 +629,13 @@ export function IndividualDeviceGrid({
             <Plus className="h-3.5 w-3.5" /> Add Device
           </button>
         )}
-      </div>
+      </GridWriteGuard>
     );
   }
 
   // ── Desktop table ─────────────────────────────────────────────────────────
   return (
-    <div>
+    <GridWriteGuard barrier={barrier}>
       <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Legend open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
@@ -639,7 +647,7 @@ export function IndividualDeviceGrid({
           {!isFinalized && (
             <button
               onClick={handleSaveSection}
-              disabled={!hasUnsavedChanges || upsertResult.isPending}
+              disabled={!hasUnsavedChanges || barrier.isLocked || upsertResult.isPending}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save
@@ -669,7 +677,7 @@ export function IndividualDeviceGrid({
           )}
         </div>
       </div>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={event => { if (!barrier.isLockedNow()) onDragEnd(event); }}>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-xs border-collapse">
           <thead>
@@ -734,7 +742,7 @@ export function IndividualDeviceGrid({
                   {/* Editable device fields */}
                   {(["location", "label"] as const).map((field) => {
                     const isEditing = editing?.deviceId === device.id && editing?.field === field;
-                    const value = ((localDeviceEdits[device.id]?.[field] ?? device[field]) ?? "") as string;
+                    const value = (device[field] ?? "") as string;
                     return (
                       <td
                         key={field}
@@ -763,32 +771,33 @@ export function IndividualDeviceGrid({
                   {/* Device type dropdown */}
                   <td className="px-1 py-1 border-r max-w-[5rem]">
                     {isFinalized ? (
-                      <span className="truncate block px-1 text-xs">{(localDeviceEdits[device.id]?.deviceType ?? device.deviceType) || <span className="text-muted-foreground/40">—</span>}</span>
+                      <span className="truncate block px-1 text-xs">{device.deviceType || <span className="text-muted-foreground/40">—</span>}</span>
                     ) : (
-                      <select
+                      <RevisionBoundSelect
                         className="w-full bg-transparent text-xs outline-none cursor-pointer hover:bg-primary/5 rounded"
-                        value={(localDeviceEdits[device.id]?.deviceType ?? device.deviceType) || ""}
-                        onChange={(e) => handleDeviceTypeChange(device.id, e.target.value)}
+                        value={device.deviceType || ""}
+                        revision={device.deviceRevision ?? ""}
+                        onCommit={(value, revision) => saveMetadata(device.id, { deviceType: value }, revision)}
                       >
                         {/* Always show the device's own stored type, even if it's
                             not a standard fire-alarm type, so the grid reflects
                             the individual device record instead of defaulting to
                             the first option. */}
                         {(() => {
-                          const current = (localDeviceEdits[device.id]?.deviceType ?? device.deviceType) || "";
+                          const current = device.deviceType || "";
                           return current && !FIRE_ALARM_DEVICE_TYPES.includes(current)
                             ? <option value={current}>{current}</option>
                             : null;
                         })()}
                         {FIRE_ALARM_DEVICE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
+                      </RevisionBoundSelect>
                     )}
                   </td>
 
                   {/* Address & Zone — click to edit */}
                   {(["circuitAddress", "zone"] as const).map((field) => {
                     const isEditing = editing?.deviceId === device.id && editing?.field === field;
-                    const value = ((localDeviceEdits[device.id]?.[field] ?? device[field]) ?? "") as string;
+                    const value = (device[field] ?? "") as string;
                     return (
                       <td
                         key={field}
@@ -902,6 +911,6 @@ export function IndividualDeviceGrid({
           </button>
         </div>
       )}
-    </div>
+    </GridWriteGuard>
   );
 }

@@ -223,7 +223,7 @@ export function drawEnhancedCoverPage(
     propertyAddress: string;
     propertyCity: string;
     propertyPostalCode?: string;
-    inspectionDate: Date;
+    inspectionDate: Date | null;
     companyName: string;
     companyPhone?: string;
     companyEmail?: string;
@@ -315,7 +315,7 @@ export function drawEnhancedCoverPage(
      .font(PDF_FONTS.regular)
      .fillColor(PDF_COLORS.black)
      .text(
-      options.inspectionDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+      options.inspectionDate?.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) ?? 'Not recorded',
       boxLeft + 20,
       boxTop + 145,
       { width: boxWidth - 40, align: 'center' }
@@ -804,6 +804,11 @@ export function drawRFPTSeal(
   certNumber: string,
   disciplines?: string
 ): number {
+  if (!certNumber.trim()) {
+    doc.fontSize(8).font('Helvetica').fillColor('#4b5563')
+       .text('Certification not recorded', x, y, { width: 120 });
+    return y + 18;
+  }
   const sealWidth = 120;
   const topBandH = 14;
   const bodyRowH = 13;
@@ -891,7 +896,7 @@ export function drawSignatureTable(
   pageCount: number,
   primaryName: string,
   primaryCertNumber: string,
-  inspectionDate: Date,
+  inspectionDate: Date | null,
   companyName: string,
   secondaryName?: string,
   secondaryCertNumber?: string,
@@ -903,11 +908,9 @@ export function drawSignatureTable(
 
   // ── Affirmation paragraph ────────────────────────────────────────────────
   const affirmationText =
-    `The information in this report, which comprises ${pageCount} pages, affirms that the equipment ` +
-    `listed here-in was tested and inspected in conformance with ULC 536:2019 (2024); Standard for ` +
-    `Inspection and Testing of Fire Alarm Systems, applicable codes, bylaws, Standards, and the ` +
-    `manufacturer's requirements by a qualified technician. The equipment was left in an operational ` +
-    `condition except as noted above.`;
+    `This report comprises ${pageCount} pages and records the equipment, inspection observations, ` +
+    `test results and deficiencies captured for this visit. The technician details and signature ` +
+    `below identify the recorded inspection.`;
 
   doc.fontSize(8)
      .font('Helvetica')
@@ -951,7 +954,7 @@ export function drawSignatureTable(
       // Header labels
       doc.fillColor(fgColor).fontSize(8).font('Helvetica-Bold');
       doc.text(col1Text, leftMargin + 4, rowY + 7, { width: col1W - 8 });
-      doc.text('Certification Number /\nSeal', leftMargin + col1W + 4, rowY + 4, { width: col2W - 8 });
+      doc.text('Recorded Certification\nNumber', leftMargin + col1W + 4, rowY + 4, { width: col2W - 8 });
       doc.text(col3Text, leftMargin + col1W + col2W + 4, rowY + 7, { width: col3W - 8 });
       doc.text(col4Text, leftMargin + col1W + col2W + col3W + 4, rowY + 7, { width: col4W - 8 });
     } else {
@@ -961,11 +964,10 @@ export function drawSignatureTable(
       // Col 1 – name
       doc.text(col1Text, leftMargin + 4, rowY + 6, { width: col1W - 8 });
 
-      // Col 2 – RFPT seal box (centered vertically in the cell)
+      // A captured number alone does not establish its issuer or professional
+      // membership. Print it as recorded; do not generate a registrar's seal.
       if (typeof col2Content === 'object') {
-        const sealX = leftMargin + col1W + 10;
-        const sealY = rowY + 5;
-        drawRFPTSeal(doc, sealX, sealY, col2Content.name, col2Content.cert);
+        doc.text(col2Content.cert.trim() || 'Certification not recorded', leftMargin + col1W + 4, rowY + 6, { width: col2W - 8 });
       }
 
       // Col 3 – date
@@ -990,7 +992,7 @@ export function drawSignatureTable(
     }
   };
 
-  const dateStr = inspectionDate.toLocaleDateString('en-CA'); // YYYY-MM-DD
+  const dateStr = inspectionDate?.toLocaleDateString('en-CA') ?? 'Not recorded';
 
   // ── Primary technician rows ──────────────────────────────────────────────
   drawRow(y, true, 'Supervising / Primary Technician Name', 'header', 'Date', 'Signature');
@@ -1081,7 +1083,7 @@ export function drawInspectionSummaryPage(
 
   // ── Device results table ─────────────────────────────────────────────────
   if (options.deviceSummaries.length > 0) {
-    const cols = [234, 60, 60, 60, 98]; // DeviceType | Total | Pass | Fail | N/A
+    const cols = [194, 52, 52, 52, 64, 98]; // Type | Total | Pass | Fail | N/A | Not tested
     const tableWidth = cols.reduce((a, b) => a + b, 0);
     const rowH = 22;
 
@@ -1089,7 +1091,7 @@ export function drawInspectionSummaryPage(
     doc.rect(margin, y, tableWidth, rowH).fill(PDF_COLORS.brandNavy);
     doc.fontSize(9).font(PDF_FONTS.bold).fillColor(PDF_COLORS.white);
     let cx = margin;
-    ['Device / System Type', 'Total', 'Pass', 'Fail', 'N/A'].forEach((h, i) => {
+    ['Device / System Type', 'Total', 'Pass', 'Fail', 'N/A', 'Not tested'].forEach((h, i) => {
       doc.text(h, cx + 6, y + 7, { width: cols[i] - 10, align: i > 0 ? 'center' : 'left' });
       cx += cols[i];
     });
@@ -1118,6 +1120,8 @@ export function drawInspectionSummaryPage(
 
       doc.fillColor(PDF_COLORS.grayDark)
          .text(ds.na.toString(), cx, y + 7, { width: cols[4], align: 'center' });
+      cx += cols[4];
+      doc.text(Math.max(0, ds.total - ds.passed - ds.failed - ds.na).toString(), cx, y + 7, { width: cols[5], align: 'center' });
 
       y += rowH;
     });
@@ -1135,10 +1139,10 @@ export function drawInspectionSummaryPage(
     doc.rect(margin, y, 6, blockH).fill('#16a34a');
 
     doc.fontSize(15).font(PDF_FONTS.bold).fillColor('#15803d')
-       .text('NO DEFICIENCIES IDENTIFIED', margin + 20, y + 10);
+       .text('NO DEFICIENCIES RECORDED', margin + 20, y + 10);
     doc.fontSize(9).font(PDF_FONTS.regular).fillColor('#166534')
        .text(
-         'All inspected systems and devices are operating within normal parameters.',
+         'Refer to the individual recorded results for the inspection scope and test outcomes.',
          margin + 20, y + 33, { width: contentWidth - 28 }
        );
     y += blockH + 16;
@@ -1190,7 +1194,7 @@ export function drawClientAuthorizationBlock(
   doc: PDFKit.PDFDocument,
   startY: number,
   companyName: string,
-  reportDate: Date,
+  reportDate: Date | null,
   leftMargin = 50,
   contentWidth = 512
 ): number {
@@ -1203,13 +1207,13 @@ export function drawClientAuthorizationBlock(
   y += 36;
 
   // Authorization text
-  const validUntil = new Date(reportDate);
-  validUntil.setDate(validUntil.getDate() + 30);
-  const validUntilStr = validUntil.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const validUntil = reportDate ? new Date(reportDate) : null;
+  validUntil?.setDate(validUntil.getDate() + 30);
+  const validityText = validUntil ? `This quotation is valid until ${validUntil.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}. ` : 'A quotation validity date has not been recorded. ';
 
   const authText =
     `By signing below, you authorize ${companyName} to proceed with the corrective work ` +
-    `detailed in this report at the quoted prices. This quotation is valid until ${validUntilStr}. ` +
+    `detailed in this report at the quoted prices. ${validityText}` +
     `Verbal authorization is not accepted. A signed copy must be returned before work will be scheduled.`;
 
   doc.fontSize(9).font(PDF_FONTS.regular).fillColor(PDF_COLORS.black)

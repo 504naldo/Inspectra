@@ -16,6 +16,7 @@ import { runMigrations } from "../runMigrations";
 import { runAutoScheduler } from "../scheduler";
 import { validateJwtSecret } from "./env";
 import { buildHealthPayload } from "./health";
+import { EXPECTED_ACCOUNT_HEADER } from "../../shared/accountBinding";
 
 /**
  * Builds CSP directives for production. script-src/connect-src additions
@@ -165,7 +166,7 @@ async function startServer() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', EXPECTED_ACCOUNT_HEADER],
   }));
   
   // Configure body parser with larger size limit for file uploads

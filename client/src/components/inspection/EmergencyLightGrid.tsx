@@ -1,19 +1,21 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { scanBarcode } from "@/lib/native";
 import { trpc } from "@/lib/trpc";
 import { CheckToggle, type InspectionResult } from "./CheckToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CheckCheck, Trash2, Plus, GripVertical } from "lucide-react";
-import { DndContext, closestCenter } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDeviceReorder } from "./useDeviceReorder";
 import { SortableRow } from "./SortableRow";
 import { useSectionPendingChanges } from "./useSectionPendingChanges";
 import { SearchInput } from "./SearchInput";
+import { acknowledgedDevicePatch, GridWriteGuard, useGridWriteBarrier } from "./gridWriteSafety";
 
 interface EmergencyLightRow {
   id: number;
+  deviceRevision?: string;
   deviceType: string;
   location?: string | null;
   manufacturer?: string | null;
@@ -42,6 +44,7 @@ interface EmergencyLightGridProps {
 }
 
 interface EditState {
+  revision: string;
   deviceId: number;
   field: string;
   value: string;
@@ -68,7 +71,11 @@ const EDITABLE_FIELDS = [
 ];
 
 
-export function EmergencyLightGrid({
+export function EmergencyLightGrid(props: EmergencyLightGridProps) {
+  return <ScopedEmergencyLightGrid key={`${props.companyId}:${props.siteId}:${props.jobId}`} {...props} />;
+}
+
+function ScopedEmergencyLightGrid({
   jobId,
   siteId,
   companyId,
@@ -78,13 +85,22 @@ export function EmergencyLightGrid({
   carriedForwardDeviceIds,
   onRefresh,
 }: EmergencyLightGridProps) {
+  const barrier = useGridWriteBarrier();
+  const { isLockedNow, run: runWrite } = barrier;
   const [editing, setEditing] = useState<EditState | null>(null);
   const [localResults, setLocalResults] = useState<Record<number, InspectionResult>>({});
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addForm, setAddForm] = useState({ location: "", deviceType: "Emergency Light" });
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
-  const { rows, setRows, onDragEnd, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
+  const { rows, setRows, sensors, reorder } = useDeviceReorder(devices, !!isFinalized);
+  // Bind each pending observation to the definition actually shown when edited.
+  const draftRevisions = useRef<Record<number, string>>({});
+  const displayedRevision = useCallback((id: number) => rows.find(row => row.id === id)?.deviceRevision ?? "", [rows]);
+  const rememberRevision = useCallback((id: number, revision?: string) => {
+    draftRevisions.current[id] ??= revision ?? displayedRevision(id);
+  }, [displayedRevision]);
+
   const [localDeviceEdits, setLocalDeviceEdits] = useState<Record<number, Partial<EmergencyLightRow>>>({});
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -104,19 +120,20 @@ export function EmergencyLightGrid({
   }, [rows, searchQuery]);
 
   const handleScan = useCallback(async () => {
+    if (isLockedNow()) return;
     const code = await scanBarcode();
-    if (code) setSearchQuery(code);
-  }, []);
+    if (code && !isLockedNow()) setSearchQuery(code);
+  }, [isLockedNow]);
   const {
     pendingChanges: pendingDeviceChanges,
     queueChange: queuePendingDeviceChange,
-    clearChanges: clearPendingDeviceChanges,
+    setPendingChanges: setPendingDeviceChanges,
     hasUnsavedChanges: hasPendingDeviceChanges,
   } = useSectionPendingChanges();
   const {
     pendingChanges: pendingResultChanges,
     queueChange: queuePendingResultChange,
-    clearChanges: clearPendingResultChanges,
+    setPendingChanges: setPendingResultChanges,
     hasUnsavedChanges: hasPendingResultChanges,
   } = useSectionPendingChanges();
   const hasPending = hasPendingDeviceChanges || hasPendingResultChanges;
@@ -126,7 +143,7 @@ export function EmergencyLightGrid({
   });
 
   const updateDevice = trpc.device.technicianUpdate.useMutation({
-    onError: () => toast.error("Failed to save field"),
+    onError: (error) => toast.error(error.message || "Failed to save field"),
   });
 
   const addDevice = trpc.device.addDuringInspection.useMutation({
@@ -150,57 +167,88 @@ export function EmergencyLightGrid({
 
   const handleResultChange = useCallback(
     (deviceId: number, result: InspectionResult) => {
+      if (isFinalized || isLockedNow()) return;
       setLocalResults((prev) => ({ ...prev, [deviceId]: result }));
+      rememberRevision(deviceId);
       queuePendingResultChange(deviceId, "result", result);
       onResultChange?.(deviceId, result);
     },
-    [queuePendingResultChange, onResultChange]
+    [queuePendingResultChange, onResultChange, rememberRevision, isFinalized, isLockedNow]
   );
 
   const handleCellClick = (deviceId: number, field: string, currentValue: string) => {
-    if (isFinalized || !EDITABLE_FIELDS.includes(field)) return;
-    setEditing({ deviceId, field, value: currentValue ?? "" });
+    if (isFinalized || isLockedNow() || !EDITABLE_FIELDS.includes(field)) return;
+    if (editing?.deviceId === deviceId && editing.field === field) return;
+    setEditing({ deviceId, field, value: currentValue ?? "", revision: draftRevisions.current[deviceId] ?? displayedRevision(deviceId) });
   };
 
   const handleEditBlur = () => {
-    if (!editing) return;
-    const { deviceId, field, value } = editing;
+    if (!editing || isLockedNow()) return;
+    const { deviceId, field, value, revision } = editing;
     const numericFields = ["batteryCount", "lampCount"];
     const fieldValue = numericFields.includes(field)
-      ? (value === "" ? undefined : Number(value) || undefined)
+      ? (value === "" ? undefined : Number(value))
       : value;
     setLocalDeviceEdits((prev) => ({ ...prev, [deviceId]: { ...(prev[deviceId] ?? {}), [field]: fieldValue } }));
+    rememberRevision(deviceId, revision);
     queuePendingDeviceChange(deviceId, field, fieldValue);
     setEditing(null);
   };
 
   const handleSaveSection = useCallback(async () => {
+    if (isFinalized) return;
     try {
-      const deviceSaveTasks = (Object.entries(pendingDeviceChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
-        updateDevice.mutateAsync({ id: Number(id), ...changeSet } as Parameters<typeof updateDevice.mutate>[0])
-      );
-      const resultSaveTasks = (Object.entries(pendingResultChanges) as [string, Record<string, unknown>][]).map(([id, changeSet]) =>
-        upsertResult.mutateAsync({
-          jobId,
-          deviceId: Number(id),
-          result: changeSet.result as InspectionResult,
-        })
-      );
-      await Promise.all([...deviceSaveTasks, ...resultSaveTasks]);
-      clearPendingDeviceChanges();
-      clearPendingResultChanges();
-      toast.success("Emergency light changes saved");
+      await runWrite(async () => {
+        // Metadata acknowledgements alone may advance an observation's revision.
+        // Keep unacknowledged work queued if a later request fails.
+        for (const [id, changeSet] of Object.entries(pendingDeviceChanges)) {
+          const deviceId = Number(id);
+          const expectedRevision = draftRevisions.current[deviceId] ?? "";
+          const saved = await updateDevice.mutateAsync({ jobId, id: deviceId,
+            ...changeSet, expectedDeviceRevision: expectedRevision,
+          } as Parameters<typeof updateDevice.mutate>[0]);
+          setRows(previous => acknowledgedDevicePatch(previous, deviceId, changeSet, saved.deviceRevision, expectedRevision));
+          draftRevisions.current[deviceId] = saved.deviceRevision;
+          setPendingDeviceChanges(previous => {
+            const remaining = { ...previous };
+            delete remaining[deviceId];
+            return remaining;
+          });
+          setLocalDeviceEdits(previous => {
+            const remaining = { ...previous };
+            delete remaining[deviceId];
+            return remaining;
+          });
+          if (!pendingResultChanges[deviceId]) delete draftRevisions.current[deviceId];
+        }
+        for (const [id, changeSet] of Object.entries(pendingResultChanges)) {
+          const deviceId = Number(id);
+          const result = changeSet.result as InspectionResult;
+          await upsertResult.mutateAsync({ jobId, deviceId,
+            expectedDeviceRevision: draftRevisions.current[deviceId] ?? "", result,
+          });
+          setRows(previous => previous.map(row => row.id === deviceId ? { ...row, result } : row));
+          setPendingResultChanges(previous => {
+            const remaining = { ...previous };
+            delete remaining[deviceId];
+            return remaining;
+          });
+          setLocalResults(previous => {
+            const remaining = { ...previous };
+            delete remaining[deviceId];
+            return remaining;
+          });
+          delete draftRevisions.current[deviceId];
+        }
+        onRefresh?.();
+        toast.success("Emergency light changes saved");
+      });
     } catch {
       toast.error("Failed to save emergency light changes");
     }
   }, [
-    pendingDeviceChanges,
-    pendingResultChanges,
-    updateDevice,
-    upsertResult,
-    jobId,
-    clearPendingDeviceChanges,
-    clearPendingResultChanges,
+    pendingDeviceChanges, pendingResultChanges, updateDevice, upsertResult, jobId,
+    setPendingDeviceChanges, setPendingResultChanges, setRows, onRefresh, isFinalized, runWrite,
   ]);
 
   const getEffectiveResult = (device: EmergencyLightRow): InspectionResult => {
@@ -208,57 +256,87 @@ export function EmergencyLightGrid({
   };
 
   const handleAllPass = useCallback(() => {
-    if (isFinalized) return;
+    if (isFinalized || isLockedNow()) return;
     const updates: Record<number, InspectionResult> = {};
     devices.forEach((d) => { updates[d.id] = "pass"; });
     setLocalResults((prev) => ({ ...prev, ...updates }));
     devices.forEach((d) => {
+      rememberRevision(d.id);
       queuePendingResultChange(d.id, "result", "pass");
       onResultChange?.(d.id, "pass");
     });
-    toast.success(`Marked ${devices.length} emergency light${devices.length !== 1 ? "s" : ""} as pass`);
-  }, [devices, isFinalized, queuePendingResultChange, onResultChange]);
+    toast.success(`Marked ${devices.length} emergency light${devices.length !== 1 ? "s" : ""} as pass. Save changes to submit.`);
+  }, [devices, isFinalized, queuePendingResultChange, onResultChange, rememberRevision, isLockedNow]);
 
-  const handleSort = (dir: "asc" | "desc") => {
-    setSortDir(dir);
-    const sorted = [...rows].sort((a, b) => {
-      const aKey = (a.location || "").toLowerCase();
-      const bKey = (b.location || "").toLowerCase();
-      const cmp = aKey.localeCompare(bKey, undefined, { numeric: true });
-      return dir === "asc" ? cmp : -cmp;
-    });
-    setRows(sorted);
-    reorder.mutate({ orderedIds: sorted.map((r) => r.id) });
+  const persistOrder = async (next: EmergencyLightRow[]) => {
+    const previous = rows;
+    try {
+      return await runWrite(async () => {
+        setRows(next);
+        try {
+          await reorder.mutateAsync({ orderedIds: next.map(row => row.id) });
+        } catch (error) {
+          setRows(previous);
+          throw error;
+        }
+      });
+    } catch { return false; /* The mutation reports its error. */ }
   };
 
-  const handleAddSubmit = () => {
+  const handleSort = async (dir: "asc" | "desc") => {
+    if (isFinalized || isLockedNow()) return;
+    const sorted = [...rows].sort((a, b) => {
+      const cmp = (a.location || "").toLowerCase().localeCompare((b.location || "").toLowerCase(), undefined, { numeric: true });
+      return dir === "asc" ? cmp : -cmp;
+    });
+    if (await persistOrder(sorted)) setSortDir(dir);
+  };
+
+  const handleDragEnd = async ({ active, over }: DragEndEvent) => {
+    if (isFinalized || isLockedNow() || searchQuery || !over || active.id === over.id) return;
+    const oldIndex = rows.findIndex(row => row.id === active.id);
+    const newIndex = rows.findIndex(row => row.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    await persistOrder(arrayMove(rows, oldIndex, newIndex));
+  };
+
+  const handleAddSubmit = async () => {
+    if (isFinalized || isLockedNow()) return;
     if (!addForm.location.trim() && !addForm.deviceType.trim()) {
       toast.error("Location or device type required");
       return;
     }
-    addDevice.mutate({
-      jobId,
-      siteId,
-      companyId,
-      category: "EMERGENCY_LIGHT",
-      deviceType: addForm.deviceType.trim() || "Emergency Light",
-      location: addForm.location.trim() || undefined,
-    });
+    try {
+      await runWrite(async () => {
+        await addDevice.mutateAsync({
+          jobId, siteId, companyId, category: "EMERGENCY_LIGHT",
+          deviceType: addForm.deviceType.trim() || "Emergency Light",
+          location: addForm.location.trim() || undefined,
+        });
+      });
+    } catch { /* The mutation reports its error. */ }
+  };
+
+  const handleRemove = async (deviceId: number) => {
+    if (isFinalized || isLockedNow()) return;
+    try {
+      await runWrite(async () => { await softDelete.mutateAsync({ deviceId, jobId }); });
+    } catch { /* The mutation reports its error. */ }
   };
 
   return (
-    <div>
+    <GridWriteGuard barrier={barrier}>
       {devices.length > 0 && (
         <div className="flex items-center gap-2 mb-2 flex-wrap">
           {devices.length > 1 && (
-            <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Filter devices…" onScan={handleScan} />
+            <SearchInput value={searchQuery} onChange={(value) => { if (!isLockedNow()) setSearchQuery(value); }} placeholder="Filter devices…" onScan={handleScan} />
           )}
           {!isFinalized && (
             <div className="flex items-center gap-2 ml-auto">
               {hasPending && (
                 <button
                   onClick={handleSaveSection}
-                  disabled={updateDevice.isPending || upsertResult.isPending}
+                  disabled={barrier.isLocked}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save
@@ -288,7 +366,7 @@ export function EmergencyLightGrid({
           )}
         </div>
       )}
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full text-xs border-collapse">
         <thead>
@@ -321,7 +399,7 @@ export function EmergencyLightGrid({
                 : "";
 
             return (
-              <SortableRow key={device.id} id={device.id} disabled={!!isFinalized || !!searchQuery} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
+              <SortableRow key={device.id} id={device.id} disabled={!!isFinalized || barrier.isLocked || !!searchQuery} className={cn("border-b hover:bg-muted/30 transition-colors", rowBg)}>
                 {(dragHandleProps) => (<>
                 {/* # + delete */}
                 <td className="sticky left-0 bg-inherit px-1 py-1 text-center text-muted-foreground border-r font-mono w-10">
@@ -337,11 +415,11 @@ export function EmergencyLightGrid({
                   {!isFinalized && (
                     confirmDeleteId === device.id ? (
                       <div className="flex flex-col gap-0.5 mt-1">
-                        <button onClick={() => softDelete.mutate({ deviceId: device.id, jobId })} className="text-[9px] px-1 py-0.5 rounded bg-red-600 text-white leading-none">✓ Yes</button>
-                        <button onClick={() => setConfirmDeleteId(null)} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground leading-none">✕ No</button>
+                        <button onClick={() => handleRemove(device.id)} className="text-[9px] px-1 py-0.5 rounded bg-red-600 text-white leading-none">✓ Yes</button>
+                        <button onClick={() => { if (!isLockedNow()) setConfirmDeleteId(null); }} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground leading-none">✕ No</button>
                       </div>
                     ) : (
-                      <button onClick={() => setConfirmDeleteId(device.id)} className="mt-0.5 text-muted-foreground/30 hover:text-red-500 transition-colors" title="Remove device">
+                      <button onClick={() => { if (!isLockedNow()) setConfirmDeleteId(device.id); }} className="mt-0.5 text-muted-foreground/30 hover:text-red-500 transition-colors" title="Remove device">
                         <Trash2 className="h-3 w-3 mx-auto" />
                       </button>
                     )
@@ -371,10 +449,11 @@ export function EmergencyLightGrid({
                             className="w-full bg-transparent outline-none border-b border-primary text-xs"
                             value={editing.value}
                             onChange={(e) =>
-                              setEditing((prev) => prev && { ...prev, value: e.target.value })
+                              !isLockedNow() && setEditing((prev) => prev && { ...prev, value: e.target.value })
                             }
                             onBlur={handleEditBlur}
                             onKeyDown={(e) => {
+                              if (isLockedNow()) return;
                               if (e.key === "Enter" || e.key === "Tab") {
                                 e.preventDefault();
                                 handleEditBlur();
@@ -395,7 +474,7 @@ export function EmergencyLightGrid({
                   <CheckToggle
                     value={result}
                     onChange={(r) => handleResultChange(device.id, r)}
-                    disabled={isFinalized}
+                    disabled={isFinalized || barrier.isLocked}
                     size="sm"
                   />
                 </td>
@@ -409,13 +488,13 @@ export function EmergencyLightGrid({
           {!isFinalized && showAddRow && (
             <tr className="border-b bg-blue-50/40 dark:bg-blue-950/10">
               <td className="sticky left-0 bg-inherit px-1 py-1 text-center text-muted-foreground border-r font-mono w-10 text-xs">{devices.length + 1}</td>
-              <td className="px-2 py-1 border-r"><input autoFocus placeholder="Location" className="w-full bg-transparent outline-none border-b border-primary text-xs" value={addForm.location} onChange={(e) => setAddForm((p) => ({ ...p, location: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") handleAddSubmit(); if (e.key === "Escape") setShowAddRow(false); }} /></td>
-              <td className="px-2 py-1 border-r"><input placeholder="Type" className="w-full bg-transparent outline-none border-b border-primary text-xs" value={addForm.deviceType} onChange={(e) => setAddForm((p) => ({ ...p, deviceType: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") handleAddSubmit(); if (e.key === "Escape") setShowAddRow(false); }} /></td>
+              <td className="px-2 py-1 border-r"><input autoFocus placeholder="Location" className="w-full bg-transparent outline-none border-b border-primary text-xs" value={addForm.location} onChange={(e) => { if (!isLockedNow()) setAddForm((p) => ({ ...p, location: e.target.value })); }} onKeyDown={(e) => { if (isLockedNow()) return; if (e.key === "Enter") handleAddSubmit(); if (e.key === "Escape") setShowAddRow(false); }} /></td>
+              <td className="px-2 py-1 border-r"><input placeholder="Type" className="w-full bg-transparent outline-none border-b border-primary text-xs" value={addForm.deviceType} onChange={(e) => { if (!isLockedNow()) setAddForm((p) => ({ ...p, deviceType: e.target.value })); }} onKeyDown={(e) => { if (isLockedNow()) return; if (e.key === "Enter") handleAddSubmit(); if (e.key === "Escape") setShowAddRow(false); }} /></td>
               <td colSpan={COL_HEADERS.length - 3} className="px-2 py-1 text-muted-foreground/40 text-[10px]">Fill remaining fields after saving</td>
               <td className="sticky right-0 bg-inherit px-2 py-1 border-l">
                 <div className="flex gap-1">
                   <button onClick={handleAddSubmit} disabled={addDevice.isPending} className="text-[9px] px-1.5 py-0.5 rounded bg-primary text-primary-foreground">Save</button>
-                  <button onClick={() => setShowAddRow(false)} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">✕</button>
+                  <button onClick={() => { if (!isLockedNow()) setShowAddRow(false); }} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">✕</button>
                 </div>
               </td>
             </tr>
@@ -444,13 +523,13 @@ export function EmergencyLightGrid({
     {!isFinalized && (
       <div className="mt-2">
         <button
-          onClick={() => setShowAddRow(true)}
+          onClick={() => { if (!isLockedNow()) setShowAddRow(true); }}
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
         >
           <Plus className="h-3.5 w-3.5" /> Add Device
         </button>
       </div>
     )}
-    </div>
+    </GridWriteGuard>
   );
 }

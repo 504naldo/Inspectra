@@ -7,7 +7,9 @@ import * as db from "../db";
 import { getJobForCompany } from "../tenantGuards";
 import { getValidGoogleToken } from "../_core/googleAuth";
 import { assertPublicHttpUrl } from "../_core/ssrfGuard";
-import { storageGet } from "../storage";
+import { and, eq, inArray } from "drizzle-orm";
+import { reports } from "../../drizzle/schema";
+import { randomUUID } from "node:crypto";
 
 /**
  * Strips CR/LF from a value bound for a single MIME header line. Without
@@ -16,6 +18,16 @@ import { storageGet } from "../storage";
  */
 export function sanitizeHeaderValue(value: string): string {
   return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+export function escapeEmailHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    character =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        character
+      ]!
+  );
 }
 
 /**
@@ -31,7 +43,7 @@ export function buildMimeMessage(opts: {
   attachmentName: string;
   attachmentBase64: string;
 }): string {
-  const boundary = "inspectra_boundary_" + Date.now();
+  const boundary = "inspectra_boundary_" + randomUUID();
 
   const parts: string[] = [];
   parts.push(`From: ${sanitizeHeaderValue(opts.from)}`);
@@ -54,10 +66,15 @@ export function buildMimeMessage(opts: {
   }
 
   // PDF attachment
-  const safeAttachmentName = sanitizeHeaderValue(opts.attachmentName);
+  const safeAttachmentName = sanitizeHeaderValue(opts.attachmentName).replace(
+    /["\\]/g,
+    "_"
+  );
   parts.push(`--${boundary}`);
   parts.push(`Content-Type: application/pdf; name="${safeAttachmentName}"`);
-  parts.push(`Content-Disposition: attachment; filename="${safeAttachmentName}"`);
+  parts.push(
+    `Content-Disposition: attachment; filename="${safeAttachmentName}"`
+  );
   parts.push(`Content-Transfer-Encoding: base64`);
   parts.push("");
   parts.push(opts.attachmentBase64);
@@ -79,101 +96,30 @@ export const gmailRouter = router({
    * Send a report PDF via the admin's Gmail account.
    */
   sendReport: adminOrOfficeProcedure
-    .input(z.object({
-      jobId: z.number(),
-      reportId: z.number(),
+    .input(
+      z.object({
+        jobId: z.number().int().positive(),
+        reportId: z.number().int().positive(),
         requestId: z.string().uuid(),
-      recipientEmail: z.string().email(),
-      recipientName: z.string().optional(),
-      subject: z.string().min(1),
-      body: z.string().min(1),
-    }))
+        recipientEmail: z.string().email(),
+        recipientName: z.string().optional(),
+        subject: z.string().min(1),
+        body: z.string().min(1),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
-      // 1. Get a valid Google token for the current user
-      const accessToken = await getValidGoogleToken(ctx.user.id);
-      if (!accessToken) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Google account not connected or token expired. Please log out and log back in to reconnect your Google account.",
-        });
-      }
-
-      // 2. Get the report and its PDF URL
+      // Authorize the report's real parent before refreshing credentials or
+      // touching storage. The caller cannot pair a report with a different job.
       const report = await db.getReportById(input.reportId);
-      if (!report) {
+      if (!report)
         throw new TRPCError({ code: "NOT_FOUND", message: "Report not found" });
-      }
-      // Enforce company ownership via the report's own parent job before we
-      // download or email the PDF, so an office user can't email another
-      // company's report to an arbitrary recipient.
       const job = await getJobForCompany(report.jobId, ctx.user.companyId!);
-      if (!report.fileUrl && !report.fileKey) {
+      if (input.jobId !== report.jobId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Report has no generated PDF. Generate the report first.",
+          message: "Report does not belong to this job",
         });
       }
-
-      // 3. Download the PDF from S3
-      let pdfBuffer: Buffer;
-      try {
-        const pdfUrl = (await resolveDocumentUrl(report))!;
-        await assertPublicHttpUrl(pdfUrl);
-        const pdfResponse = await fetch(pdfUrl, { redirect: "error" });
-        if (!pdfResponse.ok) {
-          throw new Error(`Failed to download PDF: ${pdfResponse.status}`);
-        }
-        pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
-      } catch (error) {
-        console.error("[Gmail] Failed to download report PDF:", error);
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to retrieve the report PDF. Try regenerating the report.",
-        });
-      }
-
-      // 4. Site info for the email (job already ownership-checked above).
-      const site = await db.getSiteById(job.siteId);
-
-      const fileName = `${site?.name || "Inspection"} - ${report.reportNumber || "Report"}.pdf`;
-
-      // 5. Build HTML email body
-      const htmlBody = `
-        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background: #16324F; color: white; padding: 20px 24px; border-radius: 8px 8px 0 0;">
-            <h2 style="margin: 0; font-size: 18px;">Inspectra — Inspection Report</h2>
-          </div>
-          <div style="padding: 24px; border: 1px solid #D7DEE7; border-top: none; border-radius: 0 0 8px 8px;">
-            <p>${input.body.replace(/\n/g, "<br>")}</p>
-            <hr style="border: none; border-top: 1px solid #D7DEE7; margin: 20px 0;" />
-            <table style="font-size: 14px; color: #5B6472;">
-              ${site ? `<tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Site:</td><td>${site.name}</td></tr>` : ""}
-              ${site?.address ? `<tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Address:</td><td>${site.address}${site.city ? `, ${site.city}` : ""}</td></tr>` : ""}
-              ${job?.jobNumber ? `<tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Job #:</td><td>${job.jobNumber}</td></tr>` : ""}
-              ${report.reportNumber ? `<tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Report #:</td><td>${report.reportNumber}</td></tr>` : ""}
-            </table>
-            <p style="font-size: 13px; color: #5B6472; margin-top: 20px;">
-              The inspection report is attached as a PDF. If you have any questions, please reply to this email.
-            </p>
-          </div>
-        </div>
-      `;
-
-      // 6. Build MIME message
-      const mimeMessage = buildMimeMessage({
-        from: ctx.user.email || "noreply@inspectrafire.ca",
-        to: input.recipientEmail,
-        subject: input.subject,
-        bodyText: input.body,
-        bodyHtml: htmlBody,
-        attachmentName: fileName,
-        attachmentBase64: pdfBuffer.toString("base64"),
-      });
-
-      // 7. Send via Gmail API
-      const encodedMessage = base64ToBase64url(
-        Buffer.from(mimeMessage).toString("base64")
-      );
 
       try {
         const result = await sendEmailOnce({
@@ -185,32 +131,135 @@ export const gmailRouter = router({
           provider: "gmail",
           payload: input,
           send: async () => {
-            const response = await fetch(
-          "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ raw: encodedMessage }),
-          }
-        );
+            // All preparation stays behind the durable receipt check. Accepted
+            // replays work even when OAuth or the original PDF is unavailable.
+            const accessToken = await getValidGoogleToken(ctx.user.id);
+            if (!accessToken)
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message:
+                  "Reconnect your Google account before sending a report.",
+              });
+            if (!ctx.user.email)
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: "Your Google sender email is not recorded.",
+              });
+            if (!report.fileUrl && !report.fileKey)
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message:
+                  "Report has no generated PDF. Generate the report first.",
+              });
+            // 3. Download the PDF from S3
+            let pdfBuffer: Buffer;
+            try {
+              const pdfUrl = (await resolveDocumentUrl(report))!;
+              await assertPublicHttpUrl(pdfUrl);
+              const pdfResponse = await fetch(pdfUrl, { redirect: "error" });
+              if (!pdfResponse.ok) {
+                throw new Error(
+                  `Failed to download PDF: ${pdfResponse.status}`
+                );
+              }
+              pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
+            } catch (error) {
+              console.error("[Gmail] Failed to download report PDF:", error);
+              throw new TRPCError({
+                code: "INTERNAL_SERVER_ERROR",
+                message:
+                  "Failed to retrieve the report PDF. Try regenerating the report.",
+              });
+            }
 
-        if (!response.ok) {
+            // 4. Site info for the email (job already ownership-checked above).
+            const site = await db.getSiteById(job.siteId);
+
+            const fileName = `${site?.name || "Inspection"} - ${report.reportNumber || "Report"}.pdf`;
+
+            // 5. Build HTML email body
+            const htmlBody = `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: #16324F; color: white; padding: 20px 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0; font-size: 18px;">Inspectra — Inspection Report</h2>
+          </div>
+          <div style="padding: 24px; border: 1px solid #D7DEE7; border-top: none; border-radius: 0 0 8px 8px;">
+            <p>${escapeEmailHtml(input.body).replace(/\n/g, "<br>")}</p>
+            <hr style="border: none; border-top: 1px solid #D7DEE7; margin: 20px 0;" />
+            <table style="font-size: 14px; color: #5B6472;">
+              ${site ? `<tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Site:</td><td>${escapeEmailHtml(site.name)}</td></tr>` : ""}
+              ${site?.address ? `<tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Address:</td><td>${escapeEmailHtml(site.address)}${site.city ? `, ${escapeEmailHtml(site.city)}` : ""}</td></tr>` : ""}
+              ${job?.jobNumber ? `<tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Job #:</td><td>${escapeEmailHtml(job.jobNumber)}</td></tr>` : ""}
+              ${report.reportNumber ? `<tr><td style="padding: 4px 12px 4px 0; font-weight: 600;">Report #:</td><td>${escapeEmailHtml(report.reportNumber)}</td></tr>` : ""}
+            </table>
+            <p style="font-size: 13px; color: #5B6472; margin-top: 20px;">
+              The inspection report is attached as a PDF. If you have any questions, please reply to this email.
+            </p>
+          </div>
+        </div>
+      `;
+
+            // 6. Build MIME message
+            const mimeMessage = buildMimeMessage({
+              from: ctx.user.email,
+              to: input.recipientEmail,
+              subject: input.subject,
+              bodyText: input.body,
+              bodyHtml: htmlBody,
+              attachmentName: fileName,
+              attachmentBase64: pdfBuffer.toString("base64"),
+            });
+
+            // 7. Send via Gmail API
+            const encodedMessage = base64ToBase64url(
+              Buffer.from(mimeMessage).toString("base64")
+            );
+
+            const response = await fetch(
+              "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ raw: encodedMessage }),
+              }
+            );
+
+            if (!response.ok) {
               if ([401, 403, 429].includes(response.status))
                 throw new EmailProviderRejected(
-                  `Gmail rejected the request (${response.status})`);
+                  `Gmail rejected the request (${response.status})`
+                );
               throw new Error(
-                `Gmail outcome could not be confirmed (${response.status})`);
-          }
+                `Gmail outcome could not be confirmed (${response.status})`
+              );
+            }
             return (await response.json()) as {
-          id: string };
-        },
+              id: string;
+            };
+          },
         });
 
         // "sent" means provider acceptance, not confirmed recipient delivery.
-        await db.updateReport(input.reportId, { status: "sent" });
+        const database = await db.getDb();
+        if (!database)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message:
+              "Report acceptance metadata unavailable. Recover this same send operation.",
+          });
+        await database
+          .update(reports)
+          .set({ status: "sent" })
+          .where(
+            and(
+              eq(reports.id, report.id),
+              eq(reports.jobId, job.id),
+              inArray(reports.status, ["draft", "generated"])
+            )
+          );
 
         return {
           success: true,

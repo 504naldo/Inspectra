@@ -1,4 +1,6 @@
 import { PendingSaves, fireAlarmDraftKey } from "@/lib/pendingSaves";
+import { isFireAlarmDraft, dispatchFireAlarmDraft } from "@/lib/fireAlarmDrafts";
+import { offlineScopeFromUser } from "@/lib/offlineScope";
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -17,6 +19,8 @@ import { cn } from "@/lib/utils";
 
 type ChecklistRow = {
   id: number;
+  questionRevision: string;
+  standardVersion?: string | null;
   sectionName: string;
   sectionOrder: number;
   itemLetter: string | null;
@@ -52,8 +56,22 @@ interface FireAlarmChecklistProps {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChecklistProps) {
+export function FireAlarmChecklist(props: FireAlarmChecklistProps) {
   const { user } = useAuth();
+  const identity = `${user?.id ?? "pending"}:${user?.companyId ?? "none"}:${props.jobId}`;
+  return <FireAlarmChecklistContent key={identity} {...props} />;
+}
+function headerDraftFields(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== "object") return {};
+  const { jobId: _jobId, ...fields } = payload as Record<string, unknown>;
+  return fields;
+}
+function FireAlarmChecklistContent({ jobId, siteId, isFinalized, }: FireAlarmChecklistProps) {
+  const { user } = useAuth();
+  const scope = offlineScopeFromUser(user);
+  const activeContext = useRef({ scope, jobId, isFinalized });
+  activeContext.current = { scope, jobId, isFinalized };
+  const queueScope = useRef("");
 
   // ── Queries ──
   const { data: jobDetails } = trpc.job.getWithDetails.useQuery({ id: jobId }, { enabled: !!jobId });
@@ -89,14 +107,16 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
   const [results, setResults] = useState<Record<number, ItemResult>>({});
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
-  // Debounce refs
-  const pendingSaves = useRef<PendingSaves>(new PendingSaves());
+  const [draftError, setDraftError] = useState("");
+  const [draftRevision, setDraftRevision] = useState(0);
+  // No volatile fallback: editing must wait until the account-scoped queue exists.
+  const pendingSaves = useRef<PendingSaves | null>(null);
   const attendanceDraftRef = useRef<Record<number, Record<string, any>>>({});
   const ancillaryDraftRef = useRef<Record<number, Record<string, any>>>({});
 
   // ── Mutations ──
   const upsertHeader = trpc.fireAlarmForm.upsertHeader.useMutation({
-    onSuccess: () => { setSaveStatus("saved"); setTimeout(() => setSaveStatus("idle"), 2000); },
+    onSuccess: () => {},
     onError: (err: any) => { setSaveStatus("error"); toast.error(`Save failed: ${err.message}`); },
   });
   const upsertAttendanceRow = trpc.fireAlarmForm.upsertAttendanceRow.useMutation({
@@ -116,66 +136,73 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
       onError: err => toast.error(`Save failed: ${err.message}`),
   });
   const saveResult = trpc.fireAlarm.saveInspectionResult.useMutation({
-    onSuccess: () => { setSaveStatus("saved"); setTimeout(() => setSaveStatus("idle"), 2000); },
+    onSuccess: () => {},
     onError: (err: any) => { setSaveStatus("error"); toast.error(`Save failed: ${err.message}`); },
   });
 
   useEffect(() => {
-    if (!user?.id) return;
-    const queue = new PendingSaves({
-      key: fireAlarmDraftKey(user.id, user.companyId, jobId),
-      storage: localStorage,
-      send: (key, payload) => {
-        if (payload.jobId !== jobId)
-          return Promise.reject(new Error("Draft belongs to a different job"));
-        if (key === "header") return upsertHeader.mutateAsync(payload);
-        if (key.startsWith("result:")) return saveResult.mutateAsync(payload);
-        if (key.startsWith("attendance:"))
-          return upsertAttendanceRow.mutateAsync(payload);
-        if (key.startsWith("ancillary:"))
-          return upsertAncillaryCircuit.mutateAsync(payload);
-        return Promise.reject(new Error("Unknown saved draft type"));
-      },
+    if (!scope) { pendingSaves.current?.close(); pendingSaves.current = null; queueScope.current = ""; return; }
+    const queueKey = fireAlarmDraftKey(scope.userId, scope.companyId, jobId);
+    const send = (key: string, payload: unknown) => dispatchFireAlarmDraft(key, payload, {
+      scope,
+      currentScope: () => activeContext.current.jobId === jobId ? activeContext.current.scope : null,
+      jobId,
+      isFinalized: () => !!activeContext.current.isFinalized,
+    }, draft => {
+      switch (draft.kind) {
+        case "header": return upsertHeader.mutateAsync(draft.payload);
+        case "result": return saveResult.mutateAsync(draft.payload);
+        case "attendance": return upsertAttendanceRow.mutateAsync(draft.payload);
+        case "ancillary": return upsertAncillaryCircuit.mutateAsync(draft.payload);
+      }
     });
-    pendingSaves.current = queue;
-    const flush = () => {
-      if (navigator.onLine) void queue.flush();
-    };
-    flush();
-    window.addEventListener("online", flush);
-    return () => {
-      window.removeEventListener("online", flush);
-      queue.close();
-    };
-    // Mutation objects change each render; queue callbacks still use their stable client.
+    const queue = new PendingSaves({ key: queueKey, storage: localStorage, send,
+      validate: (key, payload) => isFireAlarmDraft(key, payload, jobId),
+      onError: error => { setSaveStatus("error"); setDraftError(error.message); },
+      onChange: () => { setSaveStatus(queue.count() ? "saving" : "saved"); setDraftError(""); },
+    });
+    pendingSaves.current = queue; queueScope.current = queueKey;
+    attendanceDraftRef.current = {}; ancillaryDraftRef.current = {};
+    for (const [key, payload] of !activeContext.current.isFinalized ? queue.entries() : []) {
+      if (key.startsWith("attendance:")) attendanceDraftRef.current[Number(key.slice(11))] = payload as Record<string, unknown>;
+      if (key.startsWith("ancillary:")) ancillaryDraftRef.current[Number(key.slice(10))] = payload as Record<string, unknown>;
+    }
+    if (activeContext.current.isFinalized && queue.count() > 0) setDraftError("This finalized job has local drafts that were not applied. Export them for review");
+    setDraftRevision(value => value + 1);
+    const flush = () => { if (navigator.onLine && !activeContext.current.isFinalized) void queue.flush(); };
+    flush(); window.addEventListener("online", flush);
+    return () => { window.removeEventListener("online", flush); queue.close(); if (pendingSaves.current === queue) { pendingSaves.current = null; queueScope.current = ""; } };
+    // Mutation callbacks use the stable tRPC client. Scope changes replace and close the queue.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, user?.companyId, jobId]);
 
-  const scheduleSave = (key: string, payload: any, delay: number) => {
-    if (!user?.id) return;
+  const scheduleSave = (key: string, payload: unknown, delay: number) => {
     try {
-      pendingSaves.current.schedule(
-        key,
-        () => {
-          if (key === "header") return upsertHeader.mutateAsync(payload);
-          if (key.startsWith("result:")) return saveResult.mutateAsync(payload);
-          if (key.startsWith("attendance:"))
-            return upsertAttendanceRow.mutateAsync(payload);
-          return upsertAncillaryCircuit.mutateAsync(payload);
-        },
-        delay,
-        payload
-      );
-    } catch {
+      if (!scope || !pendingSaves.current || queueScope.current !== fireAlarmDraftKey(scope.userId, scope.companyId, jobId)) throw new Error("Sign in and reopen the inspection before editing");
+      if (!isFireAlarmDraft(key, payload, jobId)) throw new Error("This draft type or job needs review before saving");
+      pendingSaves.current.schedulePersisted(key, payload, delay);
+    } catch (error) {
       setSaveStatus("error");
-      toast.error(
-        "Could not save this edit locally. Keep this page open and restore storage before continuing."
-      );
+      setDraftError(error instanceof Error ? error.message : "Could not save this edit locally");
+      toast.error("Could not save this edit locally. Keep this page open and restore storage before continuing.");
     }
+  };
+  const exportDrafts = () => {
+    try {
+      if (!scope || !pendingSaves.current || queueScope.current !== fireAlarmDraftKey(scope.userId, scope.companyId, jobId)) throw new Error();
+      const url = URL.createObjectURL(new Blob([JSON.stringify({ scope, jobId, reviewRequired: true, sources: pendingSaves.current.exportSaved() }, null, 2)], { type: "application/json" }));
+      const link = document.createElement("a"); link.href = url; link.download = `inspectra-fire-alarm-drafts-${jobId}.json`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { setDraftError("Draft export failed; saved data was preserved"); }
   };
 
   // ── Seed header from server data ──
   useEffect(() => {
+    if (!savedHeader) {
+      const draft = !isFinalized ? pendingSaves.current?.payload("header") : undefined;
+      if (draft) setHeader(prev => ({ ...prev, ...headerDraftFields(draft) }));
+      return;
+    }
     if (savedHeader) {
       setHeader(prev => ({
         ...prev,
@@ -195,10 +222,10 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
         techCompany: savedHeader.techCompany ?? prev.techCompany,
         recommendations: savedHeader.recommendations ?? prev.recommendations,
         sectionHeaderValues: (savedHeader.sectionHeaderValues as any) ?? prev.sectionHeaderValues,
-        ...pendingSaves.current.payload("header"),
+        ...(!isFinalized ? headerDraftFields(pendingSaves.current?.payload("header")) : {}),
       }));
     }
-  }, [savedHeader]);
+  }, [savedHeader, draftRevision, isFinalized]);
 
   // Auto-fill blanks from job/system/user if no saved header yet
   useEffect(() => {
@@ -231,12 +258,12 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
         };
       }
     });
-    for (const [key, payload] of pendingSaves.current.entries()) {
+    for (const [key, payload] of !isFinalized ? pendingSaves.current?.entries() ?? [] : []) {
       if (key.startsWith("result:") && payload)
         map[Number(key.slice(7))] = payload as ItemResult;
     }
     setResults(map);
-  }, [jobChecklist]);
+  }, [jobChecklist, draftRevision, isFinalized]);
 
   // ── Header save (debounced) ──
   const updateHeader = (key: string, value: any) => {
@@ -244,7 +271,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
     const updated = { ...header, [key]: value };
     setHeader(updated);
     setSaveStatus("saving");
-    scheduleSave ("header",{ jobId, ...updated
+    scheduleSave ("header",{ ...updated, jobId
     }, 1500);
   };
 
@@ -261,7 +288,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
     };
     setHeader(updated);
     setSaveStatus("saving");
-    scheduleSave ("header",{ jobId, ...updated
+    scheduleSave ("header",{ ...updated, jobId
     }, 1500);
   };
 
@@ -279,6 +306,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
       jobId,
       fireAlarmSystemId: systemId,
       checklistItemId: itemId,
+      questionRevision: row.questionRevision,
       result: r.result,
       notes: r.notes,
       numericValue: r.numericValue || undefined,
@@ -310,6 +338,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
           jobId,
           fireAlarmSystemId: systemId,
           checklistItemId:item.id,
+          questionRevision: item.questionRevision,
           ... updated[item.id],
         }, 1500);
   };
@@ -593,6 +622,10 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
   // ── Render ──
   return (
     <div className="space-y-4">
+      {draftError && <div role="alert" className="border border-destructive rounded p-3 space-y-2 text-sm">
+        <p>{draftError}. Saved data is preserved. Keep unsaved edits on this screen and review exported drafts with office staff.</p>
+        <Button variant="outline" onClick={exportDrafts}>Export saved drafts</Button>
+      </div>}
       {/* Save status + progress */}
       <div className="flex items-center gap-3">
         <div className="flex-1">
@@ -626,7 +659,7 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
           <h3 className="text-sm font-semibold">
             Fire Alarm System Verification — Cover Page
           </h3>
-          <p className="text-xs opacity-75">CAN/ULC-S536:2019-REV1</p>
+          <p className="text-xs opacity-75">CAN/ULC-S536 · {Array.from(new Set(((jobChecklist ?? []) as ChecklistRow[]).map(row => row.standardVersion).filter(Boolean))).join(", ") || "version unavailable"}</p>
         </div>
         <div className="p-4 space-y-4">
           {/* Inspection & Building Info */}
@@ -883,8 +916,8 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
                   </td>
                 </tr>
               ) : (
-                (attendanceData ?? []).map((row: any) => (
-                  <tr key={row.id} className="border-t">
+                (attendanceData ?? []).map((row: any) => ({ ...row, ...attendanceDraftRef.current[row.id] })).map((row: any) => (
+                  <tr key={`${row.id}:${draftRevision}`} className="border-t">
                     {["attendanceDate", "techName", "certNo", "timeIn", "timeOut", "notes",].map(field => (
                       <td key={field} className="px-1 py-1">
                         <Input
@@ -973,8 +1006,8 @@ export function FireAlarmChecklist({ jobId, siteId, isFinalized, }: FireAlarmChe
                   </td>
                 </tr>
               ) : (
-                (ancillaryData ?? []).map((row: any) => (
-                  <tr key={row.id} className="border-t">
+                (ancillaryData ?? []).map((row: any) => ({ ...row, ...ancillaryDraftRef.current[row.id] })).map((row: any) => (
+                  <tr key={`${row.id}:${draftRevision}`} className="border-t">
                     {["circuitDescription", "circuitType", "poweredBy"].map(field => (
                       <td key={field} className="px-1 py-1">
                           <Input

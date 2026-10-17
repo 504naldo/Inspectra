@@ -4,6 +4,7 @@ import superjson from "superjson";
 import type { TrpcContext } from "./context";
 import { ENV } from "./env";
 import { runWithActor } from "./actorContext";
+import { assertAccountBinding } from "./accountBinding";
 
 const GENERIC_SERVER_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
@@ -64,8 +65,9 @@ export const publicProcedure = t.procedure;
  * there is no authenticated user (guards then fail closed). Prepended to every
  * authenticated procedure below.
  */
-const actorScope = t.middleware(async ({ ctx, next }) => {
+const actorScope = t.middleware(async ({ ctx, type, next }) => {
   if (!ctx.user) return next();
+  assertAccountBinding(ctx, type === "mutation");
   return runWithActor(
     { role: ctx.user.role, companyId: ctx.user.companyId ?? null },
     () => next(),

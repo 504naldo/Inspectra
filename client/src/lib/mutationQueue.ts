@@ -1,44 +1,45 @@
 const QUEUE_KEY = "inspectra_mutation_queue";
-
 export interface QueuedRequest {
   id: string;
   url: string;
   body: string;
   timestamp: number;
 }
-
-function load(): QueuedRequest[] {
+function inspect(): {
+  items: QueuedRequest[];
+  blocked: number;
+  raw: string | null;
+} {
   try {
-    return JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
+    const raw = localStorage.getItem(QUEUE_KEY);
+    if (raw === null) return { items: [], blocked: 0, raw };
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return { items: [], blocked: 1, raw };
+    const items = parsed.filter(
+      (item): item is QueuedRequest =>
+        !!item &&
+        typeof item === "object" &&
+        typeof item.id === "string" &&
+        typeof item.url === "string" &&
+        typeof item.body === "string" &&
+        typeof item.timestamp === "number"
+    );
+    return { items, blocked: parsed.length, raw };
   } catch {
-    return [];
+    return { items: [], blocked: 1, raw: null };
   }
 }
-
-function save(items: QueuedRequest[]) {
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(items));
-}
-
+/** Legacy requests have no trusted operation/account identity. Export for review only. */
 export const mutationQueue = {
-  getAll(): QueuedRequest[] {
-    return load();
+  getAll: () => inspect().items,
+  count: () => inspect().blocked,
+  add(_url: string, _body: string): never {
+    throw new Error("Use the typed inspection offline capture to save changes");
   },
-
-  count(): number {
-    return load().length;
+  remove(_id: string): never {
+    throw new Error("Legacy changes must be recovered before removal");
   },
-
-  add(url: string, body: string): void {
-    const items = load();
-    items.push({ id: crypto.randomUUID(), url, body, timestamp: Date.now() });
-    save(items);
-  },
-
-  remove(id: string): void {
-    save(load().filter((item) => item.id !== id));
-  },
-
-  clear(): void {
-    localStorage.removeItem(QUEUE_KEY);
+  clear(): never {
+    throw new Error("Legacy changes are preserved for recovery");
   },
 };

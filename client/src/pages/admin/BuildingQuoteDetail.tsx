@@ -348,7 +348,7 @@ export default function BuildingQuoteDetail({ id: quoteId }: BuildingQuoteDetail
                 <CardTitle className="text-base font-semibold">Status</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {status !== "sent" && status !== "accepted" && status !== "declined" && (
+                {status === "draft" && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -359,7 +359,7 @@ export default function BuildingQuoteDetail({ id: quoteId }: BuildingQuoteDetail
                     <Send className="h-3.5 w-3.5" /> Mark as Sent
                   </Button>
                 )}
-                {status !== "accepted" && status !== "declined" && (
+                {(status === "sent" || status === "viewed") && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -370,7 +370,7 @@ export default function BuildingQuoteDetail({ id: quoteId }: BuildingQuoteDetail
                     <CheckCircle className="h-3.5 w-3.5" /> Mark as Accepted
                   </Button>
                 )}
-                {status !== "declined" && status !== "accepted" && (
+                {(status === "sent" || status === "viewed") && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -381,16 +381,10 @@ export default function BuildingQuoteDetail({ id: quoteId }: BuildingQuoteDetail
                     <XCircle className="h-3.5 w-3.5" /> Mark as Declined
                   </Button>
                 )}
-                {status === "accepted" || status === "declined" ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full gap-1.5 text-muted-foreground"
-                    disabled={isPending}
-                    onClick={() => statusMutation.mutate({ id: quoteId, status: "draft" })}
-                  >
-                    Revert to Draft
-                  </Button>
+                {quote.finalizedAt ? (
+                  <p className="text-xs text-muted-foreground">
+                    This quote's scope is locked. Create a new quote for changes.
+                  </p>
                 ) : null}
               </CardContent>
             </Card>

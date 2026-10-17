@@ -7,17 +7,25 @@ import { usePendingFireAlarmResults } from "@/hooks/usePendingFireAlarmResults";
 import { usePendingSmokeAlarmTests } from "@/hooks/usePendingSmokeAlarmTests";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
+import { useOfflineRecovery } from "@/hooks/useOfflineRecovery";
 
 export function OfflineBanner() {
   const isOnline = useOnlineStatus();
-  const { syncStatus } = useOfflineStorage();
+  const { syncStatus, recoveryRecords } = useOfflineStorage();
+  const { summary, error: recoveryError } = useOfflineRecovery();
+  const recoveryPending =
+    recoveryRecords.filter(record => record.key !== "inspectra_mutation_queue")
+      .length +
+    summary.legacy +
+    summary.invalid +
+    (recoveryError ? 1 : 0);
   const pendingFireAlarmResults = usePendingFireAlarmResults();
   const pendingSmokeAlarmTests = usePendingSmokeAlarmTests();
   const [mqPending, setMqPending] = useState(() => mutationQueue.count());
 
   const offlineStorePending =
     syncStatus.pendingResults + syncStatus.pendingDeficiencies + syncStatus.pendingChecklistResponses + syncStatus.pendingTemplateResponses + syncStatus.pendingAttachments + pendingFireAlarmResults.length + pendingSmokeAlarmTests.length;
-  const totalPending = mqPending + offlineStorePending;
+  const totalPending = mqPending + offlineStorePending + recoveryPending;
 
   // Refresh mutationQueue count every 2 seconds
   useEffect(() => {
@@ -48,9 +56,14 @@ export function OfflineBanner() {
       ) : (
         <span className="flex items-center gap-1.5">
           Back online —{" "}
-          {mqPending > 0 ? (
+          {mqPending > 0 || recoveryPending > 0 ? (
             <span>
-              {mqPending} older queued change{mqPending !== 1 ? "s" : ""} need
+              <Link href="/tech/sync" className="underline">
+                Saved changes need recovery →
+              </Link>{" "}
+              <span className="sr-only">
+                {mqPending + recoveryPending} record sources need
+              </span>
               review before recovery
             </span>
           ) : null}

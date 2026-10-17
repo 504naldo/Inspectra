@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb, assertJobCompany } from "./db";
+import { getDb } from "./db";
+import { withMutableAssignmentJobs, readJobAssignments, replaceJobAssignments } from "./jobAssignmentIntegrity";
 import { callerIsPlatformOperator } from "./_core/actorContext";
 import { jobs, users, jobAssignments, sites, customerOrgs } from "../drizzle/schema";
 import { eq, inArray, and, or, isNull, gte, lte, sql } from "drizzle-orm";
@@ -15,6 +16,10 @@ function assertCompanyScope(inputCompanyId: number, callerCompanyId: number | nu
   if (inputCompanyId !== callerCompanyId && !callerIsPlatformOperator()) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Cannot access another company's data" });
   }
+}
+
+function assertAssignmentOffice(role: string) {
+  if (!["admin", "office"].includes(role)) throw new TRPCError({ code: "FORBIDDEN", message: "Only admin or office users can change assignments." });
 }
 
 /**
@@ -58,12 +63,15 @@ export const jobAssignmentRouter = router({
         customerOrgId: jobs.customerOrgId,
         createdAt: jobs.createdAt,
         updatedAt: jobs.updatedAt,
-        assignmentRole: jobAssignments.role,
-        assignedAt: jobAssignments.assignedAt,
+        assignmentRole: sql<"LEAD" | "ASSIST">`CASE WHEN ${jobs.leadTechnicianId} = ${ctx.user.id} OR ${jobs.assignedTechnicianId} = ${ctx.user.id} THEN 'LEAD' ELSE 'ASSIST' END`,
+        assignedAt: jobs.assignedAt,
       })
       .from(jobs)
-      .innerJoin(jobAssignments, eq(jobs.id, jobAssignments.jobId))
-      .where(eq(jobAssignments.userId, ctx.user.id))
+      .where(and(
+        eq(jobs.companyId, ctx.user.companyId ?? 0),
+        or(eq(jobs.leadTechnicianId, ctx.user.id), eq(jobs.assignedTechnicianId, ctx.user.id),
+          sql`EXISTS (SELECT 1 FROM job_assignments AS my_assignment WHERE my_assignment.jobId = ${jobs.id} AND my_assignment.userId = ${ctx.user.id})`),
+      ))
       .orderBy(jobs.scheduledDate);
 
     return assignedJobs;
@@ -216,96 +224,18 @@ export const jobAssignmentRouter = router({
   setJobAssignments: protectedProcedure
     .input(
       z.object({
-        jobId: z.number(),
-        technicianIds: z.array(z.number()),
-        leadId: z.number(), // REQUIRED lead technician
+        jobId: z.number().int().positive(),
+        technicianIds: z.array(z.number().int().positive()),
+        leadId: z.number().int().nonnegative(), // REQUIRED lead technician
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only admin or office users can assign jobs",
-        });
-      }
-
-      const db = await getDb();
-      if (!db) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
-      }
-
-      // Scope the target job to the caller's company (admin platform operator
-      // bypasses per docs/ROLE_TRUST_MODEL.md). Runs before the unassign-all
-      // delete below so that path is guarded too.
-      const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
-
-      // Allow empty assignments (unassign all)
-      if (input.technicianIds.length === 0) {
-        // Delete all assignments and return
-        await db
-          .delete(jobAssignments)
-          .where(eq(jobAssignments.jobId, input.jobId));
-        return { success: true, count: 0 };
-      }
-
-      // Validate leadId is required when assigning technicians
-      if (!input.leadId) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Lead technician is required when assigning technicians to a job",
-        });
-      }
-
-      // Validate leadId is included in technicianIds
-      if (!input.technicianIds.includes(input.leadId)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Lead technician must be included in the list of assigned technicians",
-        });
-      }
-
-      // Validate all assigned users exist, are active, and belong to the job's
-      // company (assignees are tenant-scoped — never assign a foreign user).
-      if (input.technicianIds.length > 0) {
-        const validTechs = await db
-          .select({ id: users.id })
-          .from(users)
-          .where(and(
-            inArray(users.id, input.technicianIds),
-            inArray(users.role, ['technician', 'admin', 'office']),
-            eq(users.companyId, job.companyId),
-            eq(users.isActive, 1)
-          ));
-
-        if (validTechs.length !== input.technicianIds.length) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "One or more invalid, inactive, or out-of-company technician IDs",
-          });
-        }
-      }
-
-      // Delete existing assignments
-      await db
-        .delete(jobAssignments)
-        .where(eq(jobAssignments.jobId, input.jobId));
-
-      // Insert new assignments
-      if (input.technicianIds.length > 0) {
-        const newAssignments = input.technicianIds.map(techId => ({
-          jobId: input.jobId,
-          userId: techId,
-          role: (input.leadId && techId === input.leadId) ? 'LEAD' as const : 'ASSIST' as const,
-          assignedByUserId: ctx.user.id,
-        }));
-
-        await db.insert(jobAssignments).values(newAssignments);
-      }
-
-      return { success: true, count: input.technicianIds.length };
+      assertAssignmentOffice(ctx.user.role);
+      const technicianIds = Array.from(new Set(input.technicianIds));
+      return withMutableAssignmentJobs(ctx, "jobAssignment.setJobAssignments", [input.jobId], async ([job], tx) => {
+        await replaceJobAssignments(ctx, job, tx, technicianIds, technicianIds.length ? input.leadId : null);
+        return { success: true, count: technicianIds.length };
+      });
     }),
 
   /**
@@ -314,73 +244,21 @@ export const jobAssignmentRouter = router({
   addJobAssignments: protectedProcedure
     .input(
       z.object({
-        jobId: z.number(),
-        technicianIds: z.array(z.number()),
-        leadId: z.number().optional(),
+        jobId: z.number().int().positive(),
+        technicianIds: z.array(z.number().int().positive()),
+        leadId: z.number().int().positive().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only admin or office users can assign jobs",
-        });
-      }
-
-      const db = await getDb();
-      if (!db) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
-      }
-
-      // Scope the target job to the caller's company (admin bypasses per model).
-      const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
-
-      // Validate assigned users exist, are active, and belong to the job's company.
-      if (input.technicianIds.length > 0) {
-        const validTechs = await db
-          .select({ id: users.id })
-          .from(users)
-          .where(and(
-            inArray(users.id, input.technicianIds),
-            inArray(users.role, ['technician', 'admin', 'office']),
-            eq(users.companyId, job.companyId),
-            eq(users.isActive, 1)
-          ));
-
-        if (validTechs.length !== input.technicianIds.length) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "One or more invalid, inactive, or out-of-company technician IDs",
-          });
-        }
-      }
-
-      // Get existing assignments
-      const existing = await db
-        .select({ userId: jobAssignments.userId })
-        .from(jobAssignments)
-        .where(eq(jobAssignments.jobId, input.jobId));
-
-      const existingIds = new Set(existing.map(e => e.userId));
-
-      // Filter out already-assigned technicians
-      const newTechIds = input.technicianIds.filter(id => !existingIds.has(id));
-
-      if (newTechIds.length > 0) {
-        const newAssignments = newTechIds.map(techId => ({
-          jobId: input.jobId,
-          userId: techId,
-          role: (input.leadId && techId === input.leadId) ? 'LEAD' as const : 'ASSIST' as const,
-          assignedByUserId: ctx.user.id,
-        }));
-
-        await db.insert(jobAssignments).values(newAssignments);
-      }
-
-      return { success: true, added: newTechIds.length, skipped: input.technicianIds.length - newTechIds.length };
+      assertAssignmentOffice(ctx.user.role);
+      return withMutableAssignmentJobs(ctx, "jobAssignment.addJobAssignments", [input.jobId], async ([job], tx) => {
+        const previous = await readJobAssignments(job, tx);
+        const incoming = Array.from(new Set(input.technicianIds));
+        const next = Array.from(new Set([...previous.ids, ...incoming]));
+        const added = incoming.filter(id => !previous.ids.includes(id)).length;
+        await replaceJobAssignments(ctx, job, tx, next, input.leadId ?? previous.leadId);
+        return { success: true, added, skipped: incoming.length - added };
+      });
     }),
 
   /**
@@ -389,78 +267,26 @@ export const jobAssignmentRouter = router({
   removeJobAssignment: protectedProcedure
     .input(
       z.object({
-        jobId: z.number(),
-        technicianId: z.number(),
-        newLeadId: z.number().optional(), // Required if removing current Lead
+        jobId: z.number().int().positive(),
+        technicianId: z.number().int().positive(),
+        newLeadId: z.number().int().positive().optional(), // Required if removing current Lead
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only admin or office users can remove assignments",
-        });
-      }
-
-      const db = await getDb();
-      if (!db) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
-      }
-
-      // Scope the target job to the caller's company (admin bypasses per model).
-      await assertJobCompany(input.jobId, ctx.user.companyId!);
-
-      // Check if removing the Lead technician
-      const assignment = await db
-        .select({ role: jobAssignments.role })
-        .from(jobAssignments)
-        .where(and(
-          eq(jobAssignments.jobId, input.jobId),
-          eq(jobAssignments.userId, input.technicianId)
-        ))
-        .limit(1);
-
-      if (assignment.length > 0 && assignment[0].role === 'LEAD') {
-        // Check if there are other assignments
-        const otherAssignments = await db
-          .select({ userId: jobAssignments.userId })
-          .from(jobAssignments)
-          .where(and(
-            eq(jobAssignments.jobId, input.jobId),
-            sql`${jobAssignments.userId} != ${input.technicianId}`
-          ));
-
-        if (otherAssignments.length > 0 && !input.newLeadId) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Cannot remove Lead technician without assigning a new Lead. Provide newLeadId.",
-          });
+      assertAssignmentOffice(ctx.user.role);
+      return withMutableAssignmentJobs(ctx, "jobAssignment.removeJobAssignment", [input.jobId], async ([job], tx) => {
+        const previous = await readJobAssignments(job, tx);
+        const next = previous.ids.filter(id => id !== input.technicianId);
+        if (input.newLeadId !== undefined && !next.includes(input.newLeadId)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "The replacement lead must already be assigned to this job." });
         }
-
-        // If newLeadId provided, promote them to Lead
-        if (input.newLeadId) {
-          await db
-            .update(jobAssignments)
-            .set({ role: 'LEAD' })
-            .where(and(
-              eq(jobAssignments.jobId, input.jobId),
-              eq(jobAssignments.userId, input.newLeadId)
-            ));
+        const leadId = previous.leadId === input.technicianId ? (input.newLeadId ?? null) : previous.leadId;
+        if (input.newLeadId !== undefined && previous.leadId !== input.technicianId && input.newLeadId !== previous.leadId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Only removing the current lead can promote a replacement." });
         }
-      }
-
-      // Remove the assignment
-      await db
-        .delete(jobAssignments)
-        .where(and(
-          eq(jobAssignments.jobId, input.jobId),
-          eq(jobAssignments.userId, input.technicianId)
-        ));
-
-      return { success: true };
+        await replaceJobAssignments(ctx, job, tx, next, leadId);
+        return { success: true };
+      });
     }),
 
   /**
@@ -469,128 +295,32 @@ export const jobAssignmentRouter = router({
   bulkAssignJobs: protectedProcedure
     .input(
       z.object({
-        jobIds: z.array(z.number()),
-        technicianIds: z.array(z.number()),
+        jobIds: z.array(z.number().int().positive()).min(1),
+        technicianIds: z.array(z.number().int().positive()),
         mode: z.enum(['add', 'replace']).default('add'),
-        leadId: z.number(), // REQUIRED lead technician
+        leadId: z.number().int().nonnegative(), // REQUIRED lead technician
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only admin or office users can bulk assign jobs",
-        });
+      assertAssignmentOffice(ctx.user.role);
+      const technicianIds = Array.from(new Set(input.technicianIds));
+      if (!technicianIds.length || !technicianIds.includes(input.leadId)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Select technicians and include the required lead." });
       }
-
-      const db = await getDb();
-      if (!db) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
-      }
-
-      if (input.jobIds.length === 0 || input.technicianIds.length === 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Must select at least one job and one technician",
-        });
-      }
-
-      // Validate leadId is required
-      if (!input.leadId) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Lead technician is required for bulk assignment",
-        });
-      }
-
-      // Validate leadId is included in technicianIds
-      if (!input.technicianIds.includes(input.leadId)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Lead technician must be included in the list of assigned technicians",
-        });
-      }
-
-      // Verify every target job belongs to the caller's company (admin platform
-      // operator bypasses per docs/ROLE_TRUST_MODEL.md).
-      const jobRows = await db
-        .select({ id: jobs.id, companyId: jobs.companyId })
-        .from(jobs)
-        .where(inArray(jobs.id, input.jobIds));
-
-      if (jobRows.length !== input.jobIds.length) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "One or more jobs not found" });
-      }
-      if (!callerIsPlatformOperator() && jobRows.some((j) => j.companyId !== ctx.user.companyId)) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot assign jobs from another company" });
-      }
-      // Assignees are tenant-scoped, so a single technician set can only be valid
-      // if all target jobs share one company.
-      const jobCompanyIds = new Set(jobRows.map((j) => j.companyId));
-      if (jobCompanyIds.size > 1) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "All selected jobs must belong to the same company" });
-      }
-      const targetCompanyId = jobRows[0].companyId;
-
-      // Validate technicians exist, are active, and belong to the jobs' company.
-      const validTechs = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(and(
-          inArray(users.id, input.technicianIds),
-          eq(users.role, "technician"),
-          eq(users.companyId, targetCompanyId),
-          eq(users.isActive, 1)
-        ));
-
-      if (validTechs.length !== input.technicianIds.length) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "One or more invalid, inactive, or out-of-company technician IDs",
-        });
-      }
-
-      // If replace mode, delete existing assignments
-      if (input.mode === 'replace') {
-        await db
-          .delete(jobAssignments)
-          .where(inArray(jobAssignments.jobId, input.jobIds));
-      }
-
-      // Create new assignments for each job x technician combination
-      const newAssignments = [];
-      for (const jobId of input.jobIds) {
-        for (const techId of input.technicianIds) {
-          newAssignments.push({
-            jobId,
-            userId: techId,
-            role: (input.leadId && techId === input.leadId) ? 'LEAD' as const : 'ASSIST' as const,
-            assignedByUserId: ctx.user.id,
-          });
+      return withMutableAssignmentJobs(ctx, "jobAssignment.bulkAssignJobs", input.jobIds, async (parents, tx) => {
+        // Validate the whole batch before replacing any assignment set.
+        const plans = [];
+        for (const job of parents) {
+          const previous = await readJobAssignments(job, tx);
+          plans.push({ job, previous, ids: input.mode === "replace" ? technicianIds : Array.from(new Set([...previous.ids, ...technicianIds])) });
         }
-      }
-
-      // In add mode, use INSERT IGNORE to skip duplicates
-      if (input.mode === 'add') {
-        // Insert one by one to handle duplicates gracefully
         let added = 0;
-        for (const assignment of newAssignments) {
-          try {
-            await db.insert(jobAssignments).values(assignment);
-            added++;
-          } catch (err) {
-            // Skip duplicates (unique constraint violation)
-            continue;
-          }
+        for (const plan of plans) {
+          await replaceJobAssignments(ctx, plan.job, tx, plan.ids, input.leadId);
+          added += input.mode === "replace" ? technicianIds.length : technicianIds.filter(id => !plan.previous.ids.includes(id)).length;
         }
-        return { success: true, added, total: newAssignments.length };
-      } else {
-        await db.insert(jobAssignments).values(newAssignments);
-        return { success: true, added: newAssignments.length, total: newAssignments.length };
-      }
+        return { success: true, added, total: parents.length * technicianIds.length };
+      });
     }),
 
   /**
@@ -706,77 +436,23 @@ export const jobAssignmentRouter = router({
       jobIds:     z.array(z.number().int().positive()).min(1),
     }))
     .mutation(async ({ input, ctx }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "office") {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      assertAssignmentOffice(ctx.user.role);
       if (input.fromTechId === input.toTechId) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "From and to technician must be different." });
       }
-
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
-
-      // Verify all jobs belong to this company
-      const jobRows = await db
-        .select({ id: jobs.id, companyId: jobs.companyId })
-        .from(jobs)
-        .where(inArray(jobs.id, input.jobIds));
-
-      if (jobRows.some((j) => j.companyId !== ctx.user.companyId)) {
-        throw new TRPCError({ code: "FORBIDDEN" });
-      }
-
-      let reassigned = 0;
-
-      for (const job of jobRows) {
-        const fromRow = await db
-          .select({ role: jobAssignments.role })
-          .from(jobAssignments)
-          .where(and(eq(jobAssignments.jobId, job.id), eq(jobAssignments.userId, input.fromTechId)))
-          .limit(1);
-
-        if (fromRow.length === 0) continue;
-        const role = fromRow[0].role;
-
-        const toRow = await db
-          .select({ id: jobAssignments.jobId })
-          .from(jobAssignments)
-          .where(and(eq(jobAssignments.jobId, job.id), eq(jobAssignments.userId, input.toTechId)))
-          .limit(1);
-
-        if (toRow.length > 0) {
-          // toTech already on this job — promote if fromTech was lead
-          if (role === "LEAD") {
-            await db.update(jobAssignments)
-              .set({ role: "LEAD" })
-              .where(and(eq(jobAssignments.jobId, job.id), eq(jobAssignments.userId, input.toTechId)));
-            await db.update(jobs).set({ leadTechnicianId: input.toTechId }).where(eq(jobs.id, job.id));
+      return withMutableAssignmentJobs(ctx, "jobAssignment.reassignTechnician", input.jobIds, async (parents, tx) => {
+        const plans = [];
+        for (const job of parents) {
+          const previous = await readJobAssignments(job, tx);
+          if (!previous.ids.includes(input.fromTechId)) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "The source technician must be assigned to every selected job. Refresh the selection before retrying." });
           }
-        } else {
-          // Add toTech in same role
-          await db.insert(jobAssignments).values({
-            jobId: job.id,
-            userId: input.toTechId,
-            role,
-            assignedByUserId: ctx.user.id,
-          });
-          if (role === "LEAD") {
-            await db.update(jobs).set({ leadTechnicianId: input.toTechId }).where(eq(jobs.id, job.id));
-          }
+          const ids = Array.from(new Set([...previous.ids.filter(id => id !== input.fromTechId), input.toTechId]));
+          const leadId = previous.leadId === input.fromTechId ? input.toTechId : previous.leadId;
+          plans.push({ job, ids, leadId });
         }
-
-        // Remove fromTech
-        await db.delete(jobAssignments)
-          .where(and(eq(jobAssignments.jobId, job.id), eq(jobAssignments.userId, input.fromTechId)));
-
-        // Clear deprecated leadTechnicianId if it still points to fromTech
-        await db.update(jobs)
-          .set({ leadTechnicianId: null })
-          .where(and(eq(jobs.id, job.id), eq(jobs.leadTechnicianId, input.fromTechId)));
-
-        reassigned++;
-      }
-
-      return { reassigned };
+        for (const plan of plans) await replaceJobAssignments(ctx, plan.job, tx, plan.ids, plan.leadId);
+        return { reassigned: parents.length };
+      });
     }),
 });

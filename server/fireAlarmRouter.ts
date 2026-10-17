@@ -6,6 +6,7 @@ import { getDb, getSiteById, assertJobCompany, assertJobNotFinalized,
 import { assertSiteCompany } from "./tenantGuards";
 import { fireAlarmSystems, fireAlarmChecklistTemplates, fireAlarmInspectionResults, } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
+import { assertFireAlarmCaptureUnchanged, assertFireAlarmQuestionRevision, fireAlarmQuestionRevision, mergeCapturedFireAlarmQuestions } from "./canonicalFireAlarmReport";
 
 /**
  * Get or create the fire alarm system for a site.
@@ -137,7 +138,7 @@ export const fireAlarmRouter = router({
           items: [],
         };
       }
-      sections[sectionKey].items.push(item);
+      sections[sectionKey].items.push({ ...item, questionRevision: fireAlarmQuestionRevision(item) });
     });
 
     return Object.values(sections).sort((a, b) => a.sectionOrder - b.sectionOrder);
@@ -150,12 +151,12 @@ export const fireAlarmRouter = router({
   getJobChecklist: technicianProcedure
     .input(z.object({ jobId: z.number() }))
     .query(async ({ input, ctx }) => {
-      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
       const database = await getDb();
       if (!database) return [];
 
       const [templates, jobResults] = await Promise.all([
-        database
+        job.finalizedAt ? Promise.resolve([]) : database
           .select()
           .from(fireAlarmChecklistTemplates)
           .where(eq(fireAlarmChecklistTemplates.isActive, true))
@@ -168,10 +169,14 @@ export const fireAlarmRouter = router({
 
       const byItemId = new Map(jobResults.map(r => [r.checklistItemId, r]));
 
-      return templates.map(item => {
+      return mergeCapturedFireAlarmQuestions(templates, jobResults).map(item => {
         const r = byItemId.get(item.id);
         return {
           id: item.id,
+          questionRevision: fireAlarmQuestionRevision(item),
+          requirementType: item.requirementType ?? null,
+          standardId: item.standardId ?? null,
+          standardVersion: item.standardVersion ?? null,
           sectionName: item.sectionName,
           sectionOrder: item.sectionOrder,
           itemLetter: item.itemLetter,
@@ -217,20 +222,21 @@ export const fireAlarmRouter = router({
         jobId: z.number(),
         fireAlarmSystemId: z.number(),
         checklistItemId: z.number(),
+        questionRevision: z.string().min(1).optional(),
         result: z.enum(["pass", "fail", "na", "not_tested"]),
         notes: z.string().optional(),
         numericValue: z.string().optional(),
         textValue: z.string().optional(),
       })
     )
-    .mutation(async ({ input, ctx }) =>
-      withAudit(ctx, "fireAlarm.saveInspectionResult", async () => {
+    .mutation(async ({ input, ctx }) => {
+      await assertJobCompany(input.jobId, ctx.user.companyId!);
+      return withAudit(ctx, "fireAlarm.saveInspectionResult", async tx => {
       // Company + finalized scope only — NOT assignment-scoped, so a reassigned
       // technician's captured offline fire-alarm results still sync (no
       // field-data loss). Locked by offlineSyncSafeguards.test.ts.
-        const job =
-      await assertJobCompany(input.jobId, ctx.user.companyId!);
-      await assertJobNotFinalized(input.jobId);
+      await assertJobNotFinalized(input.jobId, tx);
+      const job = await assertJobCompany(input.jobId, ctx.user.companyId!);
       const database = await getDb();
       if (!database) throw new Error("Database not available");
 
@@ -277,6 +283,12 @@ export const fireAlarmRouter = router({
         )
         .limit(1);
 
+      const displayedQuestion = existing[0]?.itemSnapshot && typeof existing[0].itemSnapshot === "object"
+        ? { ...existing[0].itemSnapshot as Record<string, unknown>, id: item.id }
+        : item;
+      assertFireAlarmQuestionRevision(input.questionRevision, displayedQuestion);
+      if (!existing.length && item.isActive === false) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "This fire-alarm question is no longer active. Review the current checklist before saving." });
+
       // Only store numeric-parseable values in the DECIMAL column; raw string always goes to numericValueRaw
       const numericValueDecimal = (() => {
         if (!input.numericValue) return null;
@@ -285,6 +297,7 @@ export const fireAlarmRouter = router({
       })();
 
       if (existing.length > 0) {
+        assertFireAlarmCaptureUnchanged(existing[0].itemSnapshot, item);
         await database
           .update(fireAlarmInspectionResults)
           .set({
@@ -304,7 +317,7 @@ export const fireAlarmRouter = router({
         return { success: true, id: existing[0].id };
       } else {
         const result = await database.insert(fireAlarmInspectionResults).values({
-              itemSnapshot: { ...item, captureProvenance: "captured" },
+              itemSnapshot: { ...item, captureProvenance: "captured", displayedQuestionRevision: input.questionRevision },
               technicianCertificationSnapshot: credentialSnapshot,
           jobId: input.jobId,
           fireAlarmSystemId: input.fireAlarmSystemId,
@@ -320,7 +333,8 @@ export const fireAlarmRouter = router({
 
         return { success: true, id: Number((result as any)[0].insertId) };
       }
-    })),
+      });
+    }),
 
   // Create or update fire alarm system
   upsertSystem: technicianProcedure

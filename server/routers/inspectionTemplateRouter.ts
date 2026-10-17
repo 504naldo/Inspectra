@@ -3,7 +3,8 @@ import { callerIsPlatformOperator } from "../_core/actorContext";
 import { TRPCError } from "@trpc/server";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { router, officeProcedure, adminProcedure, technicianProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, withAudit } from "../db";
+import { buildTemplateItemSnapshot, getCapturedTemplateReportData, readCapturedTemplateQuestion, templateQuestionRevision, templateQuestionView } from "../canonicalTemplateReport";
 import {
   inspectionTemplates,
   inspectionTemplateSections,
@@ -11,7 +12,6 @@ import {
   inspectionTemplateAssignments,
   inspectionTemplateResponses,
   jobs,
-  users,
   deficiencies,
   TEMPLATE_STATUSES,
 } from "../../drizzle/schema";
@@ -450,12 +450,21 @@ export const inspectionTemplateRouter = router({
 
       // Get job details to match against assignments
       const [job] = await db
-        .select({ jobType: jobs.jobType, siteId: jobs.siteId, customerOrgId: jobs.customerOrgId, companyId: jobs.companyId })
+        .select({ id: jobs.id, finalizedAt: jobs.finalizedAt, jobType: jobs.jobType, siteId: jobs.siteId, customerOrgId: jobs.customerOrgId, companyId: jobs.companyId })
         .from(jobs)
         .where(eq(jobs.id, input.jobId))
         .limit(1);
 
       if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const responses = await db.select().from(inspectionTemplateResponses).where(eq(inspectionTemplateResponses.jobId, job.id));
+      const capturedTemplates = new Map<number, { id: number; name: string; systemType: string; inspectionType: string; version: number; description: string | null }>();
+      for (const response of responses) {
+        const captured = readCapturedTemplateQuestion(response);
+        if (captured.companyId !== job.companyId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Template capture company does not match the job" });
+        if (!capturedTemplates.has(captured.template.id)) capturedTemplates.set(captured.template.id, { ...captured.template, description: null });
+      }
+      if (job.finalizedAt) return Array.from(capturedTemplates.values());
 
       // Find active templates with matching assignments
       const assignments = await db
@@ -468,7 +477,7 @@ export const inspectionTemplateRouter = router({
         })
         .from(inspectionTemplateAssignments)
         .where(and(
-          eq(inspectionTemplateAssignments.companyId, ctx.user.companyId!),
+          eq(inspectionTemplateAssignments.companyId, job.companyId),
           eq(inspectionTemplateAssignments.isActive, 1),
         ));
 
@@ -482,49 +491,56 @@ export const inspectionTemplateRouter = router({
         }
       }
 
-      if (matchingTemplateIds.size === 0) return [];
+      if (matchingTemplateIds.size === 0) return Array.from(capturedTemplates.values());
 
       const templates = await db
         .select()
         .from(inspectionTemplates)
         .where(and(
-          eq(inspectionTemplates.companyId, ctx.user.companyId!),
+          eq(inspectionTemplates.companyId, job.companyId),
           eq(inspectionTemplates.status, "active"),
         ));
 
-      return templates.filter((t) => matchingTemplateIds.has(t.id));
+      const available = new Map(templates.filter(t => matchingTemplateIds.has(t.id)).map(t => [t.id, { id: t.id, name: t.name, systemType: t.systemType, inspectionType: t.inspectionType, version: t.version, description: t.description }]));
+      capturedTemplates.forEach((template, id) => available.set(id, template));
+      return Array.from(available.values());
     }),
 
   getTemplateWithResponses: technicianProcedure
     .input(z.object({ templateId: z.number(), jobId: z.number() }))
     .query(async ({ ctx, input }) => {
       const db = (await getDb())!;
-
-      const [[template], [job]] = await Promise.all([
-        db.select().from(inspectionTemplates)
-          .where(and(eq(inspectionTemplates.id, input.templateId), eq(inspectionTemplates.companyId, ctx.user.companyId!)))
-          .limit(1),
-        db.select({ companyId: jobs.companyId }).from(jobs).where(eq(jobs.id, input.jobId)).limit(1),
-      ]);
-
-      if (!template) throw new TRPCError({ code: "NOT_FOUND" });
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
       if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
-
-      const [sections, items, responses] = await Promise.all([
+      const responses = await db.select().from(inspectionTemplateResponses).where(and(eq(inspectionTemplateResponses.jobId, input.jobId), eq(inspectionTemplateResponses.templateId, input.templateId)));
+      const captures = responses.map(response => {
+        const snapshot = readCapturedTemplateQuestion(response);
+        if (snapshot.companyId !== job.companyId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Template capture company does not match the job" });
+        return snapshot;
+      });
+      const [currentTemplates, sections, items] = job.finalizedAt ? [[], [], []] : await Promise.all([
+        db.select().from(inspectionTemplates).where(and(eq(inspectionTemplates.id, input.templateId), eq(inspectionTemplates.companyId, job.companyId))).limit(1),
         db.select().from(inspectionTemplateSections)
-          .where(eq(inspectionTemplateSections.templateId, input.templateId))
+          .where(and(eq(inspectionTemplateSections.templateId, input.templateId), eq(inspectionTemplateSections.companyId, job.companyId)))
           .orderBy(asc(inspectionTemplateSections.sortOrder)),
         db.select().from(inspectionTemplateItems)
-          .where(eq(inspectionTemplateItems.templateId, input.templateId))
+          .where(and(eq(inspectionTemplateItems.templateId, input.templateId), eq(inspectionTemplateItems.companyId, job.companyId)))
           .orderBy(asc(inspectionTemplateItems.sectionId), asc(inspectionTemplateItems.sortOrder)),
-        db.select().from(inspectionTemplateResponses)
-          .where(and(
-            eq(inspectionTemplateResponses.jobId, input.jobId),
-            eq(inspectionTemplateResponses.templateId, input.templateId),
-          )),
       ]);
-
-      return { template, sections, items, responses };
+      const template = job.finalizedAt ? captures[0]?.template : currentTemplates[0] ?? captures[0]?.template;
+      if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Template not found" });
+      const views = new Map<number, ReturnType<typeof templateQuestionView>>();
+      const displayedSections = new Map(sections.map(section => [section.id, { id: section.id, title: section.title, sortOrder: section.sortOrder, description: section.description }]));
+      if (!job.finalizedAt) for (const item of items) {
+        const section = sections.find(section => section.id === item.sectionId);
+        if (!section) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Template question section is missing" });
+        views.set(item.id, templateQuestionView(buildTemplateItemSnapshot({ companyId: job.companyId, jobId: job.id, capturedById: ctx.user.id, capturedAt: new Date(), template: currentTemplates[0], section, item })));
+      }
+      for (const snapshot of captures) {
+        views.set(snapshot.item.id, templateQuestionView(snapshot));
+        displayedSections.set(snapshot.section.id, snapshot.section);
+      }
+      return { template, sections: Array.from(displayedSections.values()), items: Array.from(views.values()), responses, finalized: !!job.finalizedAt };
     }),
 
   saveResponse: technicianProcedure
@@ -533,46 +549,71 @@ export const inspectionTemplateRouter = router({
       templateId: z.number(),
       sectionId: z.number(),
       itemId: z.number(),
+      questionRevision: z.string().optional(),
       responseValue: z.string().nullable().optional(),
       responseText: z.string().nullable().optional(),
       notes: z.string().nullable().optional(),
       deficiencyId: z.number().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = (await getDb())!;
-
       // Company + finalized scope only — NOT assignment-scoped, so a reassigned
       // technician's captured offline template responses still sync (no
       // field-data loss). Locked by offlineSyncSafeguards.test.ts.
-      const [job] = await db.select({ companyId: jobs.companyId, finalizedAt: jobs.finalizedAt })
-        .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
-      if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
-      if (job.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Job is finalized" });
+      return withAudit(ctx, "inspectionTemplate.saveResponse", async tx => {
+        // Acquire the parent lock before any consistent read, so a concurrent
+        // finalizer cannot seal between authorization and this response write.
+        const [job] = await tx.select().from(jobs).where(eq(jobs.id, input.jobId)).for("update");
+        if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
+        if (job.finalizedAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Job is finalized" });
 
-      await db.insert(inspectionTemplateResponses).values({
-        companyId: job.companyId,
-        jobId: input.jobId,
-        templateId: input.templateId,
-        sectionId: input.sectionId,
-        itemId: input.itemId,
-        responseValue: input.responseValue ?? null,
-        responseText: input.responseText ?? null,
-        notes: input.notes ?? null,
-        deficiencyId: input.deficiencyId ?? null,
-        answeredById: ctx.user.id,
-        answeredAt: new Date(),
-      }).onDuplicateKeyUpdate({
-        set: {
+        const [existing] = await tx.select().from(inspectionTemplateResponses)
+          .where(and(eq(inspectionTemplateResponses.jobId, input.jobId), eq(inspectionTemplateResponses.itemId, input.itemId))).limit(1);
+        if (existing && (existing.companyId !== job.companyId || existing.templateId !== input.templateId || existing.sectionId !== input.sectionId)) {
+          throw new TRPCError({ code: "CONFLICT", message: "Existing response question identity does not match" });
+        }
+        const answeredAt = new Date();
+        let currentSnapshot: ReturnType<typeof buildTemplateItemSnapshot> | undefined;
+        let expected = existing?.itemSnapshot != null ? readCapturedTemplateQuestion(existing) : undefined;
+        if (!expected) {
+          const [template] = await tx.select().from(inspectionTemplates)
+            .where(and(eq(inspectionTemplates.id, input.templateId), eq(inspectionTemplates.companyId, job.companyId))).limit(1);
+          const [section] = await tx.select().from(inspectionTemplateSections)
+            .where(and(eq(inspectionTemplateSections.id, input.sectionId), eq(inspectionTemplateSections.companyId, job.companyId), eq(inspectionTemplateSections.templateId, input.templateId))).limit(1);
+          const [item] = await tx.select().from(inspectionTemplateItems)
+            .where(and(eq(inspectionTemplateItems.id, input.itemId), eq(inspectionTemplateItems.companyId, job.companyId), eq(inspectionTemplateItems.templateId, input.templateId), eq(inspectionTemplateItems.sectionId, input.sectionId))).limit(1);
+          if (!template || !section || !item) throw new TRPCError({ code: "BAD_REQUEST", message: "Question, section and template must belong to the job company and each other" });
+          currentSnapshot = buildTemplateItemSnapshot({ companyId: job.companyId, jobId: input.jobId, capturedById: ctx.user.id, capturedAt: answeredAt, template, section, item });
+          expected = currentSnapshot;
+        }
+        if (!input.questionRevision || input.questionRevision !== templateQuestionRevision(expected)) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "The displayed template question version is missing or changed. Saved offline answers remain preserved for review." });
+        }
+        if (input.deficiencyId != null) {
+          const [deficiency] = await tx.select({ id: deficiencies.id }).from(deficiencies)
+            .where(and(eq(deficiencies.id, input.deficiencyId), eq(deficiencies.jobId, input.jobId))).limit(1);
+          if (!deficiency) throw new TRPCError({ code: "BAD_REQUEST", message: "Deficiency must belong to this job" });
+        }
+        const answer = {
           responseValue: input.responseValue ?? null,
           responseText: input.responseText ?? null,
           notes: input.notes ?? null,
           deficiencyId: input.deficiencyId ?? null,
           answeredById: ctx.user.id,
-          answeredAt: new Date(),
-        },
+          answeredAt,
+        };
+        if (existing) {
+          // Includes legacy NULL: a retry/edit must never fabricate a capture.
+          await tx.update(inspectionTemplateResponses).set(answer).where(eq(inspectionTemplateResponses.id, existing.id));
+        } else {
+          await tx.insert(inspectionTemplateResponses).values({
+            companyId: job.companyId, jobId: input.jobId, templateId: expected.template.id,
+            sectionId: expected.section.id, itemId: expected.item.id,
+            itemSnapshot: currentSnapshot,
+            ...answer,
+          });
+        }
+        return { ok: true };
       });
-
-      return { ok: true };
     }),
 
   // Returns template completeness for the Submit-for-QA dialog.
@@ -645,16 +686,9 @@ export const inspectionTemplateRouter = router({
         .from(inspectionTemplateResponses)
         .where(eq(inspectionTemplateResponses.jobId, input.jobId));
 
-      const templateIds = Array.from(new Set(responses.map((r) => r.templateId)));
-      if (templateIds.length === 0) return { templates: [], responses: [] };
-
-      const templates = await db
-        .select({ id: inspectionTemplates.id, name: inspectionTemplates.name })
-        .from(inspectionTemplates)
-        .where(eq(inspectionTemplates.companyId, ctx.user.companyId!));
-
+      const captured = await getCapturedTemplateReportData(input.jobId, job.companyId, db);
       return {
-        templates: templates.filter((t) => templateIds.includes(t.id)),
+        templates: captured.map(template => ({ id: template.templateId, name: template.templateName })),
         responses,
       };
     }),
@@ -665,114 +699,10 @@ export const inspectionTemplateRouter = router({
     .input(z.object({ jobId: z.number() }))
     .query(async ({ ctx, input }) => {
       const db = (await getDb())!;
-
-      const [job] = await db.select({ companyId: jobs.companyId })
-        .from(jobs).where(eq(jobs.id, input.jobId)).limit(1);
+      const [job] = await db.select({ companyId: jobs.companyId }).from(jobs)
+        .where(eq(jobs.id, input.jobId)).limit(1);
       if (!job || job.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
-
-      const responses = await db
-        .select()
-        .from(inspectionTemplateResponses)
-        .where(eq(inspectionTemplateResponses.jobId, input.jobId));
-
-      if (responses.length === 0) return [];
-
-      const templateIds = Array.from(new Set(responses.map((r) => r.templateId)));
-
-      // Fetch all needed data in parallel
-      const [allTemplates, allSections, allItems, allUsers, allDeficiencies] = await Promise.all([
-        db.select().from(inspectionTemplates)
-          .where(eq(inspectionTemplates.companyId, ctx.user.companyId!)),
-        db.select().from(inspectionTemplateSections)
-          .where(eq(inspectionTemplateSections.companyId, ctx.user.companyId!))
-          .orderBy(asc(inspectionTemplateSections.sortOrder)),
-        db.select().from(inspectionTemplateItems)
-          .where(eq(inspectionTemplateItems.companyId, ctx.user.companyId!))
-          .orderBy(asc(inspectionTemplateItems.sectionId), asc(inspectionTemplateItems.sortOrder)),
-        db.select({ id: users.id, name: users.name }).from(users)
-          .where(eq(users.companyId, ctx.user.companyId!)),
-        db.select({ id: deficiencies.id, title: deficiencies.title })
-          .from(deficiencies)
-          .where(eq(deficiencies.jobId, input.jobId)),
-      ]);
-
-      const userMap = new Map(allUsers.map((u) => [u.id, u.name ?? "Unknown"]));
-      const defMap = new Map(allDeficiencies.map((d) => [d.id, d.title]));
-      const responseMap = new Map(responses.map((r) => [r.itemId, r]));
-
-      return templateIds.map((templateId) => {
-        const template = allTemplates.find((t) => t.id === templateId);
-        if (!template) return null;
-
-        const templateSections = allSections.filter((s) => s.templateId === templateId);
-        const templateItems = allItems.filter((i) => i.templateId === templateId);
-        const templateResponses = responses.filter((r) => r.templateId === templateId);
-
-        const totalItems = templateItems.length;
-        const answeredItems = templateItems.filter((i) => {
-          const r = responseMap.get(i.id);
-          return r && (r.responseValue || r.responseText);
-        }).length;
-        const requiredItems = templateItems.filter((i) => i.isRequired === 1).length;
-        const unansweredRequiredItems = templateItems.filter((i) => {
-          if (i.isRequired !== 1) return false;
-          const r = responseMap.get(i.id);
-          return !r || (!r.responseValue && !r.responseText);
-        }).length;
-
-        let passCount = 0;
-        let failCount = 0;
-        let naCount = 0;
-        for (const r of templateResponses) {
-          const v = (r.responseValue ?? "").toLowerCase();
-          if (v === "pass" || v === "yes" || v === "checked") passCount++;
-          else if (v === "fail" || v === "no") failCount++;
-          else if (v === "na") naCount++;
-        }
-
-        const sections = templateSections.map((section) => {
-          const sectionItems = templateItems
-            .filter((i) => i.sectionId === section.id)
-            .map((item) => {
-              const resp = responseMap.get(item.id);
-              return {
-                itemCode: item.itemCode,
-                questionText: item.questionText,
-                responseType: item.responseType,
-                responseValue: resp?.responseValue ?? null,
-                responseText: resp?.responseText ?? null,
-                notes: resp?.notes ?? null,
-                codeReference: item.codeReference,
-                isRequired: item.isRequired === 1,
-                deficiencyId: resp?.deficiencyId ?? null,
-                deficiencyTitle: resp?.deficiencyId ? (defMap.get(resp.deficiencyId) ?? null) : null,
-                answeredByName: resp?.answeredById ? (userMap.get(resp.answeredById) ?? null) : null,
-                answeredAt: resp?.answeredAt ?? null,
-              };
-            });
-          return {
-            sectionId: section.id,
-            sectionTitle: section.title,
-            sectionSortOrder: section.sortOrder,
-            items: sectionItems,
-          };
-        });
-
-        return {
-          templateId,
-          templateName: template.name,
-          systemType: template.systemType,
-          inspectionType: template.inspectionType,
-          completionPercent: totalItems > 0 ? Math.round((answeredItems / totalItems) * 100) : 0,
-          totalItems,
-          answeredItems,
-          requiredItems,
-          unansweredRequiredItems,
-          passCount,
-          failCount,
-          naCount,
-          sections,
-        };
-      }).filter((t): t is NonNullable<typeof t> => t !== null);
+      return getCapturedTemplateReportData(input.jobId, job.companyId, db);
     }),
+
 });

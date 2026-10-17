@@ -15,16 +15,17 @@ import { generateComplianceReportPDF } from "../pdfGeneratorCompliance";
 import { fetchImageBuffer } from "../pdfSharedStyles";
 import { resolveAttachmentImageForPdf } from "../pdfImageResolver";
 import { getCanonicalFireAlarmChecklist } from "../canonicalFireAlarmReport";
+import { getCapturedTemplateReportData } from "../canonicalTemplateReport";
+import { withMutableJob, withReportJob } from "../jobWriteTransaction";
+import { assertDeviceEvidenceForReport, requireCapturedDevice } from "../canonicalDeviceEvidence";
+import { filterAuthorizedAttachments } from "../attachmentAccess";
+import { randomUUID } from "node:crypto";
+import { getRecordedReportFacts, recordedDeviceOutcome, recordedInspectionFrequency } from "../recordedReportFacts";
 import { sendReportEmail, sendReportReadyEmail, sendReportApprovedNotification, } from "../emailService";
 import { ENV } from "../_core/env";
 import { toCustomerSafeReport } from "../customerDto";
 import { assertCustomerOrgCompany } from "../tenantGuards";
 import {
-  inspectionTemplates,
-  inspectionTemplateSections,
-  inspectionTemplateItems,
-  inspectionTemplateResponses,
-  deficiencies,
   users,
   jobs as jobsTable,
   attachments,
@@ -35,95 +36,7 @@ import {
 // Returns empty array when no template responses exist — PDF skips the section.
 
 async function fetchTemplateReportData(jobId: number, companyId: number) {
-  const drizzle = (await getDb())!;
-
-  const responses = await drizzle
-    .select()
-    .from(inspectionTemplateResponses)
-    .where(eq(inspectionTemplateResponses.jobId, jobId));
-
-  if (responses.length === 0) return [];
-
-  const templateIds = Array.from(new Set(responses.map(r => r.templateId)));
-
-  const [allTemplates, allSections, allItems, allDeficiencies] = await Promise.all([
-    drizzle.select().from(inspectionTemplates)
-      .where(eq(inspectionTemplates.companyId, companyId)),
-    drizzle.select().from(inspectionTemplateSections)
-      .where(eq(inspectionTemplateSections.companyId, companyId))
-      .orderBy(asc(inspectionTemplateSections.sortOrder)),
-    drizzle.select().from(inspectionTemplateItems)
-      .where(eq(inspectionTemplateItems.companyId, companyId))
-      .orderBy(asc(inspectionTemplateItems.sectionId), asc(inspectionTemplateItems.sortOrder)),
-    drizzle.select({ id: deficiencies.id, title: deficiencies.title })
-      .from(deficiencies)
-      .where(eq(deficiencies.jobId, jobId)),
-  ]);
-
-  const defMap = new Map(allDeficiencies.map(d => [d.id, d.title]));
-  const responseMap = new Map(responses.map(r => [r.itemId, r]));
-
-  return templateIds.map(templateId => {
-    const template = allTemplates.find(t => t.id === templateId);
-    if (!template) return null;
-
-    const templateSections = allSections.filter(s => s.templateId === templateId);
-    const templateItems = allItems.filter(i => i.templateId === templateId);
-    const templateResponses = responses.filter(r => r.templateId === templateId);
-
-    const totalItems = templateItems.length;
-    const answeredItems = templateItems.filter(i => {
-      const r = responseMap.get(i.id);
-      return r && (r.responseValue || r.responseText);
-    }).length;
-    const unansweredRequiredItems = templateItems.filter(i => {
-      if (i.isRequired !== 1) return false;
-      const r = responseMap.get(i.id);
-      return !r || (!r.responseValue && !r.responseText);
-    }).length;
-
-    let passCount = 0;
-    let failCount = 0;
-    let naCount = 0;
-    for (const r of templateResponses) {
-      const v = (r.responseValue ?? "").toLowerCase();
-      if (v === "pass" || v === "yes" || v === "checked") passCount++;
-      else if (v === "fail" || v === "no") failCount++;
-      else if (v === "na") naCount++;
-    }
-
-    const sections = templateSections.map(section => ({
-      sectionTitle: section.title,
-      items: templateItems
-        .filter(i => i.sectionId === section.id)
-        .map(item => {
-          const resp = responseMap.get(item.id);
-          return {
-            itemCode: item.itemCode,
-            questionText: item.questionText,
-            responseValue: resp?.responseValue ?? null,
-            responseText: resp?.responseText ?? null,
-            notes: resp?.notes ?? null,
-            codeReference: item.codeReference,
-            isRequired: item.isRequired === 1,
-            deficiencyId: resp?.deficiencyId ?? null,
-          };
-        }),
-    }));
-
-    return {
-      templateName: template.name,
-      systemType: template.systemType,
-      completionPercent: totalItems > 0 ? Math.round((answeredItems / totalItems) * 100) : 0,
-      totalItems,
-      answeredItems,
-      passCount,
-      failCount,
-      naCount,
-      unansweredRequiredItems,
-      sections,
-    };
-  }).filter((t): t is NonNullable<typeof t> => t !== null);
+  return getCapturedTemplateReportData(jobId, companyId);
 }
 
 const reportRouter = router({
@@ -192,9 +105,7 @@ const reportRouter = router({
     title: z.string(),
     executiveSummary: z.string().optional(),
     aiSummary: z.string().optional(),
-  })).mutation(async ({ input, ctx }) => {
-    await db.assertJobCompany(input.jobId, ctx.user.companyId!);
-    await assertJobNotFinalized(input.jobId);
+  })).mutation(async ({ input, ctx }) => withMutableJob(ctx, "report.create", input.jobId, async () => {
     const stats = await db.getInspectionStats(input.jobId);
     const deficiencies = await db.getDeficienciesByJob(input.jobId);
     const reportNumber = `RPT-${Date.now().toString(36).toUpperCase()}`;
@@ -208,7 +119,7 @@ const reportRouter = router({
         failCount: stats.fail,
         deficiencyCount: deficiencies.length,
       });
-    }),
+    })),
 
   update: officeProcedure
     .input(
@@ -218,18 +129,16 @@ const reportRouter = router({
         executiveSummary: z.string().optional(),
         aiSummary: z.string().optional(),
         status: z.enum(["draft", "generated", "sent", "approved"]).optional(),
-        fileKey: z.string().optional(),
-        fileUrl: z.string().optional(),
-      })
+      }).strict()
     )
     .mutation(async ({ input, ctx }) => {
       const report = await db.getReportById(input.id);
       if (!report)
         throw new TRPCError({ code: "NOT_FOUND", message: "Report not found" });
-      // Verify the report's parent job belongs to the caller's company
-      await db.assertJobCompany(report.jobId, ctx.user.companyId!);
-      // Prevent editing reports whose parent job is finalized
-      await assertJobNotFinalized(report.jobId);
+      return withMutableJob(ctx, "report.update", report.jobId, async () => {
+      const current = await db.getReportById(input.id);
+      if (!current || current.jobId !== report.jobId)
+        throw new TRPCError({ code: "CONFLICT", message: "Report parent changed; reload before editing" });
       const { id, status, ...data } = input;
       const updateData: any = { ...data };
       if (status) {
@@ -242,6 +151,7 @@ const reportRouter = router({
       }
       await db.updateReport(id, updateData);
       return { success: true };
+      });
     }),
 
   approve: customerProcedure
@@ -302,7 +212,7 @@ const reportRouter = router({
       );
 
       // Get job details (scoped to the caller's company)
-      const job = await db.assertJobCompany(input.jobId, ctx.user.companyId!);
+      const generated = await withReportJob(ctx, "report.generatePDF", input.jobId, async job => {
 
       // Get site details
       const site = await db.getSiteById(job.siteId);
@@ -320,6 +230,7 @@ const reportRouter = router({
 
       // Get deficiencies
       const deficiencies = await db.getDeficienciesByJob(input.jobId);
+      assertDeviceEvidenceForReport(job, inspectionResults, deficiencies);
 
       // Validate deficiency locations before generating Deficiency report
       // Fetch device locations for deficiencies
@@ -327,8 +238,7 @@ const reportRouter = router({
         deficiencies.map(async d => {
           let location: string | null = null;
           if (d.deviceId) {
-            const device = await db.getDeviceById(d.deviceId);
-            location = device?.location || null;
+            location = requireCapturedDevice(d, job).location;
           }
           return {
             id: d.id,
@@ -379,7 +289,7 @@ const reportRouter = router({
         deviceTypeMap[deviceType].total++;
         if (result.result === "pass") deviceTypeMap[deviceType].passed++;
         else if (result.result === "fail") deviceTypeMap[deviceType].failed++;
-        else deviceTypeMap[deviceType].na++;
+        else if (result.result === "na") deviceTypeMap[deviceType].na++;
       }
 
       const deviceSummaries = Object.entries(deviceTypeMap).map(
@@ -390,8 +300,8 @@ const reportRouter = router({
       );
 
       // Get technician details + template checklist responses + company settings (parallel)
-      const [technician, rawTemplateData, companySettings] = await Promise.all([
-        db.getUserById(job.assignedTechnicianId || ctx.user.id),
+      const [recordedFacts, rawTemplateData, companySettings] = await Promise.all([
+        getRecordedReportFacts(input.jobId, job.leadTechnicianId ?? job.assignedTechnicianId),
         fetchTemplateReportData(input.jobId, job.companyId),
         db.getCompanySettings(job.companyId),
       ]);
@@ -404,7 +314,7 @@ const reportRouter = router({
       const companyDisplayName =
         companySettings.companyDisplayName ||
         company?.name ||
-        "Earth Wind & Fire Protection";
+        "Company not recorded";
 
       // Generate PDF with Fire-Pro style
       const pdfBuffer = await generateInspectionReportPDF(
@@ -422,13 +332,12 @@ const reportRouter = router({
           customerPostalCode: "",
           attentionTo: customerOrg?.contactName || "",
           attentionEmail: customerOrg?.contactEmail || "",
-          inspectionDate: job.scheduledDate || new Date(),
+          inspectionDate: recordedFacts.inspectionDate,
           completedDate: job.completedAt,
-          technicianName: technician?.name || ctx.user.name || undefined,
-          technicianTitle:
-            (technician as any)?.certificationLevel || "Fire Alarm Technician",
-          technicianCertNumber: (technician as any)?.certNumber || "",
-          technicianEmail: technician?.email || ctx.user.email || undefined,
+          technicianName: recordedFacts.technicianName,
+          technicianTitle: recordedFacts.technicianTitle,
+          technicianCertNumber: recordedFacts.technicianCertificateNumber,
+          technicianEmail: undefined, // No captured contact address; never substitute the current viewer.
           companyName: companyDisplayName,
           companyAddress: company?.address || "",
           companyPhone: company?.phone || undefined,
@@ -445,7 +354,7 @@ const reportRouter = router({
               let deviceType: string | undefined = undefined;
               let location: string | undefined = undefined;
               if (d.deviceId) {
-                const device = await db.getDeviceById(d.deviceId);
+                const device = requireCapturedDevice(d, job);
                 if (device) {
                   deviceType = device.deviceType;
                   location = device.location || undefined;
@@ -461,7 +370,7 @@ const reportRouter = router({
               try {
                 const drizzle = (await getDb())!;
                 if (drizzle) {
-                  const mediaRows = await drizzle
+                  const queriedMediaRows = await drizzle
                     .select()
                     .from(attachments)
                     .where(
@@ -473,6 +382,7 @@ const reportRouter = router({
                       )
                     )
                     .orderBy(attachments.sortOrder, attachments.createdAt);
+                  const mediaRows = await filterAuthorizedAttachments(queriedMediaRows, ctx.user);
 
                   // Re-sign each photo from its durable fileKey at generation time —
                   // the stored fileUrl is a presigned URL that expires (7 days), so a
@@ -550,7 +460,7 @@ const reportRouter = router({
       );
 
       // Upload to S3
-      const fileKey = `reports/${job.companyId}/Inspectra-${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pdf`;
+      const fileKey = `reports/${job.companyId}/Inspectra-${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-${randomUUID()}.pdf`;
       const { url } = await storagePut(fileKey, pdfBuffer, "application/pdf");
 
       // Create or update report record
@@ -572,6 +482,10 @@ const reportRouter = router({
         fileUrl: url,
         status: "generated",
       });
+
+      return { report, job, site, customerOrg, pdfBuffer, url, reportNumber };
+      });
+      const { report, job, site, customerOrg, pdfBuffer, url, reportNumber } = generated;
 
       // Send notification email to reports@ewandf.ca
       await sendReportEmail({
@@ -637,7 +551,7 @@ const reportRouter = router({
       );
 
       // Get job details (scoped to the caller's company)
-      const job = await db.assertJobCompany(input.jobId, ctx.user.companyId!);
+      const generated = await withReportJob(ctx, "report.generateCompliancePDF", input.jobId, async job => {
 
       // Get site details
       const site = await db.getSiteById(job.siteId);
@@ -655,11 +569,10 @@ const reportRouter = router({
 
       // Get deficiencies
       const deficiencies = await db.getDeficienciesByJob(input.jobId);
+      assertDeviceEvidenceForReport(job, inspectionResults, deficiencies);
 
       // Get technician details
-      const technician = await db.getUserById(
-        job.assignedTechnicianId || ctx.user.id
-      );
+      const recordedFacts = await getRecordedReportFacts(input.jobId, job.leadTechnicianId ?? job.assignedTechnicianId);
 
       // Validate device locations before generating Annual report
       const {
@@ -724,12 +637,7 @@ const reportRouter = router({
         .map(r => ({
           deviceType: r.deviceType || "Unknown",
           location: r.location || "Unknown",
-          result:
-            r.result === "pass"
-              ? ("PASS" as const)
-              : r.result === "fail"
-                ? ("DEFICIENT" as const)
-                : ("NO ACCESS" as const),
+          result: recordedDeviceOutcome(r.result),
           notes: r.notes || undefined,
         }));
 
@@ -747,8 +655,7 @@ const reportRouter = router({
           location: r.location || "Unknown",
           type: r.deviceType || "Unknown",
           serialNumber: r.serialNumber || undefined,
-          result:
-            r.result === "pass" ? ("PASS" as const) : ("DEFICIENT" as const),
+          result: recordedDeviceOutcome(r.result),
         }));
 
       const emergencyLights = inspectionResults
@@ -763,9 +670,8 @@ const reportRouter = router({
         })
         .map(r => ({
           location: r.location || "Unknown",
-          functionalTest:
-            r.result === "pass" ? ("PASS" as const) : ("FAIL" as const),
-          durationTest: "N/A" as const,
+          functionalTest: r.result === "fail" ? "FAIL" as const : recordedDeviceOutcome(r.result) as "PASS" | "N/A" | "NOT TESTED",
+          durationTest: "NOT RECORDED" as const,
           comments: r.notes || undefined,
         }));
 
@@ -775,7 +681,7 @@ const reportRouter = router({
           let deviceType: string | undefined = undefined;
           let location: string | undefined = undefined;
           if (d.deviceId) {
-            const device = await db.getDeviceById(d.deviceId);
+            const device = requireCapturedDevice(d, job);
             if (device) {
               deviceType = device.deviceType;
               location = device.location || undefined;
@@ -793,8 +699,8 @@ const reportRouter = router({
       const pdfBuffer = await generateComplianceReportPDF(
         buildCustomerSafeComplianceData({
           workOrderNumber: job.jobNumber,
-          dateOfService: job.scheduledDate || new Date(),
-          inspectionFrequency: "Annual",
+          dateOfService: recordedFacts.inspectionDate,
+          inspectionFrequency: recordedInspectionFrequency(job.jobType),
           contactPerson: customerOrg?.contactName || "N/A",
           contactPhone: customerOrg?.contactPhone || "N/A",
           buildingName: site.name,
@@ -806,7 +712,7 @@ const reportRouter = router({
 
           systemsInspected: {
             fireAlarmSystem: true,
-            commonAreaDevices: true,
+            commonAreaDevices: fireAlarmDevices.length > 0,
             inSuiteDevices: false,
             sprinklerSystem: false,
             fireExtinguishers: fireExtinguishers.length > 0,
@@ -822,21 +728,21 @@ const reportRouter = router({
             kitchen: false,
           },
 
-          systemModel: "EDWARDS EST 3X",
-          systemOperation: "Single Stage",
-          fireSignalReceivingCentre: "BARTEC",
-          connectedToFireSignalReceivingCentre: true,
-          systemFullyFunctional: deficiencies.length === 0,
+          systemModel: recordedFacts.systemModel,
+          systemOperation: recordedFacts.systemOperation,
+          fireSignalReceivingCentre: recordedFacts.fireSignalReceivingCentre,
+          connectedToFireSignalReceivingCentre: recordedFacts.connectedToFireSignalReceivingCentre,
+          systemFullyFunctional: recordedFacts.systemFullyFunctional,
           deficienciesIdentified: deficiencies.length > 0,
           deficienciesCorrectedDate: undefined,
-          recommendationsIdentified: false,
+          recommendationsIdentified: recordedFacts.recommendationsIdentified,
 
-          technicianName: technician?.name || ctx.user.name || "Unknown",
-          technicianCertificateNumber: (technician as any)?.certNumber || "",
+          technicianName: recordedFacts.technicianName,
+          technicianCertificateNumber: recordedFacts.technicianCertificateNumber,
           secondaryTechnicianName: undefined,
           secondaryTechnicianCertificateNumber: undefined,
-          companyName: company?.name || "Earth Wind & Fire Protection",
-          companyPhone: company?.phone || "604-299-1030",
+          companyName: company?.name || "",
+          companyPhone: company?.phone || "",
 
           checklists: checklistSections,
           fireAlarmDevices,
@@ -849,7 +755,7 @@ const reportRouter = router({
       );
 
       // Upload to S3
-      const fileKey = `reports/${job.companyId}/Inspectra-${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-compliance-${Date.now()}.pdf`;
+      const fileKey = `reports/${job.companyId}/Inspectra-${job.jobNumber.replace(/[^a-zA-Z0-9]/g, '-')}-compliance-${randomUUID()}.pdf`;
       const { url } = await storagePut(fileKey, pdfBuffer, "application/pdf");
 
       // Create report record
@@ -860,8 +766,8 @@ const reportRouter = router({
         jobId: input.jobId,
         title: `CAN/ULC-S536 Compliance Report - ${job.title}`,
         executiveSummary:
-          "Annual fire alarm system inspection per CAN/ULC-S536:2019",
-        aiSummary: "Annual fire alarm system inspection per CAN/ULC-S536:2019",
+          "Fire alarm inspection using captured checklist questions and recorded results",
+        aiSummary: "Fire alarm inspection using captured checklist questions and recorded results",
         generatedById: ctx.user.id,
         reportNumber,
         deviceCount: stats.total,
@@ -872,6 +778,10 @@ const reportRouter = router({
         fileUrl: url,
         status: "generated",
       });
+
+      return { report, job, site, customerOrg, pdfBuffer, url, reportNumber };
+      });
+      const { report, job, site, customerOrg, pdfBuffer, url, reportNumber } = generated;
 
       // Send notification email to reports@ewandf.ca
       await sendReportEmail({

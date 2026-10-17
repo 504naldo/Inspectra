@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb } from "./db";
-import { companies, users, sites, jobs, attachments } from "../drizzle/schema";
+import { companies, customerOrgs, users, sites, jobs, attachments } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import { storagePut } from "./storage";
+import { assertDisposableS3Environment } from "../scripts/disposableS3Config.mjs";
 
-// Requires a real S3/R2 bucket — skips gracefully when credentials aren't configured.
-describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Sheet Selection and Detection", () => {
+// Real disposable storage is required; production credentials never enable this suite.
+describe.skipIf(process.env.DISPOSABLE_S3_ACCEPTANCE !== "true")("Sheet Selection and Detection", () => {
   let testCompanyId: number;
+  let testCustomerOrgId: number;
   let testUserId: number;
   let testSiteId: number;
   let testJobId: number;
@@ -15,6 +17,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Sheet Selection and Detection", 
   let testFileUrl: string;
 
   beforeAll(async () => {
+    assertDisposableS3Environment();
     const db = await getDb();
     if (!db) throw new Error("Database not available");
 
@@ -28,6 +31,8 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Sheet Selection and Detection", 
       })
       .$returningId();
     testCompanyId = company.id;
+    const [org] = await db.insert(customerOrgs).values({ companyId: testCompanyId, name: "Sheet Selection Test Customer" }).$returningId();
+    testCustomerOrgId = org.id;
 
     // Create test user
     const [user] = await db
@@ -48,7 +53,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Sheet Selection and Detection", 
       .insert(sites)
       .values({
         companyId: testCompanyId,
-        customerOrgId: testCompanyId, // Required field
+        customerOrgId: testCustomerOrgId,
         name: "Sheet Test Site",
         address: "123 Test St",
         city: "Test City",
@@ -64,7 +69,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Sheet Selection and Detection", 
       .values({
         companyId: testCompanyId,
         siteId: testSiteId,
-        customerOrgId: testCompanyId, // Required field
+        customerOrgId: testCustomerOrgId,
         jobNumber: `SHEET-TEST-${Date.now()}`,
         title: "Sheet Test Job",
         jobType: "annual",
@@ -143,6 +148,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Sheet Selection and Detection", 
   });
 
   afterAll(async () => {
+    if (!testCompanyId) return;
     const db = await getDb();
     if (!db) return;
 
@@ -151,13 +157,15 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Sheet Selection and Detection", 
     await db.delete(jobs).where(eq(jobs.companyId, testCompanyId));
     await db.delete(sites).where(eq(sites.companyId, testCompanyId));
     await db.delete(users).where(eq(users.companyId, testCompanyId));
+    await db.delete(customerOrgs).where(eq(customerOrgs.id, testCustomerOrgId));
     await db.delete(companies).where(eq(companies.id, testCompanyId));
   });
 
   it("should detect device and non-device sheets correctly", async () => {
     // Download and parse the file
     const response = await fetch(testFileUrl);
-    const buffer = await response.buffer();
+    expect(response.ok).toBe(true);
+    const buffer = Buffer.from(await response.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: "buffer" });
 
     // Helper function (same as in filesRouter)
@@ -193,7 +201,8 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Sheet Selection and Detection", 
   it("should return available sheets in preview with detection flags", async () => {
     // This would normally call the tRPC procedure, but for testing we'll simulate it
     const response = await fetch(testFileUrl);
-    const buffer = await response.buffer();
+    expect(response.ok).toBe(true);
+    const buffer = Buffer.from(await response.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: "buffer" });
 
     const availableSheets: Array<{ name: string; isDevice: boolean; reason: string; rowCount: number }> = [];

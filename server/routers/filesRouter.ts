@@ -1,21 +1,20 @@
-import { assertAttachmentDestination } from "../attachmentAccess";
-import { storageGet } from "../storage";
+import { assertAttachmentDestination, assertAttachmentLinksUnchanged, requireUploadedAttachment, withAttachmentWrite, filterAuthorizedAttachments } from "../attachmentAccess";
+import { resolveAuthorizedStorageDownload } from "../storageDownload";
 import { z } from "zod";
 import { callerIsPlatformOperator } from "../_core/actorContext";
 import { router, protectedProcedure,
   officeProcedure,
   technicianProcedure, } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb, assertJobCompany } from "../db";
+import { getDb, assertJobCompany, createAttachment } from "../db";
 import { attachments, devices, jobs, sites } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import fetch from "node-fetch";
-import crypto from "crypto";
 import { safeToLower, safeIncludes, safeTrim } from "../safeStringHelpers";
 import { assertSiteCompany, assertEntityCompany, getAttachmentOwnerCompanyId, } from "../tenantGuards";
-import { assertPublicHttpUrl } from "../_core/ssrfGuard";
 import { safeXlsxRead } from "../_core/safeXlsxRead";
+import { importWorkbookForSite } from "../services/workbookImport";
 
 export const filesRouter = router({
   // Upload file to S3 and return URL
@@ -30,18 +29,11 @@ export const filesRouter = router({
         fileData: z.string(), // base64 encoded file data
       })
     )
-    .mutation(async ({ input, ctx }) => {
-      // Use server-side companyId — never trust the client-supplied value.
-      const companyId = ctx.user.companyId;
-      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "User has no company assignment", });
-
-      await assertAttachmentDestination(
-        { entityType: "job", entityId: input.jobId },
-        ctx.user,
-        true);
+    .mutation(async ({ input, ctx }) => withAttachmentWrite(
+      ctx, "files.uploadToS3", [{ entityType: "job", entityId: input.jobId }], async ([parent]) => {
 
       const randomSuffix = Math.random().toString(36).substring(7);
-      const fileKey = `${companyId}/jobs/${input.jobId}/${input.fileName}-${randomSuffix}`;
+      const fileKey = `${parent.companyId}/jobs/${input.jobId}/${input.fileName}-${randomSuffix}`;
       
       // Decode base64 file data
       const buffer = Buffer.from(input.fileData, "base64");
@@ -55,11 +47,24 @@ export const filesRouter = router({
       // Upload to S3
       const { url } = await storagePut(fileKey, buffer, contentType);
       
-      return {
+      // Persist provenance in the same locked transaction. A later compatibility
+      // registration can only return this row, never attach an arbitrary key.
+      return createAttachment({
+        companyId: parent.companyId,
+        entityType: "job",
+        entityId: input.jobId,
+        jobId: parent.jobId,
+        siteId: parent.siteId,
+        uploadedById: ctx.user.id,
+        fileName: input.fileName,
         fileKey,
         fileUrl: url,
-      };
-    }),
+        mimeType: contentType,
+        fileSize: buffer.length,
+        uploadStatus: "completed",
+        importStatus: "none",
+      });
+    })),
 
   // List files for a job
   listByJob: technicianProcedure
@@ -90,7 +95,7 @@ export const filesRouter = router({
         )
         .orderBy(attachments.createdAt);
 
-      return files;
+      return filterAuthorizedAttachments(files, ctx.user);
     }),
 
   // Create file attachment
@@ -109,28 +114,10 @@ export const filesRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const companyId = ctx.user.companyId;
-      if (!companyId) throw new TRPCError({ code: "FORBIDDEN", message: "User has no company assignment", });
-
-      const parent =
-
-      await assertAttachmentDestination(input, ctx.user, true);
-
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable", });
-
-      const [attachment] = await db.insert(attachments).values({
-        ...input,
-        companyId: parent.companyId,
-        jobId: parent.jobId,
-        siteId: parent.siteId,
-        deviceId: parent.deviceId,
-        uploadedById: ctx.user.id,
-        uploadStatus: "completed",
-        importStatus: "none",
-      });
-
-      return attachment;
+      const attachment = await requireUploadedAttachment(input, input.fileKey, ctx.user);
+      // A lost registration response is safe to replay, including after seal:
+      // all authoritative metadata comes from the already-persisted upload.
+      return { ...attachment, insertId: attachment.id };
     }),
 
   // Preview Excel import
@@ -154,10 +141,8 @@ export const filesRouter = router({
       } await assertAttachmentDestination(file, ctx.user);
 
       // Download file
-      const downloadUrl = file.fileKey
-        ? (await storageGet(file.fileKey)).url
-        : file.fileUrl;
-      await assertPublicHttpUrl(downloadUrl);
+      const downloadUrl = await resolveAuthorizedStorageDownload(file);
+      if (!downloadUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Attachment has no downloadable file" });
       const response = await fetch(downloadUrl, { redirect: "error" });
       if (!response.ok) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to download file", });
@@ -276,11 +261,10 @@ export const filesRouter = router({
         }
       });
 
-      // Update import status
-      await db
-        .update(attachments)
-        .set({ importStatus: "previewed" })
-        .where(eq(attachments.id, input.fileId));
+      await withAttachmentWrite(ctx, "files.previewImportExcel", [file], async (_parents, tx) => {
+        await assertAttachmentLinksUnchanged(file);
+        await tx.update(attachments).set({ importStatus: "previewed" }).where(eq(attachments.id, input.fileId));
+      });
 
       // Determine which sheet to use
       let selectedSheet = input.sheetName;
@@ -358,7 +342,11 @@ export const filesRouter = router({
       const targetCompanyId = targetSite.companyId;
       const targetJob =
       await assertJobCompany(input.jobId, ctx.user.companyId);
-      if (targetJob.siteId !== targetSite.id)
+      if (
+        targetJob.siteId !== targetSite.id ||
+        targetJob.companyId !== targetSite.companyId ||
+        targetJob.customerOrgId !== targetSite.customerOrgId
+      )
         throw new TRPCError({
           code: "FORBIDDEN",
           message: "Import job and site disagree",
@@ -372,293 +360,65 @@ export const filesRouter = router({
 
       if (!file) {
         throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
-      } await assertAttachmentDestination(file, ctx.user);
+      }
+      const source = await assertAttachmentDestination(file, ctx.user);
+      if (
+        source.companyId !== targetCompanyId ||
+        source.customerOrgId !== targetSite.customerOrgId ||
+        (source.siteId != null && source.siteId !== targetSite.id)
+      ) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Import source and destination disagree",
+        });
+      }
 
       // Download file
-      const downloadUrl = file.fileKey
-        ? (await storageGet(file.fileKey)).url
-        : file.fileUrl;
-      await assertPublicHttpUrl(downloadUrl);
+      const downloadUrl = await resolveAuthorizedStorageDownload(file);
+      if (!downloadUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Attachment has no downloadable file" });
       const response = await fetch(downloadUrl, { redirect: "error" });
       if (!response.ok) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to download file", });
       }
 
       const buffer = await response.buffer();
-      const workbook = await safeXlsxRead(buffer, { type: "buffer" });
-
-      const imported = {
-        fireAlarm: 0,
-        extinguishers: 0,
-        emergencyLights: 0,
-        sprinkler: 0,
-      };
-
-      const updated = {
-        fireAlarm: 0,
-        extinguishers: 0,
-        emergencyLights: 0,
-        sprinkler: 0,
-      };
-
-      const excluded: any[] = [];
-      
-      // Site update tracking
-      let siteFieldsUpdated = 0;
-      const siteUpdatedFields: string[] = [];
-
-      let sequenceOrder = 1;
-
-      // Helper to generate deterministic dedupe key
-      const generateDedupeKey = (category: string, location: string, description: string) => {
-        const hash = crypto.createHash("md5");
-        hash.update(`${category}:${location}:${description}`);
-        return hash.digest("hex");
-      };
-
-      // Helper to find location column
-      const findLocationValue = (row: any): string | null => {
-        const locationKeys = ["location", "Location", "LOCATION", "loc", "Loc", "Device Location", "device location",];
-        for (const key of locationKeys) {
-          if (row[key]) return String(row[key]).trim();
+      return withAttachmentWrite(ctx, "files.importExcelDevices", [
+        file, { entityType: "job", entityId: input.jobId },
+      ], async (_parents, tx) => {
+        const currentFile = await assertAttachmentLinksUnchanged(file);
+        if (currentFile.fileKey !== file.fileKey || (!file.fileKey && currentFile.fileUrl !== file.fileUrl)) {
+          throw new TRPCError({ code: "CONFLICT", message: "Import source changed. Preview it again." });
         }
-        return null;
-      };
-
-      // Helper to find description/label
-      const findDescriptionValue = (row: any): string => {
-        const descKeys = ["description", "Description", "DESCRIPTION", "label", "Label", "type", "Type", "Type/Size", "type/size", "Device Type", "device type",];
-        for (const key of descKeys) {
-          if (row[key]) return String(row[key]).trim();
+        const currentJob = await assertJobCompany(input.jobId, ctx.user.companyId!);
+        const currentSite = await assertSiteCompany(input.siteId, ctx.user.companyId!);
+        if (currentSite.companyId !== targetCompanyId ||
+            currentSite.customerOrgId !== targetSite.customerOrgId ||
+            currentJob.siteId !== currentSite.id ||
+            currentJob.companyId !== currentSite.companyId ||
+            currentJob.customerOrgId !== currentSite.customerOrgId) {
+          throw new TRPCError({ code: "CONFLICT", message: "Import destination changed. Preview it again." });
         }
-        return "";
-      };
-
-      // Helper to find external ref (tag/ID)
-      const findExternalRef = (row: any): string | null => {
-        const refKeys = ["tag", "Tag", "TAG", "id", "ID", "identifier", "Identifier", "barcode", "Barcode", "Unit #", "unit #",];
-        for (const key of refKeys) {
-          if (row[key]) return String(row[key]).trim();
-        }
-        return null;
-      };
-      
-      // Helper to extract value from key/value pair row
-      const extractValueFromKeyValue = (rows: any[][], targetKeys: string[]): string => {
-        for (const row of rows) {
-          if (row.length < 3) continue;
-          const key = safeTrim(safeToLower(row[0]));
-          // Try column 3 first (index 2), then column 2 (index 1)
-          const value = String(row[2] || row[1] || "").trim();
-          if (targetKeys.some(tk => key.includes(safeToLower(tk))) && value) {
-            return value;
-          }
-        }
-        return "";
-      };
-      
-      // Step 1: Parse Site sheet first (if present)
-      const siteSheetName = workbook.SheetNames.find(name => {
-        const lower = safeToLower(name);
-        if (!lower) return false;
-        return ( lower.includes("site") || lower.includes("building") || lower.includes("property") || lower.includes("info"));
+        const result = await importWorkbookForSite({
+          fileBuffer: buffer, fileName: currentFile.fileName,
+          siteId: input.siteId, companyId: targetCompanyId, customerOrgId: targetSite.customerOrgId, userId: ctx.user.id,
+          selectedSheets: input.selectedSheets,
+          preserveSourceOrder: true,
+        });
+        const legacyCounts = (counts: typeof result.counts) => ({
+          fireAlarm: counts.fireAlarm + counts.smokeAlarms,
+          extinguishers: counts.extinguishers, emergencyLights: counts.emergencyLights,
+          sprinkler: 0,
+        });
+        const imported = legacyCounts(result.insertedCounts);
+        const updated = legacyCounts(result.updatedCounts);
+        const excluded = result.excludedRows.map(row => ({ ...row, sheet: row.sheetName }));
+        await tx.update(attachments).set({
+          importStatus: "imported", importSummary: { imported, updated, excluded },
+        }).where(eq(attachments.id, input.fileId));
+        return {
+          imported, updated, excluded,
+          siteUpdated: { fieldsUpdated: result.siteFieldsUpdated, updatedFields: result.siteUpdatedFields },
+        };
       });
-      
-      if (siteSheetName) {
-        const siteSheet = workbook.Sheets[siteSheetName];
-        // Parse as key/value pairs (header: 1 returns array of arrays)
-        const siteRows = XLSX.utils.sheet_to_json(siteSheet, { header: 1, defval: "", }) as any[][];
-        
-        // Extract site fields
-        const siteName = extractValueFromKeyValue(siteRows, ["site name", "building name", "property name", "name",]);
-        const address = extractValueFromKeyValue(siteRows, ["address", "street",]);
-        const city = extractValueFromKeyValue(siteRows, ["city", "municipality",]);
-        const state = extractValueFromKeyValue(siteRows, ["state", "province", "region",]);
-        const postalCode = extractValueFromKeyValue(siteRows, ["postal", "zip", "postal code", "zip code",]);
-        const contactName = extractValueFromKeyValue(siteRows, ["contact name", "contact", "site contact",]);
-        const contactPhone = extractValueFromKeyValue(siteRows, ["contact phone", "phone", "telephone",]);
-        const notes = extractValueFromKeyValue(siteRows, ["notes", "comments", "remarks",]);
-        
-        // Update site record (only overwrite non-empty values)
-        const siteUpdateData: any = {};
-        if (siteName) { siteUpdateData.name = siteName; siteUpdatedFields.push("name"); siteFieldsUpdated++; }
-        if (address) { siteUpdateData.address = address; siteUpdatedFields.push("address"); siteFieldsUpdated++; }
-        if (city) { siteUpdateData.city = city; siteUpdatedFields.push("city"); siteFieldsUpdated++; }
-        if (state) { siteUpdateData.state = state; siteUpdatedFields.push("state"); siteFieldsUpdated++; }
-        if (postalCode) { siteUpdateData.postalCode = postalCode; siteUpdatedFields.push("postalCode"); siteFieldsUpdated++; }
-        if (contactName) { siteUpdateData.contactName = contactName; siteUpdatedFields.push("contactName"); siteFieldsUpdated++; }
-        if (contactPhone) { siteUpdateData.contactPhone = contactPhone; siteUpdatedFields.push("contactPhone"); siteFieldsUpdated++; }
-        if (notes) { siteUpdateData.notes = notes; siteUpdatedFields.push("notes"); siteFieldsUpdated++; }
-        
-        if (Object.keys(siteUpdateData).length > 0) {
-          siteUpdateData.updatedAt = new Date();
-          await db.update(sites).set(siteUpdateData).where(eq(sites.id, input.siteId));
-        }
-      }
-
-      // Helper: Detect if sheet is a device sheet (reuse from preview)
-      const isDeviceSheet = (sheetName: string, sheet: any): boolean => {
-        const lowerName = safeToLower(sheetName);
-        if (!lowerName) return false;
-        const excludeKeywords = ["labour", "labor", "rate", "pricing", "cost", "invoice", "summary", "notes", "legend",];
-        if (excludeKeywords.some(kw => lowerName.includes(kw))) return false;
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-        const first10Rows = rows.slice(0, 10);
-        const allText = first10Rows.flat().map(cell => safeToLower(cell)).join(" ");
-        const deviceKeywords = ["device", "location", "serial", "smoke", "heat", "extinguisher", "emergency light", "pull station", "unit #",];
-        const matchCount = deviceKeywords.filter(kw => allText.includes(kw)).length;
-        return matchCount >= 2;
-      };
-
-      // Step 2: Process device sheets
-      for (const sheetName of workbook.SheetNames) {
-        // Skip site sheet (already processed)
-        const lowerSheetName = safeToLower(sheetName);
-        if (!lowerSheetName) continue;
-        if (lowerSheetName.includes("site") || lowerSheetName.includes("building") || lowerSheetName.includes("property") || lowerSheetName.includes("info")) {
-          continue;
-        }
-        
-        // If selectedSheets provided, only import those sheets
-        if (input.selectedSheets && input.selectedSheets.length > 0) {
-          if (!input.selectedSheets.includes(sheetName)) {
-            continue;
-          }
-        } else {
-          // Auto-detect: skip non-device sheets
-          const sheet = workbook.Sheets[sheetName];
-          if (!isDeviceSheet(sheetName, sheet)) {
-            continue;
-          }
-        }
-        const sheet = workbook.Sheets[sheetName];
-        // Try parsing with default headers (Row 1)
-        let rows = XLSX.utils.sheet_to_json(sheet);
-        
-        // If no valid rows or first row looks like a title, try Row 2 as headers
-        if (rows.length === 0 || (rows[0] && typeof rows[0] === 'object' && !('Location' in rows[0]) && !('location' in rows[0]))) {
-          // Parse with Row 2 as headers
-          rows = XLSX.utils.sheet_to_json(sheet, { range: 1 }); // Start from row 2 (0-indexed)
-        }
-
-        const lowerName = safeToLower(sheetName);
-        let category:
-          | "FIRE_EXTINGUISHER" | "EMERGENCY_LIGHT" | "FIRE_ALARM_DEVICE" | "SMOKE_ALARM" | null = null;
-        let counterKey: keyof typeof imported | null = null;
-
-        if (lowerName.includes("exting")) {
-          category = "FIRE_EXTINGUISHER";
-          counterKey = "extinguishers";
-        } else if (lowerName.includes("emerg") || lowerName.includes("exit") || lowerName.includes("light")) {
-          category = "EMERGENCY_LIGHT";
-          counterKey = "emergencyLights";
-        } else if (lowerName.includes("sprink")) {
-          // Skip sprinkler for now - not in devices category enum
-          continue;
-        } else if (lowerName.includes("individual device record")) {
-          // This is the actual Fire Alarm device list
-          category = "FIRE_ALARM_DEVICE";
-          counterKey = "fireAlarm";
-          // Headers are on Row 3 for this sheet
-          rows = XLSX.utils.sheet_to_json(sheet, { range: 2 }); // Start from row 3 (0-indexed)
-        } else if (lowerName.includes("smoke alarm")) {
-          category = "SMOKE_ALARM";
-          counterKey = "fireAlarm"; // Count as fire alarm devices
-          // This is a legend sheet, skip it
-          continue;
-        } else if (
-          lowerName.includes("alarm") ||
-          lowerName.includes("device")
-        ) {
-          // Skip generic alarm/device sheets that are forms, not device lists
-          continue;
-        }
-
-        if (!category || !counterKey) continue;
-
-        for (const row of rows) {
-          const location = findLocationValue(row);
-          if (!location) {
-            excluded.push({
-              row,
-              reason: "Missing location",
-              sheet: sheetName,
-            });
-            continue;
-          }
-
-          const description = findDescriptionValue(row);
-          const externalRef = findExternalRef(row);
-          const dedupeKey = externalRef || generateDedupeKey(category, location, description);
-
-          // Check if device exists
-          const dbInstance = await getDb();
-          if (!dbInstance) continue;
-          const existing = await dbInstance
-            .select()
-            .from(devices)
-            .where(
-              and(
-                eq(devices.companyId, ctx.user.companyId!),
-                eq(devices.siteId, input.siteId),
-                eq(devices.externalRef, dedupeKey)
-              )
-            );
-
-          if (existing.length > 0) {
-            // Update existing — realign to the source order too (source is authoritative).
-            await dbInstance
-              .update(devices)
-              .set({
-                location,
-                deviceType: description,
-                category,
-                sortOrder: sequenceOrder,
-                updatedAt: new Date(),
-              })
-              .where(eq(devices.id, existing[0].id));
-
-            updated[counterKey]++;
-          } else {
-            // Insert new — sortOrder follows the source row order.
-            await dbInstance.insert(devices).values({
-              companyId: targetCompanyId,
-              siteId: input.siteId,
-              location,
-              deviceType: description,
-              category,
-              externalRef: dedupeKey,
-              sortOrder: sequenceOrder,
-              isActive: true,
-            });
-
-            imported[counterKey]++;
-          }
-
-          sequenceOrder++;
-        }
-      }
-
-      // Update import status
-      const finalDb = await getDb();
-      if (finalDb) {
-        await finalDb
-          .update(attachments)
-          .set({
-            importStatus: "imported",
-            importSummary: { imported, updated, excluded },
-          })
-          .where(eq(attachments.id, input.fileId));
-      }
-
-      return {
-        imported,
-        updated,
-        excluded,
-        siteUpdated: {
-          fieldsUpdated: siteFieldsUpdated,
-          updatedFields: siteUpdatedFields,
-        },
-      };
     }),
 });

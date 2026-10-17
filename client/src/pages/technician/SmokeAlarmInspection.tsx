@@ -1,3 +1,6 @@
+import { useOfflineScope } from "@/hooks/useOfflineScope";
+import { useOfflineJobPacket } from "@/hooks/useOfflineJobPacket";
+import { displayedDeviceRevision } from "@/lib/deviceEvidence";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,18 +34,21 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
   });
 
   const isOnline = useOnlineStatus();
+  const scope = useOfflineScope();
   const pendingSmokeTests = usePendingSmokeAlarmTests();
 
   const { data: job } = trpc.job.getWithDetails.useQuery({ id: jobId });
-  const { data: smokeAlarms = [], refetch } = trpc.smokeAlarm.listByJob.useQuery({ jobId });
+  const { data: serverSmokeAlarms, refetch } = trpc.smokeAlarm.listByJob.useQuery({ jobId });
+  const { packet } = useOfflineJobPacket(jobId);
+  const smokeAlarms = serverSmokeAlarms ?? packet?.devices?.filter((row: { category?: string }) => row.category === "SMOKE_ALARM") as NonNullable<typeof serverSmokeAlarms> ?? [];
 
   // Overlay test results recorded offline (queued in IndexedDB) on top of the
   // server data, so the UI reflects them immediately even before they sync.
   const offlineResultByAlarm = new Map(
     pendingSmokeTests.filter((t) => t.jobId === jobId).map((t) => [t.alarmId, t.testResult] as const)
   );
-  const getEffectiveResult = (alarm: { id: number; testResult: string | null }) =>
-    alarm.testResult ?? offlineResultByAlarm.get(alarm.id) ?? null;
+  const getEffectiveResult = (alarm: { id: number; testResult: string | null;
+  }) => offlineResultByAlarm.get(alarm.id) ?? alarm.testResult ?? null;
   const pendingThisJob = offlineResultByAlarm.size;
 
   const createAlarm = trpc.smokeAlarm.create.useMutation({
@@ -82,19 +88,23 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
   // without navigating away. deleteSmokeTest is a safe no-op if SyncScreen got
   // there first, so the two paths can't double-error.
   useEffect(() => {
-    if (!isOnline) return;
+    if (!isOnline || !scope) return;
     let cancelled = false;
 
     const syncPending = async () => {
       try {
-        const pending = await offlineStorage.getPendingSmokeTests();
+        const pending = await offlineStorage.getPendingSmokeTests(scope);
         if (pending.length === 0 || cancelled) return;
 
         let success = 0;
-        for (const test of pending) {
+        for (const test of pending.filter(test => test.jobId === jobId)) {
+          if (cancelled) break;
           try {
-            await syncSmokeTest.mutateAsync({ id: test.alarmId, testResult: test.testResult, notes: test.notes });
-            await offlineStorage.deleteSmokeTest(test.id);
+            await syncSmokeTest.mutateAsync({ jobId: test.jobId,
+              id: test.alarmId, expectedDeviceRevision: test.expectedDeviceRevision,
+              testResult: test.testResult, notes: test.notes });
+            if (cancelled) break;
+            await offlineStorage.deleteSmokeTest(test.id, scope);
             success++;
           } catch (error) {
             console.error(`Failed to sync smoke-alarm test ${test.id}:`, error);
@@ -113,7 +123,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
     syncPending();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnline]);
+  }, [isOnline, scope?.userId, scope?.companyId, jobId]);
 
   const handleAddAlarm = () => {
     if (!newAlarm.suiteNumber.trim()) {
@@ -127,6 +137,7 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
     }
 
     createAlarm.mutate({
+      jobId,
       companyId: job.site.companyId,
       siteId: job.job.siteId,
       suiteNumber: newAlarm.suiteNumber,
@@ -138,11 +149,16 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
   };
 
   const handleRecordTest = async (alarmId: number, testResult: "pass" | "fail" | "no_access" | "na") => {
+    let expectedDeviceRevision: string;
+    try { expectedDeviceRevision = displayedDeviceRevision(smokeAlarms.find(alarm => alarm.id === alarmId), alarmId); }
+    catch (error) { toast.error((error as Error).message); return; }
     // If offline, queue to IndexedDB; the pub/sub overlay reflects it instantly
     // and SyncScreen / the reconnect effect will push it to the server later.
     if (!isOnline) {
       try {
-        await offlineStorage.savePendingSmokeTest({ jobId, alarmId, testResult });
+        await offlineStorage.savePendingSmokeTest({ jobId, alarmId, expectedDeviceRevision, testResult },
+          scope
+        );
         toast.info("Saved offline. Will sync when online.");
       } catch (error) {
         console.error("Failed to save smoke-alarm test offline:", error);
@@ -152,13 +168,15 @@ export default function SmokeAlarmInspection({ jobId }: SmokeAlarmInspectionProp
     }
 
     try {
-      await recordTest.mutateAsync({ id: alarmId, testResult });
+      await recordTest.mutateAsync({ jobId, id: alarmId, expectedDeviceRevision, testResult });
     } catch (error) {
       // Server save failed — fall back to the offline queue instead of losing it
       console.error("Server save failed, falling back to offline:", error);
       try {
-        await offlineStorage.savePendingSmokeTest({ jobId, alarmId, testResult });
-        toast.info("Saved offline. Will sync when connection improves.");
+        await offlineStorage.savePendingSmokeTest({ jobId, alarmId, expectedDeviceRevision, testResult },
+          scope
+        );
+        toast.info("Test preserved on this device. Sync or review it before submitting the job.");
       } catch (offlineError) {
         console.error("Offline save also failed:", offlineError);
         toast.error("Failed to record test");

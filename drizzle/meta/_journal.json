@@ -267,6 +267,34 @@
       "when": 1790924190458,
       "tag": "0037_payment_protocol_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "5",
+      "when": 1790924190459,
+      "tag": "0038_inspection_template_capture",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1790924190460,
+      "tag": "0039_finalization_hash_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1790924190461,
+      "tag": "0040_captured_device_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1790924190462,
+      "tag": "0041_invoice_payment_state_guards",
+      "breakpoints": true
     }
   ]
 }

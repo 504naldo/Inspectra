@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import { useAllCachedPackets, removePacketById } from "@/hooks/useOfflineJobPack
 import { usePendingFireAlarmResults } from "@/hooks/usePendingFireAlarmResults";
 import { usePendingSmokeAlarmTests } from "@/hooks/usePendingSmokeAlarmTests";
 import { offlineStorage } from "@/lib/offlineStorage";
+import { offlineScopeKey } from "@/lib/offlineScope";
+import { OfflineRecoveryCard } from "@/components/OfflineRecoveryCard";
 import {
   ArrowLeft,
   RefreshCw,
@@ -37,6 +39,7 @@ import { toast } from "sonner";
 export default function SyncScreen() {
   const {
     isOnline,
+    scope,
     syncStatus,
     getOfflineResults,
     getOfflineDeficiencies,
@@ -53,6 +56,9 @@ export default function SyncScreen() {
     setLastSyncTime,
     clearAllOfflineData,
   } = useOfflineStorage();
+
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -71,11 +77,22 @@ export default function SyncScreen() {
   const recordSmokeTest = trpc.smokeAlarm.recordTest.useMutation();
 
   const handleSync = async () => {
+    if (!scope) {
+      toast.error("Sign in before syncing saved data");
+      return;
+    }
     if (!isOnline) {
       toast.error("Cannot sync while offline");
       return;
     }
 
+    const ensureScope = () => {
+      if (
+        !currentScope.current ||
+        offlineScopeKey(currentScope.current) !== offlineScopeKey(scope)
+      )
+        throw new Error("Account changed; saved data was preserved");
+    };
     setIsSyncing(true);
     setSyncError(null);
 
@@ -91,25 +108,31 @@ export default function SyncScreen() {
     let templateSynced = 0;
     let fireAlarmSynced = 0;
     let smokeSynced = 0;
+    let photosSynced = 0;
 
     try {
       // Sync inspection results (batch)
       const pendingResults = getOfflineResults().filter((r) => !r.synced);
       if (pendingResults.length > 0) {
         try {
+          ensureScope();
           const data = await syncBatch.mutateAsync({
             results: pendingResults.map((r) => ({
               jobId: r.jobId,
               deviceId: r.deviceId,
+              expectedDeviceRevision: r.expectedDeviceRevision,
               result: r.result,
               notes: r.notes,
               testedAt: r.testedAt,
             })),
           });
+          ensureScope();
+          if (data.synced !== pendingResults.length)
+            throw new Error(
+              "The server did not acknowledge the complete batch"
+            );
           resultsSynced = data.synced;
-          // Mark all pending results as synced (by unique job ID), then clear
-          const uniqueJobIds = Array.from(new Set(pendingResults.map((r) => r.jobId)));
-          for (const jId of uniqueJobIds) markResultsSynced(jId);
+          markResultsSynced(pendingResults);
           clearSyncedResults();
         } catch {
           resultsFailed = pendingResults.length;
@@ -122,9 +145,11 @@ export default function SyncScreen() {
       const syncedLocalIds: string[] = [];
       for (const def of pendingDefs) {
         try {
+          ensureScope();
           const created = await createDeficiency.mutateAsync({
             jobId: def.jobId,
             deviceId: def.deviceId,
+            expectedDeviceRevision: def.expectedDeviceRevision,
             title: def.title,
             severity: def.severity,
             description: def.description,
@@ -138,19 +163,27 @@ export default function SyncScreen() {
             // a lost response on reconnect) never duplicates this deficiency.
             idempotencyKey: def.localId,
           });
+          ensureScope();
+
+          const queuedPhotos = await offlineStorage.getPendingPhotosForDeficiency(def.localId,
+              scope
+            );
+          for (const photo of queuedPhotos) {
+            await offlineStorage.setPhotoResolvedDeficiencyId(photo.id, created.id,
+              scope,
+              def.jobId
+            );
+          }
           syncedLocalIds.push(def.localId);
           defsSynced++;
-
-          const queuedPhotos = await offlineStorage.getPendingPhotosForDeficiency(def.localId);
-          for (const photo of queuedPhotos) {
-            await offlineStorage.setPhotoResolvedDeficiencyId(photo.id, created.id);
-          }
         } catch {
           defsFailed++;
         }
       }
       if (syncedLocalIds.length > 0) {
-        markDeficienciesSynced(syncedLocalIds);
+        markDeficienciesSynced(
+          pendingDefs.filter(def => syncedLocalIds.includes(def.localId))
+        );
         clearSyncedDeficiencies();
       }
 
@@ -158,6 +191,7 @@ export default function SyncScreen() {
       const pendingChecklist = getOfflineChecklistResponses().filter((r) => !r.synced);
       if (pendingChecklist.length > 0) {
         try {
+          ensureScope();
           await bulkSaveChecklistResponses.mutateAsync({
             responses: pendingChecklist.map((r) => ({
               jobId: r.jobId,
@@ -167,8 +201,9 @@ export default function SyncScreen() {
               comment: r.comment,
             })),
           });
+          ensureScope();
           checklistSynced = pendingChecklist.length;
-          markChecklistResponsesSynced(pendingChecklist.map((r) => r.localId));
+          markChecklistResponsesSynced(pendingChecklist);
           clearSyncedChecklistResponses();
         } catch {
           checklistFailed = pendingChecklist.length;
@@ -180,16 +215,19 @@ export default function SyncScreen() {
       const syncedTemplateLocalIds: string[] = [];
       for (const r of pendingTemplate) {
         try {
+          ensureScope();
           await saveTemplateResponse.mutateAsync({
             jobId: r.jobId,
             templateId: r.templateId,
             sectionId: r.sectionId,
             itemId: r.itemId,
+            questionRevision: r.questionRevision,
             responseValue: r.responseValue,
             responseText: r.responseText,
             notes: r.notes,
             deficiencyId: r.deficiencyId,
           });
+          ensureScope();
           syncedTemplateLocalIds.push(r.localId);
           templateSynced++;
         } catch {
@@ -197,7 +235,11 @@ export default function SyncScreen() {
         }
       }
       if (syncedTemplateLocalIds.length > 0) {
-        markTemplateResponsesSynced(syncedTemplateLocalIds);
+        markTemplateResponsesSynced(
+          pendingTemplate.filter(item =>
+            syncedTemplateLocalIds.includes(item.localId)
+          )
+        );
         clearSyncedTemplateResponses();
       }
 
@@ -205,17 +247,20 @@ export default function SyncScreen() {
       // these live in IndexedDB via offlineStorage.ts, not localStorage)
       for (const item of pendingFireAlarmResults) {
         try {
+          ensureScope();
           await saveFireAlarmResult.mutateAsync({
             jobId: item.jobId,
             fireAlarmSystemId: item.fireAlarmSystemId,
             checklistItemId: item.checklistItemId,
+            questionRevision: item.questionRevision,
             result: item.result,
             notes: item.notes,
             numericValue: item.numericValue,
             textValue: item.textValue,
           });
-          await offlineStorage.markAsSynced(item.id);
-          await offlineStorage.deleteSyncedResult(item.id);
+          ensureScope();
+          await offlineStorage.markAsSynced(item.id, scope);
+          await offlineStorage.deleteSyncedResult(item.id, scope);
           fireAlarmSynced++;
         } catch {
           fireAlarmFailed++;
@@ -226,12 +271,16 @@ export default function SyncScreen() {
       // these live in their own IndexedDB store, keyed by alarm device id)
       for (const test of pendingSmokeTests) {
         try {
+          ensureScope();
           await recordSmokeTest.mutateAsync({
+            jobId: test.jobId,
             id: test.alarmId,
+            expectedDeviceRevision: test.expectedDeviceRevision,
             testResult: test.testResult,
             notes: test.notes,
           });
-          await offlineStorage.deleteSmokeTest(test.id);
+          ensureScope();
+          await offlineStorage.deleteSmokeTest(test.id, scope);
           smokeSynced++;
         } catch {
           smokeFailed++;
@@ -241,9 +290,10 @@ export default function SyncScreen() {
       // Upload any queued photos whose parent deficiency has a known server id —
       // covers both freshly-synced deficiencies and ones left over from a failed retry
       let photosFailed = 0;
-      const photosToUpload = await offlineStorage.getPhotosReadyToUpload();
+      const photosToUpload = await offlineStorage.getPhotosReadyToUpload(scope);
       for (const photo of photosToUpload) {
         try {
+          ensureScope();
           await uploadMedia.mutateAsync({
             deficiencyId: photo.resolvedDeficiencyId!,
             fileName: photo.fileName,
@@ -256,21 +306,31 @@ export default function SyncScreen() {
             // never duplicates the attachment or its storage object.
             idempotencyKey: photo.id,
           });
-          await offlineStorage.deletePendingPhoto(photo.id);
+          ensureScope();
+          await offlineStorage.deletePendingPhoto(photo.id, scope);
+          photosSynced++;
         } catch {
           photosFailed++;
         }
       }
 
-      const totalSynced = resultsSynced + defsSynced + checklistSynced + templateSynced + fireAlarmSynced + smokeSynced;
-      const totalFailed = resultsFailed + defsFailed + checklistFailed + templateFailed + fireAlarmFailed + smokeFailed;
+      const totalSynced = resultsSynced + defsSynced + checklistSynced + templateSynced + fireAlarmSynced + smokeSynced +
+        photosSynced;
+      const totalFailed = resultsFailed + defsFailed + checklistFailed + templateFailed + fireAlarmFailed + smokeFailed +
+        photosFailed;
 
       if (photosFailed > 0) {
         toast.warning(`${photosFailed} photo${photosFailed !== 1 ? "s" : ""} failed to upload — they'll retry on the next sync`);
       }
 
       if (totalSynced === 0 && totalFailed === 0) {
-        toast.info(photosFailed > 0 ? "Synced deficiencies — some photos still pending" : "Nothing to sync");
+        toast.info(
+          pendingPhotoCount > 0 ? "Saved photos still need their parent deficiency; export saved data for recovery"
+            : "No account-owned changes are ready to sync"
+        );
+      } else if (totalFailed === 0 && (await offlineStorage.getPendingPhotoCount(scope)) > 0) {
+        toast.warning(`Synced ${totalSynced}; some photos still need recovery`);
+        setSyncError("Saved photos need their parent deficiency. Export saved data for recovery.");
       } else if (totalFailed === 0) {
         toast.success(`Synced ${totalSynced} item${totalSynced !== 1 ? "s" : ""}`);
         setLastSyncTime();
@@ -283,17 +343,25 @@ export default function SyncScreen() {
       }
     } catch (error) {
       console.error("Sync error:", error);
-      setSyncError("Sync failed unexpectedly");
+      setSyncError(
+        error instanceof Error
+          ? error.message
+          : "Sync failed unexpectedly; saved data was preserved"
+      );
     } finally {
       setIsSyncing(false);
     }
   };
 
   const handleClearAll = () => {
-    clearAllOfflineData();
-    offlineStorage.clearAllResults().catch(() => {});
-    offlineStorage.clearAllSmokeTests().catch(() => {});
-    toast.success("Offline data cleared");
+    try {
+      clearAllOfflineData();
+    toast.success(
+        "Cached job details cleared; all saved changes and photos were preserved"
+      );
+    } catch {
+      toast.error("Cleanup failed; saved data was preserved");
+    }
   };
 
   const offlineResults = getOfflineResults();
@@ -365,6 +433,8 @@ export default function SyncScreen() {
           </CardContent>
         </Card>
 
+        <OfflineRecoveryCard />
+
         {/* Sync Status */}
         <div className="grid grid-cols-2 gap-4">
           <Card>
@@ -434,7 +504,8 @@ export default function SyncScreen() {
                       Device Test · Job #{result.jobId}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Device #{result.deviceId} · {new Date(result.testedAt).toLocaleString()}
+                      Device #{result.deviceId} · {" "}
+                      {new Date(result.testedAt).toLocaleString()}
                     </p>
                   </div>
                   <span
@@ -532,7 +603,8 @@ export default function SyncScreen() {
               )}
               {pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length + pendingFireAlarmResults.length + pendingSmokeTests.length > 16 && (
                 <p className="text-sm text-muted-foreground text-center">
-                  +{pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length + pendingFireAlarmResults.length + pendingSmokeTests.length - 16} more items
+                  +{pendingResults.length + pendingDefs.length + pendingChecklist.length + pendingTemplate.length + pendingFireAlarmResults.length + pendingSmokeTests.length - 16}{" "}
+                  more items
                 </p>
               )}
             </CardContent>
@@ -582,8 +654,13 @@ export default function SyncScreen() {
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
                         onClick={() => {
-                          removePacketById(jobId);
-                          toast.success("Packet removed");
+                          try {
+                            removePacketById(jobId, scope);
+                            window.dispatchEvent(new Event("storage"));
+                            toast.success("Packet removed");
+                          } catch (error) {
+                            toast.error(error instanceof Error ? error.message : "Packet could not be removed");
+                          }
                         }}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -601,7 +678,7 @@ export default function SyncScreen() {
           <Button
             className="w-full h-14"
             onClick={handleSync}
-            disabled={!isOnline || isSyncing || totalPending === 0}
+            disabled={!scope || !isOnline || isSyncing || totalPending === 0}
           >
             {isSyncing ? (
               <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
@@ -626,7 +703,7 @@ export default function SyncScreen() {
           {(offlineResults.length > 0 || offlineDeficiencies.length > 0 || offlineChecklistResponses.length > 0 || offlineTemplateResponses.length > 0 || pendingFireAlarmResults.length > 0 || pendingSmokeTests.length > 0) && (
             <Button variant="outline" className="w-full" onClick={() => setIsClearAllOpen(true)}>
               <Trash2 className="h-4 w-4 mr-2" />
-              Clear All Offline Data
+              Clear Cached Job Details
             </Button>
           )}
         </div>
@@ -635,9 +712,11 @@ export default function SyncScreen() {
       <AlertDialog open={isClearAllOpen} onOpenChange={setIsClearAllOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Clear all offline data?</AlertDialogTitle>
+            <AlertDialogTitle>Clear cached job details?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all unsynced inspection results, deficiencies, checklist/template responses, and queued photos on this device. This cannot be undone.
+              This removes synced records and cached job details for your
+              account. Pending changes, photos, older data, and records
+              belonging to other accounts stay on this device.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

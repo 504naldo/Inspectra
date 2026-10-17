@@ -20,6 +20,9 @@ vi.mock("./db", () => {
     getDeviceById: vi
       .fn()
       .mockResolvedValue({ id: 1, siteId: 1, companyId: 1 }),
+    getSiteById: vi.fn().mockResolvedValue({ id: 1, companyId: 1, customerOrgId: 1 }),
+    getCustomerOrgById: vi.fn().mockResolvedValue({ id: 1, companyId: 1 }),
+    captureDeviceSnapshotForJob: vi.fn().mockResolvedValue({ captureProvenance: "captured", deviceId: 1, companyId: 1, siteId: 1, jobId: 1 }),
     getInspectionResultsByJob: vi.fn(),
     getInspectionResultByJobAndDevice: vi.fn(),
     upsertInspectionResult: vi.fn(),
@@ -164,6 +167,7 @@ describe("Inspection Result Router", () => {
       jobId: 1,
       deviceId: 1,
       result: "pass",
+      expectedDeviceRevision: "displayed-device-revision",
       notes: "Device functioning properly",
     });
     
@@ -209,7 +213,7 @@ describe("Deficiency Router", () => {
     };
     
     vi.mocked(db.createDeficiency).mockResolvedValue(mockDeficiency as any);
-    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 1 } as any);
+    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 1, siteId: 1, customerOrgId: 1 } as any);
 
     const ctx = createTechnicianContext();
     const caller = appRouter.createCaller(ctx);
@@ -217,6 +221,7 @@ describe("Deficiency Router", () => {
     const result = await caller.deficiency.create({
       jobId: 1,
       deviceId: 1,
+      expectedDeviceRevision: "displayed-device-revision",
       title: "Smoke detector not responding",
       severity: "major",
     });
@@ -232,7 +237,7 @@ describe("Deficiency Router", () => {
     ];
     
     vi.mocked(db.getDeficienciesByJob).mockResolvedValue(mockDeficiencies as any);
-    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 1 } as any);
+    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 1, siteId: 1, customerOrgId: 1 } as any);
 
     const ctx = createTechnicianContext();
     const caller = appRouter.createCaller(ctx);

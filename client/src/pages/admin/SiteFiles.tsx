@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { ACCOUNT_CHANGED_MESSAGE, EXPECTED_ACCOUNT_HEADER, expectedAccount, serializeExpectedAccount } from "@shared/accountBinding";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -141,6 +142,9 @@ export default function SiteFiles({ siteId }: SiteFilesProps) {
   
   const handleUpload = async () => {
     if (pendingFiles.length === 0 || !user?.companyId) return;
+    const displayedAccount = expectedAccount(user);
+    if (!displayedAccount) { toast.error(ACCOUNT_CHANGED_MESSAGE); return; }
+    const accountHeader = serializeExpectedAccount(displayedAccount);
     
     setIsUploading(true);
     setUploadProgress(0);
@@ -164,6 +168,7 @@ export default function SiteFiles({ siteId }: SiteFilesProps) {
 
         const response = await fetch("/api/upload", {
           method: "POST",
+          headers: { [EXPECTED_ACCOUNT_HEADER]: accountHeader },
           body: formData,
           credentials: "include",
         });

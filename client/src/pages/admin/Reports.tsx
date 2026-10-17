@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useDurableEmail } from "@/hooks/useDurableEmail";
+import type { ReportDeliveryPayload } from "@/lib/deliveryOperation";
 import {
   FileText,
   Plus,
@@ -93,7 +95,12 @@ export default function AdminReports() {
     );
   }
 
-  const companyId = user.companyId;
+  return <ReportsContent key={`${user.id}:${user.companyId}`} user={user} />;
+}
+
+function ReportsContent({ user }: { user: NonNullable<ReturnType<typeof useAuth>["user"]> }) {
+  const companyId = user.companyId!;
+  const utils = trpc.useUtils();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
@@ -114,6 +121,8 @@ export default function AdminReports() {
   const [emailBody, setEmailBody] = useState("");
   // Track the active job/report when emailing an existing (pre-generated) report
   const [activeEmailJobId, setActiveEmailJobId] = useState<number | null>(null);
+  const [activeEmailReportId, setActiveEmailReportId] = useState<number | null>(null);
+  const [activeEmailReportNumber, setActiveEmailReportNumber] = useState("");
 
   const { data: jobs, refetch: refetchJobs } = trpc.job.listByCompany.useQuery({
     companyId,
@@ -200,21 +209,16 @@ export default function AdminReports() {
     },
   });
 
-  const [emailRequestId, setEmailRequestId] = useState(() =>
-    crypto.randomUUID());
-
-  const sendReport = trpc.gmail.sendReport.useMutation({
-    onSuccess: () => {
-      toast.success('Report emailed successfully!');
-      setIsEmailOpen(false);
-      setEmailTo("");
-      setActiveEmailJobId(null);
-      refetchReports();
-    },
-    onError:error => {
-      toast.error(error.message || 'Failed to send email');
-    },
+  const sendReport = trpc.gmail.sendReport.useMutation();
+  const emailDelivery = useDurableEmail<ReportDeliveryPayload>({
+    open: isEmailOpen,
+    scope: activeEmailReportId ? { accountId: user.id, accountCompanyId: user.companyId ?? null,
+      companyId, route: "gmail.sendReport", entityId: activeEmailReportId } : null,
+    onSend: ({ id: _id, to: _to, ...input }) => sendReport.mutateAsync(input),
+    lookup: requestId => utils.emailDelivery.lookup.fetch({ requestId }),
+    onAccepted: () => { void refetchReports(); },
   });
+  const emailWorking = emailDelivery.working || sendReport.isPending;
 
   const saveReportToDrive = trpc.drive.saveReport.useMutation({
     onSuccess:data => {
@@ -322,10 +326,11 @@ EWF Fire & Security`;
       : new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric", });
 
     setActiveEmailJobId(parseInt(selectedJobId));
+    setActiveEmailReportId(generatedReportId);
+    setActiveEmailReportNumber(reportNumber);
     setEmailSubject(`Inspection Report - ${siteName} - ${reportNumber}`);
     setEmailBody(buildEmailBody(siteName, jobNumber, reportNumber, inspectionDate));
     setEmailTo("");
-    setEmailRequestId(crypto.randomUUID());
     setIsEmailOpen(true);
   };
 
@@ -336,34 +341,25 @@ EWF Fire & Security`;
     const inspectionDate = new Date(r.createdAt).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric", });
 
     setActiveEmailJobId(r.jobId);
+    setActiveEmailReportId(r.id);
+    setActiveEmailReportNumber(reportNumber);
     setGeneratedReportId(r.id);
     setGeneratedReportNumber(reportNumber);
     setEmailTo(r.contactEmail || "");
     setEmailSubject(`Inspection Report - ${siteName} - ${reportNumber}`);
     setEmailBody(buildEmailBody(siteName, r.jobNumber || "", reportNumber, inspectionDate)
     );
-    setEmailRequestId(crypto.randomUUID());
     setIsEmailOpen(true);
   };
 
   const handleSendEmail = () => {
-    if (!emailTo || !emailSubject || !emailBody) {
-      toast.error('Please fill in all required fields');
-      return;
+    const jobId = activeEmailJobId;
+    if (!activeEmailReportId || !jobId) { toast.error("No report selected"); return; }
+    if (!emailDelivery.saved && (!emailTo || !emailSubject || !emailBody)) {
+      toast.error("Please fill in all required fields"); return;
     }
-    const jobId = activeEmailJobId ?? (selectedJobId ? parseInt(selectedJobId) : null);
-    if (!generatedReportId || !jobId) {
-      toast.error('No report selected');
-      return;
-    }
-    sendReport.mutate({
-      requestId: emailRequestId,
-      jobId,
-      reportId: generatedReportId,
-      recipientEmail: emailTo,
-      subject: emailSubject,
-      body: emailBody,
-    });
+    void emailDelivery.send({ id: activeEmailReportId, to: [emailTo], jobId,
+      reportId: activeEmailReportId, recipientEmail: emailTo, subject: emailSubject, body: emailBody });
   };
 
   const getStatusBadge = (status: string) => {
@@ -615,18 +611,6 @@ EWF Fire & Security`;
                           Open in New Tab
                         </Button>
                         {/* Email Report button */}
-                        {gmailConnection?.connected === false ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled
-                            title="Log out and log back in to connect your Gmail account"
-                            className="opacity-60"
-                          >
-                            <AlertCircle className="h-4 w-4 mr-1" />
-                            Gmail Not Connected
-                          </Button>
-                        ) : (
                           <Button
                             variant="outline"
                             size="sm"
@@ -636,7 +620,7 @@ EWF Fire & Security`;
                             <Mail className="h-4 w-4 mr-1" />
                             Email Report
                           </Button>
-                        )}
+
                         {/* Drive button */}
                         {generatedDriveUrl ? (
                           <Button
@@ -815,11 +799,6 @@ EWF Fire & Security`;
                           <Download className="h-4 w-4" />
                         </Button>
                       )}
-                      {gmailConnection?.connected === false ? (
-                        <Button variant="ghost" size="sm" disabled title="Gmail not connected">
-                          <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                        </Button>
-                      ) : (
                         <Button
                           variant="outline"
                           size="sm"
@@ -829,7 +808,7 @@ EWF Fire & Security`;
                           <Mail className="h-4 w-4 mr-1" />
                           Email
                         </Button>
-                      )}
+
                     </div>
                   </div>
                 ))}
@@ -894,6 +873,16 @@ EWF Fire & Security`;
             <DialogTitle>Email Report to Client</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {emailDelivery.error && <p role="alert" className="rounded-md border border-red-200 p-3 text-sm text-red-800">{emailDelivery.error}</p>}
+            {emailDelivery.restoring && <p role="status" className="text-sm text-muted-foreground">Checking saved email…</p>}
+            {emailDelivery.saved && <div role="status" className="rounded-md border bg-muted/40 p-3 space-y-2 text-sm">
+              <p className="font-medium">{emailDelivery.accepted ? "Email provider accepted this email" : emailDelivery.saved.status === "rejected" ? "Provider rejected this email" : "An email send is saved for recovery"}</p>
+              <p>{emailDelivery.accepted ? "The original message remains saved. Check its status to finish any pending report update." : "Check the outcome or retry the original email with the saved recipient and message below."}</p>
+              <Button size="sm" variant="outline" disabled={emailWorking} onClick={emailDelivery.checkStatus}>Check email status</Button>
+            </div>}
+            {gmailConnection?.connected === false && <p className="text-sm text-muted-foreground">Reconnect Gmail before starting a new email. Saved email status is still available.</p>}
+            <fieldset disabled={emailWorking || !!emailDelivery.saved || !!emailDelivery.error} className="space-y-4">
+            <legend className="sr-only">Report email recipient and message</legend>
             <ReportRecipientSuggestion
               jobId={activeEmailJobId}
               jobs={jobs}
@@ -904,7 +893,7 @@ EWF Fire & Security`;
               <Input
                 id="email-to"
                 type="email"
-                value={emailTo}
+                value={emailDelivery.saved?.input.recipientEmail ?? emailTo}
                 onChange={e => setEmailTo(e.target.value)}
                 placeholder="client@example.com"
               />
@@ -913,7 +902,7 @@ EWF Fire & Security`;
               <Label htmlFor="email-subject">Subject *</Label>
               <Input
                 id="email-subject"
-                value={emailSubject}
+                value={emailDelivery.saved?.input.subject ?? emailSubject}
                 onChange={e => setEmailSubject(e.target.value)}
               />
             </div>
@@ -921,35 +910,27 @@ EWF Fire & Security`;
               <Label htmlFor="email-body">Message *</Label>
               <Textarea
                 id="email-body"
-                value={emailBody}
+                value={emailDelivery.saved?.input.body ?? emailBody}
                 onChange={e => setEmailBody(e.target.value)}
                 className="min-h-[220px] resize-y font-mono text-sm"
               />
             </div>
+            </fieldset>
             <p className="text-xs text-muted-foreground">
-              The report PDF ({generatedReportNumber}) will be attached
+              The report PDF ({activeEmailReportNumber}) will be attached
               automatically. This email is sent from your Gmail account.
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setIsEmailOpen(false)}>
                 Cancel
               </Button>
-              <Button
+              {emailDelivery.canStartAnother ? <Button disabled={emailWorking || gmailConnection?.connected === false} onClick={emailDelivery.startAnother}>Start another email</Button> : <Button
                 onClick={handleSendEmail}
-                disabled={sendReport.isPending || !emailTo}
+                disabled={emailWorking || !emailDelivery.ready || (!emailDelivery.saved && (!emailTo || !emailSubject || !emailBody || !!emailDelivery.error || gmailConnection?.connected === false))}
               >
-                {sendReport.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Mail className="h-4 w-4 mr-2" />
-                    Send Email
-                  </>
-                )}
-              </Button>
+                {emailWorking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                {emailDelivery.saved ? "Retry original email" : "Send Email"}
+              </Button>}
             </div>
           </div>
         </DialogContent>

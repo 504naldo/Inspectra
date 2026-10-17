@@ -1,24 +1,36 @@
 import { useEffect, useState } from "react";
-import { offlineStorage, subscribePendingSmokeTests, type PendingSmokeAlarmTest } from "@/lib/offlineStorage";
-
-/**
- * Tracks pending smoke-alarm test results queued in IndexedDB awaiting sync.
- * Reacts instantly to save/sync/clear via offlineStorage's pub/sub instead of polling.
- */
+import {
+  offlineStorage,
+  subscribePendingSmokeTests,
+  type PendingSmokeAlarmTest,
+} from "@/lib/offlineStorage";
+import { useOfflineScope } from "./useOfflineScope";
+import { offlineScopeKey } from "@/lib/offlineScope";
 export function usePendingSmokeAlarmTests() {
-  const [tests, setTests] = useState<PendingSmokeAlarmTest[]>([]);
-
+  const scope = useOfflineScope();
+  const scopeKey = scope ? offlineScopeKey(scope) : "";
+  const [state, setState] = useState<{
+    scopeKey: string;
+    items: PendingSmokeAlarmTest[];
+  }>({ scopeKey: "", items: [] });
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
-      offlineStorage.getPendingSmokeTests().then((items) => {
-        if (!cancelled) setTests(items);
-      }).catch(() => {});
+      offlineStorage
+        .getPendingSmokeTests(scope)
+        .then(items => {
+          if (!cancelled) setState({ scopeKey, items });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ scopeKey, items: [] });
+        });
     };
-
     refresh();
-    return subscribePendingSmokeTests(refresh);
-  }, []);
-
-  return tests;
+    const unsubscribe = subscribePendingSmokeTests(refresh);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [scopeKey]);
+  return state.scopeKey === scopeKey ? state.items : [];
 }

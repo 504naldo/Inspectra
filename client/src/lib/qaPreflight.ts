@@ -18,6 +18,7 @@ export interface QaSyncCounts {
   // is exactly what this preflight exists to catch — so they count here too.
   pendingFireAlarmResults?: number;
   pendingSmokeTests?: number;
+  pendingPhotos?: number;
   pendingLegacyRequests?: number;
 }
 
@@ -30,6 +31,7 @@ export function pendingSyncItemCount(s: QaSyncCounts): number {
     (s.pendingTemplateResponses ?? 0) +
     (s.pendingFireAlarmResults ?? 0) +
     (s.pendingSmokeTests ?? 0) +
+    (s.pendingPhotos ?? 0) +
     (s.pendingLegacyRequests ?? 0)
   );
 }

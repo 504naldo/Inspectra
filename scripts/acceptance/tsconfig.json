@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["browserHarness.tsx", "../../server/_core/types/**/*.d.ts"],
+  "exclude": ["../../node_modules"],
+  "compilerOptions": { "incremental": false }
+}

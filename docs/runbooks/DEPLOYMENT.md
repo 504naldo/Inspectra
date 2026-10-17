@@ -7,7 +7,9 @@ backfills. Never expose database credentials in logs, PRs, or docs.
 
 ## Background (how this app deploys)
 
-- Push to `main` → Railway auto-builds (Nixpacks, **Node 22** (proposed in audit-remediation branch; live runtime unverified)) and deploys.
+- Push to `main` → Railway auto-builds and deploys. Read-only inspection on
+  2026-10-17 confirmed `source.branch=main` and `checkSuites=false`. Source config
+  requests Nixpacks/Node 22; verify the actual runtime from the deployed image.
 - **Two migration histories (intentional — see `CLAUDE.md`):**
   - `drizzle/*.sql` + journal: generated from `drizzle/schema.ts`; CI runs
     `npx drizzle-kit migrate` against a fresh `mysql:8`.
@@ -33,9 +35,11 @@ backfills. Never expose database credentials in logs, PRs, or docs.
    files under the required write freeze. Startup is read-only and refuses pending
    manual migrations; journal startup verifies required schema and guards. See
    [PR18_RELEASE_SAFETY.md](PR18_RELEASE_SAFETY.md) before any migration.
-5. **Verify schema version.** Confirm the expected files appear in
-   `__schema_migrations` and that boot logs show `[Migrations] Applied: …` with no
-   repeating failures.
+5. **Verify schema version.** Confirm the expected files appear in the correct
+   history (`__schema_migrations` for manual maintenance or `__drizzle_migrations`
+   for journal installs). Verify required columns, null-capture preflight and all
+   six payment guard definitions. Startup performs read-only checks; it does not
+   apply missing migrations.
 6. **Deploy the application.** Push to `main` (or trigger redeploy).
 7. **Smoke test.** `GET /health` → 200; exercise the manual smoke checklist
    (auth redirect, one tenant-scoped read, invoice mark-paid guard, a customer PDF).
@@ -71,10 +75,11 @@ real email.
 
 ## Deployment mismatch detection
 
-- The startup runner logging is the current mismatch signal: a chronically-failing
-  `[Migrations] Failed to apply …` line means application code expects schema the DB
-  lacks. Treat repeated failures as a release blocker (this was the root cause of the
-  parts-import 500s — see `PRODUCTION_READINESS.md` PR-09).
+- Missing-column and explicit-maintenance startup errors mean the code and
+  schema are incompatible. The latest attempted Railway deployment, October 4
+  `5b14e294-35e0-4e84-991f-849a6ee480e2`, failed on missing
+  `jobs.googleCalendarOwnerId` before listening. This requires reviewed schema
+  maintenance, not a longer healthcheck timeout.
 - Startup now fails closed on pending manual history, missing required columns
   and absent protocol-v2 payment guards. Never let a warning substitute for a
   successful schema/ledger preflight.
@@ -87,16 +92,15 @@ real email.
 - [ ] Rollback plan written for any high-risk change.
 - [ ] No credentials in logs/PR/docs.
 
-## Audit remediation release prerequisites (draft, 2026-10-02)
+## Audit remediation release prerequisites (updated 2026-10-17)
 
-The audit branch prepares Node 22 runtime configuration, required schema checks,
-receipt/outbox tables, and Calendar ownership columns. It has **not** been
-merged or deployed. Main currently auto-deploys before CI finishes; retain the
-draft until the readiness register's release blockers are resolved.
+PR #18 was merged as `179e8c8`; Railway reports its deployment failed. The newer
+local audit fixes are not deployed. Main auto-deploys before CI finishes; keep
+release blocked until the readiness register's prerequisites are resolved.
 
-Journal migration `0036_opposite_franklin_richards.sql` initializes the CI schema.
-Manual `0086_audit_receipts_outbox_calendar.sql` targets the separate manual
-history. Both were tested on disposable MySQL only. Before a separately
+The journal now runs through **0041**; manual migrations **0086–0091** target the
+separate manual history. See the current migration-pair table in
+[PR18_RELEASE_SAFETY.md](PR18_RELEASE_SAFETY.md). Before a separately
 approved release, inspect actual live DDL for manual 0014's non-null inspection
 snapshot and 0044's sessionVersion. Startup now fails when required columns or
 legacy non-null captures are missing. Review old records using original evidence;
@@ -108,9 +112,11 @@ Manual Gmail/Resend operations reserve a durable email_outbox operation first.
 the same accepted request ID returns its receipt. `sending`/`unknown` must be
 reconciled against provider logs before any explicit new send; never automatically
 replay an ambiguous operation. `rejected` requires an explicit corrected send
-with a new operation ID. A reconciliation UI is still outstanding. Other manual
-send routes require separate review. Automated delivery remains default-off;
-this branch does not change EMAIL_AUTOMATION_ENABLED or any live settings.
+with a new operation ID. Quote, invoice and Gmail dialogs now retain exact
+payloads and UUIDs and look up owned receipts. Unknown-outcome provider
+reconciliation remains an operator task; the UI cannot mark an ambiguous send
+accepted/rejected or erase it. Automated delivery remains default-off; no live
+automation setting was changed in the continuation.
 
 Payments require a stable client request UUID and record cumulative receipts
 under an invoice lock. Existing accounting history is not backfilled. Resolve

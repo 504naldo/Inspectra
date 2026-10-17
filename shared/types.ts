@@ -33,6 +33,7 @@ export interface OfflineInspectionResult {
   localId: string;
   jobId: number;
   deviceId: number;
+  expectedDeviceRevision: string;
   result: InspectionResultType;
   notes?: string;
   testedAt: Date;
@@ -43,6 +44,7 @@ export interface OfflineDeficiency {
   localId: string;
   jobId: number;
   deviceId?: number;
+  expectedDeviceRevision?: string;
   title: string;
   severity: DeficiencySeverity;
   description?: string;
@@ -71,6 +73,9 @@ export interface OfflineTemplateResponse {
   templateId: number;
   sectionId: number;
   itemId: number;
+  questionRevision: string;
+  /** Exact displayed question context retained for offline export/review. */
+  questionContext?: Record<string, unknown>;
   responseValue?: string | null;
   responseText?: string | null;
   notes?: string | null;

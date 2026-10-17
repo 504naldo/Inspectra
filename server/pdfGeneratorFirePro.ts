@@ -85,7 +85,7 @@ export interface ReportData {
   customerPostalCode?: string;
   attentionTo?: string;
   attentionEmail?: string;
-  inspectionDate: Date;
+  inspectionDate: Date | null;
   completedDate?: Date | null;
   technicianName?: string;
   technicianTitle?: string;
@@ -182,8 +182,8 @@ const CW        = 512;  // content width (612 - 2*50)
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Formats a Date to "Month D, YYYY" */
-function longDate(d: Date): string {
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+function longDate(d: Date | null): string {
+  return d?.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) ?? 'Not recorded';
 }
 
 /** Builds a city/province/postal string without duplicating the province. */
@@ -216,7 +216,7 @@ function drawPageHeader(doc: any, data: ReportData): number {
   doc.fontSize(7).font('Helvetica-Bold')
      .text(`Job #: ${data.jobNumber}`, barX, M + 44, { width: barW, align: 'right' });
   doc.font('Helvetica')
-     .text(data.inspectionDate.toLocaleDateString(), barX, M + 55, { width: barW, align: 'right' });
+     .text(data.inspectionDate?.toLocaleDateString() ?? 'Not recorded', barX, M + 55, { width: barW, align: 'right' });
 
   const sepY = M + 112;
   doc.moveTo(M, sepY).lineTo(M + CW, sepY).lineWidth(0.5).stroke('#cccccc');
@@ -291,7 +291,7 @@ function drawAfterServiceLetter(doc: any, data: ReportData, hasDeficiencies: boo
   // ── RE block ──────────────────────────────────────────────────────────────
   const reSubject = hasDeficiencies
     ? 'Fire Protection Inspection — Deficiencies Identified'
-    : 'Fire Protection Inspection — No Deficiencies Found';
+    : 'Fire Protection Inspection — No Deficiencies Recorded';
 
   doc.fontSize(10).font('Helvetica-Bold').fillColor(NAVY)
      .text(`RE:  ${reSubject}`, M, y, { width: CW });
@@ -310,11 +310,10 @@ function drawAfterServiceLetter(doc: any, data: ReportData, hasDeficiencies: boo
   y += 18;
 
   // ── Opening paragraph ─────────────────────────────────────────────────────
-  const techRef = data.technicianName ? `, ${data.technicianName},` : '';
+  const techRef = data.technicianName ? ` Recorded technician: ${data.technicianName}.` : '';
   doc.text(
-    `On ${longDate(data.inspectionDate)}, our certified technician${techRef} conducted the annual ` +
-    `fire protection inspection at ${data.siteName}, located at ${data.siteAddress}, in accordance ` +
-    `with CAN/ULC S536:2019 and applicable BC Fire Code requirements.`,
+    `This report presents the inspection observations and test results recorded for ${data.siteName}, ` +
+    `located at ${data.siteAddress}.${techRef} The scope and outcomes are limited to the captured records included here.`,
     M, y, { width: CW, lineGap: 3 }
   );
   y = doc.y + 12;
@@ -322,18 +321,16 @@ function drawAfterServiceLetter(doc: any, data: ReportData, hasDeficiencies: boo
   // ── Outcome paragraph ─────────────────────────────────────────────────────
   if (!hasDeficiencies) {
     doc.text(
-      `We are pleased to report that all systems and devices inspected were found to be in satisfactory ` +
-      `working order. No deficiencies were identified at the time of service. All required documentation ` +
-      `has been completed and retained on file.`,
+      `No deficiencies are recorded in this report. ` +
+      `Refer to the individual captured results for the recorded inspection scope.`,
       M, y, { width: CW, lineGap: 3 }
     );
     y = doc.y + 12;
   } else {
     const n = data.deficiencies.length;
     doc.text(
-      `During our inspection, ${n} deficien${n === 1 ? 'cy was' : 'cies were'} identified that require ` +
-      `corrective action. The full details, corrective action recommendations, and associated costs are ` +
-      `outlined in the enclosed Deficiency Report.`,
+      `This report records ${n} deficien${n === 1 ? 'cy' : 'cies'}. The recorded details, status, ` +
+      `corrective action recommendations and any associated costs appear in the enclosed deficiency records.`,
       M, y, { width: CW, lineGap: 3 }
     );
     y = doc.y + 10;
@@ -782,7 +779,7 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
         startY: summaryHeaderY,
         technicianName: data.technicianName,
         jobNumber: data.jobNumber,
-        inspectionDate: data.inspectionDate,
+        inspectionDate: data.inspectionDate ?? undefined,
       });
 
       // ════════════════════════════════════════════════════════════════════
@@ -1147,14 +1144,14 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
         doc.rect(M, certY, CW, 26).fill(NAVY);
         doc.fillColor(WHITE).fontSize(9.5).font('Helvetica-Bold')
            .text(
-             'INSPECTION, TESTING, AND MAINTENANCE OF FIRE ALARM SYSTEMS',
+             'RECORDED INSPECTION RESULTS',
              M + 6, certY + 8, { width: CW - 12, align: 'center', lineBreak: false }
            );
         certY += 30;
 
         doc.fontSize(8).font('Helvetica').fillColor(GRAY_TEXT)
            .text(
-             'CAN/ULC-S536:2019  —  Inspection and Testing of Fire Alarm Systems',
+             'Scope and outcomes are limited to the captured records included in this report.',
              M, certY, { width: CW, align: 'center', lineBreak: false }
            );
         certY += 20;
@@ -1168,7 +1165,7 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
           // Row 1: Single / Two stage + model
           doc.fontSize(8).font('Helvetica-Bold').fillColor(BLACK)
              .text('System Provides:', M + 6, certY + 6, { lineBreak: false });
-          drawCheckbox(doc, M + 86, certY + 6, sys.operationType !== 'two_stage', 9);
+          drawCheckbox(doc, M + 86, certY + 6, sys.operationType === 'single_stage', 9);
           doc.fontSize(8).font('Helvetica').fillColor(BLACK)
              .text('Single Stage', M + 99, certY + 6, { lineBreak: false });
           drawCheckbox(doc, M + 180, certY + 6, sys.operationType === 'two_stage', 9);
@@ -1186,7 +1183,7 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
           );
           drawCheckbox(doc, M + 332, certY + 20, sys.connectedToMonitoring === true, 9);
           doc.text('Yes', M + 345, certY + 20, { lineBreak: false });
-          drawCheckbox(doc, M + 372, certY + 20, !sys.connectedToMonitoring, 9);
+          drawCheckbox(doc, M + 372, certY + 20, sys.connectedToMonitoring === false, 9);
           doc.text('No', M + 385, certY + 20, { lineBreak: false });
           if (sys.monitoringCentreName) {
             doc.text(`Centre: ${sys.monitoringCentreName}`, M + 415, certY + 20, { lineBreak: false });
@@ -1200,20 +1197,20 @@ export async function generateInspectionReportPDF(data: ReportData): Promise<Buf
         type CertItem = { text: string; yes: boolean; no: boolean };
         const certItems: CertItem[] = [
           {
-            text: 'The entire fire alarm system has been inspected and tested in accordance with CAN/ULC-S536:2019, Inspection and Testing of Fire Alarm Systems.',
-            yes: true, no: false,
+            text: 'Inspection observations and test results are included in this report.',
+            yes: data.inspectionResults.length > 0, no: false,
           },
           {
-            text: 'The fire alarm system is fully functional.',
-            yes: !hasDefCert, no: hasDefCert,
+            text: 'A complete-system functionality declaration was recorded.',
+            yes: false, no: false,
           },
           {
-            text: 'During the inspection and test, were any Deficiencies Identified? (See attached deficiency report, if applicable.)',
+            text: 'Deficiencies are recorded in this report. See the recorded status and details.',
             yes: hasDefCert, no: !hasDefCert,
           },
           {
-            text: 'During the inspection and test, were any Recommendations Identified?',
-            yes: false, no: true,
+            text: 'A separate recommendations declaration was recorded.',
+            yes: false, no: false,
           },
         ];
 

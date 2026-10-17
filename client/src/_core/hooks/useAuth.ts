@@ -1,7 +1,10 @@
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useContext, useEffect, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { clearAccountDataCache } from "@/lib/accountCache";
+import { SessionBoundaryContext } from "@/components/SessionBoundaryContext";
 
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -16,19 +19,21 @@ export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
     options ?? {};
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
+  const sessionBoundary = useContext(SessionBoundaryContext);
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
     retry: false,
     refetchOnWindowFocus: false,
   });
 
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      utils.auth.me.setData(undefined, null);
-    },
-  });
+  const logoutMutation = trpc.auth.logout.useMutation();
 
   const logout = useCallback(async () => {
+    // Retire the visible account before yielding. Its in-flight callbacks keep
+    // their old transport/cache and cannot publish over a later account.
+    if (sessionBoundary && !sessionBoundary.signedOut()) return;
+    try { localStorage.removeItem('inspectra-user-info'); } catch { /* Optional debug storage. */ }
     try {
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {
@@ -40,18 +45,17 @@ export function useAuth(options?: UseAuthOptions) {
       }
       throw error;
     } finally {
-      // Clear auth state
+      // Remove account data before publishing signed-out auth to the app.
+      await clearAccountDataCache(queryClient);
+      await utils.auth.me.cancel();
       utils.auth.me.setData(undefined, null);
-      await utils.auth.me.invalidate();
-      
-      // Clear localStorage auth keys
-      localStorage.removeItem('inspectra-user-info');
+      if (!sessionBoundary) await utils.auth.me.invalidate();
       
       if (IS_DEV) {
         console.log('[AUTH] Logout complete - cleared session and localStorage');
       }
     }
-  }, [logoutMutation, utils]);
+  }, [logoutMutation, utils, queryClient, sessionBoundary]);
 
   const state = useMemo(() => {
     const loading = meQuery.isLoading || logoutMutation.isPending;
@@ -68,22 +72,6 @@ export function useAuth(options?: UseAuthOptions) {
       status = 'unauthenticated';
     }
     
-    // Store user info in localStorage (for debug / offline reference)
-    localStorage.setItem(
-      "inspectra-user-info",
-      JSON.stringify(user)
-    );
-    
-    // Debug logging in dev mode
-    if (IS_DEV) {
-      console.log('[AUTH]', {
-        status,
-        hasSession: isAuthenticated,
-        role: user?.role,
-        path: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
-      });
-    }
-    
     return {
       status,
       user,
@@ -98,6 +86,13 @@ export function useAuth(options?: UseAuthOptions) {
     logoutMutation.error,
     logoutMutation.isPending,
   ]);
+
+  useEffect(() => {
+    try { localStorage.setItem("inspectra-user-info", JSON.stringify(state.user)); }
+    catch { /* Optional debug/offline reference must not interrupt authentication. */ }
+    if (IS_DEV) console.log('[AUTH]', { status: state.status, hasSession: state.isAuthenticated,
+      role: state.user?.role, path: typeof window !== 'undefined' ? window.location.pathname : 'unknown' });
+  }, [state.user, state.status, state.isAuthenticated]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;
@@ -117,7 +112,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   return {
     ...state,
-    refresh: () => meQuery.refetch(),
+    refresh: () => sessionBoundary ? sessionBoundary.refresh() : meQuery.refetch().then(() => {}),
     logout,
   };
 }

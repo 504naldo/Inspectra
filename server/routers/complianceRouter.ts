@@ -74,6 +74,7 @@ const complianceRouter = router({
           id: jobsTable.id,
           companyId: jobsTable.companyId,
           finalizationHash: jobsTable.finalizationHash,
+          finalizationHashVersion: jobsTable.finalizationHashVersion,
           finalizedAt: jobsTable.finalizedAt,
           status: jobsTable.status,
         })
@@ -99,7 +100,9 @@ const complianceRouter = router({
         };
       }
 
-      const payload = await buildFinalizationPayload(input.jobId, dbConn as unknown as import("drizzle-orm/mysql2").MySql2Database<typeof import("../../drizzle/schema")>);
+      const hashVersion = job.finalizationHashVersion ?? 1;
+      if (hashVersion !== 1 && hashVersion !== 2) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Unsupported finalization hash version" });
+      const payload = await buildFinalizationPayload(input.jobId, dbConn as unknown as import("drizzle-orm/mysql2").MySql2Database<typeof import("../../drizzle/schema")>, hashVersion);
       const recomputedHash = computeFinalizationHash(payload);
       const hashMatch = recomputedHash === job.finalizationHash;
 

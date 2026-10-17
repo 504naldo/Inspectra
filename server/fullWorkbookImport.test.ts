@@ -7,6 +7,7 @@ import { storagePut } from "./storage";
 import * as XLSX from "xlsx";
 import path from "path";
 import fs from "fs";
+import { assertDisposableS3Environment } from "../scripts/disposableS3Config.mjs";
 
 /**
  * Full Workbook Import Test
@@ -15,7 +16,7 @@ import fs from "fs";
  * - Site tab parsing and update
  * - All device categories import (Fire Alarm, Extinguishers, Emergency Lights, Sprinkler)
  * - No row limits (processes all rows)
- * - Validation and exclusion reporting
+ * - Barcode identity remains importable when a location is absent
  */
 
 function createTestContext(role: "admin" | "office" | "technician" = "office") {
@@ -36,8 +37,8 @@ function createTestContext(role: "admin" | "office" | "technician" = "office") {
   };
 }
 
-// Requires a real S3/R2 bucket — skips gracefully when credentials aren't configured.
-describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
+// Real disposable storage is required; production credentials never enable this suite.
+describe.skipIf(process.env.DISPOSABLE_S3_ACCEPTANCE !== "true")("Full Workbook Import", () => {
   let testCompanyId: number;
   let testCustomerOrgId: number;
   let testSiteId: number;
@@ -45,6 +46,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
   let testAttachmentId: number;
 
   beforeAll(async () => {
+    assertDisposableS3Environment();
     const database = await getDb();
     if (!database) throw new Error("Database not available");
 
@@ -106,7 +108,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
       ["Lobby", "FA-001", "Smoke Detector", "Main entrance"],
       ["Hallway 1", "FA-002", "Pull Station", "Near exit"],
       ["Office 101", "FA-003", "Smoke Detector", ""],
-      ["", "FA-004", "Horn/Strobe", ""], // Missing location - should be excluded
+      ["", "FA-004", "Horn/Strobe", ""], // Barcode supplies meaningful identity without a location.
       ["Conference Room", "FA-005", "Smoke Detector", "Large room"],
       ["Kitchen", "FA-006", "Heat Detector", ""],
       ["Storage", "FA-007", "Smoke Detector", ""],
@@ -133,7 +135,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
       ["Storage", "EXT-006", "ABC 10lb", ""],
       ["Mechanical Room", "EXT-007", "ABC 20lb", ""],
       ["Parking", "EXT-008", "ABC 10lb", ""],
-      ["", "EXT-009", "ABC 10lb", ""], // Missing location - should be excluded
+      ["", "EXT-009", "ABC 10lb", ""], // Barcode supplies meaningful identity without a location.
       ["Roof", "EXT-010", "ABC 10lb", ""],
     ];
     const extinguisherSheet = XLSX.utils.aoa_to_sheet(extinguisherData);
@@ -176,6 +178,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
 
     // Create attachment record
     const [attachment] = await database.insert(attachments).values({
+      companyId: testCompanyId,
       entityType: "job",
       entityId: testJobId,
       siteId: testSiteId,
@@ -193,6 +196,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
   });
 
   afterAll(async () => {
+    if (!testCompanyId) return;
     const database = await getDb();
     if (!database) return;
 
@@ -216,12 +220,12 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
     // Verify import summary
     expect(result.success).toBe(true);
     expect(result.siteFieldsUpdated).toBeGreaterThan(0);
-    expect(result.deviceCounts.fireAlarm).toBe(14); // 15 rows - 1 excluded (missing location)
-    expect(result.deviceCounts.extinguishers).toBe(9); // 10 rows - 1 excluded
+    expect(result.deviceCounts.fireAlarm).toBe(18); // 15 alarm devices + 3 sprinkler systems
+    expect(result.deviceCounts.extinguishers).toBe(10);
     expect(result.deviceCounts.emergencyLights).toBe(8);
-    expect(result.deviceCounts.sprinklerSystems).toBe(3);
-    expect(result.deviceCounts.total).toBe(34);
-    expect(result.excludedRowsCount).toBe(2); // 2 rows with missing location
+    expect(result.deviceCounts.sprinklerSystems).toBe(0); // Canonical category is fire alarm.
+    expect(result.deviceCounts.total).toBe(36);
+    expect(result.excludedRowsCount).toBe(0);
 
     // Verify site was updated
     const database = await getDb();
@@ -250,20 +254,20 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
         eq(devices.siteId, testSiteId)
       ));
 
-    expect(allDevices.length).toBe(34);
+    expect(allDevices.length).toBe(36);
 
     // Verify device categories
     const fireAlarmDevices = allDevices.filter(d => d.category === "FIRE_ALARM_DEVICE");
     const extinguishers = allDevices.filter(d => d.category === "FIRE_EXTINGUISHER");
     const emergencyLights = allDevices.filter(d => d.category === "EMERGENCY_LIGHT");
 
-    expect(fireAlarmDevices.length).toBe(17); // 14 fire alarm + 3 sprinkler systems
-    expect(extinguishers.length).toBe(9);
+    expect(fireAlarmDevices.length).toBe(18); // 15 fire alarm + 3 sprinkler systems
+    expect(extinguishers.length).toBe(10);
     expect(emergencyLights.length).toBe(8);
 
-    // Verify excluded rows are reported
-    expect(result.excludedRows.length).toBe(2);
-    expect(result.excludedRows[0].reason).toBe("Missing location");
+    expect(result.excludedRows).toEqual([]);
+    expect(allDevices.some(device => device.barcode === "FA-004")).toBe(true);
+    expect(allDevices.some(device => device.barcode === "EXT-009")).toBe(true);
   }, 30000);
 
   it("should handle idempotent imports (re-importing same file)", async () => {
@@ -276,7 +280,7 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
 
     // Should still report success
     expect(result.success).toBe(true);
-    expect(result.deviceCounts.total).toBe(34);
+    expect(result.deviceCounts.total).toBe(36);
 
     // Verify device count didn't double (upsert worked)
     const database = await getDb();
@@ -290,6 +294,6 @@ describe.skipIf(!process.env.S3_ACCESS_KEY_ID)("Full Workbook Import", () => {
         eq(devices.siteId, testSiteId)
       ));
 
-    expect(allDevices.length).toBe(34); // Same count, not doubled
+    expect(allDevices.length).toBe(36); // Same count, not doubled
   }, 30000);
 });

@@ -7,6 +7,14 @@ live status. Update it (don't fork it) when findings change.
 Severity: P0 = blocks release / data-integrity / security · P1 = important · P2 = minor.
 Status: open · in-progress · fixed · accepted-risk · wont-do.
 
+**Current continuation (2026-10-17):** local checkout includes merged PR #18
+(`179e8c8`). The October 2–3 draft/publication statements below are historical
+evidence, not the current merge status. Deployment, live schema and release
+acceptance are not established by the local checks. Read-only Railway inspection
+on October 17 confirmed the latest attempted deployment failed on missing
+`jobs.googleCalendarOwnerId`; see the final continuation and deployment diagnosis
+below. The October 16–17 continuations record current fixes and verification limits.
+
 | ID | Issue | Sev | Area | Status | Evidence | Fix commit | Validation | Owner | Next action |
 |----|-------|-----|------|--------|----------|-----------|------------|-------|-------------|
 | PR-01 | Full marketing site duplicated inside the app | P1 | Frontend | fixed | `Home.tsx` rendered `components/landing/*` | `refactor: separate app entry…` | build/check green; lightweight entry | eng | — |
@@ -97,9 +105,9 @@ for CI: do not merge this draft until the remaining release checks are resolved.
 | F03 organization/invoice parent scope | fixed | Company/customer guards and consistent actual ancestor links before reads/writes | Broader live workflow acceptance |
 | F04 attachment access | in-progress | Shared canonical parent authorization across attachment, file, media and multipart paths; finalized parent locking; public-only customer projection | Direct multipart HTTP and S3 end-to-end denial tests; review remaining alternate paths |
 | F05 customer staff-data access | fixed | Customer-safe job/site/invoice/attachment projections; staff-only offline packets, inspection results and work-site data; null-company own-org reads preserved | Customer portal browser acceptance |
-| F06 financial child authorization | in-progress | Invoice child IDs validated against real parent, scoped SQL and invoice transaction locks; repair item actual parent checked | Repair-quote finalization/delete concurrency coverage |
+| F06 financial child authorization | in-progress | Invoice child IDs validated against real parent, scoped SQL and invoice transaction locks; October 16 repair quote parent locks, transactional content/totals/sealing, linked-child checks and default-free item patches | Run new repair-quote MySQL concurrency/rollback suite; production acceptance remains open |
 | F07 session revocation | fixed | Typed required sessionVersion; atomic deactivation increment; no permissive missing-column fallback | Verify live DDL before release |
-| F08 import destinations | in-progress | Drive/PDF/file destination guards before provider/download/import, deriving organization from authorized site | All import branches and source/destination site consistency acceptance |
+| F08 import destinations | in-progress | October 16 shared company/site/customer consistency checks, name-matched site revalidation, stored source/destination agreement, authorization before OAuth/provider work and preserved denial errors | Mocked denial/handoff tests passed; live storage/provider and remaining legacy import acceptance open |
 | F09 inspection device parent | fixed | Device company/site must match authorized job; whole batch validation before writes; `auditRemediation.test.ts` | Field workflow acceptance |
 | F10 unverified report facts | fixed | Removes sample system/battery facts and legacy letter assumptions; prints canonical snapshot wording and recorded values | Representative generated PDFs reviewed by inspection owner |
 | F11 checklist/report divergence | in-progress | Annual capture, QA submission and compliance report read canonical snapshot results; incomplete/legacy captures fail closed | Reviewed legacy conversion and every alternate finalization/report route |
@@ -107,10 +115,10 @@ for CI: do not merge this draft until the remaining release checks are resolved.
 | F13 offline date type | fixed | ISO timestamp validation and Date conversion; malformed batch denied | Android sync acceptance |
 | F14 false offline success/replay | in-progress | Failed offline POST rejects; generic replay disabled and preserved; QA blocks legacy queued requests | Typed account-scoped recovery for all legacy/photo queues; field recovery UI |
 | F15 partial payments | fixed | Cumulative authoritative cents, durable UUID receipt and invoice row lock; retries/concurrent receipts tested | Batch Sage export concurrency and historical accounting reconciliation |
-| F16 workbook identity | in-progress | Floor included in fallback identity; serial/barcode stable; ambiguous identities excluded before writes | Preview collision explanations and distinct inserted/updated counts |
-| F17 transaction/seal integrity | in-progress | AsyncLocalStorage transaction propagation; audited inspection/fire-alarm/attachment/media writes share finalization job lock; rollback/audit-variable tests | Concurrent finalization interleaving tests and remaining legacy mutation inventory |
+| F16 workbook identity | in-progress | October 16 canonical Quick Import preview, cross-sheet and saved-identity collision explanations, actual spreadsheet row numbers, separate inserted/updated counts and execution-time revalidation | Mocked canonical pipeline/router tests passed; concurrent import serialization and real DB/browser acceptance remain open |
+| F17 transaction/seal integrity | in-progress | AsyncLocalStorage propagation; checklist save/bulk/delete and all sprinkler writes now hold the job lock through one audited transaction; sprinkler DAL joins that connection; offline batch locks precede snapshot reads | Prepared MySQL seal-interleaving/replacement-rollback tests remain unrun; remaining legacy mutation inventory and production acceptance open |
 | F18 expired report URLs | fixed | Fresh storage URL from durable key on report reads, Gmail/Drive and file import; no stale fallback on signing error | Disposable S3 suite and live expiry acceptance |
-| F19 false/duplicate sends | in-progress | Durable outbox reservation before Gmail/Resend; accepted receipt reuse; ambiguous outcomes block retries; fake-provider/SQL-failure tests | Reconciliation UI/runbook acceptance; live provider semantics; other explicit send routes |
+| F19 false/duplicate sends | in-progress | Quote and repair-quote sends now require stable UUIDs, use the durable outbox, validate provider acceptance and preserve later approval states on receipt replay. Owned receipt lookup and durable quote-send UI support recovery without inventing another attempt. | Final browser/native and live-provider acceptance, operator reconciliation of unknown outcomes and remaining explicit-send inventory open |
 | F20 QA workflow | fixed | No 50-job discovery cutoff; independent counts; approval capability on both entries; office QA route and corrected notification link | Browser navigation acceptance |
 | F21 calendar schedule/owner | fixed | Explicit instants, required real schedule, recorded integration owner/calendar; wrong-owner and DST tests | Live Google Calendar acceptance; legacy owner reconciliation |
 | F22 runtime/verification | in-progress | Node 22 CI/dev/runtime source configuration; build and isolated built-server smoke required in CI | Live Railway runtime, S3, Android toolchain and SheetJS upgrade below |
@@ -189,3 +197,194 @@ Migration and rollback procedure: [release-safety runbook](runbooks/PR18_RELEASE
 The earlier F01–F23 register still contains other draft release blockers;
 this follow-up does not close them or authorize a merge. Automation stays
 default-off; effective live EMAIL_AUTOMATION_ENABLED remains unverified.
+
+## Audit continuation — 2026-10-16 (local changes)
+
+Baseline: clean `179e8c8`, merged PR #18. These changes are local and do not
+establish deployment, migration or live integration outcomes.
+
+| Finding | Local change | Evidence / remaining verification |
+|---|---|---|
+| F06 repair quote atomicity | Quote creation/pre-population uses one audited transaction. Content edits and finalization lock the actual quote before reads, child writes and total recalculation. Child update/delete SQL includes the parent ID; deficiency links must match the quote job and parts must match its company, including platform-admin operations. | `repairQuoteIntegrity.ts`, `repairQuoteIntegrity.test.ts`; real MySQL concurrency/rollback tests are added but **unrun** in this session. |
+| F06 item patch corruption | Separate default-free update schema preserves omitted quantity, prices, labour, fees and ordering. Zod 4 `.partial()` on the default-bearing create schema previously reset those fields on a metadata-only edit. Explicit zero values remain valid. | Router patch regressions preserve numeric fields and totals; database regressions also prepared. |
+| F06 alternate quote workflows | Generic quote edit/send and building quote edit/PDF routes reject repair quotes before changing content, generating wrong-shape PDFs or contacting delivery providers. Repair status, approval and conversion entry points require a finalized repair quote before side effects. | `repairQuoteWorkflowBoundary.test.ts`, `repairQuoteStatusBoundary.test.ts`; includes legitimate finalized delivery transition. Other explicit send routes remain acceptance work under F19. |
+| F08 import destination consistency | Shared destination guard rejects mismatched company/site/customer links even for platform admins. Drive authorization precedes OAuth refresh, reused name-matched sites are checked, stored workbook sources must match the destination, and PDF denial errors remain authorization errors. | `importDestinationAuthorization.test.ts`, `pdfImportDestination.test.ts`, `workbookUploadBoundary.test.ts`; providers/storage mocked, no live integration acceptance claimed. |
+| F16 workbook preview and counts | Quick Import now previews using the same parser/identity plan as execution; collisions across sheets and multiple saved matches are excluded before writes and explained with sheet/row details. Execution rebuilds the plan; successful inserts and updates are reported separately. | `workbookIdentity.test.ts`, `workbookImportPipeline.test.ts`; includes leading-empty-row offsets, reimport counts, source collisions, saved duplicates and write failures. No database uniqueness/concurrent-import guarantee added. |
+
+Validation uses Node **24.19.0** and pinned pnpm **10.4.1**. Production remains
+configured for Node 22; this session does not replace Node 22 CI acceptance.
+Typecheck, production build and the strict tenant audit passed. The strict audit
+ran with `node --import tsx scripts/auditTenantGuards.ts --strict` because the
+`tsx` CLI's IPC socket is denied by this sandbox; it scanned 60 router files with
+zero active findings and the same two reviewed exceptions. Build retains existing
+analytics-placeholder and browser-data warnings. `git diff --check` passed.
+
+The focused import/workbook suites passed **74 tests across five files**;
+repair input, delivery and status regressions passed **29 tests across three
+files** (**103 total**, zero failures/skips). MySQL-backed repair
+integrity/concurrency tests, full database suite, built-server/browser socket
+checks, S3/provider acceptance and Android checks are **unrun**: this sandbox
+denies sockets, and Docker/network access requests did not complete. No production
+database or service credentials were used to work around the restriction.
+
+The SheetJS `xlsx` 0.18.5 dependency blocker and earlier live-data/release gaps
+remain open. No dependency, migration, email automation or release policy was
+changed in this continuation.
+
+## Further audit fixes — 2026-10-16 (local follow-up)
+
+Baseline: clean `ff8fc37`. This follow-up addresses additional F17 and F19 code
+gaps. No schema migration, production access, real email or deployment is included.
+
+| Finding | Change | Validation / remaining limits |
+|---|---|---|
+| F17 legacy checklist writes | Save, bulk save and delete hold the job's finalization lock through the audited transaction, including parent checks and all writes. Offline result batches acquire sorted parent locks before any consistent snapshot read. | `inspectionSealBoundary.test.ts`; prepared `inspectionSealIntegrity.test.ts` covers seal-first/write-first ordering and whole-batch rollback on real MySQL, currently unrun. |
+| F17 sprinkler transaction escape | Sprinkler data helpers previously used an independent MySQL connection, escaping the caller's transaction. They now use contextual `getDb`; every sprinkler mutation holds the parent job lock and revalidates indirect ancestors after the lock. Replacement delete/insert operations commit or roll back together. | `sprinklerTransactionContext.test.ts`, sprinkler cases in the seal boundary suite; three replacement-rollback cases prepared for real MySQL, unrun. |
+| F19 quote false success and retry | Both quote send routes reject missing provider configuration before preparation, reserve durable operation UUIDs before dispatch, send provider idempotency keys, check HTTP outcome and require a nonblank string message ID. Accepted receipt retries skip PDF/provider work; generic quote tokens remain stable and conditional status writes preserve later approval decisions. | `quoteDelivery.test.ts`, `emailOutboxOrchestration.test.ts`; providers and persistence mocked. Preparation failures and uncertain provider outcomes remain blocked for operator reconciliation. |
+| F19 recovery receipts | Office senders can look up only their own operations within their company; platform operators can see their own cross-company sends. Responses expose only request ID, status and provider message ID. Malformed historical acceptance receipts are treated as unknown. | `emailDeliveryReceipt.test.ts`; denied roles, sender/tenant SQL scope, missing tracking and response projection covered. No resend or outbox-edit permission is exposed by lookup. |
+| F19 durable quote-send intent | Quote-send UI commits the original UUID and exact recipients to strict IndexedDB before dispatch, coordinates tabs with Web Locks, preserves attempts through errors/reopening and requires fresh server acceptance/rejection evidence before an explicit new send. Stale tab retries must match the observed UUID; accepted recovery reuses that UUID to finish quote state without resending. | `deliveryOperation.test.ts` (22); browser/native end-to-end interruption tests remain unrun. Provider acceptance is labeled separately from recipient delivery. |
+
+Node **24.19.0**, pinned pnpm **10.4.1**; Node 22 CI acceptance remains separate.
+Combined server verification passed **170 tests across 12 files**, and client
+delivery-operation checks passed **22 tests**: **192 total across 13 files**, zero
+failures/skips. Typecheck, production build, strict tenant audit (61 router files,
+zero active findings, two reviewed exceptions) and `git diff --check` passed.
+Existing analytics-placeholder/browser-data build warnings remain. Independent
+review found no remaining blockers in the reviewed changes after accepted-state
+recovery, stale-tab retry and malformed historical-receipt fixes.
+These are focused mocked/pure checks, not a full database
+suite. The existing optional/offline database suites cannot initialize without a
+disposable `DATABASE_URL`; no production database was substituted. The nine new
+MySQL seal/concurrency/rollback cases are prepared but **unrun**. Socket-dependent
+built-server/browser checks, S3, real delivery and native-device acceptance remain
+unrun under this sandbox's socket restriction.
+
+The full audit remains open, including the SheetJS dependency blocker, remaining
+legacy mutation/send inventory, unknown-outcome operator reconciliation and the
+historical/live-data release prerequisites. No merge, push or deployment is part
+of this follow-up.
+
+The non-repair draft-freezing gap identified in this follow-up is addressed by
+the further local fixes below. The original outbox change alone did not freeze
+quote content.
+
+
+## Remaining audit implementation — 2026-10-16–17 (local, not released)
+
+Baseline: `fa5870f`. This pass continues F04/F06/F08/F10–F12/F14–F17/F19/F23
+through alternate routes and an independent review. The table records code
+changes; database, browser, native and live-service acceptance remain separate.
+It does not close the release prerequisites elsewhere in this register.
+
+| Finding | Implemented local behavior | Evidence |
+|---|---|---|
+| F04 attachment parents and object provenance | Writes resolve the actual canonical ancestor, lock jobs then shared site/customer parents, and recheck links on the transaction. Completion requires a persisted upload by the same uploader for the same entity, using the stored key/URL. Completed idempotent replay remains readable after sealing. Lists filter contradictory legacy aliases against the canonical entity. Multipart denial cleans temporary files. | `attachmentAccess.ts`, `attachmentBoundary.test.ts`, `uploadQueueWorkflow.test.ts`; providers and HTTP request/response objects mocked. |
+| F06/F19 quotation integrity | Standard quote content freezes before preparing any outgoing PDF. Accepted or uncertain sends cannot reopen it. Partial edits preserve omitted totals. Customer decisions and required execution/approval artifacts commit together; retries validate existing scope rather than silently skipping missing work. Repair execution uses a separate job and preserves the original inspection evidence. | `standardQuoteIntegrity.test.ts`, `repairQuoteLifecycle.test.ts`, standard lifecycle regressions. |
+| F06/F15 invoices and approved work | Invoice content and sorted Sage batches lock before snapshot reads; missing, duplicate, foreign or inconsistent entries reject the whole batch. Exact cents validate lines, tax, paid amount and balance. Export flags/activity commit together. Approved-work invoicing copies only the approved snapshot and creates one linked invoice under parent locks. Payments can continue during delivery without sent-state recovery downgrading a paid/void invoice. | `invoiceAccounting.test.ts`, `invoiceBatchBoundary.test.ts`, `approvedWorkBoundary.test.ts`; `invoiceBatchMysql.test.ts` prepared, unrun. |
+| F08/F16 import execution | All three workbook entry paths share site serialization and rebuild identities after the lock. Device writes, site changes and import logs share one transaction. Arbitrary mapping fields cannot overwrite server ownership/identity. Duplicate source aliases and ambiguous stored matches are excluded with row explanations. Unexpected database errors abort the batch. | `importSiteTransaction.test.ts`, `mappedImportExecution.test.ts`, `legacyFileImportExecution.test.ts`, workbook pipeline suites; MySQL interleaving suite prepared, unrun. |
+| F10/F11 recorded report facts | Report routes use captured question wording/requirements and captured credentials. Missing panel, monitoring, inspection date, functionality, duration and credentials remain unknown. The PDFs do not invent annual service, certification, whole-system conformance or satisfactory operation from a lack of deficiencies. Rendering and report metadata publication share a job lock; finalized history remains readable. | `recordedReportFacts.test.ts`, `canonicalFireAlarmReport.test.ts`, `reportEvidencePdf.test.ts`, FirePro evidence PDF tests, `reportSnapshotBoundary.test.ts`. PDF text is extracted locally with the existing JavaScript parser. |
+| F11/F23 generic template captures | Each new response records its template, section, question, version, requirement and provenance. Updates preserve the original capture; changed definitions require review. Finalized reporting avoids current template joins. Active assigned-template completeness is checked even when no responses exist. Unproven legacy captures are preserved and rejected for reporting/sealing. | `canonicalTemplateReport.test.ts`, `inspectionTemplateCapture.test.ts`; journal 0038/manual 0088 prepared, not applied. |
+| F12 durable autosave | Fire-alarm drafts use immutable per-row revisions and acknowledgement tombstones, persist before dispatch, and serialize sends across tabs. Storage/quota/acknowledgement failure retains recovery evidence. Known payloads are strictly decoded; arbitrary stored operations never replay. The alternate fire-alarm page uses the same editor. Draft state resets by account/company/job and cannot override the target job ID. | `pendingSaves.test.ts`, `fireAlarmDrafts.test.ts`; browser/Android interruption and quota acceptance still required. |
+| F14 scoped offline recovery | Queued results, smoke tests, deficiencies, photos and cached job packets are account/company scoped. IndexedDB success waits for transaction commit. Old, unowned and malformed records remain quarantined. Normal recovery exports contain the current account’s records; administrator recovery may include records without a verified owner, while known foreign-account records remain excluded. An account change cancels an in-progress export. Revision acknowledgements cannot delete a newer tab's edit; lost photo/deficiency responses preserve stable identities. QA includes job-specific evidence still awaiting sync and blocks unreadable recovery data. | Scoped queue, IndexedDB, packet-cache, upload and QA suites; no destructive Clear All or generic POST replay. |
+| F17 remaining seal/transaction paths | Form header/attendance/circuit mutations, job/work-order lifecycle writes, field device edits, smoke tests, QA submission, schedule application and assignment changes hold the real parent lock through the transaction. Related assignment/work-order state changes commit together. Smoke results are recorded per job rather than reading a previous visit's shared device status. | Fire-alarm, job lifecycle, field mutation and smoke history boundary suites. Prepared real-DB seal/concurrency tests remain unrun. |
+| F19 manual-send inventory | Invoice and Gmail dialogs persist exact original send payloads/UUIDs before dispatch and expose receipt recovery. Gmail authorizes the actual report parent and declared job before OAuth/storage; accepted replay skips preparation/provider calls and preserves later QA/archive states. Plain text is escaped in HTML and MIME headers are sanitized. | `deliveryOperation.test.ts`, `gmailDeliveryBoundary.test.ts`; live delivery/OAuth and browser interruption unrun. |
+| F11/F23 displayed evidence and device captures | New device results and linked deficiencies capture verified device identity, location and equipment details. PDF regeneration uses those captures, never today's equipment master. Every question/device answer carries the revision actually shown when edited; changed first-time offline captures reject rather than relabeling an old answer. Older unversioned queue records remain preserved for review. Sealing rejects missing device proof. | Canonical device, displayed-evidence, fire-question revision and generic-template tests; journal 0040/manual 0090 prepared, unrun. |
+| F14 account/session boundary | Cached queries and mutation callbacks are removed before a different account subtree renders; durable offline records remain scoped and preserved. Each account has an immutable tRPC client and separate query cache, bound to its displayed identity and session epoch. Protected HTTP mutations and multipart uploads reject missing/mismatched identities; supplied stale query/logout identities are rejected before effects. Old async continuations cannot acquire another account’s cache or transport. | Account-cache and expected-account transport/server regressions; multi-tab browser acceptance remains unrun. |
+| F15 database payment state floor | Additive insert/update guards prevent payment status/date without receipts, paid-state downgrade and voiding received payments. Existing legacy data is not rewritten. Startup requires the additional guards. | Journal 0041/manual 0091 prepared; real MySQL transition tests are added but unrun. |
+| F23 versioned seals | New seals use hash version 2, covering generic templates, legacy checklist, fire-alarm form/attendance/circuits, sprinkler evidence, signatures and canonical attachment ownership. Existing version-1 seals retain the historical algorithm and are never relabeled as version 2. Unknown versions fail closed. | `compliance.hashVersion.test.ts`, `complianceHashVerification.test.ts`, `finalizationEvidenceGate.test.ts`; journal 0039/manual 0089 prepared, not applied. |
+| F22 parser containment | Workbook input size, concurrent workers, heap, lifetime, sheet count and declared cell ranges are bounded. Worker exit/termination releases the reservation correctly. | `safeXlsxRead.test.ts`, `safeXlsxReadRanges.test.ts`, `p3Security.test.ts`. **This does not fix the vulnerable dependency.** |
+
+### Remaining external acceptance and dependency blocker
+
+`xlsx` **0.18.5 remains an open release blocker**. The verified patched upstream
+artifact is unavailable under the current network policy. No mirror, substituted
+package, lockfile change or unsupported claim of remediation was introduced.
+Parser containment reduces exposure; it does not resolve the known advisories.
+
+Journal migrations **0038–0041** and separate manual migrations **0088–0091**
+are prepared. They are additive and preserve missing historical evidence. None has
+been applied to a live or disposable database in this session. Release still
+requires Node 22 CI, fresh and restored-schema migration checks, real MySQL
+concurrency/rollback, original historical evidence review, backup/PITR rehearsal,
+S3 expiry/provenance, live OAuth/Calendar/email/Sage, and browser/Android field
+acceptance. This sandbox blocks the required socket/network/device operations;
+no production credentials or services were used as substitutes.
+
+For an email with `sending`/`unknown` tracking, retain its original UUID and exact
+payload. The recovery UI may read the owned receipt and replay an accepted
+receipt to finish document metadata; it never dispatches an ambiguous attempt
+again. An operator must compare the UUID, sender, recipient, time and provider
+logs before an intentional replacement send. A missing message ID is not proof
+of rejection. There is no exposed client mutation to mark unknown email as
+accepted/rejected or erase its record. Provider-specific unknown-outcome
+reconciliation remains an operational acceptance item, not an automated resend.
+
+No push, merge, deployment, live migration, credential change, automation enable
+or real outbound message is included in this pass.
+
+
+### Final local verification for this pass
+
+Node **24.19.0**; package/runtime configuration still supports Node 22 and Node
+22 CI remains required. Independent reviewers found no remaining blocking defect
+in the bounded changes after the corrected paths were reviewed again.
+
+| Check | Final result |
+|---|---|
+| Focused affected server/client suites | **73 files / 1,013 tests passed**, zero failures or skips; real database suites excluded explicitly rather than reported as passing. |
+| TypeScript | Whole-project `tsc --noEmit` passed. |
+| Production build | Vite/PWA client and esbuild server bundles passed. Existing analytics-placeholder, browser-data and chunk-size warnings remain. |
+| Strict tenant scan | 61 router files; zero active findings; one reviewed finalization delegation. This heuristic is not an authorization proof. |
+| Migration preparation | Journal indices and snapshot chain verified through 0041; journal/manual SQL pair reviewed. No SQL execution claimed. |
+| Patch hygiene | `git diff --check` passed. No configured lint step was available. |
+| Database/live/native | **Unrun**: full MySQL suite and prepared interleaving/rollback/payment-state cases, fresh/restored schema execution, socket-based built-server/browser tests, S3/providers and Android. |
+
+These results validate local code and focused regressions. The dependency,
+historical evidence and external release prerequisites above remain open. No
+hosted CI, deployment or live acceptance result is inferred from this checkout.
+
+## Remaining acceptance continuation — 2026-10-17
+
+Baseline: `b54ac4d`. This continuation checks current capabilities and fixes
+failures in the remaining acceptance paths. It does not establish a release.
+
+| Item | Current result |
+|---|---|
+| Manual payment-guard migration | **Fixed:** manual 0091 now preserves complete trigger bodies using the maintenance runner's delimiter support. A pure regression verifies both resulting statements exactly match journal 0041. The previous file would split trigger bodies at internal semicolons. Real MySQL execution remains required. |
+| Railway failure | **Diagnosed read-only:** main deployment `5b14e294-35e0-4e84-991f-849a6ee480e2` built successfully on October 4, then repeatedly exited on missing `jobs.googleCalendarOwnerId`. The container never reached its listener. Increasing the healthcheck timeout does not resolve missing schema. [Bounded evidence](audits/RAILWAY_DEPLOYMENT_DIAGNOSIS_2026-10-17.md). |
+| Startup diagnostics and release procedure | **Fixed locally:** schema errors name the failed prerequisite and maintenance runbook, preserving only sanitized driver codes. Startup remains read-only and fails closed. Release instructions now cover journal 0041/manual 0091 and six payment guards. |
+| Release gating | Railway source is still `504naldo/Inspectra@main` with `checkSuites=false`; no staged changes were present. Main's GitHub branch is unprotected. No push, merge, deployment or live setting change was made. |
+| Runtime version | Failed deployment build logs installed Node **22.19.0**. No direct `process.version` evidence from the failed runtime was available. Local checks use Node **24.19.0** and do not replace Node 22 CI. |
+| Executor capabilities | Current enforced environment policy has no configured credentials, runtime variables or outbound identities. Chromium/Playwright are installed, but Chromium launch fails with socket `EPERM`; built-server listen and Docker socket access also fail `EPERM`. Narrow extra-access probes did not complete and were cancelled. No real browser/DB/storage/native acceptance is inferred. Connected Railway reads are separate from executor access. |
+| Disposable storage acceptance | Prepared a separate MinIO/MySQL CI job with a private synthetic bucket. Eleven existing workbook integration cases now require explicit disposable configuration and have current canonical fixtures. Four additional authenticated HTTP cases cover genuine URL expiry/re-signing, persisted uploader/parent provenance, multipart tenant denial and post-seal replay/write denial. Fresh signed downloads support configured private storage endpoints; stored/keyless URLs retain public-host checks and redirects are rejected. Independent SSRF review passed. These 15 integration cases remain unrun locally. |
+| Payment recovery/restore acceptance | Updated scripts for migrations 0038–0041 and six guards. Historical balances are seeded before the unpaid-insert guard, then upgraded without inventing captures. Native dump/restore compares legacy/current evidence and all guard definitions; repeated forward recovery preserves receipts and totals. Destructive rehearsals require explicit disposable intent and clean up only databases they successfully created. A separate Node 22/MySQL/Chromium CI job is prepared. Real execution remains unrun locally. |
+| Browser component acceptance | Eight scenarios import production components and use real browser DOM/storage/Web Locks with synthetic HTTP/provider responses. Dedicated harness typecheck, Python/Node syntax and browser bundling passed. Local launch fails before scenarios because of socket restrictions. This harness does not establish backend, service-worker, native or live-provider acceptance. |
+| Android build acceptance | Prepared Java 21/API 36/Gradle 8.14.3 debug-build CI with Capacitor sync and APK evidence. Local SDK, adb, emulator and KVM are absent; no local Gradle build ran. The CI job only builds because the configured APK API host is production. Device interruptions, camera/haptics and native storage still require separate acceptance. |
+
+Local verification for this continuation: **118 tests across 11 files passed**,
+plus the current migration-manifest check (the three MySQL cases were explicitly
+filtered out). Whole-project TypeScript, dedicated browser-harness TypeScript,
+Vite/PWA and esbuild production builds, strict tenant scan (61 routers, zero
+active findings, one reviewed exception), syntax and patch checks passed.
+The prior 1,013-test focused run belongs to baseline `b54ac4d` and is not a new
+full database run. Five hosted CI jobs are prepared for the separate unmerged
+`codex/audit-acceptance-*` branch; results are pending.
+
+### SheetJS dependency remains blocked
+
+The [official Node installation instructions](https://docs.sheetjs.com/docs/getting-started/installation/nodejs/)
+specify **0.20.3** from
+`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`; npm remains at 0.18.5.
+The official GitHub source is older than both fixed versions and has no patched
+release artifact. The installed/cache/lockfile version is still **0.18.5**.
+The current enforced host policy excludes `cdn.sheetjs.com` and `git.sheetjs.com`,
+and executor network access has not been established. No package or lockfile
+change was made. The [prototype-pollution advisory](https://github.com/advisories/GHSA-4r6h-8v6p-xvw6)
+requires at least 0.19.3; the [ReDoS advisory](https://github.com/advisories/GHSA-5pgg-2g8v-p4x9)
+requires at least 0.20.2. Containment regressions pass but do not fix either issue.
+
+Completion requires executor access to the official tarball, or an authenticated
+upstream artifact and independently verified digest supplied locally. Then pin
+the official artifact, verify its content/version and lockfile integrity, and run
+the worker, workbook/import and advisory regressions plus frozen installation,
+typecheck and build. An unverified mirror or version-only lockfile edit is not a fix.

@@ -306,6 +306,7 @@ export const jobs = mysqlTable("jobs", {
   finalizedAt: timestamp("finalizedAt"),
   finalizedById: int("finalizedById"),
   finalizationHash: varchar("finalizationHash", { length: 64 }),
+  finalizationHashVersion: int("finalizationHashVersion").notNull().default(1),
   syncAssertedAt: timestamp("syncAssertedAt"),
   syncAssertedById: int("syncAssertedById"),
   // Google Calendar integration
@@ -373,6 +374,8 @@ export const inspectionResults = mysqlTable("inspection_results", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   // --- Compliance Hardening: Technician Credential Snapshot ---
   technicianCertificationSnapshot: json("technicianCertificationSnapshot"),
+  // Nullable on legacy and carried-forward rows; never backfill from today's device master.
+  deviceSnapshot: json("deviceSnapshot"),
   // Pre-fill: true when this row was auto-created from a prior job's inspection_results
   carriedForward: tinyint("carried_forward").default(0).notNull(),
   // Defense-in-depth: denormalized company ownership (nullable, not backfilled for existing rows)
@@ -393,6 +396,7 @@ export const deficiencies = mysqlTable("deficiencies", {
   jobId: int("jobId").notNull(),
   deviceId: int("deviceId"),
   inspectionResultId: int("inspectionResultId"),
+  deviceSnapshot: json("deviceSnapshot"),
   reportedById: int("reportedById").notNull(),
   status: mysqlEnum("status", ["open", "in_progress", "resolved", "closed", "deferred", "quoted",]).default("open").notNull(),
   severity: mysqlEnum("severity", ["critical", "major", "minor", "observation",]).default("major").notNull(),
@@ -2459,6 +2463,8 @@ export const inspectionTemplateResponses = mysqlTable("inspection_template_respo
   templateId: int("templateId").notNull(),
   sectionId: int("sectionId").notNull(),
   itemId: int("itemId").notNull(),
+  // Captured once on insert. Legacy NULL remains unknown until reviewed evidence exists.
+  itemSnapshot: json("itemSnapshot"),
   responseValue: varchar("responseValue", { length: 100 }),
   responseText: text("responseText"),
   notes: text("notes"),

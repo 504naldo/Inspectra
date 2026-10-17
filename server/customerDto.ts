@@ -27,7 +27,7 @@ export function toCustomerSafeReport(report: Report): Report {
 }
 
 export function toCustomerSafeDeficiency(deficiency: Deficiency): Deficiency {
-  const { estimatedCost, resolutionNotes, ...safe } = deficiency;
+  const { estimatedCost, resolutionNotes, deviceSnapshot, ...safe } = deficiency;
   return safe as Deficiency;
 }
 

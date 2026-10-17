@@ -1,30 +1,38 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { assertAttachmentDestination } from "../attachmentAccess";
+import { withAttachmentWrite } from "../attachmentAccess";
 import { runWithActor } from "./actorContext";
 import { Request, Response } from "express";
 import formidable from "formidable";
-import { getDb, withAudit } from "../db";
 import { attachments } from "../../drizzle/schema";
 import { storagePut } from "../storage";
 import { sdk } from "./sdk";
 import crypto from "crypto";
 import fs from "fs";
- 
+import {
+  ACCOUNT_CHANGED_MESSAGE,
+  EXPECTED_ACCOUNT_HEADER,
+  expectedAccount,
+  parseExpectedAccountHeader,
+  sameExpectedAccount,
+} from "../../shared/accountBinding";
+
 // Helper: Sanitize filename for S3 storage key
 function sanitizeFilename(fileName: string): string {
-  return fileName
-    .replace(/\s+/g, "_")
-    .replace(/[,#]/g, "")
-    .replace(/_{2,}/g, "_");
+  return (
+    fileName
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .replace(/_{2,}/g, "_")
+      .slice(0, 180) || "unnamed"
+  );
 }
- 
+
 // Helper: Infer MIME type from file extension
 function inferMimeType(fileName: string, uploadedMimeType: string): string {
   if (uploadedMimeType && uploadedMimeType !== "application/octet-stream") {
     return uploadedMimeType;
   }
- 
+
   const ext = fileName.toLowerCase().split(".").pop();
   const mimeMap: Record<string, string> = {
     xlsm: "application/vnd.ms-excel.sheet.macroEnabled.12",
@@ -36,10 +44,10 @@ function inferMimeType(fileName: string, uploadedMimeType: string): string {
     jpeg: "image/jpeg",
     png: "image/png",
   };
- 
+
   return mimeMap[ext || ""] || "application/octet-stream";
 }
- 
+
 export async function handleMultipartUpload(req: Request, res: Response) {
   let temporaryFiles: string[] = [];
   try {
@@ -51,23 +59,40 @@ export async function handleMultipartUpload(req: Request, res: Response) {
       res.status(401).json({ error: "Authentication required" });
       return;
     }
- 
-    if (!user || !["admin", "office", "technician"].includes(user.role) ||
-      (!user.companyId && user.role !== "admin")) {
+
+    if (
+      !user ||
+      !["admin", "office", "technician"].includes(user.role) ||
+      (!user.companyId && user.role !== "admin")
+    ) {
       res.status(403).json({ error: "User has no company assignment" });
       return;
     }
- 
+
+    // The cookie can change while a selected file or a preceding upload is
+    // awaiting completion. Bind this request to the session that displayed it.
+    const displayedAccount = parseExpectedAccountHeader(
+      req.headers[EXPECTED_ACCOUNT_HEADER]
+    );
+    const authenticatedAccount = expectedAccount(user);
+    if (!displayedAccount || !authenticatedAccount ||
+      !sameExpectedAccount(displayedAccount, authenticatedAccount)) {
+      res.status(409).json({ error: ACCOUNT_CHANGED_MESSAGE });
+      return;
+    }
+
     // Parse multipart form data
     const form = formidable({
       maxFileSize: 50 * 1024 * 1024, // 50MB limit
+      maxTotalFileSize: 50 * 1024 * 1024,
+      maxFiles: 1,
       keepExtensions: true,
     });
 
     form.on("fileBegin", (_name, file) => {
       temporaryFiles.push(file.filepath);
     });
- 
+
     const [fields, files] = await form.parse(req);
 
     temporaryFiles = [
@@ -76,18 +101,21 @@ export async function handleMultipartUpload(req: Request, res: Response) {
         (list ?? []).map(file => file.filepath)
       ),
     ];
- 
+
     // Extract fields (companyId and userId come from the authenticated session, not the request)
     const entityType = fields.entityType?.[0];
     const entityId = fields.entityId?.[0];
     const jobId = fields.jobId?.[0];
     const siteId = fields.siteId?.[0];
- 
+    const deviceId = fields.deviceId?.[0];
+
     if (!entityType || !entityId) {
-      res.status(400).json({ error: "Missing required fields: entityType, entityId" });
+      res
+        .status(400)
+        .json({ error: "Missing required fields: entityType, entityId" });
       return;
     }
- 
+
     // Get uploaded file
     const uploadedFile = files.file?.[0];
     if (!uploadedFile) {
@@ -109,12 +137,13 @@ export async function handleMultipartUpload(req: Request, res: Response) {
         entityId: z.coerce.number().int().positive(),
         jobId: z.coerce.number().int().positive().optional(),
         siteId: z.coerce.number().int().positive().optional(),
+        deviceId: z.coerce.number().int().positive().optional(),
       })
-      .parse({ entityType, entityId, jobId, siteId });
+      .parse({ entityType, entityId, jobId, siteId, deviceId });
     const responseBody = await runWithActor(
       { role: user.role, companyId: user.companyId },
       () =>
-        withAudit(
+        withAttachmentWrite(
           {
             user,
             req,
@@ -124,71 +153,65 @@ export async function handleMultipartUpload(req: Request, res: Response) {
             userAgent: req.headers["user-agent"] ?? "",
           },
           "upload.multipart",
-          async () => {
-            const parent = await assertAttachmentDestination(
-              destination,
-              user,
-              true
-            );
- 
-    // Read file buffer
-    const fileBuffer = fs.readFileSync(uploadedFile.filepath);
-    
-    // Sanitize filename
-    const originalName = uploadedFile.originalFilename || "unnamed";
-    const sanitizedFileName = sanitizeFilename(originalName);
- 
-    // Infer MIME type with fallback
-    const contentType = inferMimeType(
-      originalName,
-      uploadedFile.mimetype || ""
-    );
- 
-    // Generate unique file key — use server-side companyId from authenticated user
-    const randomSuffix = crypto.randomBytes(4).toString("hex");
-    const fileKey = `${parent.companyId}/jobs/${parent.jobId ?? "site"}/${sanitizedFileName}-${randomSuffix}`;
- 
-    // Upload to S3
-    const { url: fileUrl } = await storagePut(fileKey, fileBuffer, contentType);
- 
-    // Clean up temp file
-    fs.unlinkSync(uploadedFile.filepath);
- 
-    // Save attachment to database
-    const db = await getDb();
-    if (!db) {
-      res.status(500).json({ error: "Database unavailable" });
-      return;
-    }
- 
-    const result = await db.insert(attachments).values({
-              companyId: parent.companyId,
-      entityType: destination. entityType,
-      entityId: destination.entityId,
-      siteId: parent. siteId,
-      jobId: parent. jobId,
-              deviceId : parent.deviceId,
-      fileName: sanitizedFileName,
-      fileKey,
-      fileUrl,
-      mimeType: contentType,
-      fileSize: uploadedFile.size,
-      uploadedById: user.id, // Server-side identity, not client-supplied
-      uploadStatus: "completed",
-      importStatus: "none",
-    });
- 
-    // Get the inserted ID (MySQL returns insertId in result)
-    const insertId = (result as [{ insertId?: number }, unknown])[0]?.insertId ?? 0;
+          [destination],
+          async ([parent], db) => {
+            // Read file buffer
+            const fileBuffer = fs.readFileSync(uploadedFile.filepath);
 
-            return{
-      success: true,
-      fileUrl,
-      fileKey,
-      attachmentId: insertId,
-      fileName: sanitizedFileName,
-      mimeType: contentType,
-    };
+            // Sanitize filename
+            const originalName = uploadedFile.originalFilename || "unnamed";
+            const sanitizedFileName = sanitizeFilename(originalName);
+
+            // Infer MIME type with fallback
+            const contentType = inferMimeType(
+              originalName,
+              uploadedFile.mimetype || ""
+            );
+
+            // Generate unique file key — use server-side companyId from authenticated user
+            const randomSuffix = crypto.randomBytes(4).toString("hex");
+            const fileKey = `${parent.companyId}/jobs/${parent.jobId ?? "site"}/${sanitizedFileName}-${randomSuffix}`;
+
+            // Upload to S3
+            const { url: fileUrl } = await storagePut(
+              fileKey,
+              fileBuffer,
+              contentType
+            );
+
+            // Clean up temp file
+            fs.unlinkSync(uploadedFile.filepath);
+
+            // Save attachment to database
+            const result = await db.insert(attachments).values({
+              companyId: parent.companyId,
+              entityType: destination.entityType,
+              entityId: destination.entityId,
+              siteId: parent.siteId,
+              jobId: parent.jobId,
+              deviceId: parent.deviceId,
+              fileName: sanitizedFileName,
+              fileKey,
+              fileUrl,
+              mimeType: contentType,
+              fileSize: fileBuffer.length,
+              uploadedById: user.id, // Server-side identity, not client-supplied
+              uploadStatus: "completed",
+              importStatus: "none",
+            });
+
+            // Get the inserted ID (MySQL returns insertId in result)
+            const insertId =
+              (result as [{ insertId?: number }, unknown])[0]?.insertId ?? 0;
+
+            return {
+              success: true,
+              fileUrl,
+              fileKey,
+              attachmentId: insertId,
+              fileName: sanitizedFileName,
+              mimeType: contentType,
+            };
           }
         )
     );
@@ -206,10 +229,14 @@ export async function handleMultipartUpload(req: Request, res: Response) {
         : error instanceof z.ZodError
           ? 400
           : 500;
-    res.status(status).json({ error:
+    res
+      .status(status)
+      .json({
+        error:
           status === 500
             ? "Upload failed. Please try again."
-            : "Upload destination is unavailable or unauthorized", });
+            : "Upload destination is unavailable or unauthorized",
+      });
   } finally {
     for (const file of temporaryFiles) {
       if (fs.existsSync(file)) fs.unlinkSync(file);

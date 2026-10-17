@@ -1,14 +1,33 @@
-import { withAudit } from "../db";
+import { withMutableJob } from "../jobWriteTransaction";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, technicianProcedure } from "../_core/trpc";
-import { getDb, assertJobCompany, assertJobNotFinalized } from "../db";
+import { getDb, assertJobCompany } from "../db";
 import {
   fireAlarmFormHeader,
   fireAlarmAttendanceLog,
   fireAlarmAncillaryCircuits,
 } from "../../drizzle/schema";
 import { eq, asc } from "drizzle-orm";
+
+async function deleteFormRow(
+  ctx: import("../_core/context").TrpcContext,
+  table: typeof fireAlarmAttendanceLog | typeof fireAlarmAncillaryCircuits,
+  id: number,
+  label: string,
+) {
+  const database = await getDb();
+  if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [parent] = await database.select({ jobId: table.jobId }).from(table).where(eq(table.id, id)).limit(1);
+  if (!parent) throw new TRPCError({ code: "NOT_FOUND", message: `${label} not found` });
+  return withMutableJob(ctx, `fireAlarmForm.delete${label.replace(/\s/g, "")}`, parent.jobId, async (_job, transaction) => {
+    const [current] = await transaction.select({ jobId: table.jobId }).from(table).where(eq(table.id, id)).limit(1);
+    if (!current) throw new TRPCError({ code: "NOT_FOUND", message: `${label} not found` });
+    if (current.jobId !== parent.jobId) throw new TRPCError({ code: "CONFLICT", message: "Form row parent changed; reload before deleting" });
+    await transaction.delete(table).where(eq(table.id, id));
+    return { success: true };
+  });
+}
 
 // These three tables carry only `jobId` (no `companyId`), so every procedure
 // must scope through the parent job with `assertJobCompany` before reading or
@@ -58,18 +77,26 @@ export const fireAlarmFormRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) =>
-      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
-      const db = await getDb();
-      if (!db) return;
-      await assertJobCompany(input.jobId, ctx.user.companyId!);
-      await assertJobNotFinalized(input.jobId, db);
+      withMutableJob(ctx, "fireAlarmForm.upsertHeader", input.jobId, async (_job, db) => {
       const { jobId, ...fields } = input;
 
       const existing = await db
-        .select({ id: fireAlarmFormHeader.id })
+        .select()
         .from(fireAlarmFormHeader)
         .where(eq(fireAlarmFormHeader.jobId, jobId))
         .limit(1);
+
+      if (input.sectionHeaderValues !== undefined || input.connectedToFSRC !== undefined) {
+        const oldValues = existing[0]?.sectionHeaderValues ?? {};
+        fields.sectionHeaderValues = {
+          ...oldValues,
+          ...input.sectionHeaderValues,
+          _inspection_capture: {
+            ...oldValues._inspection_capture,
+            ...(input.connectedToFSRC !== undefined ? { connectedToFSRC: String(input.connectedToFSRC) } : {}),
+          },
+        };
+      }
 
       if (existing.length > 0) {
         await db
@@ -112,11 +139,7 @@ export const fireAlarmFormRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) =>
-      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
-      const db = await getDb();
-      if (!db) return;
-      await assertJobCompany(input.jobId, ctx.user.companyId!);
-      await assertJobNotFinalized(input.jobId, db);
+      withMutableJob(ctx, "fireAlarmForm.upsertAttendanceRow", input.jobId, async (_job, db) => {
       const { id, ...fields } = input;
       if (id) {
         // The target row must belong to the scoped job — reject cross-job/tenant ids.
@@ -142,26 +165,7 @@ export const fireAlarmFormRouter = router({
 
   deleteAttendanceRow: technicianProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input, ctx }) =>
-      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
-      const db = await getDb();
-      if (!db) return;
-      // Resolve the row's parent job and scope through it before deleting.
-      const existing = await db
-        .select({ jobId: fireAlarmAttendanceLog.jobId })
-        .from(fireAlarmAttendanceLog)
-        .where(eq(fireAlarmAttendanceLog.id, input.id))
-        .limit(1);
-      if (!existing[0]) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Attendance row not found", });
-      }
-      await assertJobCompany(existing[0].jobId, ctx.user.companyId!);
-      await assertJobNotFinalized(existing[0].jobId, db);
-      await db
-        .delete(fireAlarmAttendanceLog)
-        .where(eq(fireAlarmAttendanceLog.id, input.id));
-      return { success: true };
-    })),
+    .mutation(({ input, ctx }) => deleteFormRow(ctx, fireAlarmAttendanceLog, input.id, "Attendance row")),
 
   // ─── Ancillary Circuits (Section 12) ─────────────────────────────────────
 
@@ -193,11 +197,7 @@ export const fireAlarmFormRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) =>
-      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
-      const db = await getDb();
-      if (!db) return;
-      await assertJobCompany(input.jobId, ctx.user.companyId!);
-      await assertJobNotFinalized(input.jobId, db);
+      withMutableJob(ctx, "fireAlarmForm.upsertAncillaryCircuit", input.jobId, async (_job, db) => {
       const { id, ...fields } = input;
       if (id) {
         // The target row must belong to the scoped job — reject cross-job/tenant ids.
@@ -223,25 +223,5 @@ export const fireAlarmFormRouter = router({
 
   deleteAncillaryCircuit: technicianProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input, ctx }) =>
-      withAudit(ctx, "fireAlarmFormRouter.mutation", async () => {
-      const db = await getDb();
-      if (!db) return;
-      // Resolve the row's parent job and scope through it before deleting.
-      const existing = await db
-        .select({ jobId: fireAlarmAncillaryCircuits.jobId })
-        .from(fireAlarmAncillaryCircuits)
-        .where(eq(fireAlarmAncillaryCircuits.id, input.id))
-        .limit(1);
-      if (!existing[0]) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Ancillary circuit not found", });
-      }
-      await assertJobCompany(existing[0].jobId, ctx.user.companyId!);
-      await assertJobNotFinalized(existing[0].jobId, db);
-      await db
-        .delete(fireAlarmAncillaryCircuits)
-        .where(eq(fireAlarmAncillaryCircuits.id, input.id));
-      return { success: true };
-    })
-    ),
+    .mutation(({ input, ctx }) => deleteFormRow(ctx, fireAlarmAncillaryCircuits, input.id, "Ancillary circuit")),
 });

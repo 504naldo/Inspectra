@@ -1,5 +1,4 @@
-import { assertSiteCompany, assertCustomerOrgCompany } from "../tenantGuards";
-import { TRPCError } from "@trpc/server";
+import { assertImportDestination } from "../importDestination";
 import { createRequire } from "module";
 import { invokeLLM } from "./llm";
 import * as db from "../db";
@@ -251,23 +250,11 @@ export interface PdfImportResult {
  */
 export async function importPdfData(opts: PdfImportOpts): Promise<PdfImportResult> {
   const { pdfBuffer, fileName, companyId, userId, customerOrgId: suppliedOrgId, siteId: inputSiteId, } = opts;
-  let inputCustomerOrgId = suppliedOrgId;
-  if (inputSiteId != null) {
-    const site = await assertSiteCompany(inputSiteId, companyId);
-    if (
-      site.companyId !== companyId ||
-      (inputCustomerOrgId != null && site.customerOrgId !== inputCustomerOrgId)
-    )
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "PDF destination links disagree",
-      });
-    inputCustomerOrgId = site.customerOrgId;
-  }
-  if (inputCustomerOrgId != null) {
-    const org = await assertCustomerOrgCompany(inputCustomerOrgId, companyId);
-    if (org.companyId !== companyId) throw new TRPCError({ code: "FORBIDDEN" });
-  }
+  const { customerOrgId: inputCustomerOrgId } = await assertImportDestination({
+    companyId,
+    siteId: inputSiteId,
+    customerOrgId: suppliedOrgId,
+  });
 
   // 1. Extract text
   const pdfText = await extractPdfText(pdfBuffer);
@@ -311,6 +298,7 @@ export async function importPdfData(opts: PdfImportOpts): Promise<PdfImportResul
       (s: any) => s.name.toLowerCase() === siteName.toLowerCase()
     );
     if (match) {
+      await assertImportDestination({ companyId, customerOrgId, siteId: match.id });
       siteId = match.id;
     } else {
       const summary = {

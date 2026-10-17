@@ -31,6 +31,9 @@ import { detectHeaderRow } from '../headerDetection';
 import { autoMapColumns } from '../autoMapper';
 import { getImportSchema, shouldSkipRow } from '../importSchemas';
 import { normalizePowerType, extractDeviceCode, } from '../powerTypeNormalization';
+import { withLockedImportSite, isRecoverableImportRowError } from './importSiteTransaction';
+import type { Db } from '../db/client';
+import { findImportDeviceMatches, findImportSourceCollisions } from './importDeviceIdentity';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -137,7 +140,6 @@ export function classifyWorkbookSheets(sheetNames: string[]): ClassifiedSheet[] 
       if (keywords.some(kw => lower.includes(kw))) {
         claimed.add(name);
         results.push({ sheetName: name, importType });
-        break; // One sheet per detection rule; re-enter outer loop for next type
       }
     }
   }
@@ -159,32 +161,67 @@ export interface ImportWorkbookOptions {
   fileName: string;
   siteId: number;
   companyId: number;
+  customerOrgId?: number;
   userId: number;
+  selectedSheets?: string[];
+  preserveSourceOrder?: boolean;
 }
 
-export interface WorkbookImportSummary {
-  siteFieldsUpdated: number;
-  counts: {
-    fireAlarm: number;
-    extinguishers: number;
-    emergencyLights: number;
-    smokeAlarms: number;
-    backflows: number;
-    total: number;
-  };
+export interface WorkbookRowIssue {
+  sheetName: string;
+  rowNumber: number;
+  externalRef?: string;
+  reason: string;
+}
+
+export interface WorkbookDeviceCounts {
+  fireAlarm: number;
+  extinguishers: number;
+  emergencyLights: number;
+  smokeAlarms: number;
+  backflows: number;
+  total: number;
+}
+
+export interface WorkbookImportPreview {
+  counts: WorkbookDeviceCounts;
+  insertedCount: number;
+  updatedCount: number;
   excludedRowsCount: number;
+  excludedRows: WorkbookRowIssue[];
   classifiedSheets: ClassifiedSheet[];
+}
+
+export interface WorkbookImportSummary extends WorkbookImportPreview {
+  siteFieldsUpdated: number;
+  siteUpdatedFields: string[];
+  insertedCounts: WorkbookDeviceCounts;
+  updatedCounts: WorkbookDeviceCounts;
   message: string;
 }
 
-/**
- * Parse and import a full workbook for a site.
- * Classifies all sheets, then runs the canonical parse → validate → upsert
- * pipeline for each category using autoMapper, importSchemas, and headerDetection.
- */
-export async function importWorkbookForSite(options: ImportWorkbookOptions): Promise<WorkbookImportSummary> {
-  const { fileBuffer, siteId, companyId } = options;
+interface DeviceCandidate {
+  source: { sheetName: string; rowNumber: number };
+  importType: Exclude<WorkbookImportType, 'site'>;
+  data: typeof devices.$inferInsert & { externalRef: string };
+  existingId?: number;
+}
 
+const COUNT_KEY: Record<Exclude<WorkbookImportType, 'site'>, Exclude<keyof WorkbookDeviceCounts, 'total'>> = {
+  fireAlarmDevices: 'fireAlarm',
+  fireExtinguishers: 'extinguishers',
+  emergencyLights: 'emergencyLights',
+  smokeAlarms: 'smokeAlarms',
+  backflows: 'backflows',
+};
+
+function emptyCounts(): WorkbookDeviceCounts {
+  return { fireAlarm: 0, extinguishers: 0, emergencyLights: 0, smokeAlarms: 0, backflows: 0, total: 0 };
+}
+
+/** Parse and resolve every identity before any site/device writes take place. */
+async function prepareWorkbookImport(options: ImportWorkbookOptions, database?: Db, lockIdentities = false) {
+  const { fileBuffer, siteId, companyId } = options;
   const workbook = await safeXlsxRead(fileBuffer, {
     type: 'buffer',
     cellDates: true,
@@ -192,85 +229,161 @@ export async function importWorkbookForSite(options: ImportWorkbookOptions): Pro
     cellStyles: false,
   });
 
-  // Phase 1: classify by sheet name
-  const classified = classifyWorkbookSheets(workbook.SheetNames);
-
-  // Phase 2: for sheets not matched by name, try header-based classification.
-  // This handles sheets like "Individual Devices" whose name contains no
-  // category keyword, but whose headers clearly belong to fire alarm devices.
+  const classified = classifyWorkbookSheets(workbook.SheetNames).filter(sheet =>
+    sheet.importType === 'site' || !options.selectedSheets?.length || options.selectedSheets.includes(sheet.sheetName));
   const classifiedNames = new Set(classified.map(c => c.sheetName));
   for (const sheetName of workbook.SheetNames) {
     if (classifiedNames.has(sheetName)) continue;
+    if (options.selectedSheets?.length && !options.selectedSheets.includes(sheetName)) continue;
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
-
-    const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', });
+    const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
     if (rawRows.length === 0) continue;
-
     const headerInfo = detectHeaderRow(rawRows, 'fireAlarmDevices', 30);
     const headers = headerInfo.headers.map(h => (h == null ? '' : String(h)));
     const mapping = autoMapColumns(headers, 'fireAlarmDevices');
-    const mappedCount = Object.keys(mapping).length;
-
-    if (mappedCount >= 2) {
-      // Headers match fire alarm device columns — treat as fire alarm sheet
-      console.log(
-        `[workbookImport] Header-based classification: "${sheetName}" → fireAlarmDevices` +
-        ` (${mappedCount} columns mapped: ${Object.keys(mapping).join(', ')})`
-      );
+    if (Object.keys(mapping).length >= 2) {
       classified.push({ sheetName, importType: 'fireAlarmDevices' });
       classifiedNames.add(sheetName);
-    } else if (rawRows.length > 1) {
-      console.log(
-        `[workbookImport] Sheet "${sheetName}" unclassified — ` +
-        `${mappedCount} columns matched (need ≥2 for auto-classification). ` +
-        `Headers: [${headers.filter(Boolean).slice(0, 8).join(', ')}]`
-      );
     }
   }
 
-  const db = await getDb();
+  const db = database ?? await getDb();
   if (!db) throw new Error('Database not available');
-
-  let siteFieldsUpdated = 0;
-  const counts = { fireAlarm: 0, extinguishers: 0, emergencyLights: 0, smokeAlarms: 0, backflows: 0, };
-  let excludedRowsCount = 0;
-
+  const candidates: DeviceCandidate[] = [];
+  const excludedRows: WorkbookRowIssue[] = [];
   for (const { sheetName, importType } of classified) {
     const sheet = workbook.Sheets[sheetName];
-    if (!sheet) continue;
-
-    if (importType === 'site') {
-      siteFieldsUpdated += await parseSiteSheet(sheet, siteId, db);
-      continue;
-    }
-
-    const result = await parseDeviceSheet(sheet, importType, siteId, companyId, db);
-    excludedRowsCount += result.excluded;
-
-    switch (importType) {
-      case 'fireAlarmDevices': counts.fireAlarm      += result.count; break;
-      case 'fireExtinguishers': counts.extinguishers += result.count; break;
-      case 'emergencyLights':  counts.emergencyLights += result.count; break;
-      case 'smokeAlarms':      counts.smokeAlarms    += result.count; break;
-      case 'backflows':        counts.backflows       += result.count; break;
-    }
+    if (!sheet || importType === 'site') continue;
+    const parsed = parseDeviceSheet(sheet, sheetName, importType, siteId, companyId);
+    candidates.push(...parsed.candidates);
+    excludedRows.push(...parsed.excludedRows);
   }
 
-  const total = counts.fireAlarm + counts.extinguishers + counts.emergencyLights + counts.smokeAlarms + counts.backflows;
-  const catCount = Object.values(counts).filter(c => c > 0).length;
+  // Identity aliases can collide across sheets even when serial-derived
+  // canonical references differ (for example a shared barcode).
+  const sourceCollisions = findImportSourceCollisions(candidates.map(candidate => candidate.data));
+  const resolved: DeviceCandidate[] = [];
+  for (let index = 0; index < candidates.length; index++) {
+    const candidate = candidates[index];
+    const collision = sourceCollisions.get(index);
+    if (collision) {
+      const sources = collision.slice(0, 5).map(i => `${candidates[i].source.sheetName} row ${candidates[i].source.rowNumber}`).join('; ') +
+        (collision.length > 5 ? `; and ${collision.length - 5} more rows` : '');
+      excludedRows.push({ ...candidate.source, externalRef: candidate.data.externalRef,
+        reason: `Ambiguous device identity shared by ${sources}. Supply unique serial numbers/barcodes or distinguish the floor, location, type, or model. All matching rows were excluded.` });
+      continue;
+    }
+    const existing = await findImportDeviceMatches(db, candidate.data, lockIdentities);
+    if (existing.length > 1) {
+      excludedRows.push({ ...candidate.source, externalRef: candidate.data.externalRef,
+        reason: 'This identity matches multiple saved devices. Resolve the saved duplicates before importing this row.' });
+      continue;
+    }
+    candidate.existingId = existing[0]?.id;
+    resolved.push(candidate);
+  }
+  // Distinct aliases can still identify one legacy record (serial on one row,
+  // barcode on another). Never apply two source rows to that same saved asset.
+  const targets = new Map<number, DeviceCandidate[]>();
+  for (const candidate of resolved) {
+    if (candidate.existingId == null) continue;
+    const group = targets.get(candidate.existingId) ?? [];
+    group.push(candidate); targets.set(candidate.existingId, group);
+  }
+  const eligible = resolved.filter(candidate => {
+    const collision = candidate.existingId == null ? undefined : targets.get(candidate.existingId);
+    if (!collision || collision.length < 2) return true;
+    const sources = collision.map(row => `${row.source.sheetName} row ${row.source.rowNumber}`).join('; ');
+    excludedRows.push({ ...candidate.source, externalRef: candidate.data.externalRef,
+      reason: `Multiple source identities resolve to the same saved device: ${sources}. All matching rows were excluded. Reconcile the serial/barcode aliases before importing.` });
+    return false;
+  });
+  return { db, workbook, classified, eligible, excludedRows };
+}
 
+function summarizePlan(plan: Awaited<ReturnType<typeof prepareWorkbookImport>>): WorkbookImportPreview {
+  const counts = emptyCounts();
+  let insertedCount = 0;
+  let updatedCount = 0;
+  for (const candidate of plan.eligible) {
+    counts[COUNT_KEY[candidate.importType]]++;
+    counts.total++;
+    if (candidate.existingId != null) updatedCount++;
+    else insertedCount++;
+  }
   return {
-    siteFieldsUpdated,
-    counts: { ...counts, total },
-    excludedRowsCount,
-    classifiedSheets: classified,
-    message: [
-      `Imported ${total} devices across ${catCount} categor${catCount === 1 ? 'y' : 'ies'}.`,
-      siteFieldsUpdated > 0 ? ` Updated ${siteFieldsUpdated} site fields.` : '',
-      excludedRowsCount > 0 ? ` Skipped ${excludedRowsCount} rows.` : '',
-    ].join('').trim(),
+    counts, insertedCount, updatedCount,
+    excludedRowsCount: plan.excludedRows.length,
+    excludedRows: plan.excludedRows,
+    classifiedSheets: plan.classified,
   };
+}
+
+/** Read-only preview uses exactly the same parser and identity checks as execution. */
+export async function previewWorkbookForSite(options: ImportWorkbookOptions): Promise<WorkbookImportPreview> {
+  return summarizePlan(await prepareWorkbookImport(options));
+}
+
+/** Rebuild the plan at execution time so a preview never authorizes stale writes. */
+export async function importWorkbookForSite(options: ImportWorkbookOptions): Promise<WorkbookImportSummary> {
+  return withLockedImportSite(options, async tx => {
+    const plan = await prepareWorkbookImport(options, tx, true);
+    const { db, workbook, classified } = plan;
+    const siteUpdatedFields: string[] = [];
+    for (const { sheetName, importType } of classified) {
+      if (importType === 'site' && workbook.Sheets[sheetName]) {
+        siteUpdatedFields.push(...await parseSiteSheet(workbook.Sheets[sheetName], options.siteId, options.companyId, db));
+      }
+    }
+
+    const counts = emptyCounts();
+    const insertedCounts = emptyCounts();
+    const updatedCounts = emptyCounts();
+    let insertedCount = 0;
+    let updatedCount = 0;
+    const excludedRows = [...plan.excludedRows];
+    for (let index = 0; index < plan.eligible.length; index++) {
+      const candidate = plan.eligible[index];
+      try {
+        if (options.preserveSourceOrder) candidate.data.sortOrder = index + 1;
+        if (candidate.existingId != null) {
+          await db.update(devices).set({ ...candidate.data, updatedAt: new Date() }).where(and(
+            eq(devices.id, candidate.existingId),
+            eq(devices.companyId, options.companyId),
+            eq(devices.siteId, options.siteId)
+          ));
+          updatedCount++;
+          updatedCounts[COUNT_KEY[candidate.importType]]++;
+          updatedCounts.total++;
+        } else {
+          await db.insert(devices).values(candidate.data);
+          insertedCount++;
+          insertedCounts[COUNT_KEY[candidate.importType]]++;
+          insertedCounts.total++;
+        }
+        counts[COUNT_KEY[candidate.importType]]++;
+        counts.total++;
+      } catch (err: any) {
+        if (!isRecoverableImportRowError(err)) throw err;
+        console.error(`[workbookImport] Row upsert failed (${candidate.importType}):`, err?.message ?? err);
+        excludedRows.push({ ...candidate.source, externalRef: candidate.data.externalRef, reason: 'Could not save this row. Check the device fields and try again.' });
+      }
+    }
+    const catCount = Object.values(COUNT_KEY).filter(key => counts[key] > 0).length;
+    const siteFieldsUpdated = siteUpdatedFields.length;
+    return {
+      siteFieldsUpdated, siteUpdatedFields, counts, insertedCount, updatedCount, insertedCounts, updatedCounts,
+      excludedRowsCount: excludedRows.length,
+      excludedRows,
+      classifiedSheets: classified,
+      message: [
+        `Imported ${counts.total} devices across ${catCount} categor${catCount === 1 ? 'y' : 'ies'} (${insertedCount} inserted, ${updatedCount} updated).`,
+        siteFieldsUpdated > 0 ? ` Updated ${siteFieldsUpdated} site fields.` : '',
+        excludedRows.length > 0 ? ` Skipped ${excludedRows.length} rows.` : '',
+      ].join('').trim(),
+    };
+  });
 }
 
 // ─── Site sheet parser ────────────────────────────────────────────────────────
@@ -292,26 +405,32 @@ const SITE_FIELDS: Record<string, string[]> = {
   ],
 };
 
-async function parseSiteSheet(sheet: XLSX.WorkSheet, siteId: number, db: any): Promise<number> {
-  // Site info sheets are typically label-value pairs; read as objects
+async function parseSiteSheet(sheet: XLSX.WorkSheet, siteId: number, companyId: number, db: Db): Promise<string[]> {
   const rows = XLSX.utils.sheet_to_json<any>(sheet, { defval: '' });
-  if (rows.length === 0) return 0;
-
-  const firstRow = rows[0];
+  const firstRow = rows[0] ?? {};
   const updateData: Record<string, any> = {};
-  let updated = 0;
+  const updated: string[] = [];
+  const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
+  // Both the horizontal template and the older label/value format are used in
+  // stored customer workbooks. Match complete labels before loose aliases.
+  const knownLabels = new Set(Object.values(SITE_FIELDS).flat());
+  const keyValue = rawRows.filter(row => row.length >= 2 && knownLabels.has(String(row[0] ?? '').trim().toLowerCase()));
+  const keyValueFormat = (rawRows[0]?.length ?? 0) <= 2 &&
+    (keyValue.length > 1 || (rawRows.length === 1 && keyValue.length === 1));
 
   for (const [col, keys] of Object.entries(SITE_FIELDS)) {
-    const val = extractFieldFromObject(firstRow, keys);
+    const val = keyValueFormat
+      ? String(keyValue.find(row => keys.includes(String(row[0] ?? '').trim().toLowerCase()))?.[1] ?? '').trim()
+      : extractFieldFromObject(firstRow, keys);
     if (val) {
       updateData[col] = val;
-      updated++;
+      updated.push(col);
     }
   }
 
-  if (updated > 0) {
+  if (updated.length > 0) {
     updateData.updatedAt = new Date();
-    await db.update(sites).set(updateData).where(eq(sites.id, siteId));
+    await db.update(sites).set(updateData).where(and(eq(sites.id, siteId), eq(sites.companyId, companyId)));
   }
 
   return updated;
@@ -319,16 +438,17 @@ async function parseSiteSheet(sheet: XLSX.WorkSheet, siteId: number, db: any): P
 
 // ─── Device sheet parser ──────────────────────────────────────────────────────
 
-async function parseDeviceSheet(
+function parseDeviceSheet(
   sheet: XLSX.WorkSheet,
+  sheetName: string,
   importType: Exclude<WorkbookImportType, 'site'>,
   siteId: number,
-  companyId: number,
-  db: any
-): Promise<{ count: number; excluded: number }> {
+  companyId: number
+): { candidates: DeviceCandidate[]; excludedRows: WorkbookRowIssue[] } {
   // Read as array-of-arrays so autoMapper + headerDetection can work properly
   const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', });
-  if (rawRows.length === 0) return { count: 0, excluded: 0 };
+  if (rawRows.length === 0) return { candidates: [], excludedRows: [] };
+  const firstSheetRow = sheet['!ref'] ? XLSX.utils.decode_range(sheet['!ref']).s.r : 0;
 
   const headerInfo = detectHeaderRow(rawRows, importType, 30);
   const headers = headerInfo.headers.map(h => (h == null ? '' : String(h)));
@@ -348,11 +468,12 @@ async function parseDeviceSheet(
     );
   }
 
-  let count = 0;
-  let excluded = 0;
-  const candidates: Record<string, any>[] = [];
+  const candidates: DeviceCandidate[] = [];
+  const excludedRows: WorkbookRowIssue[] = [];
 
-  for (const rawRow of dataRows) {
+  for (let index = 0; index < dataRows.length; index++) {
+    const rawRow = dataRows[index];
+    const source = { sheetName, rowNumber: firstSheetRow + headerInfo.dataStartIndex + index + 1 };
     // Skip header-like and pricing rows
     if (shouldSkipRow(rawRow, headers)) continue;
 
@@ -365,12 +486,11 @@ async function parseDeviceSheet(
       }
     }
 
-    // If no columns were mapped, fall back to positional extraction using raw
-    // column values keyed by their header names so we at least preserve location.
+    // An unmapped sheet cannot safely assign any device fields.
     if (Object.keys(columnMapping).length === 0) {
       // Still count these as excluded — the import needs proper column mapping to
       // assign fields correctly. The warning above tells the admin what happened.
-      excluded++;
+      excludedRows.push({ ...source, reason: 'No recognized columns. Check the sheet headers.' });
       continue;
     }
 
@@ -389,39 +509,14 @@ async function parseDeviceSheet(
       rowData.location || rowData.serialNumber || rowData.barcode || rowData.suiteNumber
     );
     if (!hasIdentity && errors.length > 0) {
-      excluded++;
+      excludedRows.push({ ...source, reason: 'Missing meaningful device identity (location, serial number, barcode, or suite).' });
       continue;
     }
 
     const deviceData = buildDeviceData(importType, rowData, siteId, companyId, category);
-    candidates.push(deviceData);
+    candidates.push({ source, importType, data: deviceData });
   }
-  const countsByIdentity = new Map<string, number>();
-  for (const row of candidates)
-    countsByIdentity.set(
-      row.externalRef,
-      (countsByIdentity.get(row.externalRef) ?? 0) + 1
-    );
-  for (const deviceData of candidates) {
-    if ((countsByIdentity.get(deviceData.externalRef) ?? 0) > 1) {
-      console.warn(
-        `[workbookImport] Ambiguous identity excluded: ${deviceData.externalRef}`
-      );
-      excluded++;
-      continue;
-    }
-    try {
-      await upsertDeviceByRef(deviceData, db);
-      count++;
-    } catch (err: any) {
-      // Row-level errors (e.g. enum value not yet in DB schema) are counted as
-      // excluded rather than crashing the entire import.
-      console.error(`[workbookImport] Row upsert failed (${importType}):`, err?.message ?? err);
-      excluded++;
-    }
-  }
-
-  return { count, excluded };
+  return { candidates, excludedRows };
 }
 
 // ─── Row normalisation ────────────────────────────────────────────────────────
@@ -452,7 +547,7 @@ function buildDeviceData(
   siteId: number,
   companyId: number,
   category: DeviceCategory
-): Record<string, any> {
+): typeof devices.$inferInsert & { externalRef: string } {
   const rawLocation = rowData.location || rowData.suiteNumber || 'Unknown';
   const location = rowData.floor
     ? `${String(rowData.floor).trim()} - ${String(rawLocation).trim()}`
@@ -465,7 +560,7 @@ function buildDeviceData(
 
   const externalRef = buildExternalRef(importType, rowData, siteId, category);
 
-  const base: Record<string, any> = {
+  const base: typeof devices.$inferInsert & { externalRef: string } = {
     companyId,
     siteId,
     category,
@@ -506,9 +601,7 @@ function buildDeviceData(
 
 // ─── Stable identity (externalRef) ───────────────────────────────────────────
 
-export
-
-function buildExternalRef(
+export function buildExternalRef(
   importType: WorkbookImportType,
   rowData: Record<string, any>,
   siteId: number,
@@ -533,33 +626,6 @@ function buildExternalRef(
     slug(rowData.location), slug(rowData.deviceType), slug(rowData.model),]
     .filter(Boolean)
     .join(':');
-}
-
-// ─── Upsert by externalRef ────────────────────────────────────────────────────
-
-async function upsertDeviceByRef(deviceData: Record<string, any>, db: any): Promise<void> {
-  const { companyId, siteId, externalRef } = deviceData;
-
-  const [existing] = await db
-    .select()
-    .from(devices)
-    .where(
-      and(
-        eq(devices.companyId, companyId),
-        eq(devices.siteId, siteId),
-        eq(devices.externalRef, externalRef)
-      )
-    )
-    .limit(1);
-
-  if (existing) {
-    await db
-      .update(devices)
-      .set({ ...deviceData, updatedAt: new Date() })
-      .where(eq(devices.id, existing.id));
-  } else {
-    await db.insert(devices).values(deviceData);
-  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

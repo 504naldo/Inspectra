@@ -104,7 +104,9 @@ describe('drawSignatureTable', () => {
     const textCalls = doc.text.mock.calls.map((c: any[]) => c[0]);
     const affirmation = textCalls.find((t: string) => t.includes('42 pages'));
     expect(affirmation).toBeDefined();
-    expect(affirmation).toContain('ULC 536:2019 (2024)');
+    expect(affirmation).toContain('observations');
+    expect(affirmation).toContain('captured for this visit');
+    expect(affirmation).not.toMatch(/in conformance|qualified technician|left in an operational/);
   });
 
   it('renders the primary technician header row', async () => {
@@ -125,13 +127,15 @@ describe('drawSignatureTable', () => {
     expect(textCalls).toContain('Jane Doe');
   });
 
-  it('renders the Certification Number / Seal header', async () => {
+  it('renders recorded certification without inferring a registrar or professional seal', async () => {
     const { drawSignatureTable } = await import('./pdfSharedStyles.js');
     const doc = makeMockDoc();
-    drawSignatureTable(doc, 100, 10, 'Jane Doe', 'FP9876', new Date(), 'Test Co');
+    drawSignatureTable(doc, 100, 10, 'Jane Doe', 'CFAA-12345', new Date(), 'Test Co');
 
     const textCalls = doc.text.mock.calls.map((c: any[]) => c[0]);
-    expect(textCalls).toContain('Certification Number /\nSeal');
+    expect(textCalls).toContain('Recorded Certification\nNumber');
+    expect(textCalls).toContain('CFAA-12345');
+    expect(textCalls).not.toContain('ASTTBC');
   });
 
   it('renders secondary technician rows when provided', async () => {

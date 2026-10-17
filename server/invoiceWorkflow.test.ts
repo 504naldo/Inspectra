@@ -101,14 +101,16 @@ describe("Revenue loop UAT — Approved Work → Invoice → Sage CSV", () => {
     expect(updated?.invoiceNumber).toBe(res.invoiceNumber);
   });
 
-  it("blocks a second invoice for the same approved work", async () => {
+  it("reuses the existing invoice for an approved-work retry without creating another", async () => {
     const aw = await db.createApprovedWork({
       companyId, customerOrgId, siteId,
       type: "repair_order", status: "approved",
       approvedScope: "Once only", approvedAmount: "100.00",
     });
-    await caller.approvedWork.createInvoice({ id: aw.id });
-    await expect(caller.approvedWork.createInvoice({ id: aw.id })).rejects.toThrow();
+    const first = await caller.approvedWork.createInvoice({ id: aw.id });
+    expect(await caller.approvedWork.createInvoice({ id: aw.id })).toEqual(first);
+    const saved = await db.getInvoicesByCompany(companyId);
+    expect(saved.filter(invoice => invoice.approvedWorkId === aw.id)).toHaveLength(1);
   });
 
   it("exports a Sage 50 Canada CSV with the documented columns and tax code", async () => {
