@@ -105,6 +105,13 @@ keys before its first release: the observed production image predates version 2,
 and branch-only version-2 fixtures were disposable. If another environment has
 already persisted version-2 seals, review compatibility before this change.
 
+Signature and report-photo fetching allows a configured private storage endpoint
+only for fresh SDK-signed URLs bound to that exact origin, bucket and object key,
+after the stored parent's authorization. A known key never falls back to its old
+URL when signing or fetching fails. Keyless legacy images and external logos keep
+the public-host URL guard; redirects are rejected. A private endpoint setting
+does not establish ownership of a historical URL or justify inventing a key.
+
 MySQL DDL auto-commits. If interrupted, retain the freeze, inspect committed DDL
 and ledger state, and resume the **same reviewed SQL**. The runner recognizes
 existing tables/columns/keys/triggers, stops at the first real error and leaves the

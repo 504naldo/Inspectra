@@ -489,8 +489,9 @@ GitHub head `416c617c7d6ae96b772680ddcc1ac5c30671afc1`. Its tree
 `430deddacb6cfd78e496df80bac9f2a193f9efbf` exactly matches local code commit
 `6f9f7ef59774123d5eaa4f58d333fb179b87a793`. This head includes both preview
 corrections and the durable-signature implementation. **All five jobs passed.**
-The subsequent evidence update changes this documentation only; application,
-schema, tests, acceptance scripts and workflow remain identical to this tested head.
+The documentation-only evidence update immediately after that run retained its
+tested application tree. The later private-endpoint follow-up below has separate
+validation and changes the image-fetch implementation.
 
 | Check | Final verified result |
 |---|---|
@@ -544,8 +545,37 @@ captured row or seal algorithm changes are part of this follow-up.
 Local checks passed **98 tests across 11 files**, whole-project TypeScript and
 patch checks. Independent review found no blocker. The real-storage acceptance
 case now exercises actual private MinIO signature retrieval/PDF embedding and
-photo recovery after URL expiry. Hosted verification of this head is pending;
-the earlier green run does not establish these additional behaviors.
+photo recovery after URL expiry. Hosted
+[run 38999316236](https://github.com/504naldo/Inspectra/actions/runs/38999316236)
+passed **all five jobs** at GitHub head
+`2e919f9e303c42125a306cfc5f1e2fdb104ba4d3`. Its tree
+`fc08bd606b5e4ee05f5446c1a8333fdad0072b6a` exactly matches local implementation
+commit `6ef005786edff85e73f010a85d7da142f466c8dd`. The subsequent update records
+results/runbook guidance only; the tested application, schema, scripts, tests and
+CI workflow are unchanged.
+
+| Current acceptance | Verified result |
+|---|---|
+| Full Node 22 / MySQL suite | **2,345 passed**, zero failures; 194 passing files across 199 total. The same **18 explicit skips** remain: 16 storage cases passed separately, plus two historical Phase-2 source-comment checks. |
+| Required gates | Frozen install, TypeScript, strict tenant scan, journal migration through 0042, production build and isolated built-server health/UI smoke passed on Node 22.23.3/MySQL 8.0.46. |
+| Real storage and private PDF images | **16/16 passed**. Actual captured signature keys were freshly signed from private MinIO, returned original PNG bytes and embedded into a real generated PDF after the original URL returned 403. Actual uploaded photo recovery passed. Keyless private URLs remained blocked, foreign/sealed mutations were denied, and captured job rows stayed unchanged. |
+| Browser components | **8/8 passed**, with synthetic HTTP/provider responses; no native or live-provider result inferred. |
+| Payment and recovery | Real browser interruption/deduplication and current-schema full dump/restore, signature/evidence preservation, all six guards, stale-backup detection and repeated exact-once synthetic forward recovery passed. |
+| Android | Debug build passed, 308 tasks executed; nonempty APK uploaded. No APK launch or hardware acceptance. |
+
+Current artifacts:
+
+| Artifact | Download | ZIP SHA-256 |
+|---|---|---|
+| Browser traces/results | [12088561678](https://github.com/504naldo/Inspectra/actions/runs/38999316236/artifacts/12088561678) | `7a7a9df4ad21026f3a7dc4dc3cbda2bc1dce3ab6bc9edcdb2ed0378f74eb8f31` |
+| Storage runtime log | [12087574494](https://github.com/504naldo/Inspectra/actions/runs/38999316236/artifacts/12087574494) | `c4816854ceeff9104ba2ef65315c19213d03971da31582dccfe5f067d288d1c5` |
+| Unlaunched Android APK | [12088910662](https://github.com/504naldo/Inspectra/actions/runs/38999316236/artifacts/12088910662) | `afe0d824fc89864f2c2be4133afb7c701b796dd28710038f1c32d42b5431a7fc` |
+
+Browser/storage ZIP digests were independently verified after download. The
+[storage job log](https://github.com/504naldo/Inspectra/actions/runs/38999316236/job/117298669443)
+contains the expanded private-image assertions and 16-case result; its small
+runtime-log artifact records graceful MinIO cleanup. The APK digest is uploaded
+metadata, not device evidence.
 
 The [Android field runbook](runbooks/ANDROID_OFFLINE_FIELD_TEST.md#22-audit-acceptance-addendum-device-storage-sessions-and-operation-recovery)
 now specifies quota failures, late account responses, service-worker/in-place APK
@@ -563,6 +593,10 @@ local caches and official GitHub releases/tags/source found no authenticated
 patched artifact. SheetJS 0.18.5 remains installed. Current connected tools cannot
 set Railway `source.checkSuites` or GitHub branch protection; source reconnection
 would start a build and is not a substitute. No production setting was changed.
+Railway inventory still contains only the production environment; read-only
+status showed the same October 2 deployment online, one running replica and no
+pending rollout. No approved staging target, database/provider test identity or
+attached Android device was available for the remaining external checks.
 
 ### Remaining release work after automated acceptance
 
@@ -576,7 +610,7 @@ missing production evidence or authorize a release.
 | Historical inspection/report evidence (F10/F11/F23) | An inspection owner must review representative original reports, credentials, template/device captures and legacy seals. Preserve unproven records and recover original evidence; today's master data cannot establish what was inspected. |
 | Credential exposure and live integrations (F01/F02/F19/F21) | Complete the authorized incident/token review, OAuth/invitation, Google Calendar ownership, email and Sage acceptance using the intended accounts. For uncertain sends, reconcile the original UUID/payload against provider records before any intentional replacement. Synthetic providers establish no live delivery result. |
 | Android and offline field acceptance (F12/F13/F14/F19) | Run the field runbook on actual hardware, including camera/haptics, process interruptions, storage/quota, account changes, service-worker updates and native send recovery. A desktop browser harness and an unlaunched debug APK do not establish these results. |
-| Legacy signatures and external images (F18) | Recover original evidence when an expired historical signature has no durable key. Operator-supplied logos still require a stable external host. Signature PDF fetching keeps public-host SSRF checks; private custom storage endpoints need separate supported-path acceptance. |
+| Legacy signatures and external images (F18) | Recover original evidence when an expired historical signature has no durable key. Operator-supplied logos still require a stable external host. Keyless private URLs remain blocked. Fresh key-based private signature/photo recovery and PDF embedding passed real MinIO acceptance in the follow-up above. |
 | Release gating | Main is unprotected and Railway follows main with `checkSuites=false`. Establish the intended protection/check policy and complete the maintenance runbook before merging. No protection, deployment or production-setting change was made here. |
 
 No production SQL, historical conversion, provider mutation, token rotation, real
