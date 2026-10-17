@@ -295,6 +295,13 @@
       "when": 1790924190462,
       "tag": "0041_invoice_payment_state_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "5",
+      "when": 1790924190463,
+      "tag": "0042_durable_signature_keys",
+      "breakpoints": true
     }
   ]
 }

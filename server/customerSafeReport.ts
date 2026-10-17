@@ -167,6 +167,7 @@ export function buildCustomerSafeReportData(input: ReportData): ReportData {
       severity: m.severity,
     })),
     techSignatureUrl: input.techSignatureUrl,
+    techSignatureKey: input.techSignatureKey,
     fireAlarmChecklist: input.fireAlarmChecklist?.map(safeChecklistItem),
     fireAlarmSystem: input.fireAlarmSystem
       ? {
@@ -247,6 +248,7 @@ export function buildCustomerSafeComplianceData(input: ComplianceReportData): Co
     companyName: input.companyName,
     companyPhone: input.companyPhone,
     techSignatureUrl: input.techSignatureUrl,
+    techSignatureKey: input.techSignatureKey,
     checklists: input.checklists.map(safeChecklistSection),
     fireAlarmDevices: input.fireAlarmDevices.map(safeDeviceRecord),
     fireExtinguishers: input.fireExtinguishers.map(safeExtinguisherRecord),

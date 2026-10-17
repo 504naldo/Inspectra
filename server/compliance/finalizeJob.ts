@@ -140,7 +140,7 @@ export async function finalizeJob(
   // immutability-sealing step that happens afterward.
 
   // 5. Signature check — technician signature required before finalization
-  if (!job.techSignatureUrl) {
+  if (!job.techSignatureKey && !job.techSignatureUrl) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "Technician signature is required before finalizing.",

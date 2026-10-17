@@ -981,9 +981,8 @@ export function drawSignatureTable(
           const maxH = dataRowH - 10;
           doc.image(sigBuffer, sig4X + 4, rowY + 5, { fit: [maxW, maxH] });
         } catch {
-          // Fallback to placeholder if image fails
-          doc.fillColor('#9ca3af').fontSize(7)
-             .text(companyName, sig4X + 4, rowY + 6, { width: col4W - 8 });
+          // Captured evidence must not silently become an unsigned placeholder.
+          throw new Error('The captured technician signature could not be rendered. The report was not generated.');
         }
       } else {
         doc.fillColor('#9ca3af').fontSize(7)

@@ -29,11 +29,12 @@ export async function assertCurrentPaymentSchema(connection) {
     SELECT TABLE_NAME tableName, COLUMN_NAME columnName FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA=DATABASE() AND (
       (TABLE_NAME='inspection_template_responses' AND COLUMN_NAME='itemSnapshot') OR
-      (TABLE_NAME='jobs' AND COLUMN_NAME='finalizationHashVersion') OR
+      (TABLE_NAME='jobs' AND COLUMN_NAME IN ('finalizationHashVersion','tech_signature_key','contact_signature_key')) OR
       (TABLE_NAME IN ('inspection_results','deficiencies') AND COLUMN_NAME='deviceSnapshot'))`);
   assert.deepEqual(columns.map(row => `${row.tableName}.${row.columnName}`).sort(), [
     'deficiencies.deviceSnapshot', 'inspection_results.deviceSnapshot',
-    'inspection_template_responses.itemSnapshot', 'jobs.finalizationHashVersion',
+    'inspection_template_responses.itemSnapshot', 'jobs.contact_signature_key',
+    'jobs.finalizationHashVersion', 'jobs.tech_signature_key',
   ]);
   const [triggers] = await connection.query(`
     SELECT TRIGGER_NAME name FROM information_schema.TRIGGERS

@@ -11,10 +11,11 @@ beforeEach(() => {
   execute.mockResolvedValue([[], []]);
 });
 it("checks required authentication, capture, schedule, receipt and outbox columns", async () => {
-  for (let i = 0; i < 9; i++) execute.mockResolvedValueOnce([[], []]);
+  for (let i = 0; i < 10; i++) execute.mockResolvedValueOnce([[], []]);
   execute.mockResolvedValueOnce([[{ guardCount: 6 }], []]);
   await verifyAuditRequiredSchema();
-  expect(execute).toHaveBeenCalledTimes(10);
+  expect(execute).toHaveBeenCalledTimes(11);
+  expect(execute.mock.calls.some(([query]) => new MySqlDialect().sqlToQuery(query).sql.includes("tech_signature_key, contact_signature_key"))).toBe(true);
 });
 it("missing required migrations fail closed before serving requests", async () => {
   execute.mockRejectedValueOnce(new Error("Unknown column sessionVersion"));
@@ -24,7 +25,7 @@ it("missing required migrations fail closed before serving requests", async () =
   expect(execute).toHaveBeenCalledTimes(1);
 });
 it("unreviewed legacy snapshots are a release blocker", async () => {
-  for (let i = 0; i < 8; i++) execute.mockResolvedValueOnce([[], []]);
+  for (let i = 0; i < 9; i++) execute.mockResolvedValueOnce([[], []]);
   execute.mockResolvedValueOnce([[{ id: 1 }], []]);
   await expect(verifyAuditRequiredSchema()).rejects.toThrow(
     /Legacy fire-alarm snapshots/
@@ -98,7 +99,7 @@ it("keeps transient database failures distinct from missing columns and does not
 });
 
 it("labels inaccessible trigger metadata and blocks startup without exposing database errors", async () => {
-  for (let i = 0; i < 9; i++) execute.mockResolvedValueOnce([[], []]);
+  for (let i = 0; i < 10; i++) execute.mockResolvedValueOnce([[], []]);
   execute.mockRejectedValueOnce(
     Object.assign(new Error("secret trigger metadata error"), {
       code: "ER_TABLEACCESS_DENIED_ERROR",
@@ -107,7 +108,7 @@ it("labels inaccessible trigger metadata and blocks startup without exposing dat
   await expect(verifyAuditRequiredSchema()).rejects.toThrow(
     /payment protocol v2 and invoice-state trigger metadata/
   );
-  expect(execute).toHaveBeenCalledTimes(10);
+  expect(execute).toHaveBeenCalledTimes(11);
 });
 
 it("missing or failed database construction remains a labeled release blocker", async () => {
@@ -126,12 +127,12 @@ it("missing or failed database construction remains a labeled release blocker", 
 });
 
 it("preflight executes only read queries after all prerequisites succeed", async () => {
-  for (let i = 0; i < 9; i++) execute.mockResolvedValueOnce([[], []]);
+  for (let i = 0; i < 10; i++) execute.mockResolvedValueOnce([[], []]);
   execute.mockResolvedValueOnce([[{ guardCount: 6 }], []]);
   await verifyAuditRequiredSchema();
   const queries = execute.mock.calls.map(
     ([query]) => new MySqlDialect().sqlToQuery(query).sql
   );
-  expect(queries).toHaveLength(10);
+  expect(queries).toHaveLength(11);
   expect(queries.every(query => /^SELECT\b/.test(query))).toBe(true);
 });

@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { resolveSignatureImageForPdf } from './signatureImage';
 import {
   PDF_COLORS,
   PDF_FONTS,
@@ -15,7 +16,6 @@ import {
   drawSignatureTable,
   drawInspectionSummaryPage,
   drawClientAuthorizationBlock,
-  fetchImageBuffer,
   registerReportFonts,
   type SignatureOpts,
 } from './pdfSharedStyles.js';
@@ -108,6 +108,7 @@ export interface ReportData {
 
   // Signature capture (optional — populated after job completion)
   techSignatureUrl?: string;
+  techSignatureKey?: string;
 
   // Fire Alarm CAN/ULC-S536 checklist (optional — only for fire alarm jobs with results)
   fireAlarmChecklist?: FireAlarmChecklistItem[];
@@ -731,9 +732,9 @@ function drawTemplateChecklistSection(
 export async function generateInspectionReportPDF(data: ReportData): Promise<Buffer> {
   // Pre-fetch signature images so the inner PDF callback stays synchronous
   const sigOpts: SignatureOpts = {};
-  if (data.techSignatureUrl) {
-    sigOpts.techSignatureBuffer = await fetchImageBuffer(data.techSignatureUrl);
-  }
+  sigOpts.techSignatureBuffer = await resolveSignatureImageForPdf({
+    fileKey: data.techSignatureKey, fileUrl: data.techSignatureUrl,
+  });
 
   return new Promise((resolve, reject) => {
     try {

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import express from "express";
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { GetObjectCommand, ListObjectsV2Command, S3Client, DeleteObjectsCommand } from "@aws-sdk/client-s3";
@@ -17,7 +18,7 @@ import { createContext } from "./_core/context";
 import { handleMultipartUpload } from "./_core/upload";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
-import { storagePut } from "./storage";
+import { storageGet, storagePut } from "./storage";
 
 // No storage/DB/HTTP mocks. CI provides a private, disposable MinIO + MySQL pair.
 describe.skipIf(process.env.DISPOSABLE_S3_ACCEPTANCE !== "true")("Disposable S3 and authenticated HTTP acceptance", () => {
@@ -185,5 +186,32 @@ describe.skipIf(process.env.DISPOSABLE_S3_ACCEPTANCE !== "true")("Disposable S3 
     expect((await multipart(owner, sealedJobId)).status).toBe(403);
     await expect(ownClient.attachment.upload.mutate({ ...input, idempotencyKey: randomUUID() })).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });
     expect([...await keys(multipartPrefix), ...await keys(attachmentPrefix)].sort()).toEqual(before);
+  }, 30000);
+
+  it("persists real signature keys and recovers their bytes after the original URL expires", async () => {
+    const bytes = readFileSync(new URL("../assets/ewf-logo.png", import.meta.url));
+    const input = { jobId: ownJobId, techSignatureBase64: bytes.toString("base64"),
+      contactSignatureBase64: bytes.toString("base64"), contactName: "Synthetic contact" };
+    await ownClient.job.saveSignatures.mutate(input);
+    const [stored] = await (await getDb())!.select().from(jobs).where(eq(jobs.id, ownJobId));
+    expect(stored.techSignatureKey).toMatch(/^signatures\/.+\.png$/);
+    expect(stored.contactSignatureKey).toMatch(/^signatures\/.+\.png$/);
+    expect(stored.contactSignatureKey).not.toBe(stored.techSignatureKey);
+    for (const key of [stored.techSignatureKey!, stored.contactSignatureKey!]) {
+      objectKeys.add(key);
+      const expired = await getSignedUrl(s3, new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key }),
+        { expiresIn: 7 * 24 * 60 * 60, signingDate: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) });
+      expect((await fetch(expired)).status).toBe(403);
+      const fresh = await storageGet(key);
+      const response = await fetch(fresh.url);
+      expect(response.status).toBe(200);
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+    }
+    const before = await keys("signatures/");
+    await expect(foreignClient.job.saveSignatures.mutate(input)).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });
+    await expect(ownClient.job.saveSignatures.mutate({ ...input, jobId: sealedJobId })).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });
+    expect(await keys("signatures/")).toEqual(before);
+    const [after] = await (await getDb())!.select().from(jobs).where(eq(jobs.id, ownJobId));
+    expect(after).toEqual(stored);
   }, 30000);
 });

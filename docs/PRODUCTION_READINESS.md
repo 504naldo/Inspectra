@@ -41,7 +41,7 @@ below. The October 16–17 continuations record current fixes and verification l
 | FAB-07 | Newest audit findings not in the authoritative register | P2 | Docs | fixed | 82+ root snapshot `*_AUDIT.md` already indexed by `docs/audits/README.md` | this pass | this register | eng | Root files were **deliberately** left in place (see `docs/audits/README.md` — moving them risks breaking references); the real gap was the new Fable findings not being registered. Now recorded here (FAB-01…FAB-06); `FABLE_APPLICATION_AUDIT.md` is the snapshot |
 | FAB-09 | `fireAlarmFormRouter` cross-tenant IDOR: 8 technician procedures read/write/delete fire-alarm form data by raw jobId/row id with no company scope, no assignment check, no finalized-job check | P1 | Security | fixed | `server/routers/fireAlarmFormRouter.ts` (all procedures); `fire_alarm_form_header`/`_attendance_log`/`_ancillary_circuits` tables carry only `jobId` | `security: scope fireAlarmFormRouter to job company (FAB-09)` | `authorization.test.ts` (25) | eng | Every procedure now calls `assertJobCompany`; `upsert*` add `assertJobNotFinalized`; id-addressed upserts verify the row belongs to the scoped job; `delete*` resolve the parent job before deleting. Found in the 2026-07-16 Fable re-audit — the lone router that never adopted the `assertJobCompany` convention |
 | FAB-10 | `company.update`/`company.list` are cross-company by `adminProcedure` — by design (admin = platform operator), but undocumented and untested | P3 | Permission model | fixed | `entityRouters.ts` company router; `_core/actorContext.ts` (`callerIsPlatformOperator` true for any admin) | `docs+test: pin company-router platform-operator model (FAB-10)` | `authorization.test.ts` (25) | eng | Not an isolation bug: `admin` is the platform-operator role per `ROLE_TRUST_MODEL.md`. Documented "no company-scoped admin exists" at the company router and pinned intent with a `company.update/list` test (admin cross-company allowed; office/tech/customer FORBIDDEN). If a company-scoped admin is ever added, the test flags that these endpoints need an ownership check |
-| PR-16 | Customer report photos fetched from the stored, expiring presigned `fileUrl` (7-day) → silently dropped from reports regenerated later | P1 | Reports/Storage | fixed | `reportRouter.ts` deficiency-photo prefetch used `fetchImageBuffer(row.fileUrl)`; the durable `fileKey` was unused | `server: re-sign report photos from fileKey so they survive fileUrl expiry` | `pdfImageResolver.test.ts` (6) | eng | Closes the "presigned-URL expiry on old report photos" runtime risk from the 2026-07-16 Fable audit. New `resolveAttachmentImageForPdf()` re-signs a fresh URL from the durable `fileKey` at generation time (falls back to the stored URL only when no key), keeps SSRF protection, returns a discriminated ok/fail result (a failed image is never treated as embedded), and logs a secret-free warning. Logo/tech-signature still use stored URLs with **no key column** — separate, smaller exposure noted for a future schema follow-up |
+| PR-16 | Customer report photos fetched from the stored, expiring presigned `fileUrl` (7-day) → silently dropped from reports regenerated later | P1 | Reports/Storage | fixed | `reportRouter.ts` deficiency-photo prefetch used `fetchImageBuffer(row.fileUrl)`; the durable `fileKey` was unused | `server: re-sign report photos from fileKey so they survive fileUrl expiry` | `pdfImageResolver.test.ts` (6) | eng | Closes the "presigned-URL expiry on old report photos" runtime risk from the 2026-07-16 Fable audit. New `resolveAttachmentImageForPdf()` re-signs a fresh URL from the durable `fileKey` at generation time (falls back to the stored URL only when no key), keeps SSRF protection, returns a discriminated ok/fail result (a failed image is never treated as embedded), and logs a secret-free warning. October 17 adds durable technician/contact signature keys (journal 0042/manual 0092); operator-supplied logo URLs still depend on the external host |
 | PR-17 | No automated guard against a new router forgetting the tenant-scoping convention (recurring FAB-01/02/09 failure mode) | P2 | Security/Process | fixed | ad-hoc convention only | `docs+ci: add static tenant-guard audit` + `04f5257` | `security:tenant-audit:strict`: 60 router files, zero active findings, two reviewed exceptions | eng | CI now requires the strict audit step (no continue-on-error). Keep real authorization tests alongside this lint-grade heuristic; a clean scan is not a security proof. See `docs/security/TENANT_GUARD_AUDIT.md` |
 | PR-18 | Tenant-guard audit surfaced id-addressed router procedures with no *visible* company scope | P1 | Security | fixed (merged PR 16) | Four remaining raw-parent-id paths in fireAlarm/job/site routers, after prior jobAssignment fixes | `security: close jobAssignmentRouter cross-tenant gaps` + `04f5257` | `companyAccess.test.ts` (26); focused suite 110 passed; full suite 1,167 passed / 14 skipped; typecheck, build and strict audit passed | eng | The prior jobAssignment write/read/assignee guards remain. All four remaining procedures now authorize the parent before child reads/writes: `fireAlarm.getSystemBySite` and `job.getJobTechnicians` preserve customer own-org reads including `companyId: null`; staff use company helpers with the platform-admin bypass. `fireAlarm.upsertSystem` admits technician/office/admin only, with guarded insert and update paths. `site.getLastInspectionSummary` remains office/admin-only and company-scoped. Regression cases cover same-company allow, cross-company denial, customer org isolation, admin access, missing parents, no-system sites, unchanged data after denied inserts/updates, and technician reassignment without an assignment gate. Merged as 7c4e5df; deployment reported successful. Runtime boundary checks remain unrun |
 
@@ -79,7 +79,7 @@ These can't be settled by static analysis or the CI suite — they need a real d
 - **Real-device offline sync / camera / haptics (Android).** Covered by the manual plan `docs/runbooks/ANDROID_OFFLINE_FIELD_TEST.md`; **not** automated. Run on hardware before a field release.
 - **Live email / Google / Sage delivery.** Delivery success and OAuth token refresh are only exercisable against the real integrations.
 - **N+1 query counts under load.** Not measured; flag if latency regresses.
-- **Presigned-URL expiry on old report photos — CLOSED** by PR-16 (fresh re-sign from `fileKey`). Logo/tech-signature durability is a smaller open follow-up (no key column).
+- **Presigned-URL expiry on old report photos — CLOSED** by PR-16 (fresh re-sign from `fileKey`). Durable technician/contact signature keys and PDF rereads are implemented in the October 17 continuation below. Historical keyless signatures require their original accessible evidence; company logos remain operator-supplied external URLs whose availability depends on their host.
 
 ## How to use this register
 - Add a row per finding with evidence (file/line or commit).
@@ -414,6 +414,39 @@ successful October 2 deployment `0d71ab5f-a6d8-4925-bcb8-001635f381d0`, with no
 pending work. The later October 4 attempt failed on missing schema. The failed
 attempt does not mean the earlier serving deployment is offline, and the new
 audit branch has not replaced it.
+
+The next verified head, `ab73e75f0371d7061d059fb6935d7d002ae7fc6b`, passed
+**2,285 tests across 188 files**, with **18 explicit skips** across the full
+193-file suite. Node 22 typecheck, strict tenant scan, fresh schema migration,
+production build and isolated built-server smoke passed. All eight Chromium
+component scenarios and the payment/browser/restore job passed. The Android
+debug APK built using Java 21/Gradle 8.14.3 and was uploaded; it was never launched.
+[Browser evidence](https://github.com/504naldo/Inspectra/actions/runs/38995939508/artifacts/12086129861)
+and [Android artifact](https://github.com/504naldo/Inspectra/actions/runs/38995939508/artifacts/12086914641)
+belong to that head, not to later changes.
+
+The official registry image references both required authentication. CI now builds
+the official MinIO source at signed release commit
+`0d7408fc9969caf07de6a8c3a84f9fbb10a6739e` using Go 1.24.2. The first source-built
+run executed all 15 storage cases: four authenticated expiry/provenance/multipart/
+seal cases and ten imports passed. One real Site-preview defect remained:
+two-column key/value rows were skipped despite the parser's column-two fallback.
+The row guard is corrected and two-/three-column regressions pass locally; real-storage rerun remains pending.
+
+### Remaining signature durability implementation
+
+The smaller F18 follow-up is now implemented locally. Newly captured technician
+and contact signatures store actual object keys under the job lock, using additive
+journal **0042** / manual **0092** nullable columns. Both PDF pipelines refresh
+the technician signature URL from its key. Retrieval/render failures stop report
+generation instead of silently substituting a company name. Captured rows and
+URLs are not changed by reads. Legacy keyless records stay keyless; no expired URL
+is turned into invented provenance. Version-1 seals are unchanged; the still
+unreleased version 2 includes both keys. Fresh signature captures, real PNG PDF
+embedding, failed retrieval/rendering, locking and hash tamper cases passed
+focused checks and independent review. Updated MySQL migration/restore and real
+storage capture acceptance still require the next hosted run. Company logos are
+external URLs; no unsupported managed-logo upload workflow was added.
 
 ### SheetJS dependency remains blocked
 

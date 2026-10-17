@@ -22,6 +22,7 @@ const manualFiles = [
   "0089_finalization_hash_version.sql",
   "0090_captured_device_evidence.sql",
   "0091_invoice_payment_state_guards.sql",
+  "0092_durable_signature_keys.sql",
 ] as const;
 const expectedGuardNames = [
   "inspectra_invoice_payment_state_v3",
@@ -44,7 +45,7 @@ async function invariants() {
       "SELECT jobId, checklistItemId, itemSnapshot, result FROM fire_alarm_inspection_results ORDER BY id",
     invoiceOwnership:
       "SELECT id, companyId, customerOrgId, status, total, amountPaid, balanceDue, paidAt FROM invoices ORDER BY id",
-    jobs: "SELECT id, companyId, customerOrgId, siteId, finalizedAt, finalizationHash FROM jobs ORDER BY id",
+    jobs: "SELECT id, companyId, customerOrgId, siteId, finalizedAt, finalizationHash, tech_signature_url, contact_signature_url FROM jobs ORDER BY id",
     templateResponses:
       "SELECT id, companyId, jobId, templateId, sectionId, itemId, responseValue, responseText, notes FROM inspection_template_responses ORDER BY id",
     deviceResults:
@@ -130,10 +131,11 @@ it("current manual release manifest parses complete statements and matches all s
         await readFile(join("drizzle/migrations", file), "utf8")
       ).length
     );
-  expect(statementCounts).toEqual([4, 4, 1, 1, 2, 2]);
+  expect(statementCounts).toEqual([4, 4, 1, 1, 2, 2, 2]);
   for (const [manual, journal] of [
     [manualFiles[1], "0037_payment_protocol_guard.sql"],
     [manualFiles[5], "0041_invoice_payment_state_guards.sql"],
+    [manualFiles[6], "0042_durable_signature_keys.sql"],
   ]) {
     const actual = splitSqlStatements(
       await readFile(join("drizzle/migrations", manual), "utf8")
@@ -200,6 +202,7 @@ describe("selected manual-history MySQL acceptance", () => {
       "INSERT INTO customer_orgs(id,companyId,name) VALUES(701,701,'Org A'),(702,702,'Org B')",
       "INSERT INTO sites(id,companyId,customerOrgId,name) VALUES(701,701,701,'Site A'),(702,702,702,'Site B')",
       "INSERT INTO jobs(id,companyId,customerOrgId,siteId,jobNumber,title,finalizedAt,finalizationHash) VALUES(701,701,701,701,'HIST-701','Historical sealed fixture','2025-01-01',REPEAT('a',64)),(702,702,702,702,'HIST-702','Historical mutable fixture',NULL,NULL)",
+      "UPDATE jobs SET tech_signature_url='https://legacy.example/expired-tech.png',contact_signature_url='https://legacy.example/expired-contact.png' WHERE id IN (701,702)",
       "INSERT INTO invoices(id,companyId,customerOrgId,invoiceNumber,status,total,amountPaid,balanceDue) VALUES(701,701,701,'HIST-701','partial',100,30,70),(702,702,702,'HIST-702','partial',200,50,150)",
       "INSERT INTO fire_alarm_checklist_templates(id,sectionName,sectionOrder,itemDescription,effectiveDate) VALUES(701,'Today',1,'Edited later','2026-01-01')",
       "INSERT INTO fire_alarm_inspection_results(jobId,fireAlarmSystemId,checklistItemId,result,itemSnapshot) VALUES(701,701,701,'pass',NULL),(701,701,702,'fail',JSON_OBJECT('captureProvenance','captured','itemDescription','Original','isRequired',true,'requirementType','test','standardVersion','2019'))",
@@ -259,7 +262,7 @@ describe("selected manual-history MySQL acceptance", () => {
     expect(await ledger()).toEqual([]);
   });
 
-  it("upgrades through manual 0091, preserving unknown captures and v1 seals while recovering complete trigger bodies after interrupted DDL", async () => {
+  it("upgrades through manual 0092, preserving unknown captures and v1 seals while recovering complete trigger bodies after interrupted DDL", async () => {
     const dir = join(directory, "safe");
     await mkdir(dir);
     for (const file of manualFiles)
@@ -339,6 +342,20 @@ describe("selected manual-history MySQL acceptance", () => {
     ).toEqual([
       { id: 701, version: 1 },
       { id: 702, version: 1 },
+    ]);
+    const [signatures] = await connection.query<mysql.RowDataPacket[]>(
+      "SELECT id,tech_signature_key,contact_signature_key FROM jobs ORDER BY id"
+    );
+    expect(signatures).toMatchObject([
+      { id: 701, tech_signature_key: null, contact_signature_key: null },
+      { id: 702, tech_signature_key: null, contact_signature_key: null },
+    ]);
+    const [signatureColumns] = await connection.query<mysql.RowDataPacket[]>(
+      "SELECT COLUMN_NAME columnName,IS_NULLABLE nullable,COLUMN_DEFAULT defaultValue FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='jobs' AND COLUMN_NAME IN ('tech_signature_key','contact_signature_key') ORDER BY COLUMN_NAME"
+    );
+    expect(signatureColumns).toMatchObject([
+      { columnName: "contact_signature_key", nullable: "YES", defaultValue: null },
+      { columnName: "tech_signature_key", nullable: "YES", defaultValue: null },
     ]);
     const [columns] = await connection.query<mysql.RowDataPacket[]>(
       "SELECT TABLE_NAME tableName,COLUMN_NAME columnName,IS_NULLABLE nullable,COLUMN_DEFAULT defaultValue FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND ((TABLE_NAME='inspection_template_responses' AND COLUMN_NAME='itemSnapshot') OR (TABLE_NAME IN ('inspection_results','deficiencies') AND COLUMN_NAME='deviceSnapshot') OR (TABLE_NAME='jobs' AND COLUMN_NAME='finalizationHashVersion')) ORDER BY TABLE_NAME"

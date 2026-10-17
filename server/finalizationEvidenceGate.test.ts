@@ -63,3 +63,13 @@ it("unrelated jobs without fire-alarm captures still pass the generic evidence g
   expect(buildFinalizationPayload).toHaveBeenCalledWith(20, database, 2);
   expect(writes[0]).toMatchObject({ status: "completed", finalizationHash: "verified-hash", finalizationHashVersion: 2 });
 });
+it("seals key-only signature evidence without requiring an expiring URL", async () => {
+  job.techSignatureUrl = null;
+  job.techSignatureKey = "signatures/captured.png";
+  expect(await finalizeJob({ jobId: 20, clientAssertsSynced: true }, context, database)).toMatchObject({ finalizationHash: "verified-hash" });
+});
+it("rejects finalization when neither a key nor legacy signature URL is recorded", async () => {
+  job.techSignatureUrl = null;
+  await expect(finalizeJob({ jobId: 20, clientAssertsSynced: true }, context, database)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  expect(writes).toEqual([]);
+});

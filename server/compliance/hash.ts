@@ -107,6 +107,8 @@ export type FinalizationPayloadV2 = FinalizationPayloadV1 & {
     officeNotes: string | null;
     techSignatureUrl: string | null;
     contactSignatureUrl: string | null;
+    techSignatureKey: string | null;
+    contactSignatureKey: string | null;
     contactName: string | null;
     techSignedAt: Date | null;
     contactSignedAt: Date | null;
@@ -257,6 +259,8 @@ export async function buildFinalizationPayload(
         officeNotes: schema.jobs.officeNotes,
         techSignatureUrl: schema.jobs.techSignatureUrl,
         contactSignatureUrl: schema.jobs.contactSignatureUrl,
+        techSignatureKey: schema.jobs.techSignatureKey,
+        contactSignatureKey: schema.jobs.contactSignatureKey,
         contactName: schema.jobs.contactName,
         techSignedAt: schema.jobs.techSignedAt,
         contactSignedAt: schema.jobs.contactSignedAt,

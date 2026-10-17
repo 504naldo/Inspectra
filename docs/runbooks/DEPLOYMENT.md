@@ -98,7 +98,7 @@ PR #18 was merged as `179e8c8`; Railway reports its deployment failed. The newer
 local audit fixes are not deployed. Main auto-deploys before CI finishes; keep
 release blocked until the readiness register's prerequisites are resolved.
 
-The journal now runs through **0041**; manual migrations **0086–0091** target the
+The journal now runs through **0042**; manual migrations **0086–0092** target the
 separate manual history. See the current migration-pair table in
 [PR18_RELEASE_SAFETY.md](PR18_RELEASE_SAFETY.md). Before a separately
 approved release, inspect actual live DDL for manual 0014's non-null inspection

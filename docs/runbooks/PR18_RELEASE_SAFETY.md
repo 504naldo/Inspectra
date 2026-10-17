@@ -54,14 +54,14 @@ trustworthy evidence require a visible exception and inspection-owner review.
 ## Apply and resume
 
 Fresh installs use **only the journal** (`pnpm exec drizzle-kit migrate`), now
-through **0041**. Do not replay manual history onto a journal installation.
+through **0042**. Do not replay manual history onto a journal installation.
 Repeat journal execution is recorded by Drizzle. Journal replay onto a populated
 unrelated legacy schema is unsupported.
 
 Legacy/manual installations use their verified manual history. Confirm actual
 0014 NOT NULL and 0044 sessionVersion prerequisites from live DDL/evidence;
 missing/null captures require reviewed remediation, not 0011 inference. Under
-the write freeze, apply the missing reviewed files from **0086–0091** only through
+the write freeze, apply the missing reviewed files from **0086–0092** only through
 explicit maintenance, from a directory containing the selected reviewed files:
 
 ```ts
@@ -87,6 +87,7 @@ The current additive migration pairs are:
 | 0039 | 0089 | Historical finalization hashes retain version 1; new seals use version 2. |
 | 0040 | 0090 | Nullable device captures on inspection results and deficiencies. |
 | 0041 | 0091 | Two additional unpaid-insert and invoice-state guards. |
+| 0042 | 0092 | Nullable durable technician/contact signature keys; existing keyless URLs remain unchanged. |
 
 Inspect the exact DDL and prerequisites rather than treating this table as a
 complete historical migration plan. Manual 0091 uses `DELIMITER` directives so
@@ -94,6 +95,14 @@ the maintenance runner sends each entire trigger body to MySQL. Startup requires
 all six payment guards and the new capture/hash columns. Missing generic/device
 captures remain nullable; report generation and sealing require proven evidence.
 No migration reconstructs missing captures from today's templates or devices.
+
+New signature captures persist the actual uploaded object keys while holding the
+job lock. PDF generation resolves fresh URLs without changing captured rows;
+unavailable recorded signatures stop regeneration. Legacy URL-only signatures
+are not assigned guessed keys. Version 1 stays frozen. Version 2 includes these
+keys before its first release: the observed production image predates version 2,
+and branch-only version-2 fixtures were disposable. If another environment has
+already persisted version-2 seals, review compatibility before this change.
 
 MySQL DDL auto-commits. If interrupted, retain the freeze, inspect committed DDL
 and ledger state, and resume the **same reviewed SQL**. The runner recognizes

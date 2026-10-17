@@ -216,7 +216,7 @@ export const filesRouter = router({
           
           const extractValue = (targetKeys: string[]): string => {
             for (const row of siteRows) {
-              if (row.length < 3) continue;
+              if (row.length < 2) continue;
               const key = safeTrim(safeToLower(row[0]));
               // Try column 3 first (index 2), then column 2 (index 1)
               const value = String(row[2] || row[1] || "").trim();

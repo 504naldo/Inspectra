@@ -320,6 +320,9 @@ export const jobs = mysqlTable("jobs", {
   // Digital signatures — collected at end of inspection before completion
   techSignatureUrl: text("tech_signature_url"),
   contactSignatureUrl: text("contact_signature_url"),
+  // Permanent object references. Legacy URL-only captures deliberately remain null.
+  techSignatureKey: text("tech_signature_key"),
+  contactSignatureKey: text("contact_signature_key"),
   contactName: varchar("contact_name", { length: 255 }),
   contactSignedAt: timestamp("contact_signed_at"),
   techSignedAt: timestamp("tech_signed_at"),

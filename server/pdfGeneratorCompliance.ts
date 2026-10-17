@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { resolveSignatureImageForPdf } from './signatureImage';
 import {
   PDF_COLORS,
   PDF_FONTS,
@@ -16,7 +17,6 @@ import {
   drawSectionHeader,
   applyFootersToAllPages,
   drawSignatureTable,
-  fetchImageBuffer,
   type SignatureOpts,
 } from './pdfSharedStyles.js';
 
@@ -123,6 +123,7 @@ export interface ComplianceReportData {
 
   // Signature capture (optional — populated after job completion)
   techSignatureUrl?: string;
+  techSignatureKey?: string;
 
   // Checklist sections
   checklists: ChecklistSection[];
@@ -247,9 +248,9 @@ function drawRepeatingHeader(doc: any, data: ComplianceReportData) {
 export async function generateComplianceReportPDF(data: ComplianceReportData): Promise<Buffer> {
   // Pre-fetch signature image so the inner PDF callback stays synchronous
   const sigOpts: SignatureOpts = {};
-  if (data.techSignatureUrl) {
-    sigOpts.techSignatureBuffer = await fetchImageBuffer(data.techSignatureUrl);
-  }
+  sigOpts.techSignatureBuffer = await resolveSignatureImageForPdf({
+    fileKey: data.techSignatureKey, fileUrl: data.techSignatureUrl,
+  });
 
   return new Promise((resolve, reject) => {
     try {

@@ -599,7 +599,7 @@ const jobRouter = router({
         if (job.status !== "in_progress") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Only in-progress jobs can be completed" });
         }
-        if (!job.techSignatureUrl) {
+        if (!job.techSignatureKey && !job.techSignatureUrl) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Technician signature is required before completing the job." });
         }
         await db.updateJob(input.id, { status: "completed", completedAt: completedNow });
@@ -676,37 +676,32 @@ const jobRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const job = await getJobForCompany(input.jobId, ctx.user.companyId!);
-      if (job.finalizedAt)
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: JOB_FINALIZED_IMMUTABLE,
-        });
-
-      const now = new Date();
-      const techResult = await storagePut(
-        `signatures/${nanoid()}.png`,
-        Buffer.from(input.techSignatureBase64, "base64"),
-        "image/png"
-      );
-
-      const updates: Parameters<typeof db.updateJob>[1] = {
-        techSignatureUrl: techResult.url,
-        techSignedAt: now,
-      };
-
-      if (input.contactSignatureBase64 && input.contactName) {
-        const contactResult = await storagePut(
+      await withMutableJob(ctx, "job.saveSignatures", input.jobId, async () => {
+        const now = new Date();
+        const techResult = await storagePut(
           `signatures/${nanoid()}.png`,
-          Buffer.from(input.contactSignatureBase64, "base64"),
+          Buffer.from(input.techSignatureBase64, "base64"),
           "image/png"
         );
-        updates.contactSignatureUrl = contactResult.url;
-        updates.contactName = input.contactName;
-        updates.contactSignedAt = now;
-      }
 
-      await withMutableJob(ctx, "job.saveSignatures", input.jobId, async () => {
+        const updates: Parameters<typeof db.updateJob>[1] = {
+          techSignatureUrl: techResult.url,
+          techSignatureKey: techResult.key,
+          techSignedAt: now,
+        };
+
+        if (input.contactSignatureBase64 && input.contactName) {
+          const contactResult = await storagePut(
+            `signatures/${nanoid()}.png`,
+            Buffer.from(input.contactSignatureBase64, "base64"),
+            "image/png"
+          );
+          updates.contactSignatureUrl = contactResult.url;
+          updates.contactSignatureKey = contactResult.key;
+          updates.contactName = input.contactName;
+          updates.contactSignedAt = now;
+        }
+
         await db.updateJob(input.jobId, updates);
       });
       return { success: true };

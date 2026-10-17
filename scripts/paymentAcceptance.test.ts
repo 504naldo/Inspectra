@@ -28,6 +28,8 @@ describe('destructive synthetic database acceptance boundary', () => {
 
 const currentColumns = [
   { tableName: 'jobs', columnName: 'finalizationHashVersion' },
+  { tableName: 'jobs', columnName: 'tech_signature_key' },
+  { tableName: 'jobs', columnName: 'contact_signature_key' },
   { tableName: 'deficiencies', columnName: 'deviceSnapshot' },
   { tableName: 'inspection_results', columnName: 'deviceSnapshot' },
   { tableName: 'inspection_template_responses', columnName: 'itemSnapshot' },

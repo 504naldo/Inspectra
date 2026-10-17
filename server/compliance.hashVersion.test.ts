@@ -60,7 +60,7 @@ const attachment = (id: number, entityType: string, entityId: number, jobId: num
 beforeEach(() => {
   reads = [];
   rows = {
-    jobs: [{ id: 1, companyId: 7, jobNumber: "J-1", siteId: 10, customerOrgId: 20, leadTechnicianId: 3, jobType: "annual", title: "Inspection", description: null, notes: null, technicianNotes: null, officeNotes: null, techSignatureUrl: "signed-tech", contactSignatureUrl: "signed-contact", contactName: "Contact", techSignedAt: at, contactSignedAt: at }],
+    jobs: [{ id: 1, companyId: 7, jobNumber: "J-1", siteId: 10, customerOrgId: 20, leadTechnicianId: 3, jobType: "annual", title: "Inspection", description: null, notes: null, technicianNotes: null, officeNotes: null, techSignatureUrl: "signed-tech", contactSignatureUrl: "signed-contact", techSignatureKey: null, contactSignatureKey: null, contactName: "Contact", techSignedAt: at, contactSignedAt: at }],
     inspection_results: [{ id: 101, jobId: 1, notes: "Inspection" }],
     fire_alarm_inspection_results: [{ id: 201, jobId: 1, itemSnapshot: { wording: "Captured fire question" } }],
     deficiencies: [{ id: 301, jobId: 1, title: "Fault" }],
@@ -94,6 +94,8 @@ describe("Versioned job finalization hashes", () => {
     const original = computeFinalizationHash(await buildFinalizationPayload(1, database, 1));
     rows.inspection_template_responses[0].responseValue = "fail";
     rows.jobs[0].techSignatureUrl = "replacement";
+    rows.jobs[0].techSignatureKey = "signatures/replacement-tech.png";
+    rows.jobs[0].contactSignatureKey = "signatures/replacement-contact.png";
     rows.fire_alarm_form_header[0].systemManufacturer = "Replacement manufacturer";
     rows.sprinkler_devices[0].location = "Replacement location";
     expect(computeFinalizationHash(await buildFinalizationPayload(1, database, 1))).toBe(original);
@@ -108,6 +110,7 @@ describe("Versioned job finalization hashes", () => {
 
   it.each([
     ["jobs", "techSignatureUrl"], ["jobs", "contactSignatureUrl"], ["jobs", "contactName"],
+    ["jobs", "techSignatureKey"], ["jobs", "contactSignatureKey"],
     ["inspection_template_responses", "responseValue"], ["inspection_template_responses", "itemSnapshot"],
     ["inspection_checklist_responses", "status"], ["fire_alarm_form_header", "systemManufacturer"],
     ["fire_alarm_attendance_log", "techName"], ["fire_alarm_ancillary_circuits", "operationConfirmed"],

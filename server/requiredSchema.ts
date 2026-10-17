@@ -93,6 +93,10 @@ export async function verifyAuditRequiredSchema() {
       sql`SELECT requestId, result FROM invoice_payments LIMIT 0`,
     ],
     [
+      "jobs.tech_signature_key/contact_signature_key (manual migration 0092; journal 0042)",
+      sql`SELECT tech_signature_key, contact_signature_key FROM jobs LIMIT 0`,
+    ],
+    [
       "email_outbox.requestId/status/providerMessageId",
       sql`SELECT requestId, status, providerMessageId FROM email_outbox LIMIT 0`,
     ],

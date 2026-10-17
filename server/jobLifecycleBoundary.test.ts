@@ -160,7 +160,43 @@ describe("Job lifecycle source mutations", () => {
     expect(db.updateWorkOrder).not.toHaveBeenCalled();
     expect(db.deleteJobCascade).not.toHaveBeenCalled();
     expect(logActivity).not.toHaveBeenCalled();
+    expect(storagePut).not.toHaveBeenCalled();
     expect(sequence).toEqual(["begin", "job lock", "rollback"]);
+  });
+
+  it("stores the actual uploaded signature keys with their metadata under the parent lock", async () => {
+    vi.mocked(storagePut).mockImplementation(async () => {
+      expect(inside).toBe(true);
+      expect(sequence).toContain("job lock");
+      const number = vi.mocked(storagePut).mock.calls.length;
+      sequence.push("signature upload");
+      return { key: `normalized/signature-${number}.png`, url: `https://example.test/signature-${number}.png` };
+    });
+    await caller().saveSignatures({ jobId: 1, techSignatureBase64: "aGVsbG8=", contactSignatureBase64: "Y29udGFjdA==", contactName: "On-site contact" });
+    expect(job).toMatchObject({
+      techSignatureKey: "normalized/signature-1.png", techSignatureUrl: "https://example.test/signature-1.png",
+      contactSignatureKey: "normalized/signature-2.png", contactSignatureUrl: "https://example.test/signature-2.png",
+      contactName: "On-site contact", techSignedAt: expect.any(Date), contactSignedAt: expect.any(Date),
+    });
+    expect(sequence).toEqual(["begin", "job lock", "signature upload", "signature upload", "job write", "commit"]);
+  });
+
+  it("keeps prior signature metadata when the second upload fails", async () => {
+    const before = structuredClone(job);
+    vi.mocked(storagePut).mockResolvedValueOnce({ key: "uploaded-tech.png", url: "https://example.test/tech.png" })
+      .mockRejectedValueOnce(new Error("contact storage failed"));
+    await expect(caller().saveSignatures({ jobId: 1, techSignatureBase64: "aGVsbG8=", contactSignatureBase64: "Y29udGFjdA==", contactName: "On-site contact" }))
+      .rejects.toThrow("contact storage failed");
+    expect(job).toEqual(before);
+    expect(db.updateJob).not.toHaveBeenCalled();
+    expect(sequence.at(-1)).toBe("rollback");
+  });
+
+  it("allows completion with a durable technician key even when no upload URL is stored", async () => {
+    job.techSignatureUrl = null;
+    job.techSignatureKey = "signatures/captured.png";
+    await caller().complete({ id: 1 });
+    expect(job.status).toBe("completed");
   });
 
   it("updates a job and its work order before commit, then emits activity", async () => {

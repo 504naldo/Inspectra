@@ -447,7 +447,8 @@ const reportRouter = router({
               ? locationValidation.missingDeficiencies
               : undefined,
           // Signature captured during job completion
-          techSignatureUrl: (job as any).techSignatureUrl || undefined,
+          techSignatureUrl: job.techSignatureUrl || undefined,
+          techSignatureKey: job.techSignatureKey || undefined,
           // Deficiency reports do NOT include the fire alarm checklist section.
           // The checklist belongs only in annual/compliance reports.
           includeFireAlarmChecklist: false,
@@ -750,7 +751,8 @@ const reportRouter = router({
           emergencyLights,
           deficiencies: deficienciesSummary,
           // Signature captured during job completion
-          techSignatureUrl: (job as any).techSignatureUrl || undefined,
+          techSignatureUrl: job.techSignatureUrl || undefined,
+          techSignatureKey: job.techSignatureKey || undefined,
         })
       );
 
