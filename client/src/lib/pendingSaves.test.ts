@@ -24,6 +24,21 @@ function memoryStorage() {
     },
   };
 }
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>(accept => { resolve = accept; });
+  return { promise, resolve };
+}
+const lockModes = ["Node fallback", "queued Web Locks adapter"] as const;
+function configureLocks(mode: typeof lockModes[number]) {
+  if (mode === "Node fallback") { vi.stubGlobal("navigator", {}); return; }
+  let previous: Promise<unknown> = Promise.resolve();
+  vi.stubGlobal("navigator", { locks: { request: (_key: string, action: () => Promise<void>) => {
+    const operation = previous.then(action);
+    previous = operation.catch(() => {});
+    return operation;
+  } } });
+}
 it("retains different rows and coalesces only the same row", async () => {
   vi.useFakeTimers();
   const pending = new PendingSaves(),
@@ -90,23 +105,34 @@ it("server rejection leaves the draft for recovery and keeps it out of another a
   expect(send).toHaveBeenCalledTimes(1);
   expect(other.count()).toBe(0);
 });
-it("serializes edits to the same record and never acknowledges a newer version with an older reply", async () => {
-  const storage = memoryStorage(),
-    key = fireAlarmDraftKey(1, 10, 20);
-  let acknowledge!: () => void;
-  const first = new Promise<void>(resolve => {
-      acknowledge = resolve;
-    }),
-    send = vi
-      .fn()
-      .mockImplementationOnce(() => first)
-      .mockResolvedValue(undefined);
+it.each(lockModes)("serializes same-row edits and retains the newer draft until its own reply (%s)", async mode => {
+  vi.useFakeTimers();
+  configureLocks(mode);
+  const storage = memoryStorage(), key = fireAlarmDraftKey(1, 10, 20);
+  const firstStarted = deferred(), secondStarted = deferred();
+  const firstReply = deferred(), secondReply = deferred();
+  const send = vi.fn((_key: string, payload: { version: number }) => {
+    if (payload.version === 1) { firstStarted.resolve(); return firstReply.promise; }
+    secondStarted.resolve();
+    return secondReply.promise;
+  });
   const queue = new PendingSaves({ key, storage, send });
-  queue.schedule("header", () => first, 1500, { jobId: 20, version: 1 });
+  queue.schedulePersisted("header", { jobId: 20, version: 1 }, 1500);
   const running = queue.flush();
-  await Promise.resolve();
-  queue.schedule("header", () => send(), 1500, { jobId: 20, version: 2 });
-  acknowledge();
+  // Observe actual dispatch. A guessed number of microtasks varies between
+  // Node's fallback lock and browser/Node Web Locks implementations.
+  await firstStarted.promise;
+  expect(send).toHaveBeenNthCalledWith(1, "header", { jobId: 20, version: 1 });
+  queue.schedulePersisted("header", { jobId: 20, version: 2 }, 1500);
+  expect(queue.payload("header")).toMatchObject({ version: 2 });
+  expect(send).toHaveBeenCalledTimes(1);
+  firstReply.resolve();
+  await secondStarted.promise;
+  expect(send).toHaveBeenNthCalledWith(2, "header", { jobId: 20, version: 2 });
+  // The older reply cannot acknowledge the newer persisted revision.
+  expect(pendingFireAlarmDraftCount(key, storage)).toBe(1);
+  expect(queue.payload("header")).toMatchObject({ version: 2 });
+  secondReply.resolve();
   await running;
   await queue.flush();
   expect(send).toHaveBeenCalledTimes(2);
@@ -203,33 +229,32 @@ it("two instances retain unrelated rows and observe acknowledged tombstones with
   await restored.flush();
   expect(send).toHaveBeenCalledTimes(2);
 });
-it("serializes sends across instances and an older reply never clears a newer durable row", async () => {
-  const storage = memoryStorage(),
-    key = fireAlarmDraftKey(1, 2, 3);
-  let accept!: () => void;
-  const blocked = new Promise<void>(resolve => {
-    accept = resolve;
+it.each(lockModes)("serializes instances and retains a newer row through the older reply (%s)", async mode => {
+  vi.useFakeTimers();
+  configureLocks(mode);
+  const storage = memoryStorage(), key = fireAlarmDraftKey(1, 2, 3);
+  const firstStarted = deferred(), secondStarted = deferred();
+  const firstReply = deferred(), secondReply = deferred();
+  const send = vi.fn((_key: string, payload: { systemModel: string }) => {
+    if (payload.systemModel === "old") { firstStarted.resolve(); return firstReply.promise; }
+    secondStarted.resolve();
+    return secondReply.promise;
   });
-  const send = vi
-    .fn()
-    .mockImplementationOnce(() => blocked)
-    .mockResolvedValue(undefined);
   const first = new PendingSaves({ key, storage, send }),
     second = new PendingSaves({ key, storage, send });
   first.schedulePersisted("header", { jobId: 3, systemModel: "old" }, 1500);
   const running = first.flush();
-  await Promise.resolve();
-  await Promise.resolve();
+  await firstStarted.promise;
   second.schedulePersisted("header", { jobId: 3, systemModel: "new" }, 1500);
   const later = second.flush();
-  await Promise.resolve();
   expect(send).toHaveBeenCalledTimes(1);
-  accept();
+  firstReply.resolve();
+  await secondStarted.promise;
+  expect(second.count()).toBe(1);
+  expect(second.payload("header")).toMatchObject({ systemModel: "new" });
+  secondReply.resolve();
   await Promise.all([running, later]);
-  expect(send.mock.calls.map(call => call[1].systemModel)).toEqual([
-    "old",
-    "new",
-  ]);
+  expect(send.mock.calls.map(call => call[1].systemModel)).toEqual(["old", "new"]);
   expect(second.count()).toBe(0);
 });
 it("dispatches the serialized durable snapshot even if the caller mutates its payload", async () => {

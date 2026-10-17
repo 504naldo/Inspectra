@@ -18,6 +18,7 @@ import { TRPCError } from "@trpc/server";
 vi.mock("./db", () => ({
   getDb: vi.fn(),
   getJobById: vi.fn(),
+  getSiteById: vi.fn(),
   assertJobCompany: vi.fn(async (id: number, companyId: number) => {
     const row = await db.getJobById(id);
     if (!row) throw new TRPCError({ code: "NOT_FOUND" });
@@ -97,7 +98,7 @@ const REPORT_ROW = {
   fileKey: "reports/10.pdf",
 };
 
-const JOB_ROW = { id: 1, companyId: 1, customerOrgId: 5 };
+const JOB_ROW = { id: 1, companyId: 1, customerOrgId: 5, siteId: 10 };
 
 const DEFICIENCY_ROW = {
   id: 20,
@@ -117,12 +118,14 @@ const REPAIR_ROW = {
 };
 
 const ATTACHMENT_ROWS = [
-  { id: 1, entityType: "deficiency", entityId: 20, isCustomerFacing: 1, fileName: "after.jpg", },
-  { id: 2, entityType: "deficiency", entityId: 20, isCustomerFacing: 0, fileName: "internal-note.jpg", },
+  { id: 1, entityType: "deficiency", entityId: 20, isCustomerFacing: 1, fileName: "after.jpg", fileKey: "private/after.jpg", uploadedById: 99, idempotencyKey: "private-upload-key" },
+  { id: 2, entityType: "deficiency", entityId: 20, isCustomerFacing: 0, fileName: "internal-note.jpg", fileKey: "private/internal-note.jpg" },
 ];
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(db.getSiteById).mockResolvedValue({ id: 10, companyId: 1, customerOrgId: 5 } as any);
+  vi.mocked(db.getCustomerOrgById).mockResolvedValue({ id: 5, companyId: 1 } as any);
 });
 
 describe("Customer data isolation — report.get", () => {
@@ -216,6 +219,9 @@ describe("Customer data isolation — deficiency.get", () => {
 
     expect(result!.attachments).toHaveLength(1);
     expect(result!.attachments[0].id).toBe(1);
+    expect(result!.attachments[0]).not.toHaveProperty("fileKey");
+    expect(result!.attachments[0]).not.toHaveProperty("uploadedById");
+    expect(result!.attachments[0]).not.toHaveProperty("idempotencyKey");
   });
 
   it("returns the full row, all repairs, and all attachments for an office caller", async () => {
@@ -232,6 +238,33 @@ describe("Customer data isolation — deficiency.get", () => {
     expect(result!.deficiency).toMatchObject({ estimatedCost: DEFICIENCY_ROW.estimatedCost, });
     expect(result!.repairs[0]).toMatchObject({ aiRecommendations: REPAIR_ROW.aiRecommendations, });
     expect(result!.attachments).toHaveLength(2);
+    expect(result!.attachments[0]).toHaveProperty("fileKey", "private/after.jpg");
+  });
+
+  it("rejects a different customer organization before reading attachments or repairs", async () => {
+    vi.mocked(db.getDeficiencyById).mockResolvedValue(DEFICIENCY_ROW as any);
+    vi.mocked(db.getJobById).mockResolvedValue(JOB_ROW as any);
+    const caller = appRouter.createCaller(makeUserCtx("customer", null, 6));
+    await expect(caller.deficiency.get({ id: 20 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.getAttachmentsByEntity).not.toHaveBeenCalled();
+    expect(db.getRepairsByDeficiency).not.toHaveBeenCalled();
+  });
+
+  it("excludes a customer-facing legacy attachment whose optional job link contradicts its canonical deficiency", async () => {
+    vi.mocked(db.getDeficiencyById).mockResolvedValue(DEFICIENCY_ROW as any);
+    vi.mocked(db.getJobById).mockImplementation(async id => (
+      id === 1 ? JOB_ROW : { id: 2, companyId: 1, customerOrgId: 6, siteId: 11 }
+    ) as any);
+    vi.mocked(db.getSiteById).mockImplementation(async id => (
+      id === 10 ? { id: 10, companyId: 1, customerOrgId: 5 } : { id: 11, companyId: 1, customerOrgId: 6 }
+    ) as any);
+    vi.mocked(db.getCustomerOrgById).mockImplementation(async id => ({ id, companyId: 1 }) as any);
+    vi.mocked(db.getAttachmentsByEntity).mockResolvedValue([
+      ATTACHMENT_ROWS[0], { ...ATTACHMENT_ROWS[0], id: 3, jobId: 2 },
+    ] as any);
+    vi.mocked(db.getRepairsByDeficiency).mockResolvedValue([]);
+    const caller = appRouter.createCaller(makeUserCtx("customer", null, 5));
+    expect((await caller.deficiency.get({ id: 20 }))!.attachments.map(row => row.id)).toEqual([1]);
   });
 });
 

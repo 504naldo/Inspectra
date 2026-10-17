@@ -101,7 +101,7 @@ jobs:
           --publish 127.0.0.1:9000:9000
           --env MINIO_ROOT_USER="$S3_ACCESS_KEY_ID"
           --env MINIO_ROOT_PASSWORD="$S3_SECRET_ACCESS_KEY"
-          minio/minio:RELEASE.2025-04-22T22-12-26Z server /data --address :9000
+          quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data --address :9000
       - name: Prepare private synthetic bucket
         run: node scripts/prepareDisposableS3.mjs
       - name: Apply disposable database schema
@@ -207,6 +207,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Install Android build prerequisites
         run: sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;35.0.0' 'build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v4

@@ -15,6 +15,7 @@ function deferred() {
 
 describe("Legacy inspection sealing and rollback (MySQL)", () => {
   let companyId: number, siteId: number, orgId: number;
+  let fixtureSequence = 0;
   let ctx: TrpcContext;
   beforeAll(async () => {
     const company = await db.createCompany({ name: "Inspection seal integrity" });
@@ -31,7 +32,10 @@ describe("Legacy inspection sealing and rollback (MySQL)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   async function fixture() {
-    const job = await db.createJob({ companyId, customerOrgId: orgId, siteId, title: "Seal fixture" });
+    const job = await db.createJob({
+      companyId, customerOrgId: orgId, siteId,
+      jobNumber: `ISI-${companyId}-${++fixtureSequence}`, title: "Seal fixture",
+    });
     const created = await sprinklerDb.createSprinklerInspection({ jobId: job.id, inspectionDate: new Date() });
     const inspectionId = Number(created.insertId);
     await db.saveChecklistResponse({ jobId: job.id, sectionNumber: "1", itemId: "A", status: "PASS", comment: "Original" });

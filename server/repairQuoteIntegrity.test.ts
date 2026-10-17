@@ -15,7 +15,10 @@ async function tenant(label: string) {
   const company = await db.createCompany({ name: `Repair integrity ${label}` });
   const org = await db.createCustomerOrg({ companyId: company.id, name: label });
   const site = await db.createSite({ companyId: company.id, customerOrgId: org.id, name: label });
-  const job = await db.createJob({ companyId: company.id, customerOrgId: org.id, siteId: site.id, title: label });
+  const job = await db.createJob({
+    companyId: company.id, customerOrgId: org.id, siteId: site.id,
+    jobNumber: `RQI-${company.id}-${label}`, title: label,
+  });
   return { company, org, site, job };
 }
 
@@ -96,7 +99,10 @@ describe("Repair quotes — parent authorization and atomic sealing (MySQL)", ()
 
   it("rejects deficiencies from another job before insert or update", async () => {
     const { quote, item } = await makeQuote();
-    const siblingJob = await db.createJob({ companyId: A.company.id, siteId: A.site.id, customerOrgId: A.org.id, title: "Sibling" });
+    const siblingJob = await db.createJob({
+      companyId: A.company.id, siteId: A.site.id, customerOrgId: A.org.id,
+      jobNumber: `RQI-${A.company.id}-sibling`, title: "Sibling",
+    });
     for (const job of [B.job, siblingJob]) {
       const deficiency = await db.createDeficiency({ jobId: job.id, reportedById: 1, title: "Unrelated" });
       await expect(staff.repairQuote.addItem({ quoteId: quote.id, description: "Foreign deficiency", deficiencyId: deficiency.id })).rejects.toMatchObject({ code: "BAD_REQUEST" });

@@ -258,7 +258,7 @@ async def quota_fail_closed(context, backend, base):
     assert backend.count("fireAlarmForm.upsertHeader") == 0
     assert await page.evaluate("window.__acceptance.pendingDraftCount()") == 0
     await expect(await input_for(page, "Manufacturer")).to_have_value("Unpersisted correction")
-    await page.evaluate("Storage.prototype.setItem = window.__setItem")
+    await page.evaluate("() => { Storage.prototype.setItem = window.__setItem; delete window.__setItem; }")
 
 
 async def delivery_loss_reload(context, backend, base):
@@ -311,9 +311,10 @@ async def delivery_entity_recipient_reset(context, backend, base):
     dialog = await invoice_dialog(page)
     await dialog.get_by_placeholder("extra@example.com").fill("old-extra@example.invalid")
     await page.evaluate("window.__acceptance.setInvoiceId(502)")
-    await expect(page.get_by_role("heading", name="TEST-502", exact=True)).to_be_visible()
-    await expect(dialog.get_by_placeholder("extra@example.com")).to_have_value("")
+    # Radix hides the background heading from the accessibility tree while the
+    # dialog is open. Wait on the changed recipient inside that actual dialog.
     await expect(dialog.get_by_text("invoice-502-account-1@example.invalid", exact=True)).to_be_visible()
+    await expect(dialog.get_by_placeholder("extra@example.com")).to_have_value("")
     await expect(dialog.get_by_text("invoice-501-account-1@example.invalid", exact=True)).to_have_count(0)
     assert backend.count("invoice.send") == 0
     await dialog.get_by_role("button", name="Send to 1 recipient", exact=True).click()

@@ -82,6 +82,9 @@ vi.mock("./customerRecords/driveService.js", () => ({
 import * as db from "./db";
 import * as sprinklerDb from "./db.sprinkler";
 import { finalizeJob } from "./compliance/finalizeJob";
+import { storagePut } from "./storage";
+
+vi.mock("./storage", () => ({ storagePut: vi.fn(), storageGet: vi.fn(), storageGetDownload: vi.fn() }));
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -112,6 +115,12 @@ function makeUserCtx(companyId: number, role: AuthenticatedUser["role"] = "techn
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Attachment authorization resolves the complete site -> customer-org chain
+  // before checking the caller. Missing parents would test NOT_FOUND instead
+  // of the cross-company denial these cases are intended to exercise.
+  vi.mocked(db.getCustomerOrgById).mockImplementation(async id => (
+    id === 1 || id === 2 ? { id, companyId: id } : undefined
+  ) as any);
 });
 
 describe("Cross-tenant job ownership — checklistRouter.saveResponse", () => {
@@ -303,6 +312,7 @@ describe("Cross-tenant job ownership — attachmentRouter.update", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     expect(db.updateAttachment).not.toHaveBeenCalled();
+    expect(db.withAudit).not.toHaveBeenCalled();
   });
 });
 
@@ -311,7 +321,7 @@ describe("Cross-tenant job ownership — attachmentRouter.delete", () => {
     vi.mocked(db.getAttachmentById).mockResolvedValue({ id: 1,
       entityType: "site",
       entityId: 5, jobId: null, siteId: 5, deviceId: null, } as any);
-    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 2 } as any);
+    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 2, customerOrgId: 2 } as any);
 
     const ctx = makeUserCtx(1);
     const caller = appRouter.createCaller(ctx);
@@ -321,12 +331,14 @@ describe("Cross-tenant job ownership — attachmentRouter.delete", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN", });
 
     expect(db.deleteAttachment).not.toHaveBeenCalled();
+    expect(db.withAudit).not.toHaveBeenCalled();
   });
 });
 
 describe("Cross-tenant job ownership — attachmentRouter.listByEntity", () => {
   it("rejects a device entityId belonging to another company with FORBIDDEN", async () => {
-    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 2, } as any);
+    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 2, siteId: 5 } as any);
+    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 2, customerOrgId: 2 } as any);
 
     const ctx = makeUserCtx(1);
     const caller = appRouter.createCaller(ctx);
@@ -341,8 +353,11 @@ describe("Cross-tenant job ownership — attachmentRouter.listByEntity", () => {
 
 describe("Cross-tenant data injection — attachmentRouter.upload", () => {
   it("rejects a siteId belonging to another company with FORBIDDEN, even when the entity itself is owned by the caller", async () => {
-    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 1, } as any);
-    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 2 } as any);
+    vi.mocked(db.getDeviceById).mockResolvedValue({ id: 1, companyId: 1, siteId: 1 } as any);
+    vi.mocked(db.getSiteById).mockImplementation(async id => (
+      id === 1 ? { id: 1, companyId: 1, customerOrgId: 1 }
+        : id === 5 ? { id: 5, companyId: 2, customerOrgId: 2 } : undefined
+    ) as any);
 
     const ctx = makeUserCtx(1);
     const caller = appRouter.createCaller(ctx);
@@ -359,6 +374,8 @@ describe("Cross-tenant data injection — attachmentRouter.upload", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     expect(db.createAttachment).not.toHaveBeenCalled();
+    expect(storagePut).not.toHaveBeenCalled();
+    expect(db.withAudit).not.toHaveBeenCalled();
   });
 });
 
@@ -389,7 +406,8 @@ describe("Cross-tenant job ownership — uploadQueueRouter.complete", () => {
 
 describe("Cross-tenant job ownership — filesRouter.create", () => {
   it("rejects an entityId belonging to another company's job with FORBIDDEN before touching the database", async () => {
-    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 2 } as any);
+    vi.mocked(db.getJobById).mockResolvedValue({ id: 1, companyId: 2, siteId: 5, customerOrgId: 2 } as any);
+    vi.mocked(db.getSiteById).mockResolvedValue({ id: 5, companyId: 2, customerOrgId: 2 } as any);
 
     const ctx = makeUserCtx(1);
     const caller = appRouter.createCaller(ctx);
@@ -405,6 +423,8 @@ describe("Cross-tenant job ownership — filesRouter.create", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     expect(db.getDb).not.toHaveBeenCalled();
+    expect(db.getAttachmentsByEntity).not.toHaveBeenCalled();
+    expect(db.createAttachment).not.toHaveBeenCalled();
   });
 });
 

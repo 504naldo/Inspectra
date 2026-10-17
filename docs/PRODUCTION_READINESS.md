@@ -353,7 +353,7 @@ failures in the remaining acceptance paths. It does not establish a release.
 | Manual payment-guard migration | **Fixed:** manual 0091 now preserves complete trigger bodies using the maintenance runner's delimiter support. A pure regression verifies both resulting statements exactly match journal 0041. The previous file would split trigger bodies at internal semicolons. Real MySQL execution remains required. |
 | Railway failure | **Diagnosed read-only:** main deployment `5b14e294-35e0-4e84-991f-849a6ee480e2` built successfully on October 4, then repeatedly exited on missing `jobs.googleCalendarOwnerId`. The container never reached its listener. Increasing the healthcheck timeout does not resolve missing schema. [Bounded evidence](audits/RAILWAY_DEPLOYMENT_DIAGNOSIS_2026-10-17.md). |
 | Startup diagnostics and release procedure | **Fixed locally:** schema errors name the failed prerequisite and maintenance runbook, preserving only sanitized driver codes. Startup remains read-only and fails closed. Release instructions now cover journal 0041/manual 0091 and six payment guards. |
-| Release gating | Railway source is still `504naldo/Inspectra@main` with `checkSuites=false`; no staged changes were present. Main's GitHub branch is unprotected. No push, merge, deployment or live setting change was made. |
+| Release gating | Railway source is still `504naldo/Inspectra@main` with `checkSuites=false`; no staged changes were present. Main's GitHub branch is unprotected. A separate [audit branch](https://github.com/504naldo/Inspectra/tree/codex/audit-acceptance-20261017) was published for disposable CI acceptance. Main remains `179e8c8`; no merge, production deployment or live setting change was made. |
 | Runtime version | Failed deployment build logs installed Node **22.19.0**. No direct `process.version` evidence from the failed runtime was available. Local checks use Node **24.19.0** and do not replace Node 22 CI. |
 | Executor capabilities | Current enforced environment policy has no configured credentials, runtime variables or outbound identities. Chromium/Playwright are installed, but Chromium launch fails with socket `EPERM`; built-server listen and Docker socket access also fail `EPERM`. Narrow extra-access probes did not complete and were cancelled. No real browser/DB/storage/native acceptance is inferred. Connected Railway reads are separate from executor access. |
 | Disposable storage acceptance | Prepared a separate MinIO/MySQL CI job with a private synthetic bucket. Eleven existing workbook integration cases now require explicit disposable configuration and have current canonical fixtures. Four additional authenticated HTTP cases cover genuine URL expiry/re-signing, persisted uploader/parent provenance, multipart tenant denial and post-seal replay/write denial. Fresh signed downloads support configured private storage endpoints; stored/keyless URLs retain public-host checks and redirects are rejected. Independent SSRF review passed. These 15 integration cases remain unrun locally. |
@@ -369,6 +369,51 @@ active findings, one reviewed exception), syntax and patch checks passed.
 The prior 1,013-test focused run belongs to baseline `b54ac4d` and is not a new
 full database run. Five hosted CI jobs are prepared for the separate unmerged
 `codex/audit-acceptance-*` branch; results are pending.
+
+### Hosted acceptance evidence
+
+Published GitHub head `087942344d889f79954845cd61355aa274161a95` has tree
+`72d3de04ffc1d7d1a6108492fba4dae1e6dc476e`, exactly matching local `d180c53`.
+[Run 38987514645](https://github.com/504naldo/Inspectra/actions/runs/38987514645)
+uses disposable infrastructure. Node **22.23.3** and MySQL **8.0.46** are confirmed.
+
+The [payment acceptance job](https://github.com/504naldo/Inspectra/actions/runs/38987514645/job/117262311152)
+**passed**: a committed $40 payment with its response dropped survives refresh
+and browser restart with the same receipt; a separate explicit $60 reaches $100
+with two receipts; simultaneous tabs commit one $25 operation. Native MySQL
+dump/restore preserves all rows, tenant ownership, legacy/current captures and
+six complete guard definitions. It detects the post-backup $25 gap, rejects old
+writers/history edits/state downgrades, then restores $75 through repeated
+forward recovery exactly once. This closes the synthetic current-schema
+browser/backup acceptance gap; production backup/PITR and source accounting
+reconciliation remain separate.
+
+The first workflow submission failed validation before any job ran because a
+service-container expression was placed at job level; it was moved to the
+restore/diagnostic steps. The first executable run exposed two browser-harness
+assertion/cleanup failures after six scenarios passed, an obsolete Android SDK
+setup default and an unavailable Docker Hub MinIO image. Corrections are being
+validated; none of these failed/skipped paths is counted as passing acceptance.
+
+The first full suite ran **2,249 passing tests**, with 17 failures across five
+files and one repair-suite setup failure. Two MySQL fixtures omitted required job
+numbers; attachment authorization mocks omitted canonical ancestors; one autosave
+test assumed a fixed number of microtasks across Node 22/24 lock implementations.
+These fixture/synchronization defects were corrected without weakening production
+constraints or authorization. The replacement run must execute the previously
+unreached assertions before those suites can be accepted.
+
+The hosted payment browser also exposed requests for unresolved optional
+analytics placeholders. Vite now injects the original deferred analytics tag only
+when both settings are present. A real build with empty configuration emits no
+analytics request, and all four absent/partial/configured combinations were
+verified without making tracking calls.
+
+Read-only Railway health on October 17 confirmed one running replica from the
+successful October 2 deployment `0d71ab5f-a6d8-4925-bcb8-001635f381d0`, with no
+pending work. The later October 4 attempt failed on missing schema. The failed
+attempt does not mean the earlier serving deployment is offline, and the new
+audit branch has not replaced it.
 
 ### SheetJS dependency remains blocked
 

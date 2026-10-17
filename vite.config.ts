@@ -2,11 +2,32 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "path";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 
+function optionalAnalytics(): Plugin {
+  let endpoint = "";
+  let websiteId = "";
+  return {
+    name: "inspectra-optional-analytics",
+    configResolved(config) {
+      endpoint = (config.env.VITE_ANALYTICS_ENDPOINT ?? "").trim();
+      websiteId = (config.env.VITE_ANALYTICS_WEBSITE_ID ?? "").trim();
+    },
+    transformIndexHtml() {
+      if (!endpoint || !websiteId) return [];
+      return [{
+        tag: "script",
+        attrs: { defer: true, src: `${endpoint}/umami`, "data-website-id": websiteId },
+        injectTo: "body",
+      }];
+    },
+  };
+}
+
 const plugins = [
+  optionalAnalytics(),
   react(),
   tailwindcss(),
   VitePWA({
