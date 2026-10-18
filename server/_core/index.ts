@@ -82,7 +82,7 @@ async function startServer() {
   // login fail later with a lazy error once a user actually tries to sign in.
   validateJwtSecret();
 
-  // Run pending database migrations before starting the server
+  // Read-only migration and schema checks must pass before serving traffic.
   await runMigrations();
   if (process.env.DATABASE_URL) await verifyAuditRequiredSchema();
 

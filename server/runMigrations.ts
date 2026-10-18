@@ -190,7 +190,7 @@ export async function runMigrations(options: { databaseUrl?: string; migrationsD
         );
         console.log(`[Migrations] Applied: ${file}`);
       } catch (err) {
-        console.error(`[Migrations] Failed to apply ${file}, will retry on next boot:`, err);
+        console.error(`[Migrations] Failed to apply ${file}, explicit maintenance retry required:`, err);
         throw err;
       }
     }
