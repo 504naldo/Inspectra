@@ -61,3 +61,77 @@ jobs:
 
       - name: Smoke test built server (isolated, no migrations)
         run: node scripts/smokeBuiltServer.mjs
+
+  mysql97:
+    name: Full suite (MySQL ${{ matrix.mysql }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        mysql: ['9.7.2', '9.7.4']
+
+    services:
+      mysql:
+        image: mysql:${{ matrix.mysql }}
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_DATABASE: inspectra_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: mysql://root@127.0.0.1:3306/inspectra_ci
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify exact MySQL runtime
+        env:
+          MYSQL_CONTAINER: ${{ job.services.mysql.id }}
+          MYSQL_VERSION: ${{ matrix.mysql }}
+        run: |
+          actual=$(docker exec "$MYSQL_CONTAINER" mysql --no-defaults -uroot --batch --skip-column-names -e 'SELECT VERSION()')
+          echo "MySQL runtime: $actual"
+          test "$actual" = "$MYSQL_VERSION"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install PDF text regression tool
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
+      - name: Type check
+        run: pnpm run check
+
+      # Required heuristic check: PR-18's active findings are resolved. Keep
+      # authorization tests alongside this audit; a clean scan is not a proof.
+      - name: Tenant-guard audit (strict)
+        run: pnpm run security:tenant-audit:strict
+
+      - name: Apply database schema
+        run: npx drizzle-kit migrate
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build production assets
+        run: pnpm run build
+
+      - name: Smoke test built server (isolated, no migrations)
+        run: node scripts/smokeBuiltServer.mjs
