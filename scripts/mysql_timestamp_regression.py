@@ -71,10 +71,11 @@ class Probe:
         return lines == ['1']
 
     def run(self):
-        runtime = self.objects("SELECT JSON_OBJECT('version',VERSION(),'version_comment',@@version_comment,'sql_mode',@@sql_mode,'time_zone',@@time_zone,'explicit_defaults_for_timestamp',@@explicit_defaults_for_timestamp)", database=False)[0]
+        runtime = self.objects("SELECT JSON_OBJECT('version',VERSION(),'version_comment',@@version_comment,'sql_mode',@@sql_mode,'time_zone',@@time_zone,'explicit_defaults_for_timestamp',@@explicit_defaults_for_timestamp,'skip_networking',@@skip_networking)", database=False)[0]
         self.report['runtime'] = runtime
         self.check('exact_mysql_version', runtime['version'] == self.expected)
         self.check('explicit_timestamp_defaults_enabled', runtime['explicit_defaults_for_timestamp'] == 1)
+        self.check('normal_networked_server', runtime['skip_networking'] == 0)
         self.check('empty_disposable_server', self.scalar(
             "SELECT COUNT(*)=0 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME NOT IN ('mysql','sys','information_schema','performance_schema');",
             database=False))
