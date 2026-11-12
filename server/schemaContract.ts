@@ -271,26 +271,79 @@ export async function checkSchemaContract(
             "review"
           );
       const actualIndexes = indexes.filter(r => r.TABLE_NAME === table.name);
+      const grouped = new Map<string, Row[]>();
+      // Validate before looking for equivalents. Coercion must not turn missing or
+      // malformed metadata (for example null NON_UNIQUE) into a unique index.
+      const integer = (value: unknown, minimum: number) =>
+        (typeof value === "number" ||
+          (typeof value === "string" && /^\d+$/.test(value))) &&
+        Number.isSafeInteger(Number(value)) &&
+        Number(value) >= minimum;
+      for (const row of actualIndexes) {
+        if (
+          typeof row.INDEX_NAME !== "string" ||
+          !row.INDEX_NAME ||
+          typeof row.COLUMN_NAME !== "string" ||
+          !row.COLUMN_NAME ||
+          !integer(row.NON_UNIQUE, 0) ||
+          Number(row.NON_UNIQUE) > 1 ||
+          !integer(row.SEQ_IN_INDEX, 1) ||
+          !(row.SUB_PART === null || integer(row.SUB_PART, 1)) ||
+          typeof row.INDEX_TYPE !== "string" ||
+          !row.INDEX_TYPE ||
+          !["A", "D", null].includes(row.COLLATION as string | null)
+        )
+          throw new Error("Invalid index metadata");
+        const group = grouped.get(row.INDEX_NAME) ?? [];
+        group.push(row);
+        grouped.set(row.INDEX_NAME, group);
+      }
+      for (const group of Array.from(grouped.values())) {
+        group.sort((a, b) => Number(a.SEQ_IN_INDEX) - Number(b.SEQ_IN_INDEX));
+        if (!group.every((row, i) => Number(row.SEQ_IN_INDEX) === i + 1))
+          throw new Error("Invalid index sequence metadata");
+      }
+      const matches = (index: IndexContract, actual: Row[]) =>
+        actual.length === index.columns.length &&
+        actual.every(
+          (r, i) =>
+            r.COLUMN_NAME === index.columns[i] &&
+            Number(r.NON_UNIQUE) === (index.unique ? 0 : 1) &&
+            r.SUB_PART === null &&
+            r.INDEX_TYPE === index.type &&
+            (r.COLLATION === "A" ||
+              (index.type === "HASH" && r.COLLATION === null))
+        );
+      const missing = table.indexes.filter(index => !grouped.has(index.name));
       for (const index of table.indexes) {
-        const actual = actualIndexes
-          .filter(r => r.INDEX_NAME === index.name)
-          .sort((a, b) => Number(a.SEQ_IN_INDEX) - Number(b.SEQ_IN_INDEX));
-        if (!actual.length) {
-          add("missing_index", table.name, index.name);
+        const actual = grouped.get(index.name);
+        if (!actual) {
+          // Only a one-to-one, unclaimed secondary index can explain a name
+          // difference. PRIMARY has additional semantics, not just uniqueness.
+          const candidates = Array.from(grouped).filter(
+            ([name, group]) =>
+              index.name !== "PRIMARY" &&
+              name !== "PRIMARY" &&
+              !table.indexes.some(expected => expected.name === name) &&
+              matches(index, group) &&
+              missing.filter(expected => matches(expected, group)).length === 1
+          );
+          if (candidates.length === 1)
+            add(
+              "equivalent_index_different_name",
+              table.name,
+              index.name,
+              JSON.stringify(index),
+              JSON.stringify({
+                name: candidates[0][0],
+                rows: candidates[0][1],
+              }),
+              "review"
+            );
+          else add("missing_index", table.name, index.name);
           continue;
         }
-        const valid =
-          actual.length === index.columns.length &&
-          actual.every(
-            (r, i) =>
-              r.COLUMN_NAME === index.columns[i] &&
-              Number(r.SEQ_IN_INDEX) === i + 1 &&
-              Number(r.NON_UNIQUE) === (index.unique ? 0 : 1) &&
-              r.SUB_PART === null &&
-              r.INDEX_TYPE === index.type &&
-              (r.COLLATION === "A" ||
-                (index.type === "HASH" && r.COLLATION === null))
-          );
+        const valid = matches(index, actual);
         if (!valid)
           add(
             "index_mismatch",
@@ -300,6 +353,7 @@ export async function checkSchemaContract(
             JSON.stringify(actual)
           );
       }
+      // Keep extra_index: the unexpected physical name still needs review.
       for (const name of Array.from(
         new Set(actualIndexes.map(r => String(r.INDEX_NAME)))
       ))

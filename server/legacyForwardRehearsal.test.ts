@@ -40,6 +40,7 @@ let additions: { table: string; column: string }[] = [];
 let originalColumns: { table: string; columns: string[] }[] = [];
 let originalLedger: string[] = [];
 let originalLedgerRows: mysql.RowDataPacket[] = [];
+const catalogPrefix = "Synthetic catalog " + "x".repeat(173);
 const q = (identifier: string) => "`" + identifier.replaceAll("`", "``") + "`";
 
 async function inspect(): Promise<SchemaContractReport> {
@@ -81,10 +82,51 @@ async function ledger() {
   );
   return rows.map(row => String(row.migration_name));
 }
+async function foreignKeys() {
+  return (
+    await connection!.query<mysql.RowDataPacket[]>(
+      `SELECT k.CONSTRAINT_SCHEMA,k.CONSTRAINT_NAME,k.TABLE_SCHEMA,k.TABLE_NAME,
+        k.COLUMN_NAME,k.ORDINAL_POSITION,k.POSITION_IN_UNIQUE_CONSTRAINT,
+        k.REFERENCED_TABLE_SCHEMA,k.REFERENCED_TABLE_NAME,k.REFERENCED_COLUMN_NAME,
+        r.UNIQUE_CONSTRAINT_SCHEMA,r.UNIQUE_CONSTRAINT_NAME,r.MATCH_OPTION,
+        r.UPDATE_RULE,r.DELETE_RULE
+      FROM information_schema.KEY_COLUMN_USAGE k
+      JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+        ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA
+        AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME
+      WHERE k.TABLE_SCHEMA=? AND k.REFERENCED_TABLE_NAME IS NOT NULL
+      ORDER BY k.TABLE_NAME,k.CONSTRAINT_NAME,k.ORDINAL_POSITION`,
+      [name]
+    )
+  )[0];
+}
+async function catalogIndexes() {
+  return (
+    await connection!.query<mysql.RowDataPacket[]>(
+      "SELECT INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME,SUB_PART FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME='parts_catalog' ORDER BY INDEX_NAME,SEQ_IN_INDEX",
+      [name]
+    )
+  )[0];
+}
+async function catalogDuplicateGroups() {
+  // Return only a count, never catalog keys. Match the full target key and its
+  // explicit fixture collation, not the legacy lookup index's 191-char prefix.
+  const [rows] = await connection!.query<mysql.RowDataPacket[]>(`
+    SELECT COUNT(*) n FROM (
+      SELECT 1 FROM parts_catalog
+      GROUP BY companyId, category COLLATE utf8mb4_0900_ai_ci,
+        productName COLLATE utf8mb4_0900_ai_ci
+      HAVING COUNT(*) > 1
+    ) duplicate_groups
+  `);
+  return Number(rows[0].n);
+}
 async function preflight() {
   // This helper is deliberately private to this test's owned, synthetic database.
   if (!createdDatabase || !name.startsWith("inspectra_forward_") || !connection)
     throw new Error("Synthetic database ownership required");
+  if (await catalogDuplicateGroups())
+    throw new Error("Duplicate catalog key groups: separate review required");
   const report = await inspect();
   if (report.status === "unknown")
     throw new Error("Schema metadata could not be verified");
@@ -162,7 +204,9 @@ beforeAll(async () => {
   name = `inspectra_forward_${randomUUID().replaceAll("-", "")}`;
   url.pathname = "/";
   admin = await mysql.createConnection(url.toString());
-  await admin.query(`CREATE DATABASE ${q(name)}`);
+  await admin.query(
+    `CREATE DATABASE ${q(name)} CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`
+  );
   createdDatabase = true;
   url.pathname = "/" + name;
   databaseUrl = url.toString();
@@ -237,6 +281,10 @@ beforeAll(async () => {
         `ALTER TABLE ${q(unique[1])} DROP INDEX ${q(unique[2])}`
       );
   }
+  // Reproduce only the public manual 0039 nonunique prefix index definition.
+  await connection.query(
+    "CREATE INDEX `parts_catalog_cat_product_idx` ON `parts_catalog` (`companyId`, `category`(100), `productName`(191))"
+  );
   for (const { table, column } of additions)
     await connection.query(`ALTER TABLE ${q(table)} DROP COLUMN ${q(column)}`);
   await connection.query(
@@ -277,6 +325,17 @@ beforeAll(async () => {
       await connection.query(
         `ALTER TABLE ${q(table)} MODIFY COLUMN ${q(column)} ${definition}`
       );
+  // All four FK definitions from public manual 0007, without replaying its
+  // migration or backfills. Supporting indexes are created by InnoDB as needed.
+  for (const [table, column, referencedTable] of [
+    ["inspection_results", "jobId", "jobs"],
+    ["fire_alarm_inspection_results", "jobId", "jobs"],
+    ["deficiencies", "jobId", "jobs"],
+    ["repairs", "deficiencyId", "deficiencies"],
+  ])
+    await connection.query(
+      `ALTER TABLE ${q(table)} ADD CONSTRAINT ${q(`fk_${table}_${column}`)} FOREIGN KEY (${q(column)}) REFERENCES ${q(referencedTable)} (id)`
+    );
   await connection.query(
     "INSERT INTO companies(id,name) VALUES(811,'Synthetic A'),(812,'Synthetic B')"
   );
@@ -291,6 +350,10 @@ beforeAll(async () => {
   );
   await connection.query(
     "INSERT INTO fire_alarm_inspection_results(id,jobId,fireAlarmSystemId,checklistItemId,result,itemSnapshot) VALUES(811,811,811,811,'pass',JSON_OBJECT('captureProvenance','legacy_unknown','itemDescription','Synthetic historical wording'))"
+  );
+  await connection.query(
+    "INSERT INTO parts_catalog(id,companyId,category,productName,sku,unitPrice,description) VALUES (811,811,'Synthetic sensors','Café sensor','SYN-A',12.34,'Invented catalog row'),(812,811,'Synthetic sensors',?,'SYN-B',23.45,'Invented long name A'),(813,811,'Synthetic sensors',?,'SYN-C',34.56,'Invented long name B')",
+    [catalogPrefix + "-alpha", catalogPrefix + "-beta"]
   );
   const [columns] = await connection.query<mysql.RowDataPacket[]>(
     "SELECT TABLE_NAME,COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME NOT IN ('__schema_migrations','__drizzle_migrations') ORDER BY TABLE_NAME,ORDINAL_POSITION",
@@ -374,6 +437,32 @@ it("refuses nonempty business tables and null captures without DDL or invented h
   expect(await ledgerRows()).toEqual(originalLedgerRows);
 });
 
+it("rejects case and accent equivalent full catalog keys before any repair DDL", async () => {
+  const before = await preservedRows();
+  const indexes = await catalogIndexes();
+  const report = await inspect();
+  for (const productName of ["CAFÉ SENSOR", "Cafe sensor"]) {
+    await connection!.beginTransaction();
+    try {
+      await connection!.query(
+        "INSERT INTO parts_catalog(companyId,category,productName) VALUES(811,'Synthetic sensors',?)",
+        [productName]
+      );
+      expect(await catalogDuplicateGroups()).toBe(1);
+      await expect(preflight()).rejects.toThrow(
+        "Duplicate catalog key groups: separate review required"
+      );
+      expect(await catalogIndexes()).toEqual(indexes);
+      expect((await inspect()).findings).toEqual(report.findings);
+      expect(await ledgerRows()).toEqual(originalLedgerRows);
+    } finally {
+      // Undo only this test's invented conflicting insert, not a repair branch.
+      await connection!.rollback();
+    }
+  }
+  expect(await preservedRows()).toEqual(before);
+});
+
 it("rejects an interrupted or unexpected candidate rather than blind duplicate skipping", async () => {
   await connection!.query(statements[0]);
   await expect(preflight()).rejects.toThrow("Partial or different schema");
@@ -392,6 +481,26 @@ it("rejects an interrupted or unexpected candidate rather than blind duplicate s
 
 it("rehearses a complete synthetic forward sequence preserving every original value and ledger entry", async () => {
   const before = await preservedRows();
+  const foreignKeysBefore = await foreignKeys();
+  expect(foreignKeysBefore.map(row => row.CONSTRAINT_NAME)).toEqual([
+    "fk_deficiencies_jobId",
+    "fk_fire_alarm_inspection_results_jobId",
+    "fk_inspection_results_jobId",
+    "fk_repairs_deficiencyId",
+  ]);
+  const prefixBefore = (await catalogIndexes()).filter(
+    row => row.INDEX_NAME === "parts_catalog_cat_product_idx"
+  );
+  expect(
+    prefixBefore.map(row => [row.NON_UNIQUE, row.COLUMN_NAME, row.SUB_PART])
+  ).toEqual([
+    [1, "companyId", null],
+    // MySQL may normalize a prefix equal to the whole VARCHAR length.
+    [1, "category", expect.toSatisfy((n: unknown) => n === null || n === 100)],
+    [1, "productName", 191],
+  ]);
+  expect(catalogPrefix).toHaveLength(191);
+  expect(await catalogDuplicateGroups()).toBe(0);
   expect((await preflight()).needsRepair).toBe(true);
   for (const statement of statements) await connection!.query(statement);
   await runMigrations({ databaseUrl, migrationsDir: selected, apply: true });
@@ -401,6 +510,29 @@ it("rehearses a complete synthetic forward sequence preserving every original va
   expect(
     report.findings.filter(f => f.code === "extra_column").map(f => f.object)
   ).toEqual(["notes", "paidAmount", "totalAmount"]);
+  expect(await preservedRows()).toEqual(before);
+  expect(await foreignKeys()).toEqual(foreignKeysBefore);
+  const indexesAfter = await catalogIndexes();
+  expect(
+    indexesAfter.filter(
+      row => row.INDEX_NAME === "parts_catalog_cat_product_idx"
+    )
+  ).toEqual(prefixBefore);
+  expect(
+    indexesAfter
+      .filter(row => row.INDEX_NAME === "parts_catalog_unique_cat_product")
+      .map(row => [row.NON_UNIQUE, row.COLUMN_NAME, row.SUB_PART])
+  ).toEqual([
+    [0, "companyId", null],
+    [0, "category", null],
+    [0, "productName", null],
+  ]);
+  expect(await count("parts_catalog")).toBe(3);
+  await expect(
+    connection!.query(
+      "INSERT INTO parts_catalog(companyId,category,productName) VALUES(811,'Synthetic sensors','CAFE SENSOR')"
+    )
+  ).rejects.toMatchObject({ code: "ER_DUP_ENTRY" });
   expect(await preservedRows()).toEqual(before);
   expect(await ledger()).toEqual([...originalLedger, ...selectedFiles].sort());
   expect(

@@ -23,6 +23,10 @@ Output contains schema metadata only, with blocking/review/unknown counts:
 
 - Missing tables, columns and named indexes, incompatible types/nullability and
   index definitions are blocking findings.
+- An unambiguous, differently named secondary index equivalent within the checked
+  full columns/order/uniqueness/type/direction is review-only, not permission to add a
+  duplicate index or rename it. Prefix and nonunique indexes cannot stand in for
+  full unique constraints. PRIMARY keys are never treated as interchangeable.
 - Extra legacy tables/columns/indexes require review. They are **never** a deletion
   recommendation. A review-only result has zero blocking findings but still exits
   nonzero until its scope is understood.
@@ -81,11 +85,15 @@ to an existing application's schema or copy production records.
 `fixtures/empty-legacy-forward.sql` is a **test fixture**, not a production
 migration. It is outside the automatically discovered migration directories.
 The test's private preflight checks the expected shape, empty business tables,
-non-null captures and absence of unexpected drift before executing it. Interrupted
+non-null captures, duplicate-free full catalog keys under the fixture collation,
+and absence of unexpected drift before executing it. Interrupted
 or different shapes stop. The subsequent selected 0086/0087 files use the existing
 explicit maintenance runner. The test then checks the full supported contract,
 required-schema checks, original values, historical unknown provenance, ledgers
-and four payment guards. Extra legacy columns remain present for review.
+and four payment guards. The catalog rehearsal includes case/accent collisions
+and distinct names sharing a legacy index prefix; conflicting full keys stop
+before DDL without deleting or merging records. Extra legacy columns and prefix
+indexes remain present for review.
 
 Run only against a disposable local/CI MySQL server:
 
@@ -98,3 +106,15 @@ This tests the proposed mechanics for its deliberately constructed fixture. It
 is not a production DDL snapshot, complete data conversion, fresh-backup rehearsal
 or full application/device/provider acceptance. Use exact-head CI evidence and
 keep any unrun checks explicit.
+
+## Reviewed continuation is not duplicate-error skipping
+
+The existing maintenance runner tolerates duplicate-name errors, and SQL
+`CREATE TABLE IF NOT EXISTS` can leave an incompatible table untouched. Neither
+is evidence that an earlier step produced the required definition. A separately
+authorized forward repair must check exact preconditions, execute only the
+reviewed remaining statements and verify their complete effects before recording
+completion. On any failed or uncertain DDL response, stop and inventory committed
+state; never blindly rerun a file or delete migration history. Keep any additional
+forward-repair execution receipt separate from, and consistent with, the retained
+original ledger.

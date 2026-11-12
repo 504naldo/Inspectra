@@ -178,6 +178,145 @@ describe("read-only schema contract", () => {
       ).toBe(mode === "missing" ? "missing_index" : "index_mismatch");
     }
   );
+  it("reports an exact secondary index rename for review, never compatible", async () => {
+    const data = fixture();
+    for (const row of data.indexes)
+      if (row.INDEX_NAME === "email_active") row.INDEX_NAME = "legacy_unique";
+    const before = JSON.stringify(data);
+    const report = await checkSchemaContract(adapter(data), "test", contract);
+    expect(report.status).toBe("drift");
+    expect(report.blockingCount).toBe(0);
+    expect(report.reviewCount).toBe(2); // Name difference plus unexpected index.
+    expect(report.unknownCount).toBe(0);
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        code: "equivalent_index_different_name",
+        severity: "review",
+        object: "email_active",
+      })
+    );
+    expect(report.findings.some(f => f.code === "missing_index")).toBe(false);
+    expect(JSON.stringify(data)).toBe(before);
+  });
+  it.each(["unique", "prefix", "direction", "order", "type", "width"])(
+    "does not treat a renamed %s mismatch as equivalent",
+    async mode => {
+      const data = fixture();
+      const renamed = data.indexes.filter(i => i.INDEX_NAME === "email_active");
+      for (const row of renamed) row.INDEX_NAME = "legacy_unique";
+      if (mode === "unique") for (const row of renamed) row.NON_UNIQUE = 1;
+      if (mode === "prefix") renamed[0].SUB_PART = 10;
+      if (mode === "direction") renamed[0].COLLATION = "D";
+      if (mode === "order")
+        [renamed[0].COLUMN_NAME, renamed[1].COLUMN_NAME] = [
+          renamed[1].COLUMN_NAME,
+          renamed[0].COLUMN_NAME,
+        ];
+      if (mode === "type") for (const row of renamed) row.INDEX_TYPE = "HASH";
+      if (mode === "width")
+        data.indexes = data.indexes.filter(r => r !== renamed[1]);
+      const report = await checkSchemaContract(adapter(data), "test", contract);
+      expect(report.blockingCount).toBe(1);
+      expect(report.findings).toContainEqual(
+        expect.objectContaining({
+          code: "missing_index",
+          object: "email_active",
+          severity: "blocking",
+        })
+      );
+      expect(
+        report.findings.some(f => f.code === "equivalent_index_different_name")
+      ).toBe(false);
+    }
+  );
+  it("does not replace an expected nonunique index with a unique index", async () => {
+    const data = fixture();
+    const row = data.indexes.find(i => i.INDEX_NAME === "email_idx")!;
+    row.INDEX_NAME = "legacy_index";
+    row.NON_UNIQUE = 0;
+    const report = await checkSchemaContract(adapter(data), "test", contract);
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        code: "missing_index",
+        object: "email_idx",
+        severity: "blocking",
+      })
+    );
+  });
+  it("accepts numeric metadata strings and HASH null direction for name review", async () => {
+    const expected = structuredClone(contract);
+    expected[0].indexes.find(i => i.name === "email_active")!.type = "HASH";
+    const data = fixture(expected);
+    for (const row of data.indexes.filter(
+      i => i.INDEX_NAME === "email_active"
+    )) {
+      const metadata: Record<string, unknown> = row;
+      metadata.INDEX_NAME = "legacy_hash";
+      metadata.COLLATION = null;
+      metadata.SEQ_IN_INDEX = String(row.SEQ_IN_INDEX);
+      metadata.NON_UNIQUE = String(row.NON_UNIQUE);
+    }
+    const report = await checkSchemaContract(adapter(data), "test", expected);
+    expect(report.status).toBe("drift");
+    expect(report.blockingCount).toBe(0);
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        code: "equivalent_index_different_name",
+        object: "email_active",
+      })
+    );
+  });
+  it.each(["claimed", "duplicate_expected", "duplicate_actual", "primary"])(
+    "does not resolve ambiguous or reserved indexes: %s",
+    async mode => {
+      const expected = structuredClone(contract);
+      const data = fixture(expected);
+      const target = expected[0].indexes.find(i => i.name === "email_active")!;
+      if (mode === "claimed") {
+        expected[0].indexes.push({ ...target, name: "legacy_unique" });
+      }
+      if (mode === "duplicate_expected")
+        expected[0].indexes.push({ ...target, name: "other_expected" });
+      for (const row of data.indexes)
+        if (
+          row.INDEX_NAME === (mode === "primary" ? "PRIMARY" : "email_active")
+        )
+          row.INDEX_NAME = "legacy_unique";
+      if (mode === "duplicate_actual")
+        data.indexes.push(
+          ...data.indexes
+            .filter(r => r.INDEX_NAME === "legacy_unique")
+            .map(r => ({ ...r, INDEX_NAME: "other_actual" }))
+        );
+      const report = await checkSchemaContract(adapter(data), "test", expected);
+      expect(report.blockingCount).toBeGreaterThan(0);
+      expect(
+        report.findings.some(f => f.code === "equivalent_index_different_name")
+      ).toBe(false);
+    }
+  );
+  it.each([
+    ["NON_UNIQUE", null],
+    ["NON_UNIQUE", false],
+    ["NON_UNIQUE", ""],
+    ["SEQ_IN_INDEX", 0],
+    ["SEQ_IN_INDEX", 2],
+    ["SUB_PART", undefined],
+    ["COLUMN_NAME", null],
+    ["INDEX_TYPE", null],
+    ["COLLATION", "invalid"],
+  ])("keeps malformed index metadata unknown: %s=%s", async (key, value) => {
+    const data = fixture();
+    const row = data.indexes.find(i => i.INDEX_NAME === "email_active")!;
+    row.INDEX_NAME = "legacy_unique";
+    (row as Record<string, unknown>)[key as string] = value;
+    const report = await checkSchemaContract(adapter(data), "test", contract);
+    expect(report.status).toBe("unknown");
+    expect(report.unknownCount).toBe(1);
+    expect(
+      report.findings.some(f => f.code === "equivalent_index_different_name")
+    ).toBe(false);
+  });
   it("reports extra tables/indexes for review and does not mutate input", async () => {
     const data = fixture();
     data.tables.push({ TABLE_NAME: "legacy", TABLE_TYPE: "BASE TABLE" });
@@ -259,6 +398,50 @@ describe("read-only schema contract", () => {
 });
 
 describe("schema contract CLI guards", () => {
+  it("returns a nonzero CLI exit for review-only index name drift", async () => {
+    const data = fixture(buildSchemaContract());
+    const originalName = data.indexes.find(i => i.INDEX_NAME !== "PRIMARY")!;
+    const { TABLE_NAME, INDEX_NAME } = originalName;
+    for (const row of data.indexes)
+      if (row.TABLE_NAME === TABLE_NAME && row.INDEX_NAME === INDEX_NAME)
+        row.INDEX_NAME = "generic_legacy_index";
+    const mysql = (await import("mysql2/promise")).default;
+    const db = adapter(data);
+    const query = vi.fn(
+      async (options: { sql: string }, parameters: string[]) => [
+        await db.query(options.sql, parameters),
+        [],
+      ]
+    );
+    const connect = vi
+      .spyOn(mysql, "createConnection")
+      .mockResolvedValue({ query, destroy: vi.fn() } as never);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const { runSchemaContractCli } = await import(
+        "../scripts/checkSchemaContract"
+      );
+      expect(
+        await runSchemaContractCli([
+          "--database-url",
+          "mysql://user:SECRET@example.invalid/test",
+        ])
+      ).toBe(1);
+      const report = JSON.parse(log.mock.calls[0][0]);
+      expect(report.status).toBe("drift");
+      expect(report.blockingCount).toBe(0);
+      expect(report.reviewCount).toBeGreaterThan(0);
+      expect(
+        report.findings.some(
+          (f: { code: string }) => f.code === "equivalent_index_different_name"
+        )
+      ).toBe(true);
+    } finally {
+      connect.mockRestore();
+      log.mockRestore();
+    }
+  });
+
   it.each(["example.invalid", "localhost", "127.0.0.1", "[::1]"])(
     "enforces verified TLS except explicit loopback for %s",
     async host => {

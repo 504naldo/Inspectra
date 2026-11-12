@@ -81,3 +81,8 @@ CREATE INDEX `invoices_companyId_idx` ON `invoices` (`companyId`);
 CREATE INDEX `invoices_status_idx` ON `invoices` (`status`);
 CREATE INDEX `invoices_customerOrgId_idx` ON `invoices` (`customerOrgId`);
 ALTER TABLE `invoices` ADD CONSTRAINT `invoices_company_invoiceNumber_unique` UNIQUE (`companyId`,`invoiceNumber`);
+
+-- Conditional candidate: apply only after the owned synthetic test preflight
+-- reports zero duplicate full catalog keys under utf8mb4_0900_ai_ci. The
+-- nonunique manual 0039 prefix lookup stays intact; no deduplication is allowed.
+ALTER TABLE `parts_catalog` ADD CONSTRAINT `parts_catalog_unique_cat_product` UNIQUE (`companyId`,`category`,`productName`);
