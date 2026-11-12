@@ -2,8 +2,50 @@
 
 Prepared for main `179e8c8c898a8a74309f7a5acece34c971f2c1f6` and its
 schema-recovery follow-up. This is a maintenance plan and synthetic rehearsal,
-not evidence that production is repaired. No production database, credentials,
-migrations, deploys or live settings were accessed or changed by this work.
+not evidence that production is repaired. The November 12 follow-up inspected
+live schema/ledger metadata and backup inventory read-only; it did not retrieve
+credentials or change production data, migrations, deploys or settings.
+
+## November 12 read-only findings: stop before selected recovery
+
+The previous `87a23db` application remains online, while the latest `179e8c8`
+deployment remains failed. `/health` returns 200 but is only process liveness.
+The owner-identified database reports MySQL 9.7.2. Its manual ledger reaches
+0085; 0086/0087 are not recorded. The journal table exists but is empty.
+
+Actual DDL proves that this is **not** the verified-prerequisite installation
+used in the synthetic two-file rehearsal:
+
+- Both Calendar ownership columns, receipt/outbox tables and all four expected
+  payment guards are absent. Trigger-metadata visibility was verified.
+- `users.sessionVersion` is `INT NOT NULL DEFAULT 1`.
+- `itemSnapshot` is nullable despite 0014 being recorded. An aggregate check
+  found no null item snapshots, but this does not establish their historical
+  authenticity or certify the nullable constraint.
+- `invoices` retains legacy `totalAmount`/`paidAmount` fields and lacks
+  `companyId`, `total`, `amountPaid` and `balanceDue`, despite 0041 being
+  recorded. Its status field also differs from the current schema.
+
+Two manual volume backups are listed, but no restore has been verified. No
+backup schedule is configured, PITR is off, and `@@log_bin` is zero. The old
+application is still writable. No maintenance safety gate is satisfied merely
+by having an old backup listed.
+
+**Do not execute 0086/0087 as a standalone repair.** Obtain a current verified
+restorable backup and an approved isolated, sanitized restore. Reconcile the
+full ledger against exact table definitions there, preserving invoice amounts,
+ownership and historical capture evidence. Review a forward conversion for the
+legacy invoice schema and capture constraint separately. Do not rename legacy
+amounts blindly, infer tenant ownership, manufacture snapshots, delete ledger
+entries or replay already-recorded files to force success. Only after rehearsal,
+comparison and an effective write freeze should separately authorized live
+maintenance and a compatible release be considered.
+
+The local startup fix now checks for a recorded journal entry before selecting
+the existing journal route. An empty journal therefore no longer hides pending
+manual migrations. A populated journal still requires the existing required
+schema checks and operator history review; the guard is not a lineage or full
+DDL certification. It never applies SQL at startup.
 
 ## Failure and existing repair
 
@@ -128,6 +170,14 @@ the production application's privileges or trigger-metadata visibility.
 
 Local validation on October 18: Node **24.19.0**, MySQL **8.0.46**;
 **14/14 focused tests passed**, including the real MySQL recovery test. Hosted
-Node 22/full CI evidence belongs in the draft PR. No live schema inventory,
-sanitized restored-data rehearsal, backup/PITR verification or live recovery
-has been completed. Publication of this plan does not resolve those prerequisites.
+Node 22/full CI evidence belongs in the draft PR. The November 12 follow-up
+completed the bounded live schema/ledger inventory above. A sanitized
+restored-data rehearsal, verified backup restoration and live recovery remain
+uncompleted; PITR is disabled. Publication of this plan does not resolve those
+prerequisites.
+
+November 12 guard verification: Node 24.22.1 / pnpm 10.4.1; 8 new
+classification regressions and 21 focused tests passed. Whole-project typecheck,
+strict tenant audit, production build, isolated built-server smoke and diff checks
+passed. Independent review found no scoped blocker. The full MySQL suite and
+Node 22 verification belong to exact-final hosted CI; no live write was tested.

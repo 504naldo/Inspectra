@@ -99,7 +99,20 @@ export async function runMigrations(options: { databaseUrl?: string; migrationsD
     // Startup is read-only: explicit maintenance runs alone may execute DDL.
     // Journal installations must not replay the unrelated manual history.
     const [journal] = await connection.query<mysql.RowDataPacket[]>("SHOW TABLES LIKE '__drizzle_migrations'");
-    if (journal.length && !options.migrationsDir) return;
+    if (journal.length && !options.migrationsDir) {
+      // Creating the journal table does not establish a journal installation.
+      // A failed/abandoned setup can leave it empty alongside manual history.
+      // Only a recorded journal entry selects the existing journal preflight;
+      // an empty table must still enforce pending manual migrations below.
+      const [journalEntries] = await connection.query<mysql.RowDataPacket[]>(
+        "SELECT 1 FROM __drizzle_migrations LIMIT 1"
+      );
+      if (journalEntries.length) return;
+      if (options.apply)
+        throw new Error(
+          "Empty journal requires reviewed history and an explicitly selected migrationsDir before maintenance"
+        );
+    }
     if (!options.apply) {
       const directory = options.migrationsDir ?? path.resolve(__dirname, "../drizzle/migrations");
       if (!fs.existsSync(directory)) throw new Error("Migration history directory unavailable");
