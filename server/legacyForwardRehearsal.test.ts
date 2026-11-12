@@ -492,11 +492,15 @@ it("rehearses a complete synthetic forward sequence preserving every original va
     row => row.INDEX_NAME === "parts_catalog_cat_product_idx"
   );
   expect(
-    prefixBefore.map(row => [row.NON_UNIQUE, row.COLUMN_NAME, row.SUB_PART])
+    prefixBefore.map(row => [
+      row.NON_UNIQUE,
+      row.COLUMN_NAME,
+      // A full-column prefix may be normalized to NULL by MySQL.
+      row.COLUMN_NAME === "category" && row.SUB_PART === 100 ? null : row.SUB_PART,
+    ])
   ).toEqual([
     [1, "companyId", null],
-    // MySQL may normalize a prefix equal to the whole VARCHAR length.
-    [1, "category", expect.toSatisfy((n: unknown) => n === null || n === 100)],
+    [1, "category", null],
     [1, "productName", 191],
   ]);
   expect(catalogPrefix).toHaveLength(191);
