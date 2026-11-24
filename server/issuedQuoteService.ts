@@ -168,15 +168,23 @@ export async function listIssuedQuotes(req:Request) {
   return rows;
  });
 }
-export async function readIssue(req:Request,input:{quoteId:number;issueId:string}) {
+type CustomerScope = { companyId:number|null; customerOrgId:number|null };
+function requireCustomerScope(user:Viewer,scope:CustomerScope) {
+ if(!validId(scope.companyId)||!validId(scope.customerOrgId)||
+    user.companyId!==scope.companyId||user.customerOrgId!==scope.customerOrgId)
+   fail("Customer scope unavailable.");
+}
+export async function readIssue(req:Request,input:{quoteId:number;issueId:string},scope:CustomerScope) {
  return inTransaction(req,"read",async(tx,user)=>{
+  requireCustomerScope(user,scope);
   const {quote}=await lockQuote(tx,user,input.quoteId,"accept");
   const row=await sealed(tx,quote,input.issueId);
   return {pdf:row.pdf,pdfDigest:row.pdfDigest,terms:row.terms};
  });
 }
-export async function acceptIssue(req:Request,input:{quoteId:number;issueId:string;presentedPdfDigest:string}) {
+export async function acceptIssue(req:Request,input:{quoteId:number;issueId:string;presentedPdfDigest:string},scope:CustomerScope) {
  return inTransaction(req,"accept",async(tx,user)=>{
+  requireCustomerScope(user,scope);
   const {quote}=await lockQuote(tx,user,input.quoteId,"accept");
   const row=await sealed(tx,quote,input.issueId);
   if(input.presentedPdfDigest!==row.pdfDigest) fail("Presented PDF does not match this issued version.");

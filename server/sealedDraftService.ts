@@ -140,9 +140,9 @@ async function verifyEntitlement(tx:Tx,actor:Actor,customerOrgId:number) {
  if(grants.length!==1||!grants[0].grantedBy||grants[0].grantedBy===actor.id)
    throw new TRPCError({code:"FORBIDDEN"});
 }
-export async function createSealedFixtureDraft(ctx:TrpcContext,input:SealedDraftInput) {
+export async function createSealedFixtureDraft(ctx:TrpcContext,input:SealedDraftInput,companyId:number|null) {
  const actor=allowedActor(ctx);
- const companyId=actor.companyId;
+ if(companyId===null || companyId!==actor.companyId) throw new TRPCError({code:"FORBIDDEN"});
  return db.withAudit(ctx,"isolated.sealedDraft.create",async tx=>{
   await verifyOffice(tx,actor);
   const [q]=await tx.select().from(quotes).where(and(eq(quotes.id,input.quoteId),eq(quotes.companyId,companyId))).for("update");

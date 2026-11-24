@@ -20,5 +20,5 @@ export const sealedDraftFixtureRouter=router({
     expectedTermsDigest:z.string().regex(/^[a-f0-9]{64}$/),
     scope:z.discriminatedUnion("kind",[z.object({kind:z.literal("whole")}).strict(),
       z.object({kind:z.literal("item"),quoteItemId:id}).strict()])}).strict())
-    .mutation(({ctx,input})=>createSealedFixtureDraft(ctx,input)),
+    .mutation(({ctx,input})=>createSealedFixtureDraft(ctx,input,ctx.user.companyId)),
 });

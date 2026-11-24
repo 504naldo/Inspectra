@@ -23,7 +23,7 @@ export const sealedQuoteRouter=router({
  preview:customerProcedure.input(exactVersion).query(async({ctx,input})=>{
   requireSealedQuoteFixture();
   ctx.res.setHeader("Cache-Control","private, no-store");
-  const result=await readIssue(ctx.req,input);
+  const result=await readIssue(ctx.req,input,{companyId:ctx.user.companyId,customerOrgId:ctx.user.customerOrgId});
   const expiresAt=Date.now()+10*60*1000;
   const reviewToken=sign(ctx.user,input.quoteId,input.issueId,result.pdfDigest,expiresAt);
   // Never return storage credentials, actor details or a mutable external URL.
@@ -38,6 +38,7 @@ export const sealedQuoteRouter=router({
   if(Date.now()>=input.expiresAt||input.expiresAt-Date.now()>10*60*1000) throw denied();
   const expected=sign(ctx.user,input.quoteId,input.issueId,input.pdfDigest,input.expiresAt);
   if(!timingSafeEqual(Buffer.from(expected,"hex"),Buffer.from(input.reviewToken,"hex"))) throw denied();
-  return acceptIssue(ctx.req,{quoteId:input.quoteId,issueId:input.issueId,presentedPdfDigest:input.pdfDigest});
+  return acceptIssue(ctx.req,{quoteId:input.quoteId,issueId:input.issueId,presentedPdfDigest:input.pdfDigest},
+    {companyId:ctx.user.companyId,customerOrgId:ctx.user.customerOrgId});
  }),
 });
