@@ -131,6 +131,7 @@ function CreateApprovedWorkDialog({ open, onClose, companyId, onCreated }: Creat
   const [type, setType] = useState<"job_order" | "repair_order">("repair_order");
   const [approvedScope, setApprovedScope] = useState("");
   const [approvedAmount, setApprovedAmount] = useState("");
+  const [grossCadConfirmed, setGrossCadConfirmed] = useState(false);
   const [approvedByName, setApprovedByName] = useState("");
   const [approvalSource, setApprovalSource] = useState<string>("email");
   const [officeNotes, setOfficeNotes] = useState("");
@@ -148,6 +149,7 @@ function CreateApprovedWorkDialog({ open, onClose, companyId, onCreated }: Creat
     setType("repair_order");
     setApprovedScope("");
     setApprovedAmount("");
+    setGrossCadConfirmed(false);
     setApprovedByName("");
     setApprovalSource("email");
     setOfficeNotes("");
@@ -159,6 +161,7 @@ function CreateApprovedWorkDialog({ open, onClose, companyId, onCreated }: Creat
       type,
       approvedScope: approvedScope || undefined,
       approvedAmount: approvedAmount ? parseFloat(approvedAmount) : undefined,
+      confirmedBillingBasis: grossCadConfirmed ? "CAD_GROSS" : undefined,
       approvedByName: approvedByName || undefined,
       approvalSource: approvalSource as any,
       officeNotes: officeNotes || undefined,
@@ -194,7 +197,7 @@ function CreateApprovedWorkDialog({ open, onClose, companyId, onCreated }: Creat
               rows={3}
               placeholder="Describe the approved work scope..."
               value={approvedScope}
-              onChange={(e) => setApprovedScope(e.target.value)}
+              onChange={(e) => { setApprovedScope(e.target.value); setGrossCadConfirmed(false); }}
             />
           </div>
 
@@ -208,7 +211,7 @@ function CreateApprovedWorkDialog({ open, onClose, companyId, onCreated }: Creat
                 step="0.01"
                 placeholder="0.00"
                 value={approvedAmount}
-                onChange={(e) => setApprovedAmount(e.target.value)}
+                onChange={(e) => { setApprovedAmount(e.target.value); setGrossCadConfirmed(false); }}
               />
             </div>
             <div>
@@ -238,6 +241,15 @@ function CreateApprovedWorkDialog({ open, onClose, companyId, onCreated }: Creat
               onChange={(e) => setApprovedByName(e.target.value)}
             />
           </div>
+
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1"
+              checked={grossCadConfirmed}
+              disabled={!approvedScope.trim() || !(Number(approvedAmount) > 0)}
+              onChange={(e) => setGrossCadConfirmed(e.target.checked)}
+            />
+            <span>I confirm this is the approved total in Canadian dollars, with any applicable taxes already included. Leave unchecked if the amount is not ready to invoice.</span>
+          </label>
 
           <div>
             <Label>Office Notes</Label>

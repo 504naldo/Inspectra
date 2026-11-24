@@ -1,10 +1,29 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { inspect } from "node:util";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
 import { getDb } from "./db";
 import { verifyAuditRequiredSchema } from "./requiredSchema";
 vi.mock("./db", () => ({ getDb: vi.fn() }));
 const execute = vi.fn();
+const definer = "fixture_guard@localhost";
+const mode = "STRICT_ALL_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION";
+const guards = [
+  ["inspectra_payment_insert_v2", "invoice_payments", "INSERT", "3f166278cfcb28bf38f565100ba4901b12504b218c111b4a825f998d73063acd"],
+  ["inspectra_payment_no_update", "invoice_payments", "UPDATE", "58aa2ba4dc5668f4e19c0a04855c4b7b9868bceae64eb2c94cb7a609ea8ac21c"],
+  ["inspectra_payment_no_delete", "invoice_payments", "DELETE", "58aa2ba4dc5668f4e19c0a04855c4b7b9868bceae64eb2c94cb7a609ea8ac21c"],
+  ["inspectra_invoice_payment_v2", "invoices", "UPDATE", "65d8daa0fbaaa0103ce867d4c28d309d80b5ed674814b06c96a5a8e071a94ff9"],
+].map(([trigger_name, object_table, event_type, body_hash]) => ({
+  trigger_name, object_table, event_type, body_hash,
+  action_timing: "BEFORE", action_order: 1, creation_mode: mode,
+  guard_definer: definer, attestor_definer: definer, client_charset: "utf8mb4",
+  connection_collation: "utf8mb4_0900_ai_ci", database_collation: "utf8mb4_0900_ai_ci",
+}));
+const taxShape = [{ dataType: "json", isNullable: "YES", columnDefault: null, extra: "" }];
+function prerequisites() {
+  for (let i = 0; i < 6; i++) execute.mockResolvedValueOnce([[], []]);
+}
+beforeEach(() => vi.stubEnv("INSPECTRA_PAYMENT_GUARD_DEFINER", definer));
+afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getDb).mockResolvedValue({ execute } as any);
@@ -12,9 +31,10 @@ beforeEach(() => {
 });
 it("checks required authentication, capture, schedule, receipt and outbox columns", async () => {
   for (let i = 0; i < 6; i++) execute.mockResolvedValueOnce([[], []]);
-  execute.mockResolvedValueOnce([[{ guardCount: 4 }], []]);
+  execute.mockResolvedValueOnce([[guards, { affectedRows: 0 }], []]);
+  execute.mockResolvedValueOnce([taxShape, []]);
   await verifyAuditRequiredSchema();
-  expect(execute).toHaveBeenCalledTimes(7);
+  expect(execute).toHaveBeenCalledTimes(8);
 });
 it("missing required migrations fail closed before serving requests", async () => {
   execute.mockRejectedValueOnce(new Error("Unknown column sessionVersion"));
@@ -101,7 +121,7 @@ it("labels inaccessible trigger metadata and blocks startup without exposing dat
     })
   );
   await expect(verifyAuditRequiredSchema()).rejects.toThrow(
-    /payment protocol v2 trigger metadata/
+    /live payment protocol v2 guard attestation/
   );
   expect(execute).toHaveBeenCalledTimes(7);
 });
@@ -121,13 +141,49 @@ it("missing or failed database construction remains a labeled release blocker", 
   expect(execute).not.toHaveBeenCalled();
 });
 
-it("preflight executes only read queries after all prerequisites succeed", async () => {
+it("preflight uses bounded SELECTs and only the reviewed no-argument attestation after all prerequisites succeed", async () => {
   for (let i = 0; i < 6; i++) execute.mockResolvedValueOnce([[], []]);
-  execute.mockResolvedValueOnce([[{ guardCount: 4 }], []]);
+  execute.mockResolvedValueOnce([[guards, { affectedRows: 0 }], []]);
+  execute.mockResolvedValueOnce([taxShape, []]);
   await verifyAuditRequiredSchema();
   const queries = execute.mock.calls.map(
     ([query]) => new MySqlDialect().sqlToQuery(query).sql
   );
-  expect(queries).toHaveLength(7);
-  expect(queries.every(query => /^SELECT\b/.test(query))).toBe(true);
+  expect(queries).toHaveLength(8);
+  expect(queries.slice(0, 6).every(query => /^SELECT\b/.test(query))).toBe(true);
+  expect(queries[6]).toBe("CALL inspectra_attest_payment_guards_v1()");
+  expect(queries[7]).toMatch(/^SELECT DATA_TYPE.*information_schema\.COLUMNS/s);
+});
+
+
+it("fails closed when a previous pass is followed by live guard drift", async () => {
+  prerequisites();
+  execute.mockResolvedValueOnce([[guards, { affectedRows: 0 }], []]);
+  execute.mockResolvedValueOnce([taxShape, []]);
+  await expect(verifyAuditRequiredSchema()).resolves.toBeUndefined();
+  prerequisites();
+  const drifted = guards.map((guard, i) => i === 1 ? { ...guard, body_hash: "changed" } : guard);
+  execute.mockResolvedValueOnce([[drifted, { affectedRows: 0 }], []]);
+  await expect(verifyAuditRequiredSchema()).rejects.toThrow(/Exact payment protocol v2 migration guards/);
+});
+
+it("fails closed for exact guards if the expected definer is missing", async () => {
+  vi.stubEnv("INSPECTRA_PAYMENT_GUARD_DEFINER", undefined);
+  prerequisites();
+  execute.mockResolvedValueOnce([[guards, { affectedRows: 0 }], []]);
+  await expect(verifyAuditRequiredSchema()).rejects.toThrow(/Exact payment protocol v2 migration guards/);
+});
+
+
+it.each([
+  { rows: [] },
+  { rows: [{ ...taxShape[0], dataType: "varchar" }] },
+  { rows: [{ ...taxShape[0], isNullable: "NO" }] },
+  { rows: [{ ...taxShape[0], columnDefault: "(json_object())", extra: "DEFAULT_GENERATED" }] },
+  { rows: [{ ...taxShape[0], extra: "VIRTUAL GENERATED" }] },
+])("stops on missing or non-exact invoice tax storage: %j", async ({ rows }) => {
+  prerequisites();
+  execute.mockResolvedValueOnce([[guards, { affectedRows: 0 }], []]);
+  execute.mockResolvedValueOnce([rows, []]);
+  await expect(verifyAuditRequiredSchema()).rejects.toThrow(/invoices.confirmedTax/);
 });

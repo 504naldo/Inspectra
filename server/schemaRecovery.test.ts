@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runWithDb } from "./db/client";
 import { verifyAuditRequiredSchema } from "./requiredSchema";
+import { installConfirmedTaxStorageFixture, installPaymentGuardAttestationFixture } from "./testFixtures/installPaymentGuardAttestation";
 import { runMigrations, splitSqlStatements } from "./runMigrations";
 
 const files = [
@@ -39,7 +40,7 @@ beforeAll(async () => {
   name = `inspectra_recovery_${randomUUID().replaceAll("-", "")}`;
   url.pathname = "/";
   admin = await mysql.createConnection(url.toString());
-  await admin.query(`CREATE DATABASE \`${name}\``);
+  await admin.query(`CREATE DATABASE \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
   createdDatabase = true;
   url.pathname = "/" + name;
   databaseUrl = url.toString();
@@ -174,7 +175,13 @@ it("recovers the missing-0086 failure with selected maintenance, exact partial-D
     /jobs.googleCalendarOwnerId\/googleCalendarId/
   );
   await runMigrations({ databaseUrl, migrationsDir: selected, apply: true });
-  await preflight();
+  await expect(preflight()).rejects.toThrow(/live payment protocol v2 guard attestation/);
+  const definer = await installPaymentGuardAttestationFixture(connection!);
+  await installConfirmedTaxStorageFixture(connection!);
+  const previousDefiner = process.env.INSPECTRA_PAYMENT_GUARD_DEFINER;
+  if (previousDefiner !== undefined) throw new Error("Fixture needs its own guard identity");
+  process.env.INSPECTRA_PAYMENT_GUARD_DEFINER = definer;
+  try { await preflight(); } finally { delete process.env.INSPECTRA_PAYMENT_GUARD_DEFINER; }
   expect(await ledger()).toEqual(files);
   expect(await preservedState()).toEqual(before);
 
@@ -215,7 +222,8 @@ it("recovers the missing-0086 failure with selected maintenance, exact partial-D
 
   await runMigrations({ databaseUrl, migrationsDir: selected, apply: true });
   await runMigrations({ databaseUrl, migrationsDir: selected });
-  await preflight();
+  process.env.INSPECTRA_PAYMENT_GUARD_DEFINER = definer;
+  try { await preflight(); } finally { delete process.env.INSPECTRA_PAYMENT_GUARD_DEFINER; }
   expect(await ledger()).toEqual(files);
   expect(await preservedState()).toEqual(before);
   await expect(

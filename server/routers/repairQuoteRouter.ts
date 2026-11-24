@@ -21,6 +21,9 @@
  */
 
 import crypto from "crypto";
+import { and, asc, eq } from "drizzle-orm";
+import { quotes, repairQuoteItems } from "../../drizzle/schema";
+import { createVerifiedQuoteItemWork } from "./approvedWorkRouter";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, officeProcedure } from "../_core/trpc.js";
@@ -856,60 +859,33 @@ export const repairQuoteRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const companyId = ctx.user.companyId!;
-      const quote = await getQuoteForCompany(input.id, ctx.user.companyId!);
-
-      const q = quote as any;
-      const approvedStatuses = ["approved", "accepted", "partially_approved", "converted_to_approved_work",];
-      if (!approvedStatuses.includes(q.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Quote must be approved or partially approved before converting items.", });
-      }
-
-      const items = await db.getRepairQuoteItemsByQuote(input.id);
-      const itemsToConvert = items.filter(i => (i as any).approvalStatus === "approved");
-      if (!itemsToConvert.length) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "No approved items to convert. Approve items first.", });
-      }
-
-      let created = 0;
-      let skipped = 0;
-
-      for (const item of itemsToConvert) {
-        const existing = await db.getApprovedWorkByQuoteItem(item.id);
-        if (existing) { skipped++; continue; }
-
-        await db.createApprovedWork({
-          companyId,
-          siteId: quote.siteId,
-          customerOrgId: quote.customerOrgId,
-          jobId: quote.jobId,
-          quoteId: quote.id,
-          quoteItemId: item.id,
-          deficiencyId: item.deficiencyId ?? undefined,
-          type: "repair_order",
-          status: "approved",
-          approvalSource: input.approvalSource as any,
-          approvedAt: q.approvedAt ?? new Date(),
-          approvedByName: q.approvedByName ?? undefined,
-          approvedByEmail: q.approvedByEmail ?? undefined,
-          approvedAmount: String(toNum(item.total)),
-          approvedScope: item.description,
-          createdById: ctx.user.id,
-        } as any);
-
-        await db.updateRepairQuoteItem(item.id, { approvalStatus: "converted_to_approved_work", } as any);
-        created++;
-      }
-
-      // Update quote status if all approved items are now converted
-      const refreshedItems = await db.getRepairQuoteItemsByQuote(input.id);
-      const allApprovedConverted = refreshedItems.every(i =>
-        ["converted_to_approved_work", "declined", "needs_review"].includes((i as any).approvalStatus ?? "pending")
-        && (i as any).approvalStatus !== "pending"
-        && (i as any).approvalStatus !== "approved"
-      );
-      if (allApprovedConverted) {
-        await db.updateQuote(input.id, { status: "converted_to_approved_work", } as any);
-      }
+      const approvalSource = input.approvalSource === "internal_entry" ? "internal"
+        : input.approvalSource === "portal_later" ? "portal" : input.approvalSource;
+      const { created, skipped, q } = await db.withAudit(ctx, "repairQuote.convertApprovedItemsToApprovedWork", async tx => {
+        const [quote] = await tx.select().from(quotes)
+          .where(and(eq(quotes.id, input.id), eq(quotes.companyId, companyId))).for("update");
+        if (!quote) throw new TRPCError({ code: "NOT_FOUND" });
+        if (!["approved", "accepted", "partially_approved", "converted_to_approved_work"].includes(quote.status))
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Quote must be approved before converting items." });
+        const items = await tx.select().from(repairQuoteItems)
+          .where(eq(repairQuoteItems.quoteId, quote.id)).orderBy(asc(repairQuoteItems.id)).for("update");
+        const eligible = items.filter(item => item.approvalStatus === "approved");
+        if (!eligible.length) throw new TRPCError({ code: "BAD_REQUEST", message: "No approved items to convert. Approve items first." });
+        let created = 0;
+        let skipped = 0;
+        for (const item of eligible) {
+          const work = await createVerifiedQuoteItemWork(tx, companyId, ctx.user.id, quote, item, approvalSource);
+          if (!work) { skipped++; continue; }
+          await tx.update(repairQuoteItems).set({ approvalStatus: "converted_to_approved_work" })
+            .where(and(eq(repairQuoteItems.id, item.id), eq(repairQuoteItems.quoteId, quote.id)));
+          created++;
+        }
+        if (skipped === 0 && items.every(item =>
+          ["approved", "converted_to_approved_work", "declined", "needs_review"].includes(item.approvalStatus))) {
+          await tx.update(quotes).set({ status: "converted_to_approved_work" }).where(eq(quotes.id, quote.id));
+        }
+        return { created, skipped, q: quote };
+      });
 
       void logActivity({ ctx, entityType: "repair_quote", entityId: input.id, eventType: "quote.converted",
         title: `${created} item(s) converted to Approved Work`,

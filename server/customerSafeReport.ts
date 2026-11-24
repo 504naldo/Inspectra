@@ -282,6 +282,7 @@ export function buildCustomerSafeInvoiceData(input: InvoicePdfData): InvoicePdfD
     subtotal: input.subtotal,
     taxRate: input.taxRate,
     taxAmount: input.taxAmount,
+    ...(input.confirmedTax ? { confirmedTax: { gst: input.confirmedTax.gst, pst: input.confirmedTax.pst } } : {}),
     total: input.total,
     amountPaid: input.amountPaid,
     balanceDue: input.balanceDue,

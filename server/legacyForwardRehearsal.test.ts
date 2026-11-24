@@ -22,6 +22,7 @@ import {
 } from "./schemaContract";
 import { runMigrations, splitSqlStatements } from "./runMigrations";
 import { verifyAuditRequiredSchema } from "./requiredSchema";
+import { installConfirmedTaxStorageFixture, installPaymentGuardAttestationFixture } from "./testFixtures/installPaymentGuardAttestation";
 import { runWithDb } from "./db/client";
 
 const selectedFiles = [
@@ -141,7 +142,11 @@ async function preflight() {
       "Missing historical captures: no automatic reconstruction permitted"
     );
 
-  const allowed = new Set<string>();
+  const allowed = new Set<string>([
+    // The separately reviewed additive tax fragment is scheduled after base DDL.
+    // Do not allow a same-name wrong shape to pass as merely pending.
+    "missing_column:invoices:confirmedTax",
+  ]);
   for (const { table, column } of additions)
     allowed.add(`missing_column:${table}:${column}`);
   for (const column of ["googleCalendarId", "googleCalendarOwnerId"])
@@ -396,9 +401,12 @@ it("detects broader schema drift read-only despite a complete-looking manual led
     report.findings.filter(f => f.code === "missing_table").map(f => f.table)
   ).toEqual(["email_outbox", "invoice_payments"]);
   expect(report.findings.filter(f => f.code === "missing_column")).toHaveLength(
-    54
+    55
   );
-  expect(report.blockingCount).toBeGreaterThan(54);
+  expect(report.blockingCount).toBeGreaterThan(55);
+  expect(report.findings).toContainEqual(expect.objectContaining({
+    code: "missing_column", table: "invoices", object: "confirmedTax",
+  }));
   expect(report.migrationMetadataTables).toEqual([
     "__drizzle_migrations",
     "__schema_migrations",
@@ -508,6 +516,11 @@ it("rehearses a complete synthetic forward sequence preserving every original va
   expect((await preflight()).needsRepair).toBe(true);
   for (const statement of statements) await connection!.query(statement);
   await runMigrations({ databaseUrl, migrationsDir: selected, apply: true });
+  const beforeTaxStorage = await inspect();
+  expect(
+    beforeTaxStorage.findings.filter(f => f.severity === "blocking").map(f => f.object)
+  ).toEqual(["confirmedTax"]);
+  await installConfirmedTaxStorageFixture(connection!);
   const report = await inspect();
   expect(report.findings.filter(f => f.severity === "blocking")).toEqual([]);
   expect(report.unknownCount).toBe(0);
@@ -549,7 +562,14 @@ it("rehearses a complete synthetic forward sequence preserving every original va
   expect(await count("email_outbox")).toBe(0);
   const verificationPool = createCallbackPool(databaseUrl);
   try {
-    await runWithDb(drizzle(verificationPool), verifyAuditRequiredSchema);
+    await expect(runWithDb(drizzle(verificationPool), verifyAuditRequiredSchema))
+      .rejects.toThrow(/live payment protocol v2 guard attestation/);
+    const definer = await installPaymentGuardAttestationFixture(connection!);
+    if (process.env.INSPECTRA_PAYMENT_GUARD_DEFINER !== undefined)
+      throw new Error("Fixture needs its own guard identity");
+    process.env.INSPECTRA_PAYMENT_GUARD_DEFINER = definer;
+    try { await runWithDb(drizzle(verificationPool), verifyAuditRequiredSchema); }
+    finally { delete process.env.INSPECTRA_PAYMENT_GUARD_DEFINER; }
   } finally {
     await verificationPool.promise().end();
   }

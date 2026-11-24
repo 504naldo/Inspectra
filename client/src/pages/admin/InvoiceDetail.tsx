@@ -668,6 +668,8 @@ export default function InvoiceDetail({ id }: Props) {
     : isSageExported
     ? "This invoice has been exported to Sage and is locked. Reset the Sage export status to unlock."
     : null;
+  const hasApprovedBillingLink = invoice.approvedWorkId != null || invoice.quoteId != null || invoice.workOrderId != null;
+  const canEditBillingLines = !isLocked && !hasApprovedBillingLink;
   const lineItems = invoice.lineItems ?? [];
 
   return (
@@ -899,7 +901,7 @@ export default function InvoiceDetail({ id }: Props) {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Line Items</CardTitle>
-              {!isLocked && (
+              {canEditBillingLines && (
                 <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> Add Item
                 </Button>
@@ -907,6 +909,11 @@ export default function InvoiceDetail({ id }: Props) {
             </div>
           </CardHeader>
           <CardContent>
+            {hasApprovedBillingLink && (
+              <p className="mb-3 text-sm text-muted-foreground">
+                Line items and amounts are fixed by the approved scope. Review the source before issuing a correction.
+              </p>
+            )}
             {lineItems.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">
                 No line items yet.
@@ -921,13 +928,13 @@ export default function InvoiceDetail({ id }: Props) {
                       <th className="text-right py-2 px-3 w-28">Unit Price</th>
                       <th className="text-right py-2 px-3 w-28">Total</th>
                       <th className="text-center py-2 px-3 w-16">Tax</th>
-                      {!isLocked && <th className="w-20"></th>}
+                      {canEditBillingLines && <th className="w-20"></th>}
                     </tr>
                   </thead>
                   <tbody>
                     {lineItems.map((item: any) => (
                       <tr key={item.id} className="border-b last:border-0">
-                        {editingItem === item.id ? (
+                        {canEditBillingLines && editingItem === item.id ? (
                           <>
                             <td className="py-2 pr-3">
                               <Input
@@ -993,7 +1000,7 @@ export default function InvoiceDetail({ id }: Props) {
                             <td className="py-2 px-3 text-center text-xs text-muted-foreground">
                               {item.taxable ? "✓" : "—"}
                             </td>
-                            {!isLocked && (
+                            {canEditBillingLines && (
                               <td className="py-2 px-3">
                                 <div className="flex gap-1 justify-end">
                                   <Button
@@ -1040,7 +1047,12 @@ export default function InvoiceDetail({ id }: Props) {
                 <span className="text-muted-foreground">Subtotal</span>
                 <span>{fmt(invoice.subtotal)}</span>
               </div>
-              {parseFloat(String(invoice.taxAmount ?? "0")) > 0 && (
+              {invoice.confirmedTax ? (
+                <>
+                  <div className="flex justify-between text-muted-foreground"><span>GST</span><span>{fmt(invoice.confirmedTax.gst)}</span></div>
+                  <div className="flex justify-between text-muted-foreground"><span>PST</span><span>{fmt(invoice.confirmedTax.pst)}</span></div>
+                </>
+              ) : (parseFloat(String(invoice.taxAmount ?? "0")) > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">
                     Tax (
@@ -1049,7 +1061,7 @@ export default function InvoiceDetail({ id }: Props) {
                   </span>
                   <span>{fmt(invoice.taxAmount)}</span>
                 </div>
-              )}
+              ))}
               <div className="flex justify-between font-bold text-base border-t pt-2">
                 <span>Total</span>
                 <span>{fmt(invoice.total)}</span>

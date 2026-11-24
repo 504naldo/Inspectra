@@ -1,11 +1,21 @@
 import { toPublicUser } from "../publicUser";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { router, protectedProcedure, officeProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { callerIsPlatformOperator } from "../_core/actorContext";
 import { getQuoteForCompany, assertWorkOrderCompany } from "../tenantGuards";
-import { APPROVED_WORK_STATUSES } from "../../drizzle/schema";
+import {
+  APPROVED_WORK_STATUSES, activityEvents, approvedWork as approvedWorkTable,
+  invoices, quotes, repairQuoteItems,
+} from "../../drizzle/schema";
+import { exactInvoiceCents, exactInvoiceMoney, QUOTE_ITEM_INVOICE_EVENT } from "../confirmedInvoiceTax";
+import { assertInvoiceLinks } from "../invoiceLinks";
+import {
+  approvalMoneyCents, BILLING_APPROVAL_EVENT, billingRejected,
+  manualBillingPlan, quoteItemBillingPlan, requireApprovalEvidence,
+} from "../approvedBillingEvidence";
 import { logActivity } from "../activityLogger";
 import { generateInvoiceNumber } from "../invoiceNumber.js";
 
@@ -16,6 +26,60 @@ const APPROVAL_SOURCE_ENUM = z.enum([
 ]);
 
 const TYPE_ENUM = z.enum(["job_order", "repair_order"]);
+
+const APPROVED_MONEY_INPUT = z.number().nonnegative().refine(
+  (value) => approvalMoneyCents(String(value)) != null,
+  "Use a valid amount in exact cents.",
+);
+type BillingTx = Parameters<Parameters<typeof db.withAudit>[2]>[0];
+
+async function lockedQuoteItem(tx: BillingTx, companyId: number, quoteId: number, itemId: number) {
+  const [quote] = await tx.select().from(quotes)
+    .where(and(eq(quotes.id, quoteId), eq(quotes.companyId, companyId))).for("update");
+  if (!quote) billingRejected("The approved repair quote could not be verified for this company.");
+  const [item] = await tx.select().from(repairQuoteItems)
+    .where(and(eq(repairQuoteItems.quoteId, quoteId), eq(repairQuoteItems.id, itemId))).for("update");
+  if (!item) billingRejected("The selected approved item could not be verified on this repair quote.");
+  return { quote, item };
+}
+
+async function storeBillingEvidence(
+  tx: BillingTx, companyId: number, actorUserId: number, approvalId: number,
+  prepared: ReturnType<typeof manualBillingPlan>,
+) {
+  // Only the named server billing-authority producers write this event.
+  // It is required for conversion, so failure rolls back the approval itself.
+  await tx.insert(activityEvents).values({
+    companyId, actorUserId, entityType: "approved_work", entityId: approvalId,
+    eventType: BILLING_APPROVAL_EVENT, title: "Verified billing approval recorded",
+    metadata: prepared.evidence,
+  });
+}
+
+
+/** Caller holds the same-tenant quote and literal item locks for the whole transaction. */
+export async function createVerifiedQuoteItemWork(
+  tx: BillingTx, companyId: number, actorUserId: number,
+  quote: typeof quotes.$inferSelect, item: typeof repairQuoteItems.$inferSelect,
+  approvalSource: z.infer<typeof APPROVAL_SOURCE_ENUM>,
+) {
+  const [existing] = await tx.select({id: approvedWorkTable.id}).from(approvedWorkTable)
+    .where(and(eq(approvedWorkTable.companyId, companyId),
+      eq(approvedWorkTable.quoteId, quote.id), eq(approvedWorkTable.quoteItemId, item.id)))
+    .limit(1).for("update");
+  if (existing) return null;
+  const created = await db.createApprovedWork({
+    companyId, customerOrgId: quote.customerOrgId, siteId: quote.siteId, jobId: quote.jobId,
+    deficiencyId: item.deficiencyId ?? undefined, quoteId: quote.id, quoteItemId: item.id,
+    type: "repair_order", status: "approved", approvedAmount: item.total,
+    approvedScope: item.description, approvedAt: quote.approvedAt ?? new Date(),
+    approvalSource, createdById: actorUserId,
+  });
+  const prepared = quoteItemBillingPlan(created, quote, item);
+  await assertInvoiceLinks(created, companyId);
+  await storeBillingEvidence(tx, companyId, actorUserId, created.id, prepared);
+  return created;
+}
 
 /** Approved work linked to a finalized job is part of its immutable record — block further changes. */
 async function assertApprovedWorkJobNotFinalized(jobId: number | null | undefined) {
@@ -133,7 +197,8 @@ export const approvedWorkRouter = router({
       quoteItemId:     z.number().int().positive().optional(),
       type:            TYPE_ENUM,
       approvedScope:   z.string().max(5000).optional(),
-      approvedAmount:  z.number().nonnegative().optional(),
+      approvedAmount:  APPROVED_MONEY_INPUT.optional(),
+      confirmedBillingBasis: z.literal("CAD_GROSS").optional(),
       approvedAt:      z.date().optional(),
       approvedByName:  z.string().max(255).optional(),
       approvedByEmail: z.string().email().max(320).optional(),
@@ -157,11 +222,24 @@ export const approvedWorkRouter = router({
         }
       }
 
-      const record = await db.createApprovedWork({
-        ...input,
-        approvedAmount: input.approvedAmount != null ? String(input.approvedAmount) : undefined,
-        status: "approved",
-        createdById: ctx.user.id,
+      const { confirmedBillingBasis, ...fields } = input;
+      if (confirmedBillingBasis && (
+        fields.quoteId != null || fields.quoteItemId != null || fields.deficiencyId != null ||
+        !fields.approvedScope?.trim() || !(Number(fields.approvedAmount) > 0)
+      )) billingRejected("Confirm gross CAD billing only for a manual approval with an approved scope and positive total.");
+      const record = await db.withAudit(ctx, "approvedWork.create", async tx => {
+        const created = await db.createApprovedWork({
+          ...fields,
+          approvedAmount: input.approvedAmount != null ? String(input.approvedAmount) : undefined,
+          status: "approved",
+          createdById: ctx.user.id,
+        });
+        const cents = approvalMoneyCents(created.approvedAmount);
+        if (confirmedBillingBasis === "CAD_GROSS" && cents != null && cents > BigInt(0)) {
+          await assertInvoiceLinks(created, created.companyId);
+          await storeBillingEvidence(tx, created.companyId, ctx.user.id, created.id, manualBillingPlan(created));
+        }
+        return created;
       });
 
       void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "created",
@@ -179,48 +257,13 @@ export const approvedWorkRouter = router({
       quoteItemId: z.number().int().positive(),
     }))
     .mutation(async ({ input, ctx }) => {
-      // Dedup check
-      const existing = await db.getApprovedWorkByQuoteItem(input.quoteItemId);
-      if (existing) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "An Approved Work record already exists for this quote item.",
-        });
-      }
-
-      const item = await db.getRepairQuoteItemById(input.quoteItemId);
-      if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Quote item not found.", });
-
-      const quote = await getQuoteForCompany(input.quoteId, ctx.user.companyId!);
-
-      // Must be an approved quote; declined items must not create approved work
-      if (quote.status === "declined") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Cannot create Approved Work from a declined quote.",
-        });
-      }
-      if ((quote.status as string) === "pending" || quote.status === "draft") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Quote must be approved before creating Approved Work.",
-        });
-      }
-
-      const record = await db.createApprovedWork({
-        companyId:      quote.companyId,
-        customerOrgId:  quote.customerOrgId ?? undefined,
-        siteId:         quote.siteId ?? undefined,
-        quoteId:        input.quoteId,
-        quoteItemId:    input.quoteItemId,
-        type:           "repair_order",
-        status:         "approved",
-        // Snapshot the approved amount from the item — never recalculate later
-        approvedAmount: item.total ?? undefined,
-        approvedScope:  item.description ?? undefined,
-        approvedAt:     quote.approvedAt ?? new Date(),
-        approvalSource: "portal",
-        createdById:    ctx.user.id,
+      const companyId = ctx.user.companyId;
+      if (!companyId) billingRejected("A company billing scope is required.");
+      const record = await db.withAudit(ctx, "approvedWork.createFromQuoteItem", async tx => {
+        const { quote, item } = await lockedQuoteItem(tx, companyId, input.quoteId, input.quoteItemId);
+        const created = await createVerifiedQuoteItemWork(tx, companyId, ctx.user.id, quote, item, "internal");
+        if (!created) throw new TRPCError({ code: "CONFLICT", message: "An Approved Work record already exists for this quote item." });
+        return created;
       });
 
       void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "created",
@@ -240,7 +283,7 @@ export const approvedWorkRouter = router({
       jobId:           z.number().int().positive().optional().nullable(),
       deficiencyId:    z.number().int().positive().optional().nullable(),
       approvedScope:   z.string().max(5000).optional(),
-      approvedAmount:  z.number().nonnegative().optional().nullable(),
+      approvedAmount:  APPROVED_MONEY_INPUT.optional().nullable(),
       approvedAt:      z.date().optional().nullable(),
       approvedByName:  z.string().max(255).optional(),
       approvedByEmail: z.string().email().max(320).optional(),
@@ -452,137 +495,186 @@ export const approvedWorkRouter = router({
   createInvoice: officeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
-      const record = await db.getApprovedWorkById(input.id);
-      if (!record) throw new TRPCError({ code: "NOT_FOUND" });
-      if (record.companyId !== ctx.user.companyId && !callerIsPlatformOperator()) throw new TRPCError({ code: "FORBIDDEN" });
-      if (record.status === "cancelled") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot invoice a cancelled record.", });
-      }
+      const companyId = ctx.user.companyId;
+      if (!companyId) billingRejected("A company billing scope is required.");
+      // Discovery does not authorize billing. Select the same quote → item →
+      // approval lock order as the producer, then re-read under lock.
+      const discovery = await db.getApprovedWorkById(input.id);
+      if (!discovery || discovery.companyId !== companyId) throw new TRPCError({ code: "NOT_FOUND" });
+      const result = await db.withAudit(ctx, "approvedWork.createInvoice", async tx => {
+        const quoteContext = discovery.quoteId != null && discovery.quoteItemId != null && discovery.workOrderId == null
+          ? await lockedQuoteItem(tx, companyId, discovery.quoteId, discovery.quoteItemId) : null;
+        const [record] = await tx.select().from(approvedWorkTable)
+          .where(and(eq(approvedWorkTable.id, input.id), eq(approvedWorkTable.companyId, companyId))).for("update");
+        if (!record) throw new TRPCError({ code: "NOT_FOUND" });
+        if (record.quoteId !== discovery.quoteId || record.quoteItemId !== discovery.quoteItemId ||
+            record.workOrderId !== discovery.workOrderId)
+          billingRejected("The billing source changed during review. Reopen the approval before invoicing.");
 
-      if (record.invoiceNumber) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "This Approved Work record already has an invoice number recorded. Use the existing invoice or void it before creating a new one.",
-        });
-      }
-
-      const existing = await db.getInvoiceByApprovedWork(input.id);
-      if (existing) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "An invoice already exists for this Approved Work record.",
-        });
-      }
-
-      const [customerOrg, settings] = await Promise.all([
-        record.customerOrgId ? db.getCustomerOrgById(record.customerOrgId) : Promise.resolve(null),
-        db.getCompanySettings(record.companyId),
-      ]);
-
-      const now = new Date();
-      const dueDate = new Date(now);
-      dueDate.setDate(dueDate.getDate() + (settings.invoiceDueDays ?? 30));
-
-      const invPrefix = settings.invoiceNumberPrefix ?? "INV";
-      const invoiceNumber = generateInvoiceNumber(invPrefix, now);
-
-      const inv = await db.createInvoice({
-        companyId: record.companyId,
-        invoiceNumber,
-        status: "draft",
-        customerOrgId: record.customerOrgId ?? undefined,
-        siteId: record.siteId ?? undefined,
-        jobId: record.jobId ?? undefined,
-        approvedWorkId: record.id,
-        workOrderId: record.workOrderId ?? undefined,
-        quoteId: record.quoteId ?? undefined,
-        billToName: customerOrg?.name ?? undefined,
-        billToEmail: customerOrg?.contactEmail ?? undefined,
-        billToAddress: customerOrg?.address ?? undefined,
-        invoiceDate: now,
-        dueDate,
-        taxRate: settings.gstRate as any,
-        sageGlCode: settings.sageDefaultGlCode ?? undefined,
-        sageDepartment: settings.sageDefaultDepartment ?? undefined,
-        sageCustomerCode: settings.sageCustomerCodeDefault ?? undefined,
-        createdById: ctx.user.id,
-        internalNotes: record.officeNotes ?? undefined,
-      });
-
-      // Snapshot line items — prefer repair quote items, then WO line items, then AW summary.
-      //
-      // Tax treatment: snapshotted lines are stored `taxable: false` because the
-      // source amounts here are already tax-INCLUSIVE — repair-quote item totals
-      // are `lineSubtotal + GST + PST` (see repairQuoteRouter), and the AW summary
-      // fallback derives from those quote totals too. Re-flagging them taxable would
-      // double-charge against the invoice's `taxRate`.
-      //   ⚠️ The WO branch below relies on the SAME tax-inclusive assumption, but
-      //   work-order `lineItems` carry no tax flag of their own and today no code
-      //   path populates `wo.lineItems` (createWorkOrder only sets `total`), so this
-      //   branch is effectively unreachable. If WO line items ever start carrying
-      //   PRE-tax amounts, revisit the `taxable` flag here before trusting it.
-      let linesSaved = 0;
-      if (record.quoteId) {
-        const quoteItems = await db.getRepairQuoteItemsByQuote(record.quoteId);
-        for (let i = 0; i < quoteItems.length; i++) {
-          const qi = quoteItems[i];
-          const lineTotal = parseFloat(String(qi.total ?? "0"));
-          await db.createInvoiceLineItem({
-            invoiceId: inv.id,
-            description: qi.description ?? "Repair item",
-            quantity: "1" as any,
-            unitPrice: String(lineTotal) as any,
-            total: String(lineTotal) as any,
-            taxable: false,
-            sortOrder: i,
+        if (record.invoiceNumber) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This Approved Work record already has an invoice number recorded. Use the existing invoice or void it before creating a new one.",
           });
-          linesSaved++;
         }
-      } else if (record.workOrderId) {
-        const wo = await db.getWorkOrderById(record.workOrderId);
-        const woLines = (wo?.lineItems as Array<{ description: string; quantity: number; unitPrice: number; total?: number; }> | null) ?? [];
-        for (let i = 0; i < woLines.length; i++) {
-          const wl = woLines[i];
-          const lineTotal = wl.total ?? wl.quantity * wl.unitPrice;
-          await db.createInvoiceLineItem({
-            invoiceId: inv.id,
-            description: wl.description,
-            quantity: String(wl.quantity) as any,
-            unitPrice: String(wl.unitPrice) as any,
-            total: String(lineTotal) as any,
-            taxable: false,
-            sortOrder: i,
-          });
-          linesSaved++;
-        }
-      }
 
-      if (linesSaved === 0) {
-        const amount = parseFloat(String(record.approvedAmount ?? "0"));
+        const existing = await db.getInvoiceByApprovedWork(input.id);
+        if (existing) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "An invoice already exists for this Approved Work record.",
+          });
+        }
+
+        if (!["approved", "completed", "report_pending"].includes(record.status))
+          billingRejected("This work is not in an invoice-ready approval status.");
+        if (record.workOrderId != null)
+          billingRejected("Work-order billing needs a reviewed approved scope and tax basis. No invoice was created.");
+        if (record.quoteId != null && record.quoteItemId == null)
+          billingRejected("This full-quote approval has no verified approved line set. Review the scope before invoicing.");
+        if (record.quoteId == null && record.quoteItemId != null)
+          billingRejected("The selected quote item has no verified parent quote. No invoice was created.");
+
+        let prepared;
+        if (record.quoteId != null && record.quoteItemId != null) {
+          if (!quoteContext) billingRejected("The quoted billing source could not be locked.");
+          const { quote, item } = quoteContext;
+          prepared = quoteItemBillingPlan(record, quote, item);
+          const [overlap] = await tx.select({id: approvedWorkTable.id}).from(approvedWorkTable)
+            .where(and(eq(approvedWorkTable.companyId, companyId), eq(approvedWorkTable.quoteId, quote.id),
+              ne(approvedWorkTable.id, record.id),
+              or(eq(approvedWorkTable.quoteItemId, item.id), isNull(approvedWorkTable.quoteItemId))))
+            .limit(1).for("update");
+          if (overlap) billingRejected("Overlapping quote approvals must be reconciled before invoicing.");
+          // A legacy or generic quote invoice may have billed every quote item.
+          // Only a prior invoice with the dedicated atomic conversion receipt and
+          // a distinct, stable same-quote item may coexist with this one.
+          const prior = await tx.select({
+            invoiceId: invoices.id, invoiceWorkId: invoices.approvedWorkId,
+            workId: approvedWorkTable.id, workQuoteId: approvedWorkTable.quoteId,
+            workItemId: approvedWorkTable.quoteItemId,
+          }).from(invoices)
+            .leftJoin(approvedWorkTable, and(eq(approvedWorkTable.id, invoices.approvedWorkId),
+              eq(approvedWorkTable.companyId, companyId)))
+            .where(and(eq(invoices.companyId, companyId), eq(invoices.quoteId, quote.id)))
+            .limit(251).for("update");
+          if (prior.length > 250) billingRejected("Review this quote’s extensive prior invoice activity before billing.");
+          const usedItems = new Set<number>();
+          for (const row of prior) {
+            if (row.workId == null || row.workId !== row.invoiceWorkId || row.workQuoteId !== quote.id ||
+                row.workItemId == null || row.workItemId === item.id || usedItems.has(row.workItemId))
+              billingRejected("Overlapping or unverified prior quote billing must be reconciled.");
+            const marks = await tx.select({ metadata: activityEvents.metadata }).from(activityEvents)
+              .where(and(eq(activityEvents.companyId, companyId), eq(activityEvents.entityType, "invoice"),
+                eq(activityEvents.entityId, row.invoiceId), eq(activityEvents.eventType, QUOTE_ITEM_INVOICE_EVENT),
+                eq(activityEvents.relatedEntityType, "approved_work"), eq(activityEvents.relatedEntityId, row.workId)))
+              .limit(2).for("update");
+            const receipt = marks[0]?.metadata as { quoteId?: number; quoteItemId?: number } | undefined;
+            if (marks.length !== 1 || receipt?.quoteId !== quote.id || receipt.quoteItemId !== row.workItemId)
+              billingRejected("A prior quote invoice has no exact billing-scope receipt. Reconcile it before billing.");
+            usedItems.add(row.workItemId);
+          }
+        } else {
+          prepared = manualBillingPlan(record);
+        }
+
+        const authority = await tx.select({ metadata: activityEvents.metadata, actorUserId: activityEvents.actorUserId })
+          .from(activityEvents)
+          .where(and(eq(activityEvents.companyId, companyId), eq(activityEvents.entityType, "approved_work"),
+            eq(activityEvents.entityId, record.id), eq(activityEvents.eventType, BILLING_APPROVAL_EVENT)))
+          .limit(2).for("update");
+        if (authority.length !== 1 || authority[0].actorUserId !== record.createdById)
+          billingRejected("A single verified billing approval could not be found. Confirm a new approval before invoicing.");
+        requireApprovalEvidence(authority[0].metadata, prepared);
+        await assertInvoiceLinks(record, companyId);
+
+        const [customerOrg, settings] = await Promise.all([
+          record.customerOrgId ? db.getCustomerOrgById(record.customerOrgId) : Promise.resolve(null),
+          db.getCompanySettings(record.companyId),
+        ]);
+
+        const now = new Date();
+        const dueDate = new Date(now);
+        dueDate.setDate(dueDate.getDate() + (settings.invoiceDueDays ?? 30));
+
+        const invPrefix = settings.invoiceNumberPrefix ?? "INV";
+        const invoiceNumber = generateInvoiceNumber(invPrefix, now);
+
+        const stableTax = prepared.split && prepared.quoteId != null && prepared.quoteItemId != null
+          ? {
+            version: 1 as const, currency: "CAD" as const, kind: "repair_quote_item" as const,
+            quoteId: prepared.quoteId, quoteItemId: prepared.quoteItemId, approvedWorkId: record.id,
+            approvalFingerprint: prepared.evidence.fingerprint, description: prepared.description,
+            ...prepared.split, gross: prepared.gross,
+          } : null;
+        if (prepared.kind === "quote_item" && !stableTax)
+          billingRejected("A quoted invoice must preserve the source tax split.");
+        const net = stableTax?.subtotal ?? prepared.gross;
+        const taxAmount = stableTax
+          ? exactInvoiceMoney(exactInvoiceCents(stableTax.gst)! + exactInvoiceCents(stableTax.pst)!) : "0.00";
+        const inv = await db.createInvoice({
+          companyId: record.companyId,
+          invoiceNumber,
+          status: "draft",
+          customerOrgId: record.customerOrgId ?? undefined,
+          siteId: record.siteId ?? undefined,
+          jobId: record.jobId ?? undefined,
+          approvedWorkId: record.id,
+          workOrderId: record.workOrderId ?? undefined,
+          quoteId: record.quoteId ?? undefined,
+          billToName: customerOrg?.name ?? undefined,
+          billToEmail: customerOrg?.contactEmail ?? undefined,
+          billToAddress: customerOrg?.address ?? undefined,
+          invoiceDate: now,
+          dueDate,
+          taxRate: "0.0000",
+          subtotal: net,
+          taxAmount,
+          confirmedTax: stableTax,
+          total: prepared.gross,
+          amountPaid: "0.00",
+          balanceDue: prepared.gross,
+          sageGlCode: settings.sageDefaultGlCode ?? undefined,
+          sageDepartment: settings.sageDefaultDepartment ?? undefined,
+          sageCustomerCode: settings.sageCustomerCodeDefault ?? undefined,
+          createdById: ctx.user.id,
+          internalNotes: record.officeNotes ?? undefined,
+        });
+
+        // One gross billing line per complete approved scope/quote item.
+        // This is not a unit-price recomputation of the quote's material count.
         await db.createInvoiceLineItem({
           invoiceId: inv.id,
-          description: record.approvedScope ?? "Repair/Service",
-          quantity: "1" as any,
-          unitPrice: String(amount) as any,
-          total: String(amount) as any,
+          description: prepared.description,
+          quantity: "1.00",
+          unitPrice: net,
+          total: net,
           taxable: false,
           sortOrder: 0,
         });
-      }
 
-      await db.recalculateInvoiceTotals(inv.id);
+        if (prepared.kind === "quote_item") {
+          await tx.insert(activityEvents).values({
+            companyId, actorUserId: ctx.user.id, entityType: "invoice", entityId: inv.id,
+            relatedEntityType: "approved_work", relatedEntityId: record.id,
+            eventType: QUOTE_ITEM_INVOICE_EVENT, title: "Verified quote-item invoice scope recorded",
+            metadata: { ...prepared.evidence, confirmedTaxV1: stableTax },
+          });
+        }
 
-      await db.updateApprovedWork(record.id, {
-        invoiceNumber: inv.invoiceNumber,
-        invoicedAt: now,
-        invoiceStatus: "draft",
-        status: "invoiced",
+        await db.updateApprovedWork(record.id, {
+          invoiceNumber: inv.invoiceNumber,
+          invoicedAt: now,
+          invoiceStatus: "draft",
+          status: "invoiced",
+        });
+
+        return { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber };
       });
-
-      void logActivity({ ctx, entityType: "approved_work", entityId: record.id, eventType: "converted",
-        title: `Invoice created: ${inv.invoiceNumber}`,
-        relatedEntityType: "invoice", relatedEntityId: inv.id, });
-      return { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber };
+      void logActivity({ ctx, entityType: "approved_work", entityId: input.id, eventType: "converted",
+        title: `Invoice created: ${result.invoiceNumber}`,
+        relatedEntityType: "invoice", relatedEntityId: result.invoiceId, });
+      return result;
     }),
 
   /**

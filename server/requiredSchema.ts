@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "./db";
+import { verifyPaymentGuardCall } from "./verifyPaymentGuards";
 
 const RELEASE_GUIDANCE =
   "Verify database access and the reviewed migration history before restarting; startup does not apply migrations. See docs/runbooks/PR18_RELEASE_SAFETY.md.";
@@ -100,17 +101,27 @@ export async function verifyAuditRequiredSchema() {
     throw new Error(
       `Legacy fire-alarm snapshots need reviewed remediation before release. ${RELEASE_GUIDANCE}`
     );
-  const [guards] = await checkedSchemaQuery(
-    "payment protocol v2 trigger metadata (manual migration 0087; journal 0037)",
-    () =>
-      database.execute(sql`SELECT COUNT(*) AS guardCount
-    FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME IN
-    ('inspectra_payment_insert_v2', 'inspectra_payment_no_update', 'inspectra_payment_no_delete', 'inspectra_invoice_payment_v2')`)
+  const [packet] = await checkedSchemaQuery(
+    "live payment protocol v2 guard attestation",
+    () => database.execute(sql`CALL inspectra_attest_payment_guards_v1()`)
   );
-  if (
-    Number((guards as unknown as { guardCount: number }[])[0]?.guardCount) !== 4
-  )
+  if (!verifyPaymentGuardCall(packet, process.env.INSPECTRA_PAYMENT_GUARD_DEFINER))
     throw new Error(
-      `Payment protocol v2 migration guards are required before startup. ${RELEASE_GUIDANCE}`
+      `Exact payment protocol v2 migration guards are required before startup. ${RELEASE_GUIDANCE}`
+    );
+
+  const [taxShape] = await checkedSchemaQuery(
+    "invoices.confirmedTax reviewed split-tax storage",
+    () => database.execute(sql`SELECT DATA_TYPE AS dataType, IS_NULLABLE AS isNullable,
+      COLUMN_DEFAULT AS columnDefault, EXTRA AS extra
+      FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()
+        AND TABLE_NAME='invoices' AND COLUMN_NAME='confirmedTax'`)
+  );
+  const rowsForTax = taxShape as unknown as Record<string, unknown>[];
+  if (!Array.isArray(rowsForTax) || rowsForTax.length !== 1 ||
+      rowsForTax[0]?.dataType !== "json" || rowsForTax[0]?.isNullable !== "YES" ||
+      rowsForTax[0]?.columnDefault !== null || rowsForTax[0]?.extra !== "")
+    throw new Error(
+      `Required schema preflight failed for invoices.confirmedTax: expected nullable JSON with no default or generated expression. ${RELEASE_GUIDANCE}`
     );
 }

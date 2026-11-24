@@ -1515,6 +1515,13 @@ export const INVOICE_STATUSES = [
 
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
+export type ConfirmedInvoiceTax = Readonly<{
+  version: 1; currency: "CAD"; kind: "repair_quote_item";
+  quoteId: number; quoteItemId: number; approvedWorkId: number;
+  approvalFingerprint: string; description: string;
+  subtotal: string; gst: string; pst: string; gross: string;
+}>;
+
 export const invoices = mysqlTable("invoices", {
   id: int("id").autoincrement().primaryKey(),
   companyId: int("companyId").notNull(),
@@ -1539,6 +1546,7 @@ export const invoices = mysqlTable("invoices", {
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).default("0"),
   taxRate: decimal("taxRate", { precision: 5, scale: 4 }).default("0"),
   taxAmount: decimal("taxAmount", { precision: 10, scale: 2 }).default("0"),
+  confirmedTax: json("confirmedTax").$type<ConfirmedInvoiceTax>(),
   total: decimal("total", { precision: 10, scale: 2 }).default("0"),
   amountPaid: decimal("amountPaid", { precision: 10, scale: 2 }).default("0"),
   balanceDue: decimal("balanceDue", { precision: 10, scale: 2 }).default("0"),

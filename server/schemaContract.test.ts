@@ -74,7 +74,8 @@ describe("read-only schema contract", () => {
   it("derives all current schema tables/columns and named constraints", () => {
     const actual = buildSchemaContract();
     expect(actual).toHaveLength(79);
-    expect(actual.reduce((sum, t) => sum + t.columns.length, 0)).toBe(1348);
+    expect(actual.reduce((sum, t) => sum + t.columns.length, 0)).toBe(1349);
+    expect(actual.find(t => t.name === "invoices")?.columns.find(c => c.name === "confirmedTax")?.type).toBe("json");
     expect(contract[0].indexes.map(i => i.name)).toEqual([
       "PRIMARY",
       "email_active",
