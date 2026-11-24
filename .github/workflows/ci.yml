@@ -53,6 +53,15 @@ jobs:
       - name: Apply database schema
         run: npx drizzle-kit migrate
 
+      # The new additive tax DDL is a reviewed maintenance fragment; do not
+      # stamp it into any migration ledger or aim it at a real database.
+      - name: Provision split-tax storage in the disposable CI database
+        env:
+          MYSQL_CONTAINER: ${{ job.services.mysql.id }}
+        run: |
+          test -n "$MYSQL_CONTAINER"
+          docker exec -i "$MYSQL_CONTAINER" mysql --no-defaults -uroot --database=inspectra_ci < docs/runbooks/sql/inspectra_add_confirmed_invoice_tax.sql
+
       - name: Run tests
         run: pnpm test
 
@@ -126,6 +135,15 @@ jobs:
 
       - name: Apply database schema
         run: npx drizzle-kit migrate
+
+      # The new additive tax DDL is a reviewed maintenance fragment; do not
+      # stamp it into any migration ledger or aim it at a real database.
+      - name: Provision split-tax storage in the disposable CI database
+        env:
+          MYSQL_CONTAINER: ${{ job.services.mysql.id }}
+        run: |
+          test -n "$MYSQL_CONTAINER"
+          docker exec -i "$MYSQL_CONTAINER" mysql --no-defaults -uroot --database=inspectra_ci < docs/runbooks/sql/inspectra_add_confirmed_invoice_tax.sql
 
       - name: Run tests
         run: pnpm test
