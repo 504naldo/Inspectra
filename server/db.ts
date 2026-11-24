@@ -1,3 +1,4 @@
+import { exactInvoiceCents, exactInvoiceMoney, verifiedInvoiceTax, QUOTE_ITEM_INVOICE_EVENT, requireConfirmedTaxReceipt, type TaxLine } from "./confirmedInvoiceTax";
 import { eq, and, desc, asc, sql, inArray, like, or, isNull, isNotNull, lt, lte, ne, gt, } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
@@ -2433,12 +2434,31 @@ export async function deleteInvoiceLineItem(id: number,
           : eq(invoiceLineItems.invoiceId, invoiceId)));
 }
 
+export async function getVerifiedInvoiceTax(invoice: Invoice, lines?: TaxLine[]) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const receipts = await database.select({ metadata: activityEvents.metadata, relatedEntityId: activityEvents.relatedEntityId })
+    .from(activityEvents).where(and(eq(activityEvents.companyId, invoice.companyId),
+      eq(activityEvents.entityType, "invoice"), eq(activityEvents.entityId, invoice.id),
+      eq(activityEvents.eventType, QUOTE_ITEM_INVOICE_EVENT))).limit(3);
+  requireConfirmedTaxReceipt(invoice, receipts);
+  return verifiedInvoiceTax(invoice, lines);
+}
+
 export async function recalculateInvoiceTotals(invoiceId: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const items = await getLineItemsByInvoice(invoiceId);
   const inv = await getInvoiceById(invoiceId);
   if (!inv) return;
+  const fixedTax = await getVerifiedInvoiceTax(inv, items);
+  if (fixedTax) {
+    const paid = exactInvoiceCents(inv.amountPaid);
+    if (paid == null) throw new Error("Confirmed invoice has an invalid saved payment balance");
+    const due = exactInvoiceCents(fixedTax.gross)! - paid;
+    await db.update(invoices).set({ balanceDue: exactInvoiceMoney(due > BigInt(0) ? due : BigInt(0)) }).where(eq(invoices.id, invoiceId));
+    return;
+  }
   const subtotal = items.reduce((sum, item) => sum + parseFloat(String(item.total ?? "0")), 0);
   const taxRate = parseFloat(String(inv.taxRate ?? "0"));
   const taxableSubtotal = items

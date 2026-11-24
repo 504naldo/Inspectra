@@ -67,14 +67,13 @@ describe("Revenue loop UAT — Approved Work → Invoice → Sage CSV", () => {
   });
 
   it("auto-creates an invoice from approved work with a snapshotted line item", async () => {
-    const aw = await db.createApprovedWork({
+    const aw = await caller.approvedWork.create({
       companyId,
       customerOrgId,
       siteId,
       type: "repair_order",
-      status: "approved",
       approvedScope: "Replace 2 smoke detectors",
-      approvedAmount: "525.00",
+      approvedAmount: 525, confirmedBillingBasis: "CAD_GROSS",
     });
 
     const res = await caller.approvedWork.createInvoice({ id: aw.id });
@@ -102,27 +101,38 @@ describe("Revenue loop UAT — Approved Work → Invoice → Sage CSV", () => {
   });
 
   it("blocks a second invoice for the same approved work", async () => {
-    const aw = await db.createApprovedWork({
-      companyId, customerOrgId, siteId,
-      type: "repair_order", status: "approved",
-      approvedScope: "Once only", approvedAmount: "100.00",
+    const aw = await caller.approvedWork.create({
+      companyId,
+      customerOrgId, siteId,
+      type: "repair_order",
+      approvedScope: "Once only", approvedAmount: 100, confirmedBillingBasis: "CAD_GROSS",
     });
     await caller.approvedWork.createInvoice({ id: aw.id });
     await expect(caller.approvedWork.createInvoice({ id: aw.id })).rejects.toThrow();
   });
 
-  it("exports a Sage 50 Canada CSV with the documented columns and tax code", async () => {
-    const aw = await db.createApprovedWork({
-      companyId, customerOrgId, siteId,
-      type: "repair_order", status: "approved",
-      approvedScope: "Annual inspection", approvedAmount: "450.00",
+  it("still applies the Sage tax code to taxable lines on ordinary invoices", async () => {
+    const invoice = await caller.invoice.create({ customerOrgId, siteId });
+    await caller.invoice.addLineItem({
+      invoiceId: invoice.id, description: "Ordinary taxable line", quantity: 1, unitPrice: 80, taxable: true,
+    });
+    const out = await caller.invoice.exportSage({ ids: [invoice.id] });
+    const row = out.csv.split("\n").find(line => line.includes("Ordinary taxable line"));
+    expect(row).toContain(",GP,");
+  });
+
+  it("exports a Sage 50 Canada CSV with the documented columns and without retaxing approved gross", async () => {
+    const aw = await caller.approvedWork.create({
+      companyId,
+      customerOrgId, siteId,
+      type: "repair_order",
+      approvedScope: "Annual inspection", approvedAmount: 450, confirmedBillingBasis: "CAD_GROSS",
     });
     const { invoiceId } = await caller.approvedWork.createInvoice({ id: aw.id });
 
-    // Add a taxable line so the Tax Code column is exercised.
-    await caller.invoice.addLineItem({
+    await expect(caller.invoice.addLineItem({
       invoiceId, description: "Parts", quantity: 1, unitPrice: 80, taxable: true,
-    });
+    })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
     const out = await caller.invoice.exportSage({ ids: [invoiceId] });
     const rows = out.csv.split("\n");
@@ -133,13 +143,10 @@ describe("Revenue loop UAT — Approved Work → Invoice → Sage CSV", () => {
     const inv = await db.getInvoiceById(invoiceId);
     // One CSV row per line item, all sharing the invoice number.
     const invRows = rows.filter((r) => r.startsWith(`${inv!.invoiceNumber},`));
-    expect(invRows.length).toBe(2);
-    // The taxable "Parts" line carries the company Sage tax code; the
-    // non-taxable fallback line leaves Tax Code blank.
-    const partsRow = invRows.find((r) => r.includes("Parts"));
-    expect(partsRow).toContain(",GP,");
+    expect(invRows.length).toBe(1);
+    expect(invRows[0]).not.toContain(",GP,");
     // Date is MM/DD/YYYY (Sage 50 CA default).
-    expect(partsRow).toMatch(/,\d{2}\/\d{2}\/\d{4},/);
+    expect(invRows[0]).toMatch(/,\d{2}\/\d{2}\/\d{4},/);
 
     // Export marks the invoice exported + locks it.
     const after = await db.getInvoiceById(invoiceId);

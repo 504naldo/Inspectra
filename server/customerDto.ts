@@ -86,6 +86,7 @@ export function toCustomerSafeInvoice(invoice: Invoice): Invoice {
     approvedWorkId,
     workOrderId,
     quoteId,
+    confirmedTax,
     ...safe
   } = invoice;
   return safe as Invoice;

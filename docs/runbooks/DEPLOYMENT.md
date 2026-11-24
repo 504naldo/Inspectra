@@ -71,6 +71,11 @@ real email.
 
 ## Deployment mismatch detection
 
+- For the observed main `179e8c8` failure on `jobs.googleCalendarOwnerId`, use
+  [Main schema recovery](MAIN_SCHEMA_RECOVERY.md). It identifies existing manual
+  0086/0087, distinguishes pending files from ledger/schema drift, and records a
+  synthetic recovery-to-preflight rehearsal. Production maintenance remains
+  separately authorized; publishing diagnostics does not repair live schema.
 - The startup runner logging is the current mismatch signal: a chronically-failing
   `[Migrations] Failed to apply …` line means application code expects schema the DB
   lacks. Treat repeated failures as a release blocker (this was the root cause of the

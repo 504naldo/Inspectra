@@ -36,6 +36,7 @@ export interface InvoicePdfData {
   subtotal: number;
   taxRate: number;
   taxAmount: number;
+  confirmedTax?: { gst: string; pst: string } | null;
   total: number;
   amountPaid: number;
   balanceDue: number;
@@ -191,7 +192,10 @@ export async function generateInvoicePDF(data: InvoicePdfData): Promise<Buffer> 
     // approved-work/repair quotes carry tax-inclusive line totals (taxable=false),
     // so they have a taxRate stamped but a $0 taxAmount — drawing the row there
     // would show a misleading "Tax (5%) $0.00" on the customer-facing PDF.
-    if (data.taxAmount > 0) {
+    if (data.confirmedTax) {
+      drawTotRow("GST", fmt(Number(data.confirmedTax.gst)));
+      drawTotRow("PST", fmt(Number(data.confirmedTax.pst)));
+    } else if (data.taxAmount > 0) {
       drawTotRow(`Tax (${(data.taxRate * 100).toFixed(0)}%)`, fmt(data.taxAmount));
     }
     drawTotRow("TOTAL DUE", fmt(data.total), true, true);

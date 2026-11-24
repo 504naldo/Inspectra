@@ -14,6 +14,7 @@ import { storagePut } from "../storage.js";
 import { generateInvoicePDF } from "../invoicePdfGenerator.js";
 import { buildCustomerSafeInvoiceData } from "../customerSafeReport.js";
 import { generateInvoiceNumber } from "../invoiceNumber.js";
+import { assertSageSupported, exactInvoiceCents, exactInvoiceMoney } from "../confirmedInvoiceTax";
 import { assertInvoiceLinks } from "../invoiceLinks";
 
 // ── Edit-lock rules ───────────────────────────────────────────────────────────
@@ -28,6 +29,17 @@ function isInvoiceLocked(inv: { status: string; sageExportStatus: string | null;
     inv.status === "void" ||
     inv.sageExportStatus === "exported"
   );
+}
+
+function hasApprovedBillingLink(inv: { approvedWorkId: number | null; quoteId: number | null; workOrderId: number | null }): boolean {
+  return inv.approvedWorkId != null || inv.quoteId != null || inv.workOrderId != null;
+}
+
+function requireEditableBillingLines(inv: Parameters<typeof hasApprovedBillingLink>[0]): void {
+  if (hasApprovedBillingLink(inv)) throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "Approved invoice scope and amounts cannot be edited here. Review and reapprove the source before issuing a correction.",
+  });
 }
 
 function lockMessage(inv: { status: string; sageExportStatus: string | null; }): string {
@@ -110,6 +122,7 @@ export const invoiceRouter = router({
       const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
       await assertInvoiceLinks(inv, inv.companyId);
       const lineItems = await db.getLineItemsByInvoice(inv.id);
+      await db.getVerifiedInvoiceTax(inv, lineItems);
       const [customerOrg, site] = await Promise.all([
         inv.customerOrgId ? db.getCustomerOrgById(inv.customerOrgId) : null,
         inv.siteId ? db.getSiteById(inv.siteId) : null,
@@ -142,6 +155,8 @@ export const invoiceRouter = router({
     }))
     .mutation(async ({ input, ctx }) =>
       db.withAudit(ctx, "invoice.create", async tx => {
+        if (input.approvedWorkId != null || input.workOrderId != null || input.quoteId != null)
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Create linked invoices from a verified Approved Work record." });
         await assertInvoiceLinks(input, ctx.user.companyId!);
       const settings = await db.getCompanySettings(ctx.user.companyId!);
       const invoiceDate = input.invoiceDate ? new Date(input.invoiceDate) : new Date();
@@ -202,13 +217,15 @@ export const invoiceRouter = router({
       const inv = await getInvoiceForCompany(id, ctx.user.companyId!);
         await assertInvoiceLinks({ ...inv, ...data }, inv.companyId);
       if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv), });
+      if (data.taxRate !== undefined || data.customerOrgId !== undefined || data.siteId !== undefined)
+        requireEditableBillingLines(inv);
       await db.updateInvoice(id, {
         ...data,
         invoiceDate: data.invoiceDate ? new Date(data.invoiceDate) : undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         taxRate: data.taxRate !== undefined ? ( String(data.taxRate) as any) : undefined,
       });
-      await db.recalculateInvoiceTotals(id);
+      if (!hasApprovedBillingLink(inv)) await db.recalculateInvoiceTotals(id);
       return { success: true };
     })),
 
@@ -233,6 +250,7 @@ export const invoiceRouter = router({
           .for("update");
       const inv = await getInvoiceForCompany(input.invoiceId, ctx.user.companyId!);
       if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv), });
+      requireEditableBillingLines(inv);
       const lineTotal = input.quantity * input.unitPrice;
       const item = await db.createInvoiceLineItem({
         invoiceId: input.invoiceId,
@@ -282,6 +300,7 @@ export const invoiceRouter = router({
           });
       const inv = await getInvoiceForCompany(invoiceId, ctx.user.companyId!);
       if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv), });
+      requireEditableBillingLines(inv);
       const lineTotal =
           Number(
         quantity ?? item.quantity) *
@@ -315,6 +334,7 @@ export const invoiceRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
       const inv = await getInvoiceForCompany(input.invoiceId, ctx.user.companyId!);
       if (isInvoiceLocked(inv)) throw new TRPCError({ code: "BAD_REQUEST", message: lockMessage(inv), });
+      requireEditableBillingLines(inv);
       await db.deleteInvoiceLineItem(input.id, input.invoiceId);
       await db.recalculateInvoiceTotals(input.invoiceId);
         await logActivity({ ctx, entityType: "invoice", entityId: input.invoiceId, eventType: "updated",
@@ -387,6 +407,7 @@ export const invoiceRouter = router({
           .for("update");
         if (!locked) throw new TRPCError({ code: "NOT_FOUND" });
       const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
+        const split = await db.getVerifiedInvoiceTax(inv);
         const [receipt] = await tx
           .select()
           .from(invoicePayments)
@@ -421,16 +442,20 @@ export const invoiceRouter = router({
       await db.recalculateInvoiceTotals(input.id);
       const fresh = await db.getInvoiceById(input.id);
       if (!fresh) throw new TRPCError({ code: "NOT_FOUND" });
-      const totalCents = Math.round(Number(fresh.total ?? 0) * 100);
-        const paidCents =
-          Math.round(Number(fresh.amountPaid ?? 0) * 100) +
-          Math.round(input.amountPaid * 100);
-      const fullyPaid = paidCents >= totalCents;
+      const requested = exactInvoiceCents(input.amountPaid.toFixed(2));
+      const total = split ? exactInvoiceCents(split.gross) : BigInt(Math.round(Number(fresh.total ?? 0) * 100));
+      const paidBefore = split ? exactInvoiceCents(fresh.amountPaid) : BigInt(Math.round(Number(fresh.amountPaid ?? 0) * 100));
+      if (total == null || paidBefore == null || requested == null)
+        throw new TRPCError({code: "PRECONDITION_FAILED", message: "Saved invoice amounts or payment are not in exact cents."});
+      const paid = paidBefore + requested;
+      const fullyPaid = paid >= total;
+      const due = fullyPaid ? BigInt(0) : total - paid;
+      const paidMoney = exactInvoiceMoney(paid);
+      const dueMoney = exactInvoiceMoney(due);
       const response = {
-          success: true, operationPaidAt: input.paidAt ?? null, status: fullyPaid ? "paid" : "partial",
-          total: totalCents / 100,
-          amountPaid: paidCents / 100, balanceDue: Math.max(0, totalCents - paidCents) / 100,
-        };
+        success: true, operationPaidAt: input.paidAt ?? null, status: fullyPaid ? "paid" : "partial",
+        total: Number(total) / 100, amountPaid: Number(paid) / 100, balanceDue: Number(due) / 100,
+      };
         await tx
           .insert (invoicePayments)
           .values({
@@ -440,8 +465,8 @@ export const invoiceRouter = router({
             result : response,
             recordedById: ctx.user.id, });
         await tx.update(invoices).set( {
-        amountPaid: response.amountPaid.toFixed(2),
-        balanceDue: response.balanceDue.toFixed(2),
+        amountPaid: paidMoney,
+        balanceDue: dueMoney,
         status: response.status as "paid" | "partial",
         paidAt: fullyPaid ?input.paidAt ? new Date(input.paidAt) : new Date() : null,
       })
@@ -482,6 +507,8 @@ export const invoiceRouter = router({
       for (const id of input.ids) {
         const inv = await db.getInvoiceById(id);
         if (!inv || inv.companyId !== ctx.user.companyId) continue;
+        await db.getVerifiedInvoiceTax(inv);
+        assertSageSupported(inv);
         if (inv.status === "void") {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Invoice ${inv.invoiceNumber} is voided and cannot be exported`, });
         }
@@ -580,6 +607,8 @@ export const invoiceRouter = router({
           .where(eq(invoices.id, input.id))
           .for("update");
       const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
+      await db.getVerifiedInvoiceTax(inv);
+      assertSageSupported(inv);
       if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot reset Sage export status on a voided invoice", });
       if (inv.sageExportStatus === "exported") throw new TRPCError({ code: "BAD_REQUEST", message: "This invoice has already been exported to Sage. Reverse the export in Sage before re-opening it here.", });
       await db.updateInvoice(input.id, { sageExportStatus: "pending" });
@@ -597,6 +626,8 @@ export const invoiceRouter = router({
           .where(eq(invoices.id, input.id))
           .for("update");
       const inv = await getInvoiceForCompany(input.id, ctx.user.companyId!);
+      await db.getVerifiedInvoiceTax(inv);
+      assertSageSupported(inv);
       if (inv.status === "void") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot mark a voided invoice as exported", });
       await db.updateInvoice(input.id, { sageExportStatus: "exported", sageExportedAt: new Date(), });
         await logActivity({ ctx, entityType: "invoice", entityId: input.id, eventType: "exported",
@@ -646,6 +677,7 @@ export const invoiceRouter = router({
         subtotal: toNum(inv.subtotal),
         taxRate: toNum(inv.taxRate),
         taxAmount: toNum(inv.taxAmount),
+        confirmedTax: await db.getVerifiedInvoiceTax(inv, lineItems),
         total: toNum(inv.total),
         amountPaid: toNum(inv.amountPaid),
         balanceDue: toNum(inv.balanceDue),
@@ -711,6 +743,7 @@ export const invoiceRouter = router({
         subtotal: toNum(inv.subtotal),
         taxRate: toNum(inv.taxRate),
         taxAmount: toNum(inv.taxAmount),
+        confirmedTax: await db.getVerifiedInvoiceTax(inv, lineItems),
         total: toNum(inv.total),
         amountPaid: toNum(inv.amountPaid),
         balanceDue: toNum(inv.balanceDue),
